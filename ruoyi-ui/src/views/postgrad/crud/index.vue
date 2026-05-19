@@ -1,0 +1,334 @@
+<template>
+  <div class="app-container">
+    <el-form :model="queryParams" ref="queryForm" size="small" :inline="true" v-show="showSearch" label-width="84px">
+      <el-form-item v-for="field in queryFields" :key="field.prop" :label="field.label" :prop="field.prop">
+        <component
+          :is="queryComponent(field)"
+          v-model="queryParams[field.prop]"
+          v-bind="inputAttrs(field, true)"
+          clearable
+          filterable
+          @keyup.enter.native="handleQuery"
+        >
+          <el-option
+            v-for="item in selectOptions(field)"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </component>
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" icon="el-icon-search" size="mini" @click="handleQuery">搜索</el-button>
+        <el-button icon="el-icon-refresh" size="mini" @click="resetQuery">重置</el-button>
+      </el-form-item>
+    </el-form>
+
+    <el-row :gutter="10" class="mb8">
+      <el-col :span="1.5">
+        <el-button type="primary" plain icon="el-icon-plus" size="mini" @click="handleAdd" v-hasPermi="[permission('add')]">新增</el-button>
+      </el-col>
+      <el-col :span="1.5">
+        <el-button type="success" plain icon="el-icon-edit" size="mini" :disabled="single" @click="handleUpdate" v-hasPermi="[permission('edit')]">修改</el-button>
+      </el-col>
+      <el-col :span="1.5">
+        <el-button type="danger" plain icon="el-icon-delete" size="mini" :disabled="multiple" @click="handleDelete" v-hasPermi="[permission('remove')]">删除</el-button>
+      </el-col>
+      <el-col :span="1.5">
+        <el-button type="warning" plain icon="el-icon-download" size="mini" @click="handleExport" v-hasPermi="[permission('export')]">导出</el-button>
+      </el-col>
+      <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
+    </el-row>
+
+    <el-table v-loading="loading" :data="rows" @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="55" align="center" />
+      <el-table-column
+        v-for="field in tableFields"
+        :key="field.prop"
+        :label="field.label"
+        :prop="field.prop"
+        :width="field.width"
+        :min-width="field.minWidth"
+        align="center"
+        :show-overflow-tooltip="field.showOverflow"
+      >
+        <template slot-scope="scope">
+          <el-tag v-if="field.type === 'switch' && Number(scope.row[field.prop]) === 1" size="mini" type="success">是</el-tag>
+          <span v-else-if="field.type === 'switch'">否</span>
+          <span v-else-if="field.optionsKey">{{ optionLabel(field, scope.row[field.prop]) }}</span>
+          <span v-else>{{ scope.row[field.prop] }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" align="center" class-name="small-padding fixed-width" width="150">
+        <template slot-scope="scope">
+          <el-button size="mini" type="text" icon="el-icon-edit" @click="handleUpdate(scope.row)" v-hasPermi="[permission('edit')]">修改</el-button>
+          <el-button size="mini" type="text" icon="el-icon-delete" @click="handleDelete(scope.row)" v-hasPermi="[permission('remove')]">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <pagination
+      v-show="total > 0"
+      :total="total"
+      :page.sync="queryParams.pageNum"
+      :limit.sync="queryParams.pageSize"
+      @pagination="getList"
+    />
+
+    <el-dialog :title="title" :visible.sync="open" width="760px" append-to-body>
+      <el-form ref="form" :model="form" :rules="rules" label-width="110px">
+        <el-row :gutter="16">
+          <el-col v-for="field in formFields" :key="field.prop" :span="field.type === 'textarea' ? 24 : 12">
+            <el-form-item :label="field.label" :prop="field.prop">
+              <el-input
+                v-if="field.type === 'text'"
+                v-model="form[field.prop]"
+                :placeholder="'请输入' + field.label"
+              />
+              <el-input
+                v-else-if="field.type === 'textarea'"
+                v-model="form[field.prop]"
+                type="textarea"
+                :rows="3"
+                :placeholder="'请输入' + field.label"
+              />
+              <el-input-number
+                v-else-if="field.type === 'number'"
+                v-model="form[field.prop]"
+                controls-position="right"
+                :min="0"
+                style="width: 100%"
+              />
+              <el-date-picker
+                v-else-if="field.type === 'date'"
+                v-model="form[field.prop]"
+                type="date"
+                value-format="yyyy-MM-dd"
+                placeholder="请选择日期"
+                style="width: 100%"
+              />
+              <el-switch
+                v-else-if="field.type === 'switch'"
+                v-model="form[field.prop]"
+                :active-value="1"
+                :inactive-value="0"
+              />
+              <el-select
+                v-else-if="field.type === 'select' || field.type === 'remoteSelect'"
+                v-model="form[field.prop]"
+                :placeholder="'请选择' + field.label"
+                clearable
+                filterable
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in selectOptions(field)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+              <el-input v-else v-model="form[field.prop]" disabled />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+      <div slot="footer" class="dialog-footer">
+        <el-button type="primary" @click="submitForm">确 定</el-button>
+        <el-button @click="cancel">取 消</el-button>
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<script>
+import { listCrud, getCrud, delCrud, addCrud, updateCrud, optionselectCrud } from '@/api/postgrad/crud'
+import { getModuleConfig, getOptions } from './moduleConfig'
+
+export default {
+  name: 'PostgradCrud',
+  data() {
+    return {
+      module: '',
+      config: null,
+      loading: true,
+      ids: [],
+      single: true,
+      multiple: true,
+      showSearch: true,
+      total: 0,
+      rows: [],
+      title: '',
+      open: false,
+      queryParams: {
+        pageNum: 1,
+        pageSize: 10
+      },
+      form: {},
+      rules: {},
+      remoteOptions: {}
+    }
+  },
+  computed: {
+    tableFields() {
+      return this.config ? this.config.columns.filter(field => field.type !== 'remoteSelect' || field.prop.endsWith('Id')) : []
+    },
+    formFields() {
+      return this.config ? this.config.columns.filter(field => !field.readonly) : []
+    },
+    queryFields() {
+      if (!this.config) return []
+      return this.config.query.map(prop => this.config.columns.find(field => field.prop === prop)).filter(Boolean)
+    }
+  },
+  watch: {
+    '$route.path': {
+      handler() {
+        this.initModule()
+      },
+      immediate: true
+    }
+  },
+  methods: {
+    initModule() {
+      const module = this.$route.path.split('/').filter(Boolean).pop()
+      const config = getModuleConfig(module)
+      if (!config) {
+        this.$modal.msgError('未找到业务模块配置：' + module)
+        return
+      }
+      this.module = module
+      this.config = config
+      this.resetQueryModel()
+      this.buildRules()
+      this.loadRemoteOptions().then(() => this.getList())
+    },
+    permission(action) {
+      return `postgrad:${this.module}:${action}`
+    },
+    resetQueryModel() {
+      this.queryParams = {
+        pageNum: 1,
+        pageSize: 10
+      }
+      this.config.query.forEach(prop => {
+        this.$set(this.queryParams, prop, undefined)
+      })
+    },
+    buildRules() {
+      const rules = {}
+      this.config.columns.forEach(field => {
+        if (field.required) {
+          rules[field.prop] = [{ required: true, message: field.label + '不能为空', trigger: field.type === 'select' || field.type === 'remoteSelect' ? 'change' : 'blur' }]
+        }
+      })
+      this.rules = rules
+    },
+    loadRemoteOptions() {
+      const modules = [...new Set(this.config.columns.filter(field => field.optionModule).map(field => field.optionModule))]
+      return Promise.all(modules.map(module => optionselectCrud(module).then(response => {
+        this.$set(this.remoteOptions, module, (response.data || []).map(item => ({ label: item.label, value: item.id })))
+      })))
+    },
+    getList() {
+      this.loading = true
+      listCrud(this.module, this.queryParams).then(response => {
+        this.rows = response.rows
+        this.total = response.total
+        this.loading = false
+      })
+    },
+    queryComponent(field) {
+      return field.type === 'select' || field.type === 'remoteSelect' ? 'el-select' : 'el-input'
+    },
+    inputAttrs(field, query) {
+      if (field.type === 'select' || field.type === 'remoteSelect') {
+        return { placeholder: '请选择' + field.label }
+      }
+      return { placeholder: '请输入' + field.label }
+    },
+    selectOptions(field) {
+      if (field.optionModule) return this.remoteOptions[field.optionModule] || []
+      return getOptions(field.optionsKey)
+    },
+    optionLabel(field, value) {
+      const item = this.selectOptions(field).find(option => option.value === value)
+      return item ? item.label : value
+    },
+    cancel() {
+      this.open = false
+      this.reset()
+    },
+    reset() {
+      const form = {}
+      this.config.columns.forEach(field => {
+        if (field.readonly) return
+        if (field.default !== undefined) {
+          form[field.prop] = field.default
+        } else if (field.type === 'switch') {
+          form[field.prop] = 0
+        } else {
+          form[field.prop] = undefined
+        }
+      })
+      form.__key = undefined
+      this.form = form
+      this.resetForm('form')
+    },
+    handleQuery() {
+      this.queryParams.pageNum = 1
+      this.getList()
+    },
+    resetQuery() {
+      this.resetForm('queryForm')
+      this.handleQuery()
+    },
+    handleSelectionChange(selection) {
+      this.ids = selection.map(item => item[this.config.idField] || item.__key)
+      this.single = selection.length !== 1
+      this.multiple = !selection.length
+    },
+    handleAdd() {
+      this.reset()
+      this.open = true
+      this.title = '添加' + this.config.title
+    },
+    handleUpdate(row) {
+      this.reset()
+      const id = row[this.config.idField] || this.ids[0]
+      getCrud(this.module, id).then(response => {
+        this.form = response.data
+        this.open = true
+        this.title = '修改' + this.config.title
+      })
+    },
+    submitForm() {
+      this.$refs.form.validate(valid => {
+        if (!valid) return
+        const request = this.form.__key ? updateCrud(this.module, this.form) : addCrud(this.module, this.form)
+        request.then(() => {
+          this.$modal.msgSuccess(this.form.__key ? '修改成功' : '新增成功')
+          this.open = false
+          this.getList()
+          this.loadRemoteOptions()
+        })
+      })
+    },
+    handleDelete(row) {
+      const ids = row[this.config.idField] || row.__key || this.ids
+      this.$modal.confirm('是否确认删除"' + ids + '"的数据项？').then(() => {
+        return delCrud(this.module, ids)
+      }).then(() => {
+        this.getList()
+        this.loadRemoteOptions()
+        this.$modal.msgSuccess('删除成功')
+      }).catch(() => {})
+    },
+    handleExport() {
+      this.download(`postgrad/${this.module}/export`, {
+        ...this.queryParams
+      }, `${this.module}_${new Date().getTime()}.csv`)
+    }
+  }
+}
+</script>

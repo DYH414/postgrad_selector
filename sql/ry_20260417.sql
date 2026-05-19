@@ -1,3 +1,9 @@
+CREATE DATABASE IF NOT EXISTS postgrad_selector
+  DEFAULT CHARACTER SET utf8mb4
+  DEFAULT COLLATE utf8mb4_unicode_ci;
+
+USE postgrad_selector;
+
 -- ----------------------------
 -- 1、部门表
 -- ----------------------------
