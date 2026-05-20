@@ -123,7 +123,7 @@ const readonlyColumn = (prop, label, minWidth = 180, extra = {}) => ({ prop, lab
 const admissionBase = [
   remoteColumn('schoolId', '所属学校', 'school', false, 180, { virtual: true }),
   remoteColumn('collegeId', '所属学院', 'college', false, 220, { virtual: true, dependsOn: 'schoolId' }),
-  remoteColumn('programId', '专业方向', 'program', true, 220, { dependsOn: 'collegeId' }),
+  remoteColumn('programId', '专业方向', 'program', true, 220, { dependsOn: ['schoolId', 'collegeId'] }),
   readonlyColumn('programLabel', '专业方向', 260),
   numberColumn('year', '年份', true)
 ]
@@ -233,7 +233,7 @@ export const modules = {
   admissionScore: {
     title: '复试线数据',
     idField: 'id',
-    query: ['programId', 'year', 'verifyStatus'],
+    query: ['schoolId', 'collegeId', 'programId', 'year', 'verifyStatus'],
     columns: [
       { prop: 'id', label: 'ID', type: 'readonly', width: 80, readonly: true },
       ...admissionBase,
@@ -248,7 +248,7 @@ export const modules = {
   admissionPlan: {
     title: '招生计划数据',
     idField: 'id',
-    query: ['programId', 'year', 'verifyStatus'],
+    query: ['schoolId', 'collegeId', 'programId', 'year', 'verifyStatus'],
     columns: [
       { prop: 'id', label: 'ID', type: 'readonly', width: 80, readonly: true },
       ...admissionBase,
@@ -262,7 +262,7 @@ export const modules = {
   admissionResult: {
     title: '拟录取数据',
     idField: 'id',
-    query: ['programId', 'year', 'verifyStatus'],
+    query: ['schoolId', 'collegeId', 'programId', 'year', 'verifyStatus'],
     columns: [
       { prop: 'id', label: 'ID', type: 'readonly', width: 80, readonly: true },
       ...admissionBase,

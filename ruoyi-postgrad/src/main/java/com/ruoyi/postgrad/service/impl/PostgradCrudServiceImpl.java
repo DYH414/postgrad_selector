@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.postgrad.domain.ColumnMeta;
@@ -355,6 +354,7 @@ public class PostgradCrudServiceImpl implements IPostgradCrudService
         }
         meta.col("verifyStatus", "verify_status", "可信状态", true).col("sourceId", "source_id", "来源")
                 .view("sourceLabel", "来源标题").time("createdAt", "创建时间").time("updatedAt", "更新时间")
+                .searchExact("schoolId", "s.id").searchExact("collegeId", "c.id")
                 .searchExact("programId", alias + ".program_id").searchExact("year", alias + ".year")
                 .searchExact("verifyStatus", alias + ".verify_status");
         modules.put(module, meta);
@@ -392,18 +392,18 @@ public class PostgradCrudServiceImpl implements IPostgradCrudService
             }
             if (search.isLike())
             {
-                parts.add(search.getExpression() + " like ?");
                 args.add("%" + value + "%");
+                parts.add(search.getExpression() + " like " + indexedParam("whereArgs", args.size() - 1));
             }
             else if (search.isExists())
             {
-                parts.add(search.getExpression());
                 args.add(value);
+                parts.add(search.getExpression().replace("?", indexedParam("whereArgs", args.size() - 1)));
             }
             else
             {
-                parts.add(search.getExpression() + " = ?");
                 args.add(value);
+                parts.add(search.getExpression() + " = " + indexedParam("whereArgs", args.size() - 1));
             }
         }
         return new WhereSql(parts.isEmpty() ? "" : " where " + String.join(" and ", parts), args);
@@ -421,10 +421,15 @@ public class PostgradCrudServiceImpl implements IPostgradCrudService
         for (int i = 0; i < meta.getKeyColumns().size(); i++)
         {
             ColumnMeta col = meta.getKeyColumns().get(i);
-            parts.add(meta.getKeyAlias() + "." + col.getColumn() + " = ?");
             args.add(values[i]);
+            parts.add(meta.getKeyAlias() + "." + col.getColumn() + " = " + indexedParam("keyArgs", args.size() - 1));
         }
         return new KeySql(String.join(" and ", parts), args);
+    }
+
+    private static String indexedParam(String paramName, int index)
+    {
+        return "#{" + paramName + "[" + index + "]}";
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -447,6 +452,21 @@ public class PostgradCrudServiceImpl implements IPostgradCrudService
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> optionRows(String module, ModuleMeta meta, Map<String, String> params)
     {
+        if ("subject".equals(module))
+        {
+            List<Object> args = new ArrayList<>();
+            StringBuilder sql = new StringBuilder(
+                    "select id, concat(code, ' ', name) label from subject where 1=1");
+            if (StringUtils.hasText(params.get("keyword")))
+            {
+                args.add("%" + params.get("keyword") + "%");
+                String keywordParam = indexedParam("args", args.size() - 1);
+                sql.append(" and (code like ").append(keywordParam)
+                        .append(" or name like ").append(keywordParam).append(")");
+            }
+            sql.append(" order by code");
+            return mapper.selectOption(sql.toString(), args);
+        }
         if ("college".equals(module))
         {
             List<Object> args = new ArrayList<>();
@@ -454,8 +474,14 @@ public class PostgradCrudServiceImpl implements IPostgradCrudService
                     "select c.id id, c.school_id schoolId, concat(s.name, ' / ', c.name) label from college c left join school s on s.id = c.school_id where 1=1");
             if (StringUtils.hasText(params.get("schoolId")))
             {
-                sql.append(" and c.school_id = ?");
                 args.add(params.get("schoolId"));
+                sql.append(" and c.school_id = ").append(indexedParam("args", args.size() - 1));
+            }
+            if (StringUtils.hasText(params.get("keyword")))
+            {
+                args.add("%" + params.get("keyword") + "%");
+                sql.append(" and (s.name like ").append(indexedParam("args", args.size() - 1))
+                        .append(" or c.name like ").append(indexedParam("args", args.size() - 1)).append(")");
             }
             sql.append(" order by s.name, c.name");
             return mapper.selectOption(sql.toString(), args);
@@ -467,15 +493,41 @@ public class PostgradCrudServiceImpl implements IPostgradCrudService
                     "select p.id id, p.college_id collegeId, c.school_id schoolId, concat(s.name, ' / ', c.name, ' / ', p.program_code, ' ', p.program_name) label from program p left join college c on c.id = p.college_id left join school s on s.id = c.school_id where 1=1");
             if (StringUtils.hasText(params.get("schoolId")))
             {
-                sql.append(" and c.school_id = ?");
                 args.add(params.get("schoolId"));
+                sql.append(" and c.school_id = ").append(indexedParam("args", args.size() - 1));
             }
             if (StringUtils.hasText(params.get("collegeId")))
             {
-                sql.append(" and p.college_id = ?");
                 args.add(params.get("collegeId"));
+                sql.append(" and p.college_id = ").append(indexedParam("args", args.size() - 1));
+            }
+            if (StringUtils.hasText(params.get("keyword")))
+            {
+                args.add("%" + params.get("keyword") + "%");
+                String keywordParam = indexedParam("args", args.size() - 1);
+                sql.append(" and (s.name like ").append(keywordParam)
+                        .append(" or c.name like ").append(keywordParam)
+                        .append(" or p.program_code like ").append(keywordParam)
+                        .append(" or p.program_name like ").append(keywordParam)
+                        .append(" or p.research_direction like ").append(keywordParam).append(")");
             }
             sql.append(" order by s.name, c.name, p.program_code");
+            return mapper.selectOption(sql.toString(), args);
+        }
+        if ("dataSource".equals(module))
+        {
+            List<Object> args = new ArrayList<>();
+            StringBuilder sql = new StringBuilder(
+                    "select id, coalesce(title, url, concat('来源#', id)) label from data_source where 1=1");
+            if (StringUtils.hasText(params.get("keyword")))
+            {
+                args.add("%" + params.get("keyword") + "%");
+                String keywordParam = indexedParam("args", args.size() - 1);
+                sql.append(" and (title like ").append(keywordParam)
+                        .append(" or url like ").append(keywordParam)
+                        .append(" or source_owner like ").append(keywordParam).append(")");
+            }
+            sql.append(" order by created_at desc");
             return mapper.selectOption(sql.toString(), args);
         }
         return mapper.selectOption(meta.getOptionSql(), Collections.emptyList());

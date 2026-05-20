@@ -8,8 +8,11 @@
           v-bind="inputAttrs(field, true)"
           clearable
           filterable
+          :remote="field.type === 'remoteSelect'"
+          :remote-method="keyword => remoteSearch(field, keyword, queryParams)"
           @keyup.enter.native="handleQuery"
           @change="handleQueryFieldChange(field)"
+          @visible-change="visible => handleRemoteVisible(field, visible, queryParams)"
         >
           <el-option
             v-for="item in selectOptions(field, queryParams)"
@@ -137,8 +140,11 @@
                   :placeholder="'请选择' + field.label"
                   clearable
                   filterable
+                  :remote="field.type === 'remoteSelect'"
+                  :remote-method="keyword => remoteSearch(field, keyword, form)"
                   style="width: 100%"
                   @change="handleFieldChange(field)"
+                  @visible-change="visible => handleRemoteVisible(field, visible, form)"
                 >
                   <el-option
                     v-for="item in selectOptions(field, form)"
@@ -199,6 +205,7 @@ export default {
       form: {},
       rules: {},
       remoteOptions: {},
+      remoteSearchOptions: {},
       textPreview: {
         open: false,
         title: '',
@@ -249,6 +256,7 @@ export default {
       }
       this.module = module
       this.config = config
+      this.remoteSearchOptions = {}
       this.resetQueryModel()
       this.buildRules()
       this.loadRemoteOptions().then(() => this.getList())
@@ -277,7 +285,7 @@ export default {
     loadRemoteOptions() {
       const modules = [...new Set(this.config.columns.filter(field => field.optionModule).map(field => field.optionModule))]
       return Promise.all(modules.map(module => optionselectCrud(module).then(response => {
-        this.$set(this.remoteOptions, module, (response.data || []).map(this.normalizeRemoteOption))
+        this.mergeRemoteOptions(module, response.data || [])
       })))
     },
     normalizeRemoteOption(item) {
@@ -308,35 +316,84 @@ export default {
     },
     selectOptions(field, model = this.form) {
       if (field.optionModule) {
-        const options = this.remoteOptions[field.optionModule] || []
+        const useSearchPool = model === this.form || model === this.queryParams
+        const options = useSearchPool && this.remoteSearchOptions[field.optionModule]
+          ? this.remoteSearchOptions[field.optionModule]
+          : this.remoteOptions[field.optionModule] || []
         return options.filter(option => this.matchDependency(field, option, model))
       }
       return getOptions(field.optionsKey)
     },
+    remoteSearch(field, keyword, model = this.form) {
+      if (field.type !== 'remoteSelect' || !field.optionModule) return
+      const params = this.buildOptionParams(field, model, keyword)
+      optionselectCrud(field.optionModule, params).then(response => {
+        const options = (response.data || []).map(this.normalizeRemoteOption)
+        this.$set(this.remoteSearchOptions, field.optionModule, options)
+        this.mergeRemoteOptions(field.optionModule, response.data || [])
+      })
+    },
+    handleRemoteVisible(field, visible, model = this.form) {
+      if (visible && field.type === 'remoteSelect') {
+        this.remoteSearch(field, '', model)
+      }
+    },
+    buildOptionParams(field, model = this.form, keyword = '') {
+      const params = {}
+      this.normalizeDependencies(field.dependsOn).forEach(prop => {
+        if (model[prop]) params[prop] = model[prop]
+      })
+      if (keyword) params.keyword = keyword
+      return params
+    },
+    mergeRemoteOptions(module, rows) {
+      const exists = this.remoteOptions[module] || []
+      const merged = [...exists]
+      ;(rows || []).map(this.normalizeRemoteOption).forEach(option => {
+        const index = merged.findIndex(item => String(item.value) === String(option.value))
+        if (index === -1) {
+          merged.push(option)
+        } else {
+          merged.splice(index, 1, { ...merged[index], ...option })
+        }
+      })
+      this.$set(this.remoteOptions, module, merged)
+    },
     matchDependency(field, option, model = this.form) {
-      if (!field.dependsOn || !model[field.dependsOn]) return true
-      const dependValue = String(model[field.dependsOn])
-      if (field.dependsOn === 'schoolId') return String(option.schoolId) === dependValue
-      if (field.dependsOn === 'collegeId') return String(option.collegeId) === dependValue
-      return true
+      const dependencies = this.normalizeDependencies(field.dependsOn)
+      if (!dependencies.length) return true
+      return dependencies.every(prop => {
+        if (!model[prop]) return true
+        const dependValue = String(model[prop])
+        if (prop === 'schoolId') return String(option.schoolId) === dependValue
+        if (prop === 'collegeId') return String(option.collegeId) === dependValue
+        return true
+      })
+    },
+    normalizeDependencies(dependsOn) {
+      if (!dependsOn) return []
+      return Array.isArray(dependsOn) ? dependsOn : [dependsOn]
+    },
+    hasDependency(field, prop) {
+      return this.normalizeDependencies(field.dependsOn).includes(prop)
+    },
+    clearDependentValues(fields, model, changedProp) {
+      fields.forEach(item => {
+        if (this.hasDependency(item, changedProp)) {
+          this.$set(model, item.prop, undefined)
+          this.clearDependentValues(fields, model, item.prop)
+        }
+      })
     },
     optionLabel(field, value) {
       const item = this.selectOptions(field, {}).find(option => String(option.value) === String(value))
       return item ? item.label : value
     },
     handleFieldChange(field) {
-      this.formFields.forEach(item => {
-        if (item.dependsOn === field.prop) {
-          this.$set(this.form, item.prop, undefined)
-        }
-      })
+      this.clearDependentValues(this.formFields, this.form, field.prop)
     },
     handleQueryFieldChange(field) {
-      this.queryFields.forEach(item => {
-        if (item.dependsOn === field.prop) {
-          this.$set(this.queryParams, item.prop, undefined)
-        }
-      })
+      this.clearDependentValues(this.queryFields, this.queryParams, field.prop)
       this.handleQuery()
     },
     fieldSpan(field) {

@@ -26,10 +26,11 @@ export function getSchoolOverview(id) {
 }
 
 // 学校选择框
-export function optionselectSchool() {
+export function optionselectSchool(query) {
   return request({
     url: '/postgrad/school/optionselect',
-    method: 'get'
+    method: 'get',
+    params: query
   })
 }
 

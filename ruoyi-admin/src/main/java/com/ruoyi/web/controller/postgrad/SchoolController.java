@@ -20,7 +20,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.util.StringUtils;
 
 /**
  * 学校基础信息Controller
@@ -83,8 +85,14 @@ public class SchoolController extends BaseController
      * 获取学校选择框列表
      */
     @GetMapping("/optionselect")
-    public AjaxResult optionselect()
+    public AjaxResult optionselect(@RequestParam(required = false) String keyword)
     {
+        if (StringUtils.hasText(keyword))
+        {
+            School school = new School();
+            school.setName(keyword);
+            return success(schoolService.selectSchoolList(school));
+        }
         return success(schoolService.selectSchoolAll());
     }
 
