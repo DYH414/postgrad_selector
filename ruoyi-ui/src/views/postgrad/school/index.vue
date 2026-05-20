@@ -10,20 +10,37 @@
         />
       </el-form-item>
       <el-form-item label="省份" prop="province">
-        <el-input
+        <el-select
           v-model="queryParams.province"
-          placeholder="请输入省份"
+          placeholder="请选择省份"
           clearable
-          @keyup.enter.native="handleQuery"
-        />
+          filterable
+          @change="handleQueryProvinceChange"
+        >
+          <el-option
+            v-for="item in provinceOptions"
+            :key="item"
+            :label="item"
+            :value="item"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="城市" prop="city">
-        <el-input
+        <el-select
           v-model="queryParams.city"
-          placeholder="请输入城市"
+          placeholder="请选择城市"
           clearable
-          @keyup.enter.native="handleQuery"
-        />
+          filterable
+          :disabled="!queryCityOptions.length"
+          @change="handleQuery"
+        >
+          <el-option
+            v-for="item in queryCityOptions"
+            :key="item"
+            :label="item"
+            :value="item"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="学校层次" prop="tier">
         <el-select v-model="queryParams.tier" placeholder="请选择学校层次" clearable>
@@ -145,8 +162,15 @@
           <span>{{ parseTime(scope.row.updatedAt) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" class-name="small-padding fixed-width" width="150">
+      <el-table-column label="操作" align="center" class-name="small-padding fixed-width" width="210">
         <template slot-scope="scope">
+          <el-button
+            size="mini"
+            type="text"
+            icon="el-icon-view"
+            @click="handleDetail(scope.row)"
+            v-hasPermi="['postgrad:school:query']"
+          >详情</el-button>
           <el-button
             size="mini"
             type="text"
@@ -190,12 +214,43 @@
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="省份" prop="province">
-              <el-input v-model="form.province" placeholder="如 福建" />
+              <el-select
+                v-model="form.province"
+                placeholder="请选择或输入省份"
+                clearable
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+                @change="handleFormProvinceChange"
+              >
+                <el-option
+                  v-for="item in provinceOptions"
+                  :key="item"
+                  :label="item"
+                  :value="item"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="城市" prop="city">
-              <el-input v-model="form.city" placeholder="如 福州" />
+              <el-select
+                v-model="form.city"
+                placeholder="请选择或输入城市"
+                clearable
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in formCityOptions"
+                  :key="item"
+                  :label="item"
+                  :value="item"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
@@ -249,11 +304,73 @@
         <el-button @click="cancel">取 消</el-button>
       </div>
     </el-dialog>
+
+    <el-dialog :title="detailTitle" :visible.sync="detailOpen" width="980px" append-to-body>
+      <div v-loading="detailLoading" class="school-detail">
+        <el-descriptions v-if="schoolDetail.school" :column="3" border size="small" class="mb16">
+          <el-descriptions-item label="学校名称">{{ schoolDetail.school.name }}</el-descriptions-item>
+          <el-descriptions-item label="省份">{{ schoolDetail.school.province }}</el-descriptions-item>
+          <el-descriptions-item label="城市">{{ schoolDetail.school.city }}</el-descriptions-item>
+          <el-descriptions-item label="层次">{{ formatTier(schoolDetail.school.tier) }}</el-descriptions-item>
+          <el-descriptions-item label="985">{{ Number(schoolDetail.school.is985) === 1 ? '是' : '否' }}</el-descriptions-item>
+          <el-descriptions-item label="211">{{ Number(schoolDetail.school.is211) === 1 ? '是' : '否' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <el-row :gutter="12" class="mb16">
+          <el-col :span="4" v-for="item in detailStats" :key="item.label">
+            <div class="detail-stat">
+              <div class="detail-stat__value">{{ item.value }}</div>
+              <div class="detail-stat__label">{{ item.label }}</div>
+            </div>
+          </el-col>
+        </el-row>
+
+        <el-tabs v-model="detailTab">
+          <el-tab-pane label="学院" name="college">
+            <el-table :data="schoolDetail.colleges" size="small" height="320">
+              <el-table-column label="学院名称" prop="name" min-width="180" show-overflow-tooltip />
+              <el-table-column label="专业数" prop="programCount" width="90" align="center" />
+              <el-table-column label="408专业" prop="program408Count" width="90" align="center" />
+              <el-table-column label="学院官网" prop="website" min-width="200" show-overflow-tooltip />
+              <el-table-column label="研招页" prop="graduateUrl" min-width="200" show-overflow-tooltip />
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="招生专业" name="program">
+            <el-table :data="schoolDetail.programs" size="small" height="360">
+              <el-table-column label="学院" prop="collegeName" min-width="130" show-overflow-tooltip />
+              <el-table-column label="专业代码" prop="programCode" width="90" align="center" />
+              <el-table-column label="专业名称" prop="programName" min-width="120" show-overflow-tooltip />
+              <el-table-column label="方向" prop="researchDirection" min-width="140" show-overflow-tooltip />
+              <el-table-column label="学习方式" prop="studyMode" width="90" align="center">
+                <template slot-scope="scope">{{ formatStudyMode(scope.row.studyMode) }}</template>
+              </el-table-column>
+              <el-table-column label="408" prop="is408" width="70" align="center">
+                <template slot-scope="scope">
+                  <el-tag v-if="Number(scope.row.is408) === 1" type="success" size="mini">是</el-tag>
+                  <span v-else>否</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="初试科目" prop="examSubjects" min-width="260" show-overflow-tooltip />
+              <el-table-column label="数据" width="170" align="center">
+                <template slot-scope="scope">
+                  <el-tag :type="Number(scope.row.hasScore) === 1 ? 'success' : 'info'" size="mini">线</el-tag>
+                  <el-tag :type="Number(scope.row.hasPlan) === 1 ? 'success' : 'info'" size="mini">计划</el-tag>
+                  <el-tag :type="Number(scope.row.hasResult) === 1 ? 'success' : 'info'" size="mini">录取</el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+      <div slot="footer" class="dialog-footer">
+        <el-button type="primary" @click="detailOpen = false">关 闭</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script>
-import { listSchool, getSchool, delSchool, addSchool, updateSchool } from '@/api/postgrad/school'
+import { listSchool, getSchool, getSchoolOverview, delSchool, addSchool, updateSchool, optionselectSchool } from '@/api/postgrad/school'
 
 export default {
   name: 'School',
@@ -266,8 +383,19 @@ export default {
       showSearch: true,
       total: 0,
       schoolList: [],
+      schoolOptions: [],
       title: '',
       open: false,
+      detailOpen: false,
+      detailLoading: false,
+      detailTitle: '学校详情',
+      detailTab: 'college',
+      schoolDetail: {
+        school: null,
+        stats: {},
+        colleges: [],
+        programs: []
+      },
       tierOptions: [
         { label: '985', value: '985' },
         { label: '211', value: '211' },
@@ -313,6 +441,31 @@ export default {
   },
   created() {
     this.getList()
+    this.getSchoolOptions()
+  },
+  computed: {
+    provinceOptions() {
+      return this.uniqueSorted(this.schoolOptions.map(item => item.province).concat(this.form.province || []))
+    },
+    queryCityOptions() {
+      return this.cityOptionsByProvince(this.queryParams.province)
+    },
+    formCityOptions() {
+      return this.cityOptionsByProvince(this.form.province).concat(
+        this.form.city && !this.cityOptionsByProvince(this.form.province).includes(this.form.city) ? [this.form.city] : []
+      )
+    },
+    detailStats() {
+      const stats = this.schoolDetail.stats || {}
+      return [
+        { label: '学院', value: this.normalizeStat(stats.collegeCount) },
+        { label: '专业', value: this.normalizeStat(stats.programCount) },
+        { label: '408专业', value: this.normalizeStat(stats.program408Count) },
+        { label: '复试线', value: this.normalizeStat(stats.scoreReadyCount) },
+        { label: '招生计划', value: this.normalizeStat(stats.planReadyCount) },
+        { label: '拟录取', value: this.normalizeStat(stats.resultReadyCount) }
+      ]
+    }
   },
   methods: {
     getList() {
@@ -323,6 +476,34 @@ export default {
         this.loading = false
       })
     },
+    getSchoolOptions() {
+      optionselectSchool().then(response => {
+        this.schoolOptions = response.data || []
+      })
+    },
+    uniqueSorted(values) {
+      return Array.from(new Set(values.filter(item => item !== undefined && item !== null && item !== ''))).sort((a, b) => {
+        return String(a).localeCompare(String(b), 'zh-CN')
+      })
+    },
+    cityOptionsByProvince(province) {
+      return this.uniqueSorted(
+        this.schoolOptions
+          .filter(item => !province || item.province === province)
+          .map(item => item.city)
+      )
+    },
+    handleQueryProvinceChange() {
+      if (this.queryParams.city && !this.queryCityOptions.includes(this.queryParams.city)) {
+        this.queryParams.city = undefined
+      }
+      this.handleQuery()
+    },
+    handleFormProvinceChange() {
+      if (this.form.city && !this.formCityOptions.includes(this.form.city)) {
+        this.form.city = undefined
+      }
+    },
     formatTier(value) {
       const item = this.tierOptions.find(option => option.value === value)
       return item ? item.label : value
@@ -330,6 +511,14 @@ export default {
     formatStatus(value) {
       const item = this.statusOptions.find(option => option.value === value)
       return item ? item.label : value
+    },
+    formatStudyMode(value) {
+      if (value === 'full_time') return '全日制'
+      if (value === 'part_time') return '非全日制'
+      return value
+    },
+    normalizeStat(value) {
+      return Number(value || 0)
     },
     cancel() {
       this.open = false
@@ -375,8 +564,23 @@ export default {
       const id = row.id || this.ids
       getSchool(id).then(response => {
         this.form = response.data
+        if (this.form && this.form.province) {
+          this.schoolOptions = this.schoolOptions.concat([this.form])
+        }
         this.open = true
         this.title = '修改学校'
+      })
+    },
+    handleDetail(row) {
+      this.detailOpen = true
+      this.detailLoading = true
+      this.detailTab = 'college'
+      this.detailTitle = row.name + ' 数据详情'
+      getSchoolOverview(row.id).then(response => {
+        this.schoolDetail = response.data || { school: null, stats: {}, colleges: [], programs: [] }
+        this.detailLoading = false
+      }).catch(() => {
+        this.detailLoading = false
       })
     },
     submitForm() {
@@ -386,12 +590,14 @@ export default {
             updateSchool(this.form).then(() => {
               this.$modal.msgSuccess('修改成功')
               this.open = false
+              this.getSchoolOptions()
               this.getList()
             })
           } else {
             addSchool(this.form).then(() => {
               this.$modal.msgSuccess('新增成功')
               this.open = false
+              this.getSchoolOptions()
               this.getList()
             })
           }
@@ -415,3 +621,30 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.mb16 {
+  margin-bottom: 16px;
+}
+
+.detail-stat {
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  padding: 12px 8px;
+  text-align: center;
+  background: #fafafa;
+}
+
+.detail-stat__value {
+  font-size: 22px;
+  font-weight: 600;
+  color: #303133;
+  line-height: 1.2;
+}
+
+.detail-stat__label {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #909399;
+}
+</style>

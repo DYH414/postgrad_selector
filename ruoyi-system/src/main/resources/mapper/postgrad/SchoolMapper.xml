@@ -55,6 +55,56 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by province, city, name
     </select>
 
+    <select id="selectSchoolOverviewStats" parameterType="Long" resultType="java.util.Map">
+        select count(distinct c.id) collegeCount,
+               count(distinct p.id) programCount,
+               coalesce(sum(case when p.is_408 = 1 then 1 else 0 end), 0) program408Count,
+               coalesce(sum(case when exists(select 1 from admission_score a where a.program_id = p.id) then 1 else 0 end), 0) scoreReadyCount,
+               coalesce(sum(case when exists(select 1 from admission_plan ap where ap.program_id = p.id) then 1 else 0 end), 0) planReadyCount,
+               coalesce(sum(case when exists(select 1 from admission_result ar where ar.program_id = p.id) then 1 else 0 end), 0) resultReadyCount
+        from school s
+            left join college c on c.school_id = s.id
+            left join program p on p.college_id = c.id
+        where s.id = #{id}
+    </select>
+
+    <select id="selectSchoolOverviewColleges" parameterType="Long" resultType="java.util.Map">
+        select c.id,
+               c.name,
+               c.website,
+               c.graduate_url graduateUrl,
+               count(p.id) programCount,
+               coalesce(sum(case when p.is_408 = 1 then 1 else 0 end), 0) program408Count
+        from college c
+            left join program p on p.college_id = c.id
+        where c.school_id = #{id}
+        group by c.id, c.name, c.website, c.graduate_url
+        order by c.name
+    </select>
+
+    <select id="selectSchoolOverviewPrograms" parameterType="Long" resultType="java.util.Map">
+        select p.id,
+               c.name collegeName,
+               p.program_code programCode,
+               p.program_name programName,
+               p.research_direction researchDirection,
+               p.study_mode studyMode,
+               p.degree_type degreeType,
+               p.is_408 is408,
+               (select group_concat(concat(sub.code, ' ', sub.name) order by ps.subject_order separator ' / ')
+                from program_subject ps
+                    left join subject sub on sub.id = ps.subject_id
+                where ps.program_id = p.id) examSubjects,
+               exists(select 1 from admission_score a where a.program_id = p.id) hasScore,
+               exists(select 1 from admission_plan ap where ap.program_id = p.id) hasPlan,
+               exists(select 1 from admission_result ar where ar.program_id = p.id) hasResult
+        from program p
+            left join college c on c.id = p.college_id
+        where c.school_id = #{id}
+        order by p.is_408 desc, c.name, p.program_code
+        limit 100
+    </select>
+
     <select id="selectSchoolById" parameterType="Long" resultMap="SchoolResult">
         <include refid="selectSchoolVo"/>
         where id = #{id}

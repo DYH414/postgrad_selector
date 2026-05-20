@@ -1,6 +1,8 @@
 package com.ruoyi.postgrad.service.impl;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import com.ruoyi.common.constant.UserConstants;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.postgrad.domain.School;
@@ -36,6 +38,17 @@ public class SchoolServiceImpl implements ISchoolService
     public List<School> selectSchoolAll()
     {
         return schoolMapper.selectSchoolAll();
+    }
+
+    @Override
+    public Map<String, Object> selectSchoolOverview(Long id)
+    {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("school", schoolMapper.selectSchoolById(id));
+        result.put("stats", schoolMapper.selectSchoolOverviewStats(id));
+        result.put("colleges", schoolMapper.selectSchoolOverviewColleges(id));
+        result.put("programs", schoolMapper.selectSchoolOverviewPrograms(id));
+        return result;
     }
 
     @Override

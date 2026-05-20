@@ -9,9 +9,10 @@
           clearable
           filterable
           @keyup.enter.native="handleQuery"
+          @change="handleQueryFieldChange(field)"
         >
           <el-option
-            v-for="item in selectOptions(field)"
+            v-for="item in selectOptions(field, queryParams)"
             :key="item.value"
             :label="item.label"
             :value="item.value"
@@ -55,7 +56,22 @@
         <template slot-scope="scope">
           <el-tag v-if="field.type === 'switch' && Number(scope.row[field.prop]) === 1" size="mini" type="success">是</el-tag>
           <span v-else-if="field.type === 'switch'">否</span>
-          <span v-else-if="field.optionsKey">{{ optionLabel(field, scope.row[field.prop]) }}</span>
+          <div v-else-if="field.subjectSummary" class="subject-summary">
+            <el-tag
+              v-for="subject in splitSubjects(scope.row[field.prop])"
+              :key="subject"
+              :type="subject.indexOf('408') !== -1 ? 'success' : ''"
+              size="mini"
+              effect="plain"
+            >{{ subject }}</el-tag>
+          </div>
+          <el-button
+            v-else-if="isLongText(field, scope.row[field.prop])"
+            type="text"
+            size="mini"
+            @click="openTextPreview(field, scope.row[field.prop])"
+          >查看</el-button>
+          <span v-else-if="field.optionsKey || field.optionModule">{{ optionLabel(field, scope.row[field.prop]) }}</span>
           <span v-else>{{ scope.row[field.prop] }}</span>
         </template>
       </el-table-column>
@@ -77,65 +93,81 @@
 
     <el-dialog :title="title" :visible.sync="open" width="760px" append-to-body>
       <el-form ref="form" :model="form" :rules="rules" label-width="110px">
-        <el-row :gutter="16">
-          <el-col v-for="field in formFields" :key="field.prop" :span="field.type === 'textarea' ? 24 : 12">
-            <el-form-item :label="field.label" :prop="field.prop">
-              <el-input
-                v-if="field.type === 'text'"
-                v-model="form[field.prop]"
-                :placeholder="'请输入' + field.label"
-              />
-              <el-input
-                v-else-if="field.type === 'textarea'"
-                v-model="form[field.prop]"
-                type="textarea"
-                :rows="3"
-                :placeholder="'请输入' + field.label"
-              />
-              <el-input-number
-                v-else-if="field.type === 'number'"
-                v-model="form[field.prop]"
-                controls-position="right"
-                :min="0"
-                style="width: 100%"
-              />
-              <el-date-picker
-                v-else-if="field.type === 'date'"
-                v-model="form[field.prop]"
-                type="date"
-                value-format="yyyy-MM-dd"
-                placeholder="请选择日期"
-                style="width: 100%"
-              />
-              <el-switch
-                v-else-if="field.type === 'switch'"
-                v-model="form[field.prop]"
-                :active-value="1"
-                :inactive-value="0"
-              />
-              <el-select
-                v-else-if="field.type === 'select' || field.type === 'remoteSelect'"
-                v-model="form[field.prop]"
-                :placeholder="'请选择' + field.label"
-                clearable
-                filterable
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="item in selectOptions(field)"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
+        <div v-for="group in formGroups" :key="group.name" class="crud-form-group">
+          <div class="crud-form-group__title">{{ group.name }}</div>
+          <el-row :gutter="16">
+            <el-col v-for="field in group.fields" :key="field.prop" :span="fieldSpan(field)">
+              <el-form-item :label="field.label" :prop="field.prop">
+                <el-input
+                  v-if="field.type === 'text'"
+                  v-model="form[field.prop]"
+                  :placeholder="'请输入' + field.label"
                 />
-              </el-select>
-              <el-input v-else v-model="form[field.prop]" disabled />
-            </el-form-item>
-          </el-col>
-        </el-row>
+                <el-input
+                  v-else-if="field.type === 'textarea'"
+                  v-model="form[field.prop]"
+                  type="textarea"
+                  :rows="field.longText ? 5 : 3"
+                  :placeholder="'请输入' + field.label"
+                />
+                <el-input-number
+                  v-else-if="field.type === 'number'"
+                  v-model="form[field.prop]"
+                  controls-position="right"
+                  :min="0"
+                  style="width: 100%"
+                />
+                <el-date-picker
+                  v-else-if="field.type === 'date'"
+                  v-model="form[field.prop]"
+                  type="date"
+                  value-format="yyyy-MM-dd"
+                  placeholder="请选择日期"
+                  style="width: 100%"
+                />
+                <el-switch
+                  v-else-if="field.type === 'switch'"
+                  v-model="form[field.prop]"
+                  :active-value="1"
+                  :inactive-value="0"
+                />
+                <el-select
+                  v-else-if="field.type === 'select' || field.type === 'remoteSelect'"
+                  v-model="form[field.prop]"
+                  :placeholder="'请选择' + field.label"
+                  clearable
+                  filterable
+                  style="width: 100%"
+                  @change="handleFieldChange(field)"
+                >
+                  <el-option
+                    v-for="item in selectOptions(field, form)"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  >
+                    <div class="crud-option">
+                      <span>{{ item.label }}</span>
+                      <small v-if="item.subLabel">{{ item.subLabel }}</small>
+                    </div>
+                  </el-option>
+                </el-select>
+                <el-input v-else v-model="form[field.prop]" disabled />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
       </el-form>
       <div slot="footer" class="dialog-footer">
         <el-button type="primary" @click="submitForm">确 定</el-button>
         <el-button @click="cancel">取 消</el-button>
+      </div>
+    </el-dialog>
+
+    <el-dialog :title="textPreview.title" :visible.sync="textPreview.open" width="720px" append-to-body>
+      <el-input type="textarea" :rows="14" readonly :value="textPreview.content" />
+      <div slot="footer" class="dialog-footer">
+        <el-button type="primary" @click="textPreview.open = false">关 闭</el-button>
       </div>
     </el-dialog>
   </div>
@@ -166,15 +198,33 @@ export default {
       },
       form: {},
       rules: {},
-      remoteOptions: {}
+      remoteOptions: {},
+      textPreview: {
+        open: false,
+        title: '',
+        content: ''
+      }
     }
   },
   computed: {
     tableFields() {
-      return this.config ? this.config.columns.filter(field => field.type !== 'remoteSelect' || field.prop.endsWith('Id')) : []
+      return this.config ? this.config.columns.filter(field => !field.virtual && !field.queryOnly && (field.type !== 'remoteSelect' || field.prop.endsWith('Id'))) : []
     },
     formFields() {
-      return this.config ? this.config.columns.filter(field => !field.readonly) : []
+      return this.config ? this.config.columns.filter(field => !field.readonly && !field.queryOnly) : []
+    },
+    formGroups() {
+      const groups = []
+      this.formFields.forEach(field => {
+        const name = field.group || this.inferGroup(field)
+        let group = groups.find(item => item.name === name)
+        if (!group) {
+          group = { name, fields: [] }
+          groups.push(group)
+        }
+        group.fields.push(field)
+      })
+      return groups
     },
     queryFields() {
       if (!this.config) return []
@@ -227,8 +277,17 @@ export default {
     loadRemoteOptions() {
       const modules = [...new Set(this.config.columns.filter(field => field.optionModule).map(field => field.optionModule))]
       return Promise.all(modules.map(module => optionselectCrud(module).then(response => {
-        this.$set(this.remoteOptions, module, (response.data || []).map(item => ({ label: item.label, value: item.id })))
+        this.$set(this.remoteOptions, module, (response.data || []).map(this.normalizeRemoteOption))
       })))
+    },
+    normalizeRemoteOption(item) {
+      return {
+        label: item.label || item.name || item.title || item.programName || item.code || item.id,
+        value: item.id,
+        schoolId: item.schoolId || item.schoolid || item.school_id,
+        collegeId: item.collegeId || item.collegeid || item.college_id,
+        subLabel: item.schoolName || item.collegeName || item.sourceOwner
+      }
     },
     getList() {
       this.loading = true
@@ -247,13 +306,61 @@ export default {
       }
       return { placeholder: '请输入' + field.label }
     },
-    selectOptions(field) {
-      if (field.optionModule) return this.remoteOptions[field.optionModule] || []
+    selectOptions(field, model = this.form) {
+      if (field.optionModule) {
+        const options = this.remoteOptions[field.optionModule] || []
+        return options.filter(option => this.matchDependency(field, option, model))
+      }
       return getOptions(field.optionsKey)
     },
+    matchDependency(field, option, model = this.form) {
+      if (!field.dependsOn || !model[field.dependsOn]) return true
+      const dependValue = String(model[field.dependsOn])
+      if (field.dependsOn === 'schoolId') return String(option.schoolId) === dependValue
+      if (field.dependsOn === 'collegeId') return String(option.collegeId) === dependValue
+      return true
+    },
     optionLabel(field, value) {
-      const item = this.selectOptions(field).find(option => option.value === value)
+      const item = this.selectOptions(field, {}).find(option => String(option.value) === String(value))
       return item ? item.label : value
+    },
+    handleFieldChange(field) {
+      this.formFields.forEach(item => {
+        if (item.dependsOn === field.prop) {
+          this.$set(this.form, item.prop, undefined)
+        }
+      })
+    },
+    handleQueryFieldChange(field) {
+      this.queryFields.forEach(item => {
+        if (item.dependsOn === field.prop) {
+          this.$set(this.queryParams, item.prop, undefined)
+        }
+      })
+      this.handleQuery()
+    },
+    fieldSpan(field) {
+      if (field.type === 'textarea' || field.longText) return 24
+      return 12
+    },
+    inferGroup(field) {
+      if (field.type === 'textarea' || field.longText) return '补充信息'
+      if (field.type === 'switch' || field.prop.toLowerCase().includes('status') || field.prop.toLowerCase().includes('risk')) return '状态与标记'
+      if (field.prop.toLowerCase().includes('score') || field.prop.toLowerCase().includes('count') || field.prop.toLowerCase().includes('plan') || field.prop.toLowerCase().includes('quota')) return '指标数据'
+      return '基础信息'
+    },
+    isLongText(field, value) {
+      return value && (field.longText || field.type === 'textarea' || String(value).length > 36)
+    },
+    openTextPreview(field, value) {
+      this.textPreview = {
+        open: true,
+        title: field.label,
+        content: value || ''
+      }
+    },
+    splitSubjects(value) {
+      return String(value || '').split('/').map(item => item.trim()).filter(Boolean)
     },
     cancel() {
       this.open = false
@@ -305,7 +412,8 @@ export default {
     submitForm() {
       this.$refs.form.validate(valid => {
         if (!valid) return
-        const request = this.form.__key ? updateCrud(this.module, this.form) : addCrud(this.module, this.form)
+        const payload = this.buildPayload()
+        const request = payload.__key ? updateCrud(this.module, payload) : addCrud(this.module, payload)
         request.then(() => {
           this.$modal.msgSuccess(this.form.__key ? '修改成功' : '新增成功')
           this.open = false
@@ -313,6 +421,16 @@ export default {
           this.loadRemoteOptions()
         })
       })
+    },
+    buildPayload() {
+      const payload = {}
+      this.config.columns.forEach(field => {
+        if (!field.virtual && !field.readonly && Object.prototype.hasOwnProperty.call(this.form, field.prop)) {
+          payload[field.prop] = this.form[field.prop]
+        }
+      })
+      if (this.form.__key) payload.__key = this.form.__key
+      return payload
     },
     handleDelete(row) {
       const ids = row[this.config.idField] || row.__key || this.ids
@@ -332,3 +450,49 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.crud-form-group {
+  padding-bottom: 6px;
+}
+
+.crud-form-group + .crud-form-group {
+  border-top: 1px solid #ebeef5;
+  padding-top: 14px;
+  margin-top: 4px;
+}
+
+.crud-form-group__title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.crud-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.crud-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crud-option small {
+  flex: none;
+  color: #909399;
+}
+
+.subject-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  line-height: 1.8;
+}
+</style>

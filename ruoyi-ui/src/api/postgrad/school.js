@@ -17,6 +17,14 @@ export function getSchool(id) {
   })
 }
 
+// 查询学校数据概览
+export function getSchoolOverview(id) {
+  return request({
+    url: '/postgrad/school/' + id + '/overview',
+    method: 'get'
+  })
+}
+
 // 学校选择框
 export function optionselectSchool() {
   return request({

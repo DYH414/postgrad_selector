@@ -122,7 +122,7 @@ public class PostgradCrudController extends BaseController
         {
             return success(Collections.emptyList());
         }
-        return success(jdbcTemplate.queryForList(meta.optionSql, optionArgs(meta, params).toArray()));
+        return success(optionRows(module, meta, params));
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:' + #module + ':add')")
@@ -215,7 +215,7 @@ public class PostgradCrudController extends BaseController
 
         modules.put("college", ModuleMeta.of("college", "college c left join school s on s.id = c.school_id",
             "select c.id, c.school_id, s.name school_name, c.name, c.website, c.graduate_url, c.created_at, c.updated_at from college c left join school s on s.id = c.school_id",
-            "order by s.name, c.name", option("college", "c.id", "concat(s.name, ' / ', c.name)", "college c left join school s on s.id = c.school_id", "s.name, c.name"))
+            "order by s.name, c.name", "select c.id id, c.school_id schoolId, concat(s.name, ' / ', c.name) label from college c left join school s on s.id = c.school_id order by s.name, c.name")
             .keyAlias("c").key("id", "id", "ID").col("schoolId", "school_id", "学校", true).view("schoolName", "学校名称")
             .col("name", "name", "学院名称", true).col("website", "website", "学院官网").col("graduateUrl", "graduate_url", "研招信息页")
             .time("createdAt", "创建时间").time("updatedAt", "更新时间").searchLike("name", "c.name").searchExact("schoolId", "c.school_id"));
@@ -228,21 +228,23 @@ public class PostgradCrudController extends BaseController
             .time("createdAt", "创建时间").searchLike("code", "code").searchLike("name", "name").searchExact("subjectType", "subject_type"));
 
         modules.put("program", ModuleMeta.of("program", "program p left join college c on c.id = p.college_id left join school s on s.id = c.school_id",
-            "select p.id, p.college_id, c.name college_name, s.name school_name, p.program_code, p.program_name, p.research_direction, p.discipline_category, p.first_discipline, p.study_mode, p.degree_type, p.exam_type, p.score_scale, p.retest_subjects, p.is_408, p.protects_first_choice, p.is_joint_program, p.status, p.created_at, p.updated_at from program p left join college c on c.id = p.college_id left join school s on s.id = c.school_id",
-            "order by s.name, c.name, p.program_code", option("program", "p.id", "concat(s.name, ' / ', c.name, ' / ', p.program_code, ' ', p.program_name)", "program p left join college c on c.id = p.college_id left join school s on s.id = c.school_id", "s.name, c.name, p.program_code"))
-            .keyAlias("p").key("id", "id", "ID").col("collegeId", "college_id", "学院", true).view("schoolName", "学校").view("collegeName", "学院")
+            "select p.id, p.college_id, c.school_id, s.province, s.city, c.name college_name, s.name school_name, p.program_code, p.program_name, p.research_direction, p.discipline_category, p.first_discipline, p.study_mode, p.degree_type, p.exam_type, p.score_scale, p.retest_subjects, p.is_408, (select group_concat(concat(sub.code, ' ', sub.name) order by ps.subject_order separator ' / ') from program_subject ps left join subject sub on sub.id = ps.subject_id where ps.program_id = p.id) exam_subjects, exists(select 1 from admission_score a where a.program_id = p.id) has_score, exists(select 1 from admission_plan ap where ap.program_id = p.id) has_plan, exists(select 1 from admission_result ar where ar.program_id = p.id) has_result, exists(select 1 from data_source ds where ds.source_owner = s.name or ds.source_owner = c.name or ds.title like concat('%', s.name, '%')) has_source, p.protects_first_choice, p.is_joint_program, p.status, p.created_at, p.updated_at from program p left join college c on c.id = p.college_id left join school s on s.id = c.school_id",
+            "order by s.name, c.name, p.program_code", "select p.id id, p.college_id collegeId, c.school_id schoolId, concat(s.name, ' / ', c.name, ' / ', p.program_code, ' ', p.program_name) label from program p left join college c on c.id = p.college_id left join school s on s.id = c.school_id order by s.name, c.name, p.program_code")
+            .keyAlias("p").key("id", "id", "ID").col("collegeId", "college_id", "学院", true).view("schoolId", "学校ID").view("province", "省份").view("city", "城市").view("schoolName", "学校").view("collegeName", "学院")
             .col("programCode", "program_code", "专业代码", true).col("programName", "program_name", "专业名称", true)
             .col("researchDirection", "research_direction", "研究方向").col("disciplineCategory", "discipline_category", "学科门类").col("firstDiscipline", "first_discipline", "一级学科")
             .col("studyMode", "study_mode", "学习方式", true).col("degreeType", "degree_type", "学位类型", true).col("examType", "exam_type", "考试类型", true)
-            .col("scoreScale", "score_scale", "满分", true).col("retestSubjects", "retest_subjects", "复试科目").col("is408", "is_408", "408").col("protectsFirstChoice", "protects_first_choice", "保护一志愿")
+            .col("scoreScale", "score_scale", "满分", true).col("retestSubjects", "retest_subjects", "复试科目").view("examSubjects", "初试科目").col("is408", "is_408", "408").view("hasScore", "复试线").view("hasPlan", "招生计划").view("hasResult", "拟录取").view("hasSource", "来源").col("protectsFirstChoice", "protects_first_choice", "保护一志愿")
             .col("isJointProgram", "is_joint_program", "联培").col("status", "status", "状态", true).time("createdAt", "创建时间").time("updatedAt", "更新时间")
-            .searchLike("programCode", "p.program_code").searchLike("programName", "p.program_name").searchExact("collegeId", "p.college_id").searchExact("is408", "p.is_408").searchExact("status", "p.status"));
+            .searchLike("programCode", "p.program_code").searchLike("programName", "p.program_name").searchExact("schoolId", "s.id").searchExact("collegeId", "p.college_id")
+            .searchExact("province", "s.province").searchExact("city", "s.city").searchExact("studyMode", "p.study_mode").searchExact("degreeType", "p.degree_type")
+            .searchExact("is408", "p.is_408").searchExact("status", "p.status").searchExists("subjectCode", "exists(select 1 from program_subject ps2 left join subject sub2 on sub2.id = ps2.subject_id where ps2.program_id = p.id and sub2.code = ?)"));
 
         modules.put("programSubject", ModuleMeta.of("program_subject", "program_subject ps left join program p on p.id = ps.program_id left join subject sub on sub.id = ps.subject_id left join college c on c.id = p.college_id left join school s on s.id = c.school_id",
             "select ps.program_id, ps.subject_id, concat(s.name, ' / ', c.name, ' / ', p.program_code, ' ', p.program_name) program_label, concat(sub.code, ' ', sub.name) subject_label, ps.subject_order from program_subject ps left join program p on p.id = ps.program_id left join subject sub on sub.id = ps.subject_id left join college c on c.id = p.college_id left join school s on s.id = c.school_id",
             "order by s.name, c.name, p.program_code, ps.subject_order", null)
             .keyAlias("ps").compositeKey("programId", "program_id", "专业", "subjectId", "subject_id", "科目").view("programLabel", "专业方向").view("subjectLabel", "考试科目")
-            .col("subjectOrder", "subject_order", "科目顺序", true).searchExact("programId", "ps.program_id").searchExact("subjectId", "ps.subject_id"));
+            .col("subjectOrder", "subject_order", "科目顺序", true).searchExact("schoolId", "s.id").searchExact("collegeId", "c.id").searchExact("programId", "ps.program_id").searchExact("subjectId", "ps.subject_id"));
 
         modules.put("dataSource", ModuleMeta.of("data_source", "data_source",
             "select id, source_type, url, title, source_owner, publish_date, local_file_path, file_hash, page_hash, fetched_at, robots_checked, robots_allowed, terms_checked, commercial_use_risk, copyright_risk, created_at, updated_at from data_source",
@@ -340,6 +342,11 @@ public class PostgradCrudController extends BaseController
                 parts.add(search.expression + " like ?");
                 args.add("%" + value + "%");
             }
+            else if (search.exists)
+            {
+                parts.add(search.expression);
+                args.add(value);
+            }
             else
             {
                 parts.add(search.expression + " = ?");
@@ -378,9 +385,38 @@ public class PostgradCrudController extends BaseController
         return result;
     }
 
-    private List<Object> optionArgs(ModuleMeta meta, Map<String, String> params)
+    private List<Map<String, Object>> optionRows(String module, ModuleMeta meta, Map<String, String> params)
     {
-        return Collections.emptyList();
+        if ("college".equals(module))
+        {
+            List<Object> args = new ArrayList<>();
+            StringBuilder sql = new StringBuilder("select c.id id, c.school_id schoolId, concat(s.name, ' / ', c.name) label from college c left join school s on s.id = c.school_id where 1=1");
+            if (StringUtils.hasText(params.get("schoolId")))
+            {
+                sql.append(" and c.school_id = ?");
+                args.add(params.get("schoolId"));
+            }
+            sql.append(" order by s.name, c.name");
+            return jdbcTemplate.queryForList(sql.toString(), args.toArray());
+        }
+        if ("program".equals(module))
+        {
+            List<Object> args = new ArrayList<>();
+            StringBuilder sql = new StringBuilder("select p.id id, p.college_id collegeId, c.school_id schoolId, concat(s.name, ' / ', c.name, ' / ', p.program_code, ' ', p.program_name) label from program p left join college c on c.id = p.college_id left join school s on s.id = c.school_id where 1=1");
+            if (StringUtils.hasText(params.get("schoolId")))
+            {
+                sql.append(" and c.school_id = ?");
+                args.add(params.get("schoolId"));
+            }
+            if (StringUtils.hasText(params.get("collegeId")))
+            {
+                sql.append(" and p.college_id = ?");
+                args.add(params.get("collegeId"));
+            }
+            sql.append(" order by s.name, c.name, p.program_code");
+            return jdbcTemplate.queryForList(sql.toString(), args.toArray());
+        }
+        return jdbcTemplate.queryForList(meta.optionSql);
     }
 
     private void validateRequired(ModuleMeta meta, Map<String, Object> body, boolean insert)
@@ -577,6 +613,12 @@ public class PostgradCrudController extends BaseController
             return this;
         }
 
+        private ModuleMeta searchExists(String prop, String expression)
+        {
+            searches.add(new SearchMeta(prop, expression, false, true));
+            return this;
+        }
+
         private String labelOf(String prop)
         {
             return columns.stream().filter(column -> column.prop.equals(prop)).findFirst().map(column -> column.label).orElse(prop);
@@ -608,12 +650,19 @@ public class PostgradCrudController extends BaseController
         private final String prop;
         private final String expression;
         private final boolean like;
+        private final boolean exists;
 
         private SearchMeta(String prop, String expression, boolean like)
+        {
+            this(prop, expression, like, false);
+        }
+
+        private SearchMeta(String prop, String expression, boolean like, boolean exists)
         {
             this.prop = prop;
             this.expression = expression;
             this.like = like;
+            this.exists = exists;
         }
     }
 

@@ -70,6 +70,16 @@ public class SchoolController extends BaseController
     }
 
     /**
+     * 获取学校数据概览。
+     */
+    @PreAuthorize("@ss.hasPermi('postgrad:school:query')")
+    @GetMapping(value = "/{id}/overview")
+    public AjaxResult overview(@PathVariable("id") Long id)
+    {
+        return success(schoolService.selectSchoolOverview(id));
+    }
+
+    /**
      * 获取学校选择框列表
      */
     @GetMapping("/optionselect")

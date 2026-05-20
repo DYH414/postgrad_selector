@@ -1,6 +1,7 @@
 package com.ruoyi.postgrad.service;
 
 import java.util.List;
+import java.util.Map;
 import com.ruoyi.postgrad.domain.School;
 
 /**
@@ -15,6 +16,8 @@ public interface ISchoolService
     public List<School> selectSchoolList(School school);
 
     public List<School> selectSchoolAll();
+
+    public Map<String, Object> selectSchoolOverview(Long id);
 
     public boolean checkSchoolNameUnique(School school);
 
