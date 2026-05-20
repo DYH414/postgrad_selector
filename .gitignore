@@ -5485,3 +5485,6 @@ nbdist/
 /scripts/requirements-yz-crawler.txt
 /scripts/run_full_data_pipeline.py
 /scripts/scrape_school_info.py
+/.claude/settings.local.json
+/CLAUDE.md
+/.claude/mcp.json

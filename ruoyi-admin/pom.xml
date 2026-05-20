@@ -42,6 +42,12 @@
             <artifactId>ruoyi-framework</artifactId>
         </dependency>
 
+        <!-- 考研择校业务模块-->
+        <dependency>
+            <groupId>com.ruoyi</groupId>
+            <artifactId>ruoyi-postgrad</artifactId>
+        </dependency>
+
         <!-- 定时任务-->
         <dependency>
             <groupId>com.ruoyi</groupId>
