@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import com.ruoyi.common.core.page.TableDataInfo;
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.postgrad.domain.ColumnMeta;
 import com.ruoyi.postgrad.domain.KeySql;
@@ -45,7 +44,7 @@ public class PostgradCrudServiceImpl implements IPostgradCrudService
     // ═══════════════════════════════════════════════════════════════════
 
     @Override
-    public TableDataInfo list(String module, Map<String, String> params)
+    public Map<String, Object> list(String module, Map<String, String> params)
     {
         ModuleMeta meta = getMeta(module);
         int pageNum = parsePositiveInt(params.get("pageNum"), 1);
@@ -59,12 +58,10 @@ public class PostgradCrudServiceImpl implements IPostgradCrudService
                 .map(row -> toCamelRow(meta, row))
                 .collect(Collectors.toList());
 
-        TableDataInfo rspData = new TableDataInfo();
-        rspData.setCode(200);
-        rspData.setMsg("查询成功");
-        rspData.setRows(rows);
-        rspData.setTotal(total == null ? 0 : total);
-        return rspData;
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("rows", rows);
+        result.put("total", total == null ? 0L : total);
+        return result;
     }
 
     @Override

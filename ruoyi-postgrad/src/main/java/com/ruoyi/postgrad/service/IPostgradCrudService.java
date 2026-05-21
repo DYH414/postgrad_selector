@@ -3,9 +3,6 @@ package com.ruoyi.postgrad.service;
 import java.util.List;
 import java.util.Map;
 
-import com.ruoyi.common.core.domain.AjaxResult;
-import com.ruoyi.common.core.page.TableDataInfo;
-
 /**
  * 通用CRUD Service接口 —— 元数据驱动的动态业务模块。
  *
@@ -13,8 +10,8 @@ import com.ruoyi.common.core.page.TableDataInfo;
  */
 public interface IPostgradCrudService
 {
-    /** 分页列表查询 */
-    TableDataInfo list(String module, Map<String, String> params);
+    /** 分页列表查询，返回 {"rows": [...], "total": N} */
+    Map<String, Object> list(String module, Map<String, String> params);
 
     /** CSV导出 */
     List<Map<String, Object>> export(String module, Map<String, String> params);

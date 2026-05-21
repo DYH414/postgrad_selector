@@ -48,7 +48,13 @@ public class PostgradCrudController extends BaseController
     @GetMapping("/list")
     public TableDataInfo list(@PathVariable String module, @RequestParam Map<String, String> params)
     {
-        return crudService.list(module, params);
+        Map<String, Object> data = crudService.list(module, params);
+        TableDataInfo rsp = new TableDataInfo();
+        rsp.setCode(200);
+        rsp.setMsg("查询成功");
+        rsp.setRows((List<?>) data.get("rows"));
+        rsp.setTotal(((Number) data.get("total")).longValue());
+        return rsp;
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:' + #module + ':export')")
