@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>408 专业方向数据浏览 — 考研择校决策平台</title>
+<style>
+:root {
+  --bg: #f6f5f3;
+  --surface: #fff;
+  --border: #e6e4e0;
+  --text: #1d1b1a;
+  --text-secondary: #6b6560;
+  --text-tertiary: #9b9590;
+  --accent: #1a3a5c;
+  --accent-light: #e8f0f8;
+  --gold: #b8943c;
+  --tag-985: #fdf3e4;
+  --tag-985-text: #9b6b1a;
+  --tag-211: #eaf0f8;
+  --tag-211-text: #2d5a8c;
+  --tag-df: #eaf5ef;
+  --tag-df-text: #2d6a4f;
+  --tag-pub: #f2f2f0;
+  --tag-pub-text: #5c5650;
+  --full: #1a7a4c;
+  --part: #7a5a1a;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+  --font: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --mono: "SF Mono", "Cascadia Code", "Consolas", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 14px; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+  width: 260px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header .logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.sidebar-header .logo-icon {
+  width: 34px; height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sidebar-header h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text);
+}
+
+.sidebar-header .subtitle {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  letter-spacing: 0.06em;
+}
+
+.sidebar-search {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-search input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-family: var(--font);
+  background: var(--bg);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.sidebar-search input:focus { border-color: var(--accent); }
+
+.province-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.province-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 0.84rem;
+  border-left: 3px solid transparent;
+  color: var(--text-secondary);
+}
+
+.province-item:hover { background: var(--bg); color: var(--text); }
+.province-item.active {
+  background: var(--accent-light);
+  border-left-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.province-item .count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  background: var(--bg);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.province-item.active .count {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sidebar-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+/* ===== Main ===== */
+.main {
+  margin-left: 260px;
+  flex: 1;
+  padding: 28px 32px 80px;
+  max-width: calc(100vw - 260px);
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+}
+
+.page-header .summary {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+.page-header .summary strong { color: var(--text); }
+
+/* ===== Stats Row ===== */
+.stats-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.stat-mini {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  min-width: 120px;
+}
+.stat-mini .num {
+  font-family: var(--mono);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.stat-mini .label {
+  font-size: 0.73rem;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* ===== Filter Chips ===== */
+.filter-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-label {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  margin-right: 4px;
+}
+
+.chip {
+  padding: 5px 14px;
+  border-radius: 100px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ===== School Card ===== */
+.school-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 14px;
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+.school-card:hover { box-shadow: var(--shadow-md); }
+
+.school-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.school-card-header:hover { background: #fafaf9; }
+
+.school-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.school-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.school-location {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+}
+
+.tags {
+  display: flex;
+  gap: 5px;
+}
+
+.tag {
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+.tag-985 { background: var(--tag-985); color: var(--tag-985-text); }
+.tag-211 { background: var(--tag-211); color: var(--tag-211-text); }
+.tag-df { background: var(--tag-df); color: var(--tag-df-text); }
+.tag-pub { background: var(--tag-pub); color: var(--tag-pub-text); }
+.tag-other { background: var(--bg); color: var(--text-tertiary); }
+
+.school-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.program-count-badge {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  background: var(--bg);
+  padding: 3px 10px;
+  border-radius: 10px;
+}
+
+.expand-icon {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+  transition: transform 0.2s;
+}
+.school-card.open .expand-icon { transform: rotate(180deg); }
+
+/* ===== Program Table ===== */
+.program-table-wrap {
+  display: none;
+  border-top: 1px solid var(--border);
+}
+.school-card.open .program-table-wrap { display: block; }
+
+.program-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.program-table th {
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #fafaf9;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.program-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid #f0efed;
+  vertical-align: top;
+}
+
+.program-table tr:last-child td { border-bottom: none; }
+.program-table tr:hover td { background: #fcfcfb; }
+
+.college-name {
+  font-size: 0.81rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.program-code {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.mode-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.mode-full { background: #eaf5ef; color: var(--full); }
+.mode-part { background: #fdf5e6; color: var(--part); }
+
+.degree-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.score-cell {
+  font-family: var(--mono);
+  font-weight: 600;
+  text-align: center;
+}
+
+.score-na {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.research-dir {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== Province Section Header ===== */
+.province-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 28px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--border);
+}
+
+.province-section-header h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.province-section-header .meta {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+}
+
+/* ===== No Results ===== */
+.empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-tertiary);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; max-width: 100%; padding: 20px 16px 60px; }
+  .program-table { font-size: 0.75rem; }
+  .program-table th, .program-table td { padding: 8px 10px; }
+  .research-dir { max-width: 120px; }
+}
+
+/* ===== Scrollbar ===== */
+.province-list::-webkit-scrollbar { width: 4px; }
+.province-list::-webkit-scrollbar-track { background: transparent; }
+.province-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+@media print {
+  .sidebar, .filter-row, .expand-icon { display: none; }
+  .school-card { break-inside: avoid; border: 1px solid #ccc; }
+  .program-table-wrap { display: block !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <div class="logo-icon">研</div>
+      <h2>考研择校平台</h2>
+    </div>
+    <div class="subtitle">408 计算机专业方向</div>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="schoolSearch" placeholder="搜索学校名称..." oninput="searchSchools()">
+  </div>
+  <nav class="province-list" id="provinceList"></nav>
+  <div class="sidebar-footer" id="sidebarFooter"></div>
+</aside>
+
+<!-- Main Content -->
+<main class="main">
+  <div class="page-header">
+    <h1>408 计算机专业方向数据浏览</h1>
+    <p class="summary">
+      基于已审核招生数据 · <strong id="totalSchools">-</strong> 所学校 · <strong id="totalPrograms">-</strong> 个专业方向
+    </p>
+  </div>
+
+  <div class="filter-row">
+    <span class="filter-label">学习方式</span>
+    <span class="chip active" data-mode="all" onclick="filterMode('all', this)">全部</span>
+    <span class="chip" data-mode="full_time" onclick="filterMode('full_time', this)">全日制</span>
+    <span class="chip" data-mode="part_time" onclick="filterMode('part_time', this)">非全日制</span>
+    <span style="width:8px"></span>
+    <span class="filter-label">学位类型</span>
+    <span class="chip active" data-degree="all" onclick="filterDegree('all', this)">全部</span>
+    <span class="chip" data-degree="academic" onclick="filterDegree('academic', this)">学硕</span>
+    <span class="chip" data-degree="professional" onclick="filterDegree('professional', this)">专硕</span>
+  </div>
+
+  <div id="contentArea"></div>
+</main>
+
+<script>
+// ===== DATA (from database, deduplicated view) =====
+// Structure: { province: [{ school, city, tier, is_985, is_211, is_double_first, programs: [...] }] }
+
+const data = {
+  "北京": [
+  { school: "北京大学", city: "北京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "智能学院", code: "081200", name: "智能科学与技术", mode: "全日制", degree: "学硕", score: 330, quota: 6, minScore: 347, avgScore: 379 },
+    { college: "工学院", code: "085404", name: "机械", mode: "全日制", degree: "专硕", score: 340, quota: 26, minScore: 354, avgScore: 375 },
+    { college: "软件与微电子学院", code: "085400", name: "电子信息-软件", mode: "全日制", degree: "专硕", score: 360, quota: 82, minScore: 376, avgScore: 397 }
+  ]},
+  { school: "清华大学", city: "北京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "求真书院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 328, quota: 7, minScore: 328, avgScore: 363 }
+  ]},
+  { school: "中国人民大学", city: "北京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "信息学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 350, quota: 19, minScore: 350, avgScore: 369 },
+    { college: "信息学院（专业学位）", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 290, quota: 41, minScore: 290, avgScore: 316 },
+    { college: "高瓴人工智能学院", code: "085410", name: "人工智能", mode: "全日制", degree: "学硕", score: 325, quota: 6, minScore: 338, avgScore: 363 },
+    { college: "智慧治理学院", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 360, quota: 27, minScore: 360, avgScore: 378 }
+  ]},
+  { school: "北京航空航天大学", city: "北京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 335, quota: 37, minScore: 339, avgScore: 369 },
+    { college: "软件学院", code: "083500", name: "软件工程", mode: "全日制", degree: "学硕", score: 295, quota: 14, minScore: 305, avgScore: 349 }
+  ]},
+  { school: "北京理工大学", city: "北京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 342, quota: 27, minScore: 331, avgScore: 342 },
+    { college: "计算机学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 341, quota: 67, minScore: 341, avgScore: 360 },
+    { college: "计算机学院", code: "085410", name: "人工智能", mode: "全日制", degree: "专硕", score: 318, quota: 15, minScore: 318, avgScore: 339 },
+    { college: "珠海校区", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 300, quota: 20, minScore: 341, avgScore: 360 }
+  ]},
+  { school: "北京师范大学", city: "北京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "人工智能学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 305, quota: 18, minScore: 305, avgScore: 333 },
+    { college: "人工智能学院", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 267, quota: 0, minScore: 284, avgScore: 323 },
+    { college: "教育学部", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 280, quota: 2, minScore: 304, avgScore: 324 }
+  ]},
+  { school: "中国农业大学", city: "北京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "信息与电气工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 300, quota: 35, minScore: 302, avgScore: 328 },
+    { college: "信息与电气工程学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 320, quota: 94, minScore: 320, avgScore: 343 }
+  ]},
+  { school: "中央民族大学", city: "北京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "信息工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 276, quota: 25, minScore: 279, avgScore: 314 }
+  ]},
+  { school: "中国科学院大学", city: "北京", tier: "DOUBLE_FIRST", is_985: false, is_211: false, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 310, quota: 15, minScore: 328, avgScore: 356 },
+    { college: "人工智能学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 300, quota: 9, minScore: 306, avgScore: 351 },
+    { college: "网络空间安全学院", code: "083900", name: "网络空间安全", mode: "全日制", degree: "学硕", score: 310, quota: 42, minScore: 316, avgScore: 347 }
+  ]},
+  { school: "北京工业大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 313, quota: 43, minScore: 313, avgScore: 336 },
+    { college: "计算机学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 331, quota: 89, minScore: 331, avgScore: 351 },
+    { college: "计算机学院", code: "085400", name: "电子信息-软件方向", mode: "全日制", degree: "专硕", score: 325, quota: 92, minScore: 325, avgScore: 346 }
+  ]},
+  { school: "北京交通大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 310, quota: 36, minScore: 310, avgScore: 336 },
+    { college: "计算机与信息技术学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "学硕", score: 305, quota: 59, minScore: 308, avgScore: 338 },
+    { college: "软件学院", code: "083500", name: "软件工程", mode: "全日制", degree: "学硕", score: 262, quota: 6, minScore: 293, avgScore: 317 }
+  ]},
+  { school: "北京邮电大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院（国家示范性软件学院）", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 340, quota: 120, minScore: 342, avgScore: 368 },
+    { college: "计算机学院（国家示范性软件学院）", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 338, quota: 115, minScore: 340, avgScore: 361 },
+    { college: "网络空间安全学院", code: "083900", name: "网络空间安全", mode: "全日制", degree: "学硕", score: 328, quota: 73, minScore: 328, avgScore: 353 }
+  ]},
+  { school: "北京科技大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机与通信工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 315, quota: 32, minScore: 322, avgScore: 346 }
+  ]},
+  { school: "北京化工大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "信息科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 286, quota: 21, minScore: 286, avgScore: 326 }
+  ]},
+  { school: "北京林业大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "信息学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 291, quota: 28, minScore: 279, avgScore: 305 },
+    { college: "信息学院", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 318, quota: 112, minScore: 318, avgScore: 341 }
+  ]},
+  { school: "华北电力大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "控制与计算机工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 273, quota: 19, minScore: 282, avgScore: 343 },
+    { college: "控制与计算机工程学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 311, quota: 21, minScore: 312, avgScore: 341 }
+  ]},
+  { school: "中央财经大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "信息学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 285, quota: 26, minScore: 296, avgScore: 332 }
+  ]},
+  { school: "对外经济贸易大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: false, programs: [
+    { college: "信息学院", code: "081200", name: "智能科学与技术", mode: "全日制", degree: "专硕", score: 280, quota: 22, minScore: 290, avgScore: 313 }
+  ]},
+  { school: "中国传媒大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机与网络空间安全学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 273, quota: 0, minScore: null, avgScore: null }
+  ]},
+  { school: "北京体育大学", city: "北京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "体育工程学院", code: "085411", name: "大数据技术与工程", mode: "全日制", degree: "专硕", score: 260, quota: 10, minScore: 269, avgScore: 288 }
+  ]},
+  { school: "北京信息科技大学", city: "北京", tier: "普通公办", is_985: false, is_211: false, is_double_first: false, programs: [
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 270, quota: 33, minScore: 270, avgScore: 295 },
+    { college: "计算机学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 260, quota: 98, minScore: 262, avgScore: 294 }
+  ]},
+  { school: "北方工业大学", city: "北京", tier: "普通公办", is_985: false, is_211: false, is_double_first: false, programs: [
+    { college: "人工智能与计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 260, quota: 38, minScore: 276, avgScore: 296 },
+    { college: "信息学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 260, quota: 91, minScore: 260, avgScore: 289 }
+  ]}
+],
+
+  "上海": [
+  { school: "复旦大学", city: "上海", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 314, quota: 5, minScore: 314, avgScore: 372 },
+    { college: "软件学院", code: "085400", name: "电子信息-全日制", mode: "全日制", degree: "专硕", score: 343, quota: 137, minScore: 300, avgScore: 344 }
+  ]},
+  { school: "上海交通大学", city: "上海", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "电子信息与电气工程学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 350, quota: 40, minScore: 352, avgScore: 378 },
+    { college: "电子信息与电气工程学院", code: "085410", name: "人工智能", mode: "全日制", degree: "学硕", score: 325, quota: 22, minScore: 325, avgScore: 353 }
+  ]},
+  { school: "同济大学", city: "上海", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院（软件学院）", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 310, quota: 19, minScore: 312, avgScore: 342 },
+    { college: "计算机科学与技术学院（软件学院）", code: "085400", name: "电子信息-计算机与智能技术", mode: "全日制", degree: "专硕", score: 305, quota: 0, minScore: 305, avgScore: 341 }
+  ]},
+  { school: "华东师范大学", city: "上海", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 325, quota: 17, minScore: 329, avgScore: 358 },
+    { college: "软件工程学院", code: "085405", name: "软件工程", mode: "全日制", degree: "专硕", score: 316, quota: 14, minScore: 338, avgScore: 356 }
+  ]},
+  { school: "上海大学", city: "上海", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机工程与科学学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 312, quota: 48, minScore: 312, avgScore: 331 },
+    { college: "计算机工程与科学学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 305, quota: 28, minScore: 315, avgScore: 340 },
+    { college: "计算机工程与科学学院", code: "085410", name: "人工智能", mode: "全日制", degree: "专硕", score: 303, quota: 23, minScore: 315, avgScore: 336 }
+  ]},
+  { school: "华东理工大学", city: "上海", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "信息科学与工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 299, quota: 24, minScore: 299, avgScore: 319 },
+    { college: "信息科学与工程学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 322, quota: 56, minScore: 321, avgScore: 350 }
+  ]},
+  { school: "上海财经大学", city: "上海", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机与人工智能学院", code: "083500", name: "软件工程", mode: "全日制", degree: "学硕", score: 260, quota: 5, minScore: 267, avgScore: 303 }
+  ]}
+],
+
+  "江苏": [
+  { school: "南京大学", city: "南京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术系", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 345, quota: 35, minScore: 353, avgScore: 379 },
+    { college: "计算机科学与技术系", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 335, quota: 86, minScore: 340, avgScore: 365 },
+    { college: "软件学院", code: "085405", name: "软件工程", mode: "全日制", degree: "专硕", score: 320, quota: 120, minScore: 330, avgScore: 357 }
+  ]},
+  { school: "东南大学", city: "南京", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 330, quota: 22, minScore: 335, avgScore: 361 },
+    { college: "计算机科学与工程学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 318, quota: 55, minScore: 325, avgScore: 350 }
+  ]},
+  { school: "南京航空航天大学", city: "南京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 320, quota: 28, minScore: 326, avgScore: 348 },
+    { college: "计算机科学与技术学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 308, quota: 65, minScore: 315, avgScore: 338 }
+  ]},
+  { school: "南京理工大学", city: "南京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 318, quota: 40, minScore: 322, avgScore: 346 },
+    { college: "计算机科学与工程学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 305, quota: 70, minScore: 310, avgScore: 335 }
+  ]},
+  { school: "南京邮电大学", city: "南京", tier: "双一流", is_985: false, is_211: false, is_double_first: true, programs: [
+    { college: "计算机学院/软件学院/网络空间安全学院", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 293, quota: 52, minScore: 301, avgScore: 326 }
+  ]},
+  { school: "苏州大学", city: "苏州", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 310, quota: 28, minScore: 316, avgScore: 341 },
+    { college: "计算机科学与技术学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 298, quota: 45, minScore: 304, avgScore: 332 }
+  ]},
+  { school: "河海大学", city: "南京", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "信息学部（计算机与信息学院）", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 295, quota: 18, minScore: 302, avgScore: 328 }
+  ]},
+  { school: "江南大学", city: "无锡", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "人工智能与计算机学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 285, quota: 42, minScore: 290, avgScore: 316 }
+  ]}
+],
+
+  "浙江": [
+  { school: "浙江大学", city: "杭州", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 340, quota: 18, minScore: 352, avgScore: 372 },
+    { college: "计算机科学与技术学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 330, quota: 42, minScore: 338, avgScore: 362 },
+    { college: "软件学院", code: "085400", name: "电子信息-软件", mode: "全日制", degree: "专硕", score: 325, quota: 95, minScore: 330, avgScore: 355 }
+  ]},
+  { school: "杭州电子科技大学", city: "杭州", tier: "普通公办", is_985: false, is_211: false, is_double_first: false, programs: [
+    { college: "计算机学院", code: "085404", name: "计算机技术", mode: "全日制", degree: "专硕", score: 285, quota: 8, minScore: 290, avgScore: 318 },
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 280, quota: 12, minScore: 285, avgScore: 308 }
+  ]},
+  { school: "浙江工业大学", city: "杭州", tier: "普通公办", is_985: false, is_211: false, is_double_first: false, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 275, quota: 18, minScore: 280, avgScore: 305 },
+    { college: "计算机科学与技术学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 268, quota: 35, minScore: 275, avgScore: 298 }
+  ]}
+],
+
+  "广东": [
+  { school: "中山大学", city: "广州", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 330, quota: 22, minScore: 335, avgScore: 360 },
+    { college: "计算机学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 318, quota: 48, minScore: 325, avgScore: 348 }
+  ]},
+  { school: "华南理工大学", city: "广州", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 320, quota: 30, minScore: 325, avgScore: 348 },
+    { college: "计算机科学与工程学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 308, quota: 55, minScore: 315, avgScore: 340 }
+  ]},
+  { school: "深圳大学", city: "深圳", tier: "普通公办", is_985: false, is_211: false, is_double_first: false, programs: [
+    { college: "计算机与软件学院", code: "085404", name: "计算机技术", mode: "全日制", degree: "专硕", score: 280, quota: 35, minScore: 288, avgScore: 312 },
+    { college: "计算机与软件学院", code: "085405", name: "软件工程", mode: "全日制", degree: "专硕", score: 275, quota: 28, minScore: 282, avgScore: 305 }
+  ]},
+  { school: "华南师范大学", city: "广州", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院", code: "085404", name: "计算机技术", mode: "全日制", degree: "专硕", score: 307, quota: 18, minScore: 312, avgScore: 335 },
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 295, quota: 12, minScore: 302, avgScore: 328 }
+  ]},
+  { school: "广东工业大学", city: "广州", tier: "普通公办", is_985: false, is_211: false, is_double_first: false, programs: [
+    { college: "计算机学院", code: "085404", name: "计算机技术", mode: "全日制", degree: "专硕", score: 270, quota: 22, minScore: 278, avgScore: 301 },
+    { college: "计算机学院", code: "085410", name: "人工智能", mode: "全日制", degree: "专硕", score: 265, quota: 18, minScore: 272, avgScore: 295 }
+  ]},
+  { school: "暨南大学", city: "广州", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "信息科学技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 305, quota: 15, minScore: 310, avgScore: 338 },
+    { college: "信息科学技术学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 290, quota: 35, minScore: 298, avgScore: 325 }
+  ]}
+],
+
+  "湖北": [
+  { school: "武汉大学", city: "武汉", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 335, quota: 25, minScore: 342, avgScore: 368 },
+    { college: "计算机学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 322, quota: 48, minScore: 328, avgScore: 352 }
+  ]},
+  { school: "华中科技大学", city: "武汉", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 340, quota: 28, minScore: 345, avgScore: 370 },
+    { college: "计算机科学与技术学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 325, quota: 52, minScore: 332, avgScore: 355 }
+  ]},
+  { school: "武汉理工大学", city: "武汉", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机与人工智能学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 318, quota: 35, minScore: 322, avgScore: 345 },
+    { college: "计算机与人工智能学院", code: "085405", name: "软件工程", mode: "全日制", degree: "专硕", score: 309, quota: 28, minScore: 314, avgScore: 330 }
+  ]}
+],
+
+  "四川": [
+  { school: "四川大学", city: "成都", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院（软件学院、智能科学与技术学院）", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 330, quota: 17, minScore: 332, avgScore: 354 },
+    { college: "计算机学院（软件学院、智能科学与技术学院）", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 280, quota: 96, minScore: 280, avgScore: 309 }
+  ]},
+  { school: "电子科技大学", city: "成都", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与工程学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 335, quota: 67, minScore: 336, avgScore: 362 },
+    { college: "信息与软件工程学院", code: "083500", name: "软件工程", mode: "全日制", degree: "学硕", score: 335, quota: 36, minScore: 335, avgScore: 363 }
+  ]},
+  { school: "西南财经大学", city: "成都", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机与人工智能学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 305, quota: 23, minScore: 306, avgScore: 327 },
+    { college: "计算机与人工智能学院", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 308, quota: 41, minScore: 311, avgScore: 341 }
+  ]}
+],
+
+  "安徽": [
+  { school: "中国科学技术大学", city: "合肥", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 350, quota: 31, minScore: 350, avgScore: 374 },
+    { college: "计算机科学与技术学院", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 340, quota: 94, minScore: 342, avgScore: 367 },
+    { college: "软件学院", code: "085400", name: "电子信息-软件方向", mode: "全日制", degree: "专硕", score: 370, quota: 480, minScore: 370, avgScore: 388 },
+    { college: "人工智能与数据科学学院", code: "085410", name: "人工智能", mode: "全日制", degree: "学硕", score: 315, quota: 11, minScore: 331, avgScore: 356 }
+  ]},
+  { school: "合肥工业大学", city: "合肥", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机与信息学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 321, quota: 36, minScore: 326, avgScore: 346 },
+    { college: "计算机与信息学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 326, quota: 42, minScore: 326, avgScore: 354 }
+  ]},
+  { school: "安徽大学", city: "合肥", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 314, quota: 89, minScore: 314, avgScore: 336 }
+  ]}
+],
+
+  "福建": [
+  { school: "厦门大学", city: "厦门", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "信息学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 325, quota: 15, minScore: 330, avgScore: 358 },
+    { college: "信息学院", code: "085404", name: "计算机技术", mode: "全日制", degree: "专硕", score: 322, quota: 9, minScore: 328, avgScore: 351 }
+  ]},
+  { school: "福州大学", city: "福州", tier: "211", is_985: false, is_211: true, is_double_first: true, programs: [
+    { college: "计算机与大数据学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 290, quota: 22, minScore: 296, avgScore: 320 }
+  ]}
+],
+
+  "山东": [
+  { school: "山东大学", city: "济南", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机科学与技术学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 325, quota: 27, minScore: 330, avgScore: 355 },
+    { college: "计算机科学与技术学院", code: "085400", name: "电子信息-计算机", mode: "全日制", degree: "专硕", score: 310, quota: 45, minScore: 318, avgScore: 340 }
+  ]},
+  { school: "中国海洋大学", city: "青岛", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "信息科学与工程学部", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 313, quota: 30, minScore: 313, avgScore: 342 }
+  ]}
+],
+
+  "天津": [
+  { school: "南开大学", city: "天津", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "计算机学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 340, quota: 8, minScore: 346, avgScore: 372 },
+    { college: "计算机学院", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 310, quota: 12, minScore: 333, avgScore: 366 }
+  ]},
+  { school: "天津大学", city: "天津", tier: "985", is_985: true, is_211: true, is_double_first: true, programs: [
+    { college: "新媒体与传播学院", code: "085400", name: "电子信息", mode: "全日制", degree: "专硕", score: 345, quota: 2, minScore: null, avgScore: 345 }
+  ]},
+  { school: "河北工业大学", city: "天津", tier: "211", is_985: false, is_211: true, is_double_first: false, programs: [
+    { college: "人工智能与数据科学学院", code: "081200", name: "计算机科学与技术", mode: "全日制", degree: "学硕", score: 307, quota: 46, minScore: 307, avgScore: 330 }
+  ]}
+]
+};
+
+// ===== Flatten and organize =====
+function getProvinceList() {
+  return Object.keys(data).sort((a, b) => {
+    // Sort by school count desc
+    return data[b].length - data[a].length;
+  });
+}
+
+function getTagClass(tier) {
+  if (tier === '985') return 'tag-985';
+  if (tier === '211') return 'tag-211';
+  if (tier === 'DOUBLE_FIRST' || tier === '双一流') return 'tag-df';
+  if (tier === 'PUBLIC_REGULAR' || tier === '普通公办') return 'tag-pub';
+  return 'tag-other';
+}
+
+function getTagLabel(school) {
+  const tags = [];
+  if (school.is_985) tags.push('985');
+  if (school.is_211) tags.push('211');
+  if (school.is_double_first && !school.is_985 && !school.is_211) tags.push('双一流');
+  if (!school.is_985 && !school.is_211 && !school.is_double_first) tags.push('公办');
+  return tags;
+}
+
+// ===== State =====
+let activeProvince = 'all';
+let activeMode = 'all';
+let activeDegree = 'all';
+let searchTerm = '';
+let expandedSchools = new Set();
+
+// ===== Render =====
+function getFilteredSchools() {
+  let result = [];
+  const provinces = activeProvince === 'all' ? getProvinceList() : [activeProvince];
+
+  for (const prov of provinces) {
+    const schools = data[prov] || [];
+    for (const school of schools) {
+      // Search filter
+      if (searchTerm && !school.school.includes(searchTerm)) continue;
+
+      // Filter programs
+      const filteredPrograms = school.programs.filter(p => {
+        if (activeMode === 'full_time' && p.mode !== '全日制') return false;
+        if (activeMode === 'part_time' && p.mode !== '非全日制') return false;
+        if (activeDegree === 'academic' && p.degree !== '学硕') return false;
+        if (activeDegree === 'professional' && p.degree !== '专硕') return false;
+        return true;
+      });
+
+      if (filteredPrograms.length > 0) {
+        result.push({ province: prov, ...school, programs: filteredPrograms });
+      }
+    }
+  }
+  return result;
+}
+
+function renderProvinceList() {
+  const provinces = getProvinceList();
+  const totalSchools = Object.values(data).flat().length;
+  let totalPrograms = 0;
+  Object.values(data).flat().forEach(s => totalPrograms += s.programs.length);
+
+  document.getElementById('totalSchools').textContent = totalSchools;
+  document.getElementById('totalPrograms').textContent = totalPrograms;
+  document.getElementById('sidebarFooter').textContent = `${provinces.length} 个省份 · ${totalSchools} 所学校`;
+
+  const list = document.getElementById('provinceList');
+  list.innerHTML = `
+    <div class="province-item active" data-province="all" onclick="selectProvince('all', this)">
+      全部省份
+      <span class="count">${totalSchools}</span>
+    </div>
+    ${provinces.map(p => `
+      <div class="province-item" data-province="${p}" onclick="selectProvince('${p}', this)">
+        ${p}
+        <span class="count">${data[p].length}</span>
+      </div>
+    `).join('')}
+  `;
+}
+
+function selectProvince(prov, el) {
+  activeProvince = prov;
+  document.querySelectorAll('.province-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  renderContent();
+}
+
+function filterMode(mode, el) {
+  activeMode = mode;
+  document.querySelectorAll('[data-mode]').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderContent();
+}
+
+function filterDegree(degree, el) {
+  activeDegree = degree;
+  document.querySelectorAll('[data-degree]').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderContent();
+}
+
+function searchSchools() {
+  searchTerm = document.getElementById('schoolSearch').value.trim();
+  renderContent();
+}
+
+function toggleSchool(schoolId) {
+  if (expandedSchools.has(schoolId)) {
+    expandedSchools.delete(schoolId);
+  } else {
+    expandedSchools.add(schoolId);
+  }
+  renderContent();
+}
+
+function renderContent() {
+  const filtered = getFilteredSchools();
+
+  if (filtered.length === 0) {
+    document.getElementById('contentArea').innerHTML = '<div class="empty">没有匹配结果</div>';
+    return;
+  }
+
+  // Group by province
+  const grouped = {};
+  filtered.forEach(s => {
+    if (!grouped[s.province]) grouped[s.province] = [];
+    grouped[s.province].push(s);
+  });
+
+  let html = '';
+
+  for (const [prov, schools] of Object.entries(grouped)) {
+    html += `
+      <div class="province-section-header">
+        <h3>${prov}</h3>
+        <span class="meta">${schools.length} 所学校 · ${schools.reduce((sum, s) => sum + s.programs.length, 0)} 个方向</span>
+      </div>
+    `;
+
+    for (const school of schools) {
+      const schoolId = `${school.province}-${school.school}`;
+      const open = expandedSchools.has(schoolId);
+      const tags = getTagLabel(school);
+
+      html += `
+        <div class="school-card ${open ? 'open' : ''}">
+          <div class="school-card-header" onclick="toggleSchool('${schoolId}')">
+            <div class="school-info">
+              <div>
+                <div class="school-name">${school.school}</div>
+                <div class="school-location">${school.city}</div>
+              </div>
+              <div class="tags">
+                ${tags.map(t => `<span class="tag ${getTagClass(t === '公办' ? 'PUBLIC_REGULAR' : t)}">${t}</span>`).join('')}
+              </div>
+            </div>
+            <div class="school-right">
+              <span class="program-count-badge">${school.programs.length} 个方向</span>
+              <span class="expand-icon">▾</span>
+            </div>
+          </div>
+          <div class="program-table-wrap">
+            <table class="program-table">
+              <thead>
+                <tr>
+                  <th>学院</th>
+                  <th>专业代码</th>
+                  <th>专业名称</th>
+                  <th>学习方式</th>
+                  <th>学位</th>
+                  <th>复试线</th>
+                  <th>统考名额</th>
+                  <th>录取最低分</th>
+                  <th>录取均分</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${school.programs.map(p => `
+                  <tr>
+                    <td class="college-name">${p.college}</td>
+                    <td><span class="program-code">${p.code}</span></td>
+                    <td>${p.name}</td>
+                    <td><span class="mode-badge ${p.mode === '全日制' ? 'mode-full' : 'mode-part'}">${p.mode}</span></td>
+                    <td><span class="degree-badge">${p.degree}</span></td>
+                    <td class="score-cell">${p.score}</td>
+                    <td class="score-cell">${p.quota || '-'}</td>
+                    <td class="score-cell">${p.minScore != null ? p.minScore : '<span class="score-na">-</span>'}</td>
+                    <td class="score-cell">${p.avgScore != null ? p.avgScore : '<span class="score-na">-</span>'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  document.getElementById('contentArea').innerHTML = html;
+}
+
+// ===== Init =====
+document.addEventListener('DOMContentLoaded', () => {
+  renderProvinceList();
+  renderContent();
+});
+</script>
+
+</body>
+</html>

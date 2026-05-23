@@ -9,4 +9,6 @@ import com.ruoyi.postgrad.domain.RecommendationResult;
 public interface IRecommendationService
 {
     RecommendationResult generate(RecommendationRequest request);
+
+    RecommendationResult filter(RecommendationRequest request);
 }

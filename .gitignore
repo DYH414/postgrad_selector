@@ -5499,3 +5499,31 @@ __pycache__/
 /.claude/settings.local.json
 /CLAUDE.md
 /.claude/mcp.json
+# MCP / Claude / Playwright artifacts
+/.claude/
+/.playwright-mcp/
+/claude-code/
+*.mcp.json
+
+# Test files
+/测试.txt
+/testing/
+*.test.ts
+prototype-recommendation.png
+nnuo-fzu-full.png
+nnuo-*.md
+data-browser-snapshot.md
+prototype-snapshot*.md
+
+# Docs (non-essential)
+/docs/recommendation-algorithm.html
+/docs/data-quality-report.html
+
+# Data crawl cache
+/data/noobdream/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~

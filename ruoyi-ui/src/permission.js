@@ -4,12 +4,13 @@ import { Message } from 'element-ui'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { getToken } from '@/utils/auth'
+import { getAppToken } from '@/utils/appAuth'
 import { isPathMatch } from '@/utils/validate'
 import { isRelogin } from '@/utils/request'
 
 NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login', '/register']
+const whiteList = ['/login', '/register', '/app/login']
 
 const isWhiteList = (path) => {
   return whiteList.some(pattern => isPathMatch(pattern, path))
@@ -52,6 +53,16 @@ router.beforeEach((to, from, next) => {
       } else {
         next()
       }
+    }
+  } else if (to.path.startsWith('/app/')) {
+    // App端路由：使用app token校验
+    if (to.path === '/app/login') {
+      next()
+    } else if (getAppToken()) {
+      next()
+    } else {
+      next('/app/login?redirect=' + encodeURIComponent(to.fullPath))
+      NProgress.done()
     }
   } else {
     // 没有token

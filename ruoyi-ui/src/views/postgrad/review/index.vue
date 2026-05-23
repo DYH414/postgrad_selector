@@ -33,13 +33,25 @@
         <el-select v-model="queryParams.sourceType" placeholder="来源" clearable>
           <el-option label="研招网" value="YZ_CHSI" />
           <el-option label="HTML表格" value="OFFICIAL_HTML" />
-          <el-option label="第三方" value="THIRD_PARTY" />
+          <el-option label="N诺" value="THIRD_PARTY" />
           <el-option label="人工录入" value="MANUAL" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="匹配">
+        <el-select v-model="queryParams.matchStatus" placeholder="匹配状态" clearable>
+          <el-option label="已匹配" value="matched" />
+          <el-option label="未匹配" value="unmatched" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="408">
+        <el-select v-model="queryParams.is408" placeholder="408筛选" clearable>
+          <el-option label="408专业" value="1" />
         </el-select>
       </el-form-item>
       <el-form-item>
         <el-button type="primary" icon="el-icon-search" @click="handleQuery">搜索</el-button>
         <el-button icon="el-icon-refresh" @click="resetQuery">重置</el-button>
+        <el-button type="warning" icon="el-icon-download" @click="quickFilterNoob">N诺数据速查</el-button>
       </el-form-item>
     </el-form>
 
@@ -52,6 +64,15 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 快捷操作 -->
+    <div style="margin-bottom:12px">
+      <el-button type="success" size="small" icon="el-icon-check" :loading="autoApproving"
+        @click="handleAutoApprove">一键通过学校/专业目录数据</el-button>
+      <span style="color:#909399;font-size:12px;margin-left:8px">
+        自动通过无复试线、无计划、无录取数据的学校/学院/专业记录（来自研招网目录，无需人工审核）
+      </span>
+    </div>
 
     <!-- 表格 -->
     <el-table v-loading="loading" :data="tableData" border stripe style="width:100%"
@@ -76,6 +97,18 @@
       <el-table-column prop="status" label="状态" width="80">
         <template slot-scope="scope">
           <el-tag :type="statusTag(scope.row.status)" size="mini">{{ statusLabel(scope.row.status) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="匹配" width="70">
+        <template slot-scope="scope">
+          <el-tag v-if="scope.row.matched_program_id" type="success" size="mini">已匹配</el-tag>
+          <el-tag v-else type="info" size="mini">未匹配</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="408" width="55">
+        <template slot-scope="scope">
+          <el-tag v-if="scope.row.exam_subjects && scope.row.exam_subjects.includes('408')" type="success" size="mini">408</el-tag>
+          <span v-else style="color:#c0c4cc">-</span>
         </template>
       </el-table-column>
       <el-table-column prop="matchedProgramLabel" label="匹配专业" width="180" show-overflow-tooltip />
@@ -148,7 +181,7 @@
 
 <script>
 import { listReview, getReview, approveReview, rejectReview, skipReview,
-  batchApproveReview, reviewStats } from '@/api/postgrad/review'
+  batchApproveReview, reviewStats, autoApproveDirectory } from '@/api/postgrad/review'
 
 export default {
   data() {
@@ -161,7 +194,8 @@ export default {
       detail: {},
       detailVisible: false,
       stats: [],
-      years: [2023,2024,2025,2026]
+      years: [2023,2024,2025,2026],
+      autoApproving: false
     }
   },
   created() { this.getList(); this.getStats() },
@@ -225,6 +259,20 @@ export default {
       this.$confirm(`确认通过 ${ids.length} 条记录?`, '批量审核').then(() => {
         batchApproveReview({ ids }).then(() => { this.$message.success('已批量通过'); this.getList(); this.getStats() })
       }).catch(() => {})
+    },
+    handleAutoApprove() {
+      this.$confirm('将自动通过所有无复试线、无招生计划、无录取数据的学校/学院/专业记录。这些目录数据来自研招网，无需人工审核。确认继续？', '一键通过目录数据').then(() => {
+        this.autoApproving = true
+        autoApproveDirectory().then(res => {
+          this.$message.success(res.msg || '操作成功')
+          this.getList()
+          this.getStats()
+        }).finally(() => { this.autoApproving = false })
+      }).catch(() => {})
+    },
+    quickFilterNoob() {
+      this.queryParams = { sourceType: 'THIRD_PARTY', is408: '1', pageNum: 1, pageSize: 10 }
+      this.getList()
     },
     confTag(v) { return v==='high'?'success':v==='medium'?'warning':v==='low'?'danger':'info' },
     statusTag(v) { return v==='approved'?'success':v==='rejected'?'danger':v==='pending'?'warning':'info' },

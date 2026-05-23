@@ -58,6 +58,18 @@ public class ReviewServiceImpl implements IReviewService
             where.append(" AND st.source_type = ?");
             args.add(params.get("sourceType"));
         }
+        if (has(params, "matchStatus"))
+        {
+            String ms = params.get("matchStatus");
+            if ("matched".equals(ms))
+                where.append(" AND st.matched_program_id IS NOT NULL");
+            else if ("unmatched".equals(ms))
+                where.append(" AND st.matched_program_id IS NULL");
+        }
+        if (has(params, "is408"))
+        {
+            where.append(" AND st.exam_subjects LIKE '%408%'");
+        }
 
         String countSql = "SELECT COUNT(1) FROM staging st" + where;
         Long total = jdbc.queryForObject(countSql, Long.class, args.toArray());
@@ -187,23 +199,26 @@ public class ReviewServiceImpl implements IReviewService
         // Migrate admitted data to admission_result
         Object admittedCount = staging.get("admitted_count");
         Object minAdmitted = staging.get("min_admitted");
-        if (admittedCount != null || minAdmitted != null)
+        Object maxAdmitted = staging.get("max_admitted");
+        if (admittedCount != null || minAdmitted != null || maxAdmitted != null)
         {
             String sql = """
                 INSERT INTO admission_result (program_id, year, admitted_count,
-                    min_admitted_score, avg_admitted_score, verify_status, source_id,
-                    created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'MANUAL_VERIFIED', ?, NOW(), NOW())
+                    min_admitted_score, avg_admitted_score, max_admitted_score,
+                    verify_status, source_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'MANUAL_VERIFIED', ?, NOW(), NOW())
                 ON DUPLICATE KEY UPDATE
                     admitted_count = COALESCE(VALUES(admitted_count), admitted_count),
                     min_admitted_score = COALESCE(VALUES(min_admitted_score), min_admitted_score),
                     avg_admitted_score = COALESCE(VALUES(avg_admitted_score), avg_admitted_score),
+                    max_admitted_score = COALESCE(VALUES(max_admitted_score), max_admitted_score),
                     verify_status = 'MANUAL_VERIFIED',
                     source_id = COALESCE(VALUES(source_id), source_id),
                     updated_at = NOW()
                 """;
             jdbc.update(sql, programId, ((Number) year).intValue(),
-                admittedCount, minAdmitted, staging.get("avg_admitted"), sourceId);
+                admittedCount, minAdmitted, staging.get("avg_admitted"),
+                maxAdmitted, sourceId);
         }
     }
 
@@ -243,6 +258,24 @@ public class ReviewServiceImpl implements IReviewService
         result.put("skipped", countByStatus("skipped"));
         result.put("total", countByStatus(null));
         return result;
+    }
+
+    // ═══ Auto-approve directory data ═══
+
+    @Override
+    public int autoApproveDirectory()
+    {
+        String sql = """
+            UPDATE staging SET status='approved',
+                review_note='学校/专业目录数据自动通过',
+                reviewer_id=1, reviewed_at=NOW()
+            WHERE status='pending'
+              AND (
+                (score_line IS NULL AND plan_count IS NULL AND min_admitted IS NULL)
+                OR review_note LIKE '%国家线回退%'
+              )
+            """;
+        return jdbc.update(sql);
     }
 
     // ═══ Helpers ═══

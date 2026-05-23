@@ -194,20 +194,6 @@ export const modules = {
       selectColumn('status', '状态', 'status', true, 130, { group: '标记状态' })
     ]
   },
-  programSubject: {
-    title: '专业初试科目',
-    idField: '__key',
-    query: ['schoolId', 'collegeId', 'programId', 'subjectId'],
-    columns: [
-      remoteColumn('schoolId', '所属学校', 'school', false, 180, { virtual: true }),
-      remoteColumn('collegeId', '所属学院', 'college', false, 220, { virtual: true, dependsOn: 'schoolId' }),
-      remoteColumn('programId', '专业方向', 'program', true, 240, { dependsOn: 'collegeId' }),
-      readonlyColumn('programLabel', '专业方向', 260),
-      remoteColumn('subjectId', '考试科目', 'subject', true, 160),
-      readonlyColumn('subjectLabel', '考试科目', 160),
-      numberColumn('subjectOrder', '科目顺序', true)
-    ]
-  },
   dataSource: {
     title: '来源证据管理',
     idField: 'id',
@@ -319,47 +305,6 @@ export const modules = {
       textColumn('finishedAt', '完成时间', false, 160)
     ]
   },
-  staging: {
-    title: '抽取暂存审核',
-    idField: 'id',
-    query: ['schoolName', 'programCode', 'year', 'status', 'confidence'],
-    columns: [
-      { prop: 'id', label: 'ID', type: 'readonly', width: 80, readonly: true },
-      numberColumn('taskId', '任务ID'),
-      remoteColumn('sourceId', '数据来源', 'dataSource'),
-      remoteColumn('schoolId', '所属学校', 'school', false, 180, { virtual: true }),
-      remoteColumn('collegeId', '所属学院', 'college', false, 220, { virtual: true, dependsOn: 'schoolId' }),
-      remoteColumn('matchedProgramId', '匹配专业', 'program', false, 220, { dependsOn: 'collegeId' }),
-      readonlyColumn('matchedProgramLabel', '匹配专业方向', 260),
-      selectColumn('sourceType', '采集来源', 'stagingSourceType', true),
-      textColumn('schoolName', '学校名称', true, 160),
-      textColumn('collegeName', '学院名称', false, 160),
-      textColumn('city', '城市', false, 100),
-      textColumn('programCode', '专业代码', false, 120),
-      textColumn('programName', '专业名称', false, 160),
-      textColumn('examSubjects', '初试科目', false, 180),
-      numberColumn('year', '年份'),
-      numberColumn('scoreLine', '复试线'),
-      numberColumn('singleMath', '数学线'),
-      numberColumn('singleEnglish', '英语线'),
-      numberColumn('singlePolitics', '政治线'),
-      numberColumn('singleProfessional', '专业课线'),
-      numberColumn('minAdmitted', '最低录取'),
-      numberColumn('avgAdmitted', '平均录取'),
-      numberColumn('planCount', '计划数'),
-      numberColumn('retestCount', '复试数'),
-      numberColumn('admittedCount', '录取数'),
-      selectColumn('confidence', '置信度', 'confidence'),
-      textareaColumn('sourceUrl', '来源URL', false, { group: '来源与原文', longText: true }),
-      textareaColumn('rawText', '原始文本', false, { group: '来源与原文', longText: true }),
-      textareaColumn('extractJson', '抽取JSON', false, { group: '来源与原文', longText: true }),
-      selectColumn('status', '审核状态', 'stagingStatus', true),
-      textareaColumn('errorMessage', '错误信息', false, { group: '审核信息', longText: true }),
-      numberColumn('reviewerId', '审核人'),
-      textColumn('reviewedAt', '审核时间', false, 160),
-      textareaColumn('reviewNote', '审核备注', false, { group: '审核信息', longText: true })
-    ]
-  }
 }
 
 export function getModuleConfig(module) {

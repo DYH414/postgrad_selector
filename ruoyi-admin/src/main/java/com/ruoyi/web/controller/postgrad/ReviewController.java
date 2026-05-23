@@ -118,4 +118,16 @@ public class ReviewController extends BaseController
     {
         return AjaxResult.success(reviewService.stats());
     }
+
+    /**
+     * 一键通过学校/学院/专业目录数据（无分数、计划、录取数据的记录）
+     */
+    @PreAuthorize("@ss.hasPermi('postgrad:staging:edit')")
+    @Log(title = "自动通过目录数据", businessType = BusinessType.UPDATE)
+    @PostMapping("/auto-approve-directory")
+    public AjaxResult autoApproveDirectory()
+    {
+        int count = reviewService.autoApproveDirectory();
+        return AjaxResult.success("已自动通过 " + count + " 条目录数据");
+    }
 }

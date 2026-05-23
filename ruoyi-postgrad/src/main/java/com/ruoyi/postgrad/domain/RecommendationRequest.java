@@ -34,6 +34,9 @@ public class RecommendationRequest
     /** 是否返回溢出结果 */
     private boolean includeOverflow;
 
+    /** 筛选模式：拟录取分 ±N */
+    private int scoreRange = 20;
+
     // ── getters & setters ──
 
     public int getEstimatedScore() { return estimatedScore; }
@@ -62,4 +65,7 @@ public class RecommendationRequest
 
     public boolean isIncludeOverflow() { return includeOverflow; }
     public void setIncludeOverflow(boolean includeOverflow) { this.includeOverflow = includeOverflow; }
+
+    public int getScoreRange() { return scoreRange; }
+    public void setScoreRange(int scoreRange) { this.scoreRange = scoreRange; }
 }

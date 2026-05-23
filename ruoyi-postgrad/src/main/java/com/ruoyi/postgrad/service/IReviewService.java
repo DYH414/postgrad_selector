@@ -28,4 +28,7 @@ public interface IReviewService
 
     /** 审核统计 */
     Map<String, Object> stats();
+
+    /** 一键通过学校/学院/专业目录数据（无分数、无计划、无录取数据） */
+    int autoApproveDirectory();
 }

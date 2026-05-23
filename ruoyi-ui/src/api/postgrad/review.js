@@ -34,3 +34,8 @@ export function batchApproveReview(data) {
 export function reviewStats() {
   return request({ url: '/postgrad/review/stats', method: 'get' })
 }
+
+// 一键通过学校/专业目录数据
+export function autoApproveDirectory() {
+  return request({ url: '/postgrad/review/auto-approve-directory', method: 'post' })
+}

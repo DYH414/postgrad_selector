@@ -1,0 +1,1731 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>择校推荐结果 — 考研择校决策平台</title>
+<style>
+/* ===== CSS Variables ===== */
+:root {
+  --ink-900: #1a1f2e;
+  --ink-800: #232b3e;
+  --ink-700: #2d3650;
+  --ink-600: #3a4566;
+  --ink-400: #7c88a8;
+  --ink-300: #a0aac0;
+  --ink-200: #c8cedc;
+  --ink-100: #e8ebf2;
+  --ink-60: #f2f4f8;
+  --ink-40: #f8f9fb;
+
+  --gold: #c4a265;
+  --gold-light: #d4b87a;
+  --gold-pale: #f5efe0;
+  --gold-dark: #9b7d40;
+
+  --vermillion: #c44d34;
+  --vermillion-light: #f8e8e4;
+
+  --steady: #2d6a4f;
+  --steady-bg: #eaf5ef;
+  --steady-border: #b7dcc8;
+
+  --focus: #1d6098;
+  --focus-bg: #e8f2fa;
+  --focus-border: #b8d4ee;
+
+  --reach: #b87400;
+  --reach-bg: #fdf5e6;
+  --reach-border: #f0d9a0;
+
+  --not-rec: #8b4440;
+  --not-rec-bg: #faf0ef;
+  --not-rec-border: #e8c8c6;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  --shadow-sm: 0 1px 3px rgba(26,31,46,0.06);
+  --shadow-md: 0 4px 16px rgba(26,31,46,0.08);
+  --shadow-lg: 0 8px 32px rgba(26,31,46,0.1);
+  --shadow-card: 0 2px 12px rgba(26,31,46,0.05), 0 0 0 1px rgba(26,31,46,0.04);
+
+  --font-display: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-body: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "Consolas", monospace;
+}
+
+/* ===== Reset & Base ===== */
+*,
+*::before,
+*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 15px; scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--ink-40);
+  color: var(--ink-800);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* ===== Background Texture ===== */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(196,162,101,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 85%, rgba(45,58,107,0.05) 0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 5 L31 29 L55 30 L31 31 L30 55 L29 31 L5 30 L29 29Z' fill='%23232b3e' fill-opacity='0.015'/%3E%3C/svg%3E");
+}
+
+/* ===== Layout ===== */
+.app-shell {
+  position: relative;
+  z-index: 1;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+/* ===== Top Navigation Bar ===== */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 36px;
+  padding: 0 4px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--ink-800) 0%, var(--ink-700) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold);
+  font-size: 20px;
+  box-shadow: 0 2px 10px rgba(26,31,46,0.2);
+}
+
+.brand-text h2 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--ink-900);
+  letter-spacing: 0.03em;
+}
+
+.brand-text span {
+  font-size: 0.72rem;
+  color: var(--ink-400);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.top-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-600);
+}
+.btn-ghost:hover { background: var(--ink-60); color: var(--ink-900); }
+
+.btn-primary {
+  background: var(--ink-800);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover {
+  background: var(--ink-900);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--ink-700);
+  border: 1.5px solid var(--ink-200);
+}
+.btn-outline:hover { border-color: var(--ink-400); background: var(--ink-60); }
+
+/* ===== Page Header ===== */
+.page-header {
+  margin-bottom: 28px;
+}
+
+.page-header h1 {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--ink-900);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.page-header .subtitle {
+  color: var(--ink-400);
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.subtitle .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-200); }
+
+/* ===== Profile Summary Card ===== */
+.profile-card {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--ink-100);
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dark) 100%);
+  border-radius: 4px 0 0 4px;
+}
+
+.profile-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.profile-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink-900);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-card h3 .icon { font-size: 1.1rem; }
+
+.profile-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.tag-outline {
+  background: var(--ink-40);
+  color: var(--ink-600);
+  border: 1px solid var(--ink-200);
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.profile-item label {
+  display: block;
+  font-size: 0.73rem;
+  color: var(--ink-400);
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.profile-item .value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink-800);
+}
+
+.profile-item .value.score {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--ink-900);
+}
+
+.risk-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.risk-conservative { background: var(--steady-bg); color: var(--steady); }
+.risk-balanced { background: var(--focus-bg); color: var(--focus); }
+.risk-aggressive { background: var(--reach-bg); color: var(--reach); }
+
+/* ===== Stats Bar ===== */
+.stats-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  flex: 1;
+  min-width: 120px;
+  background: #fff;
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border: 1.5px solid transparent;
+  position: relative;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.stat-card.active {
+  border-color: var(--ink-800);
+  box-shadow: var(--shadow-md);
+}
+
+.stat-card .stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.stat-card .stat-num {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.stat-card .stat-label {
+  font-size: 0.78rem;
+  color: var(--ink-400);
+  margin-top: 2px;
+}
+
+.stat-steady .stat-icon { background: var(--steady-bg); color: var(--steady); }
+.stat-steady .stat-num { color: var(--steady); }
+.stat-focus .stat-icon { background: var(--focus-bg); color: var(--focus); }
+.stat-focus .stat-num { color: var(--focus); }
+.stat-reach .stat-icon { background: var(--reach-bg); color: var(--reach); }
+.stat-reach .stat-num { color: var(--reach); }
+.stat-not .stat-icon { background: var(--not-rec-bg); color: var(--not-rec); }
+.stat-not .stat-num { color: var(--not-rec); }
+.stat-all .stat-icon { background: var(--ink-60); color: var(--ink-600); }
+.stat-all .stat-num { color: var(--ink-800); }
+
+/* ===== Filter Bar ===== */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  padding: 7px 16px;
+  border-radius: 100px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid var(--ink-200);
+  background: #fff;
+  color: var(--ink-600);
+  transition: all 0.2s ease;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.filter-chip:hover { border-color: var(--ink-400); color: var(--ink-800); }
+.filter-chip.active {
+  background: var(--ink-800);
+  color: #fff;
+  border-color: var(--ink-800);
+}
+
+.filter-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--ink-200);
+  margin: 0 6px;
+}
+
+/* ===== Tier Section ===== */
+.tier-section {
+  margin-bottom: 36px;
+  animation: fadeInUp 0.5s ease both;
+}
+
+.tier-section:nth-child(1) { animation-delay: 0s; }
+.tier-section:nth-child(2) { animation-delay: 0.08s; }
+.tier-section:nth-child(3) { animation-delay: 0.16s; }
+.tier-section:nth-child(4) { animation-delay: 0.24s; }
+
+.tier-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--ink-100);
+}
+
+.tier-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tier-header h3 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.tier-header .tier-count {
+  font-size: 0.8rem;
+  color: var(--ink-400);
+  font-weight: 400;
+}
+
+.tier-steady .tier-dot { background: var(--steady); box-shadow: 0 0 0 4px var(--steady-bg); }
+.tier-steady h3 { color: var(--steady); }
+
+.tier-focus .tier-dot { background: var(--focus); box-shadow: 0 0 0 4px var(--focus-bg); }
+.tier-focus h3 { color: var(--focus); }
+
+.tier-reach .tier-dot { background: var(--reach); box-shadow: 0 0 0 4px var(--reach-bg); }
+.tier-reach h3 { color: var(--reach); }
+
+.tier-not .tier-dot { background: var(--not-rec); box-shadow: 0 0 0 4px var(--not-rec-bg); }
+.tier-not h3 { color: var(--not-rec); }
+
+/* ===== School Card Grid ===== */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+/* ===== School Card ===== */
+.school-card {
+  background: #fff;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--ink-100);
+  padding: 0;
+  overflow: hidden;
+  transition: all 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.school-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--ink-200);
+}
+
+/* Card accent stripe on top */
+.school-card::before {
+  content: '';
+  display: block;
+  height: 3px;
+}
+
+.tier-steady .school-card::before { background: var(--steady); }
+.tier-focus .school-card::before { background: var(--focus); }
+.tier-reach .school-card::before { background: var(--reach); }
+.tier-not .school-card::before { background: var(--not-rec); }
+
+.card-body {
+  padding: 20px 22px;
+  flex: 1;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.school-name {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink-900);
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+
+.school-location {
+  font-size: 0.78rem;
+  color: var(--ink-400);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badges {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+
+.badge-985 { background: #fef3e4; color: #b87400; }
+.badge-211 { background: #eaf0f8; color: #3a5fa0; }
+.badge-double-first { background: #eaf5ef; color: #2d6a4f; }
+.badge-public { background: var(--ink-60); color: var(--ink-600); }
+
+.program-info {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: var(--ink-40);
+  border-radius: var(--radius-sm);
+}
+
+.program-info .college-name {
+  font-size: 0.82rem;
+  color: var(--ink-600);
+  margin-bottom: 3px;
+}
+
+.program-info .program-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink-800);
+}
+
+.program-info .program-code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink-400);
+  margin-left: 6px;
+}
+
+.program-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.meta-tag {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink-600);
+  border: 1px solid var(--ink-200);
+}
+
+/* Score Row */
+.score-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.score-block {
+  flex: 1;
+  text-align: center;
+  padding: 10px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-40);
+}
+
+.score-block .score-label {
+  font-size: 0.7rem;
+  color: var(--ink-400);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+}
+
+.score-block .score-value {
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--ink-800);
+}
+
+.score-block.gap-positive .score-value { color: var(--steady); }
+.score-block.gap-neutral .score-value { color: var(--focus); }
+.score-block.gap-negative .score-value { color: var(--reach); }
+.score-block.gap-bad .score-value { color: var(--not-rec); }
+
+/* Warnings */
+.warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+
+.warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.warning-risk { background: #fef9f4; color: #b87400; }
+.warning-danger { background: #fef5f4; color: #c44d34; }
+.warning-info { background: #f4f7fb; color: #5a7ca0; }
+
+.warning-icon { flex-shrink: 0; font-size: 0.85rem; }
+
+/* Card Footer */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 22px;
+  border-top: 1px solid var(--ink-60);
+  background: var(--ink-40);
+}
+
+.data-quality {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quality-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.quality-A { background: #eaf5ef; color: #2d6a4f; }
+.quality-B { background: #e8f2fa; color: #1d6098; }
+.quality-C { background: #fdf5e6; color: #b87400; }
+.quality-D { background: #faf0ef; color: #8b4440; }
+
+.quality-label {
+  font-size: 0.73rem;
+  color: var(--ink-400);
+}
+
+.fav-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-200);
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  color: var(--ink-400);
+}
+
+.fav-btn:hover {
+  border-color: var(--vermillion);
+  color: var(--vermillion);
+  background: var(--vermillion-light);
+}
+
+.fav-btn.favorited {
+  border-color: var(--vermillion);
+  background: var(--vermillion);
+  color: #fff;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-detail {
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid var(--ink-200);
+  background: #fff;
+  color: var(--ink-600);
+  transition: all 0.2s ease;
+}
+
+.btn-detail:hover {
+  border-color: var(--ink-800);
+  color: var(--ink-900);
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--ink-400);
+}
+
+.empty-state .empty-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+/* ===== Animations ===== */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.school-card {
+  animation: fadeInUp 0.45s ease both;
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ink-200); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-300); }
+
+/* ===== Responsive ===== */
+@media (max-width: 860px) {
+  .app-shell { padding: 20px 16px 60px; }
+  .page-header h1 { font-size: 1.4rem; }
+  .card-grid { grid-template-columns: 1fr; }
+  .stats-bar { gap: 8px; }
+  .stat-card { padding: 12px 14px; }
+  .stat-card .stat-num { font-size: 1.2rem; }
+  .profile-grid { grid-template-columns: repeat(2, 1fr); }
+  .score-row { flex-wrap: wrap; }
+}
+
+/* ===== Print ===== */
+@media print {
+  body::before { display: none; }
+  .top-bar, .filter-bar, .btn, .fav-btn, .card-footer { display: none; }
+  .school-card { break-inside: avoid; box-shadow: none; border: 1px solid #ddd; }
+}
+
+/* ===== Tier Tabs on Mobile ===== */
+.tier-tabs-mobile {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .stats-bar { display: none; }
+  .tier-tabs-mobile {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .tier-tabs-mobile .stat-card {
+    min-width: auto;
+    padding: 8px 14px;
+    flex: none;
+  }
+  .tier-tabs-mobile .stat-card .stat-num { font-size: 1rem; }
+  .tier-tabs-mobile .stat-card .stat-icon {
+    width: 28px; height: 28px; font-size: 0.8rem;
+  }
+  .filter-bar { gap: 6px; }
+  .filter-chip { padding: 5px 12px; font-size: 0.76rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- Top Navigation -->
+  <nav class="top-bar">
+    <div class="brand">
+      <div class="brand-icon">研</div>
+      <div class="brand-text">
+        <h2>考研择校决策平台</h2>
+        <span>Postgrad Selector</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn btn-ghost">历史推荐</button>
+      <button class="btn btn-ghost">我的收藏</button>
+      <button class="btn btn-outline">修改画像</button>
+      <button class="btn btn-primary" onclick="location.reload()">重新推荐</button>
+    </div>
+  </nav>
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <h1>择校推荐结果</h1>
+    <p class="subtitle">
+      基于您的画像生成
+      <span class="dot"></span>
+      2025 年招生数据
+      <span class="dot"></span>
+      共 <strong>10</strong> 个匹配专业方向
+    </p>
+  </div>
+
+  <!-- Profile Summary -->
+  <div class="profile-card">
+    <header>
+      <h3><span class="icon">📋</span>我的考研画像</h3>
+      <div class="profile-meta">
+        <span class="tag tag-outline">408 计算机</span>
+        <span class="tag tag-outline">2026 考研</span>
+      </div>
+    </header>
+    <div class="profile-grid">
+      <div class="profile-item">
+        <label>预估总分</label>
+        <div class="value score">315 <span style="font-size:0.7rem;font-weight:400;color:var(--ink-400)">/ 500</span></div>
+      </div>
+      <div class="profile-item">
+        <label>目标地区</label>
+        <div class="value">北京 · 上海 · 江苏 · 浙江 · 广东 · 福建</div>
+      </div>
+      <div class="profile-item">
+        <label>风险偏好</label>
+        <div class="value"><span class="risk-badge risk-balanced">均衡</span></div>
+      </div>
+      <div class="profile-item">
+        <label>学习方式</label>
+        <div class="value">全日制 · 接受专硕/学硕</div>
+      </div>
+      <div class="profile-item">
+        <label>目标专业</label>
+        <div class="value">0812 计算机科学与技术 · 0854 电子信息</div>
+      </div>
+      <div class="profile-item">
+        <label>联培/非全</label>
+        <div class="value">不接受</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card stat-all active" data-tier="all" onclick="filterByTier('all')">
+      <div class="stat-icon">全</div>
+      <div>
+        <div class="stat-num">10</div>
+        <div class="stat-label">全部结果</div>
+      </div>
+    </div>
+    <div class="stat-card stat-steady" data-tier="steady" onclick="filterByTier('steady')">
+      <div class="stat-icon">稳</div>
+      <div>
+        <div class="stat-num">3</div>
+        <div class="stat-label">重点稳妥</div>
+      </div>
+    </div>
+    <div class="stat-card stat-focus" data-tier="focus" onclick="filterByTier('focus')">
+      <div class="stat-icon">关</div>
+      <div>
+        <div class="stat-num">3</div>
+        <div class="stat-label">重点关注</div>
+      </div>
+    </div>
+    <div class="stat-card stat-reach" data-tier="reach" onclick="filterByTier('reach')">
+      <div class="stat-icon">冲</div>
+      <div>
+        <div class="stat-num">2</div>
+        <div class="stat-label">略冲</div>
+      </div>
+    </div>
+    <div class="stat-card stat-not" data-tier="not" onclick="filterByTier('not')">
+      <div class="stat-icon">慎</div>
+      <div>
+        <div class="stat-num">2</div>
+        <div class="stat-label">不建议</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Tier Tabs -->
+  <div class="tier-tabs-mobile">
+    <div class="stat-card stat-all active" data-tier="all" onclick="filterByTier('all')">
+      <div class="stat-icon">全</div>
+      <div class="stat-num">10</div>
+      <div class="stat-label">全部</div>
+    </div>
+    <div class="stat-card stat-steady" data-tier="steady" onclick="filterByTier('steady')">
+      <div class="stat-icon">稳</div>
+      <div class="stat-num">3</div>
+      <div class="stat-label">稳妥</div>
+    </div>
+    <div class="stat-card stat-focus" data-tier="focus" onclick="filterByTier('focus')">
+      <div class="stat-icon">关</div>
+      <div class="stat-num">3</div>
+      <div class="stat-label">关注</div>
+    </div>
+    <div class="stat-card stat-reach" data-tier="reach" onclick="filterByTier('reach')">
+      <div class="stat-icon">冲</div>
+      <div class="stat-num">2</div>
+      <div class="stat-label">略冲</div>
+    </div>
+    <div class="stat-card stat-not" data-tier="not" onclick="filterByTier('not')">
+      <div class="stat-icon">慎</div>
+      <div class="stat-num">2</div>
+      <div class="stat-label">不建议</div>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <span style="font-size:0.8rem;color:var(--ink-400);font-weight:500;margin-right:4px;">筛选</span>
+    <div class="filter-group" id="provinceFilter">
+      <span class="filter-chip active" data-province="all" onclick="filterByProvince('all')">全部地区</span>
+      <span class="filter-chip" data-province="北京" onclick="filterByProvince('北京')">北京</span>
+      <span class="filter-chip" data-province="上海" onclick="filterByProvince('上海')">上海</span>
+      <span class="filter-chip" data-province="江苏" onclick="filterByProvince('江苏')">江苏</span>
+      <span class="filter-chip" data-province="浙江" onclick="filterByProvince('浙江')">浙江</span>
+      <span class="filter-chip" data-province="广东" onclick="filterByProvince('广东')">广东</span>
+      <span class="filter-chip" data-province="福建" onclick="filterByProvince('福建')">福建</span>
+    </div>
+    <span class="filter-sep"></span>
+    <div class="filter-group" id="degreeFilter">
+      <span class="filter-chip active" data-degree="all" onclick="filterByDegree('all')">全部学位</span>
+      <span class="filter-chip" data-degree="academic" onclick="filterByDegree('academic')">学硕</span>
+      <span class="filter-chip" data-degree="professional" onclick="filterByDegree('professional')">专硕</span>
+    </div>
+  </div>
+
+  <!-- ===== Results ===== -->
+  <div id="resultsContainer">
+
+    <!-- Tier: 重点稳妥 -->
+    <div class="tier-section tier-steady" data-tier="steady">
+      <div class="tier-header">
+        <div class="tier-dot"></div>
+        <h3>重点稳妥</h3>
+        <span class="tier-count">预估分高出有效复试线 20 分以上，录取概率高</span>
+      </div>
+      <div class="card-grid">
+
+        <!-- Card 1: 深圳大学 -->
+        <div class="school-card" data-province="广东" data-degree="professional" data-tier="steady">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">深圳大学</div>
+                <div class="school-location">📍 广东 · 深圳</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-public">公办</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">计算机与软件学院</div>
+              <div class="program-name">
+                计算机技术<span class="program-code">085404</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">专硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">280</div>
+              </div>
+              <div class="score-block gap-positive">
+                <div class="score-label">分差</div>
+                <div class="score-value">+35</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">312</div>
+              </div>
+            </div>
+            <div class="warnings">
+              <div class="warning warning-info">
+                <span class="warning-icon">ℹ️</span>
+                暂无已审核录取分，基于复试线评估
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-B">B</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: 杭州电子科技大学 -->
+        <div class="school-card" data-province="浙江" data-degree="professional" data-tier="steady">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">杭州电子科技大学</div>
+                <div class="school-location">📍 浙江 · 杭州</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-public">公办</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">计算机学院</div>
+              <div class="program-name">
+                计算机技术<span class="program-code">085404</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">专硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">285</div>
+              </div>
+              <div class="score-block gap-positive">
+                <div class="score-label">分差</div>
+                <div class="score-value">+30</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">318</div>
+              </div>
+            </div>
+            <div class="warnings">
+              <div class="warning warning-risk">
+                <span class="warning-icon">⚠️</span>
+                统考名额较少（8人），录取不确定性高
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-A">A</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 3: 南京邮电大学 -->
+        <div class="school-card" data-province="江苏" data-degree="professional" data-tier="steady">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">南京邮电大学</div>
+                <div class="school-location">📍 江苏 · 南京</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-double-first">双一流</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">计算机学院/软件学院/网络空间安全学院</div>
+              <div class="program-name">
+                电子信息<span class="program-code">085400</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">专硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">293</div>
+              </div>
+              <div class="score-block gap-positive">
+                <div class="score-label">分差</div>
+                <div class="score-value">+22</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">326</div>
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-A">A</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Tier: 重点关注 -->
+    <div class="tier-section tier-focus" data-tier="focus">
+      <div class="tier-header">
+        <div class="tier-dot"></div>
+        <h3>重点关注</h3>
+        <span class="tier-count">预估分略超有效复试线 5~20 分，需关注竞争态势</span>
+      </div>
+      <div class="card-grid">
+
+        <!-- Card 4: 北京工业大学 -->
+        <div class="school-card" data-province="北京" data-degree="academic" data-tier="focus">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">北京工业大学</div>
+                <div class="school-location">📍 北京</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-211">211</span>
+                <span class="badge badge-double-first">双一流</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">信息学部计算机学院</div>
+              <div class="program-name">
+                计算机科学与技术<span class="program-code">081200</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">学硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">303</div>
+              </div>
+              <div class="score-block gap-neutral">
+                <div class="score-label">分差</div>
+                <div class="score-value">+12</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">331</div>
+              </div>
+            </div>
+            <div class="warnings">
+              <div class="warning warning-risk">
+                <span class="warning-icon">⚠️</span>
+                复试竞争较激烈（复录比 1.7），有效复试线上调 10 分
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-A">A</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 5: 华南师范大学 -->
+        <div class="school-card" data-province="广东" data-degree="professional" data-tier="focus">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">华南师范大学</div>
+                <div class="school-location">📍 广东 · 广州</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-211">211</span>
+                <span class="badge badge-double-first">双一流</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">计算机学院</div>
+              <div class="program-name">
+                计算机技术<span class="program-code">085404</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">专硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">307</div>
+              </div>
+              <div class="score-block gap-neutral">
+                <div class="score-label">分差</div>
+                <div class="score-value">+8</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">335</div>
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-B">B</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 6: 武汉理工大学 -->
+        <div class="school-card" data-province="北京" data-degree="professional" data-tier="focus">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">武汉理工大学</div>
+                <div class="school-location">📍 湖北 · 武汉</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-211">211</span>
+                <span class="badge badge-double-first">双一流</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">计算机与人工智能学院</div>
+              <div class="program-name">
+                软件工程<span class="program-code">085405</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">专硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">309</div>
+              </div>
+              <div class="score-block gap-neutral">
+                <div class="score-label">分差</div>
+                <div class="score-value">+6</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">330</div>
+              </div>
+            </div>
+            <div class="warnings">
+              <div class="warning warning-info">
+                <span class="warning-icon">ℹ️</span>
+                该院校一志愿保护机制较弱
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-B">B</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Tier: 略冲 -->
+    <div class="tier-section tier-reach" data-tier="reach">
+      <div class="tier-header">
+        <div class="tier-dot"></div>
+        <h3>略冲</h3>
+        <span class="tier-count">预估分略低于有效复试线 -10~5 分，有一定风险但值得尝试</span>
+      </div>
+      <div class="card-grid">
+
+        <!-- Card 7: 华东理工大学 -->
+        <div class="school-card" data-province="上海" data-degree="academic" data-tier="reach">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">华东理工大学</div>
+                <div class="school-location">📍 上海</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-211">211</span>
+                <span class="badge badge-double-first">双一流</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">信息科学与工程学院</div>
+              <div class="program-name">
+                计算机科学与技术<span class="program-code">081200</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">学硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">318</div>
+              </div>
+              <div class="score-block gap-negative">
+                <div class="score-label">分差</div>
+                <div class="score-value">-3</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">342</div>
+              </div>
+            </div>
+            <div class="warnings">
+              <div class="warning warning-danger">
+                <span class="warning-icon">🔴</span>
+                分数与估算线持平，录取风险极高
+              </div>
+              <div class="warning warning-risk">
+                <span class="warning-icon">⚠️</span>
+                复试竞争较激烈（复录比 1.8），有效复试线上调 10 分
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-A">A</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 8: 厦门大学 -->
+        <div class="school-card" data-province="福建" data-degree="professional" data-tier="reach">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">厦门大学</div>
+                <div class="school-location">📍 福建 · 厦门</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-985">985</span>
+                <span class="badge badge-211">211</span>
+                <span class="badge badge-double-first">双一流</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">信息学院</div>
+              <div class="program-name">
+                计算机技术<span class="program-code">085404</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">专硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">322</div>
+              </div>
+              <div class="score-block gap-negative">
+                <div class="score-label">分差</div>
+                <div class="score-value">-7</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">351</div>
+              </div>
+            </div>
+            <div class="warnings">
+              <div class="warning warning-info">
+                <span class="warning-icon">ℹ️</span>
+                统考名额较少（9人），录取不确定性高
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-B">B</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Tier: 不建议 -->
+    <div class="tier-section tier-not" data-tier="not">
+      <div class="tier-header">
+        <div class="tier-dot"></div>
+        <h3>不建议</h3>
+        <span class="tier-count">预估分低于有效复试线 10 分以上，录取希望较小</span>
+      </div>
+      <div class="card-grid">
+
+        <!-- Card 9: 浙江大学 -->
+        <div class="school-card" data-province="浙江" data-degree="academic" data-tier="not">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">浙江大学</div>
+                <div class="school-location">📍 浙江 · 杭州</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-985">985</span>
+                <span class="badge badge-211">211</span>
+                <span class="badge badge-double-first">双一流</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">计算机科学与技术学院</div>
+              <div class="program-name">
+                计算机科学与技术<span class="program-code">081200</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">学硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">340</div>
+              </div>
+              <div class="score-block gap-bad">
+                <div class="score-label">分差</div>
+                <div class="score-value">-25</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">372</div>
+              </div>
+            </div>
+            <div class="warnings">
+              <div class="warning warning-danger">
+                <span class="warning-icon">🔴</span>
+                分数差距较大（-25分），录取希望较小
+              </div>
+              <div class="warning warning-risk">
+                <span class="warning-icon">⚠️</span>
+                复试竞争激烈（复录比 2.1），有效复试线上调 20 分
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-A">A</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 10: 上海交通大学 -->
+        <div class="school-card" data-province="上海" data-degree="professional" data-tier="not">
+          <div class="card-body">
+            <div class="card-header">
+              <div>
+                <div class="school-name">上海交通大学</div>
+                <div class="school-location">📍 上海</div>
+              </div>
+              <div class="badges">
+                <span class="badge badge-985">985</span>
+                <span class="badge badge-211">211</span>
+                <span class="badge badge-double-first">双一流</span>
+              </div>
+            </div>
+            <div class="program-info">
+              <div class="college-name">电子信息与电气工程学院</div>
+              <div class="program-name">
+                电子信息<span class="program-code">085400</span>
+              </div>
+              <div class="program-meta">
+                <span class="meta-tag">全日制</span>
+                <span class="meta-tag">专硕</span>
+                <span class="meta-tag">408 统考</span>
+              </div>
+            </div>
+            <div class="score-row">
+              <div class="score-block">
+                <div class="score-label">有效复试线</div>
+                <div class="score-value">350</div>
+              </div>
+              <div class="score-block gap-bad">
+                <div class="score-label">分差</div>
+                <div class="score-value">-35</div>
+              </div>
+              <div class="score-block">
+                <div class="score-label">录取均分</div>
+                <div class="score-value">378</div>
+              </div>
+            </div>
+            <div class="warnings">
+              <div class="warning warning-danger">
+                <span class="warning-icon">🔴</span>
+                分数差距很大（-35分），不建议报考
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="data-quality">
+              <span class="quality-badge quality-A">A</span>
+              <span class="quality-label">数据完整度</span>
+            </div>
+            <div class="card-actions">
+              <button class="btn-detail" onclick="alert('详情页 — 建设中')">查看详情 →</button>
+              <button class="fav-btn" onclick="toggleFav(this)" title="收藏">♡</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+/* ===== State ===== */
+let activeTier = 'all';
+let activeProvince = 'all';
+let activeDegree = 'all';
+let favorites = new Set();
+
+/* ===== Tier Filter ===== */
+function filterByTier(tier) {
+  activeTier = tier;
+
+  // Update stat card active states
+  document.querySelectorAll('.stat-card').forEach(card => {
+    card.classList.toggle('active', card.dataset.tier === tier);
+  });
+
+  applyFilters();
+}
+
+/* ===== Province Filter ===== */
+function filterByProvince(province) {
+  activeProvince = province;
+
+  document.querySelectorAll('#provinceFilter .filter-chip').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.province === province);
+  });
+
+  applyFilters();
+}
+
+/* ===== Degree Filter ===== */
+function filterByDegree(degree) {
+  activeDegree = degree;
+
+  document.querySelectorAll('#degreeFilter .filter-chip').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.degree === degree);
+  });
+
+  applyFilters();
+}
+
+/* ===== Apply All Filters ===== */
+function applyFilters() {
+  const sections = document.querySelectorAll('.tier-section');
+  let anyVisible = false;
+
+  sections.forEach(section => {
+    const sectionTier = section.dataset.tier;
+
+    // Hide section if tier filter is active and doesn't match
+    if (activeTier !== 'all' && sectionTier !== activeTier) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+
+    // Filter cards within section
+    const cards = section.querySelectorAll('.school-card');
+    let sectionHasVisible = false;
+
+    cards.forEach(card => {
+      const cardProvince = card.dataset.province;
+      const cardDegree = card.dataset.degree;
+
+      const provinceMatch = activeProvince === 'all' || cardProvince === activeProvince;
+      const degreeMatch = activeDegree === 'all' || cardDegree === activeDegree;
+
+      if (provinceMatch && degreeMatch) {
+        card.style.display = '';
+        sectionHasVisible = true;
+        anyVisible = true;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+
+    // Hide empty tier sections
+    if (!sectionHasVisible) {
+      section.style.display = 'none';
+    }
+  });
+
+  // Show empty state if nothing visible
+  let emptyEl = document.getElementById('emptyState');
+  if (!anyVisible) {
+    if (!emptyEl) {
+      emptyEl = document.createElement('div');
+      emptyEl.id = 'emptyState';
+      emptyEl.className = 'empty-state';
+      emptyEl.innerHTML = '<div class="empty-icon">📭</div><p>没有匹配的推荐结果</p><p style="font-size:0.82rem;margin-top:4px;">尝试调整筛选条件</p>';
+      document.getElementById('resultsContainer').appendChild(emptyEl);
+    }
+    emptyEl.style.display = '';
+  } else if (emptyEl) {
+    emptyEl.style.display = 'none';
+  }
+}
+
+/* ===== Toggle Favorite ===== */
+function toggleFav(btn) {
+  btn.classList.toggle('favorited');
+  if (btn.classList.contains('favorited')) {
+    btn.textContent = '♥';
+  } else {
+    btn.textContent = '♡';
+  }
+}
+
+/* ===== Stagger card animations ===== */
+document.addEventListener('DOMContentLoaded', () => {
+  const cards = document.querySelectorAll('.school-card');
+  cards.forEach((card, i) => {
+    card.style.animationDelay = `${(i % 4) * 0.06}s`;
+  });
+});
+</script>
+
+</body>
+</html>

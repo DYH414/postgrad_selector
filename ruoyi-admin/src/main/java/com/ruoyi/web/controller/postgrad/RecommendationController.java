@@ -49,4 +49,20 @@ public class RecommendationController extends BaseController
         RecommendationResult result = recommendationService.generate(request);
         return success(result);
     }
+
+    /**
+     * 纯筛选模式 — 按用户画像过滤，不做推荐分档
+     */
+    @PostMapping("/filter")
+    @Log(title = "考研筛选", businessType = BusinessType.OTHER)
+    public AjaxResult filter(@RequestBody RecommendationRequest request)
+    {
+        if (request.getEstimatedScore() < 100 || request.getEstimatedScore() > 500)
+            return error("预估分数不在有效范围(100-500)");
+        if (request.getTargetProvinces() == null || request.getTargetProvinces().isEmpty())
+            return error("请至少选择一个目标地区");
+
+        RecommendationResult result = recommendationService.filter(request);
+        return success(result);
+    }
 }

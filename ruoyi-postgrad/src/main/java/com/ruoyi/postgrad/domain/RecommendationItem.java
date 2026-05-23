@@ -2,12 +2,18 @@ package com.ruoyi.postgrad.domain;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 单条推荐结果
  */
 public class RecommendationItem
 {
+    // 主键ID
+    private Long schoolId;
+    private Long collegeId;
+    private Long programId;
+
     // 学校信息
     private String schoolName;
     private String province;
@@ -23,22 +29,44 @@ public class RecommendationItem
     private String programName;
     private String studyMode;
     private String degreeType;
+    private boolean is408;
+    private String researchDirection;
 
     // 分数计算
     private int effectiveScore;
     private int scoreGap;
-    private String scoreBasis; // 分数来源说明
+    private String scoreBasis;
+
+    // 展示数据
+    private int scoreLine;
+    private int planCount;
+    private int retestCount;
+    private int minAdmittedScore;
+    private int avgAdmittedScore;
+    private String sourceUrl;
+    private String completenessLevel;
+
+    // 历年数据
+    private List<Map<String, Object>> historyScores = new ArrayList<>();
 
     // 推荐档位
-    private String tierLabel;  // steady/focus/reach/notRecommended/insufficient
+    private String tierLabel;
 
     // 风险标记
     private List<String> warnings = new ArrayList<>();
     private String warningLevel;
-    private String completenessLevel;
     private List<RecommendationItem> subPrograms = new ArrayList<>();
 
     // ── getters & setters ──
+
+    public Long getSchoolId() { return schoolId; }
+    public void setSchoolId(Long schoolId) { this.schoolId = schoolId; }
+
+    public Long getCollegeId() { return collegeId; }
+    public void setCollegeId(Long collegeId) { this.collegeId = collegeId; }
+
+    public Long getProgramId() { return programId; }
+    public void setProgramId(Long programId) { this.programId = programId; }
 
     public String getSchoolName() { return schoolName; }
     public void setSchoolName(String schoolName) { this.schoolName = schoolName; }
@@ -76,6 +104,12 @@ public class RecommendationItem
     public String getDegreeType() { return degreeType; }
     public void setDegreeType(String degreeType) { this.degreeType = degreeType; }
 
+    public boolean isIs408() { return is408; }
+    public void setIs408(boolean is408) { this.is408 = is408; }
+
+    public String getResearchDirection() { return researchDirection; }
+    public void setResearchDirection(String researchDirection) { this.researchDirection = researchDirection; }
+
     public int getEffectiveScore() { return effectiveScore; }
     public void setEffectiveScore(int effectiveScore) { this.effectiveScore = effectiveScore; }
 
@@ -84,6 +118,27 @@ public class RecommendationItem
 
     public String getScoreBasis() { return scoreBasis; }
     public void setScoreBasis(String scoreBasis) { this.scoreBasis = scoreBasis; }
+
+    public int getScoreLine() { return scoreLine; }
+    public void setScoreLine(int scoreLine) { this.scoreLine = scoreLine; }
+
+    public int getPlanCount() { return planCount; }
+    public void setPlanCount(int planCount) { this.planCount = planCount; }
+
+    public int getRetestCount() { return retestCount; }
+    public void setRetestCount(int retestCount) { this.retestCount = retestCount; }
+
+    public int getMinAdmittedScore() { return minAdmittedScore; }
+    public void setMinAdmittedScore(int minAdmittedScore) { this.minAdmittedScore = minAdmittedScore; }
+
+    public int getAvgAdmittedScore() { return avgAdmittedScore; }
+    public void setAvgAdmittedScore(int avgAdmittedScore) { this.avgAdmittedScore = avgAdmittedScore; }
+
+    public String getSourceUrl() { return sourceUrl; }
+    public void setSourceUrl(String sourceUrl) { this.sourceUrl = sourceUrl; }
+
+    public String getCompletenessLevel() { return completenessLevel; }
+    public void setCompletenessLevel(String completenessLevel) { this.completenessLevel = completenessLevel; }
 
     public String getTierLabel() { return tierLabel; }
     public void setTierLabel(String tierLabel) { this.tierLabel = tierLabel; }
@@ -94,9 +149,9 @@ public class RecommendationItem
     public String getWarningLevel() { return warningLevel; }
     public void setWarningLevel(String warningLevel) { this.warningLevel = warningLevel; }
 
-    public String getCompletenessLevel() { return completenessLevel; }
-    public void setCompletenessLevel(String completenessLevel) { this.completenessLevel = completenessLevel; }
-
     public List<RecommendationItem> getSubPrograms() { return subPrograms; }
     public void setSubPrograms(List<RecommendationItem> subPrograms) { this.subPrograms = subPrograms; }
+
+    public List<Map<String, Object>> getHistoryScores() { return historyScores; }
+    public void setHistoryScores(List<Map<String, Object>> historyScores) { this.historyScores = historyScores; }
 }
