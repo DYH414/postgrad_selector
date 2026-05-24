@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.ProgramMapper">
+
+    <resultMap type="Program" id="ProgramResult">
+        <id property="id" column="id"/><result property="collegeId" column="college_id"/><result property="programCode" column="program_code"/><result property="programName" column="program_name"/><result property="studyMode" column="study_mode"/><result property="degreeType" column="degree_type"/><result property="is408" column="is_408"/><result property="status" column="status"/>
+    </resultMap>
+
+    <sql id="selectProgramVo">
+        select id, college_id, program_code, program_name, research_direction, study_mode, degree_type, is_408, protects_first_choice, status, created_at from program
+    </sql>
+
+    <select id="selectProgramList" parameterType="Program" resultMap="ProgramResult">
+        <include refid="selectProgramVo"/>
+        <where>
+            <if test="collegeId != null"> and college_id = #{collegeId}</if>
+            <if test="programCode != null and programCode != ''"> and program_code = #{programCode}</if>
+            <if test="programName != null and programName != ''"> and program_name like concat('%', #{programName}, '%')</if>
+            <if test="is408 != null"> and is_408 = #{is408}</if>
+            <if test="status != null"> and status = #{status}</if>
+        </where>
+        order by id
+    </select>
+
+    <select id="selectProgramById" parameterType="Long" resultMap="ProgramResult">
+        <include refid="selectProgramVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertProgram" parameterType="Program" useGeneratedKeys="true" keyProperty="id">
+        insert into program (college_id, program_code, program_name, research_direction, study_mode, degree_type, is_408, protects_first_choice, status)
+        values (#{collegeId}, #{programCode}, #{programName}, #{researchDirection}, #{studyMode}, #{degreeType}, #{is408}, #{protectsFirstChoice}, #{status})
+    </insert>
+
+    <update id="updateProgram" parameterType="Program">
+        update program
+        <set>
+            <if test="collegeId != null"> college_id = #{collegeId},</if>
+            <if test="programCode != null"> program_code = #{programCode},</if>
+            <if test="programName != null"> program_name = #{programName},</if>
+            <if test="researchDirection != null"> research_direction = #{researchDirection},</if>
+            <if test="studyMode != null"> study_mode = #{studyMode},</if>
+            <if test="degreeType != null"> degree_type = #{degreeType},</if>
+            <if test="is408 != null"> is_408 = #{is408},</if>
+            <if test="protectsFirstChoice != null"> protects_first_choice = #{protectsFirstChoice},</if>
+            <if test="status != null"> status = #{status},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteProgramById" parameterType="Long">
+        delete from program where id = #{id}
+    </delete>
+
+    <delete id="deleteProgramByIds" parameterType="Long">
+        delete from program where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

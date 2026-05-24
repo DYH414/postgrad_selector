@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.DataQualityMapper">
+
+    <resultMap type="DataQuality" id="DataQualityResult">
+        <id property="id" column="id"/><result property="programId" column="program_id"/><result property="year" column="year"/><result property="hasScore" column="has_score"/><result property="hasPlan" column="has_plan"/><result property="hasResult" column="has_result"/><result property="hasOfficialSource" column="has_official_source"/><result property="hasConflict" column="has_conflict"/><result property="completenessLevel" column="completeness_level"/><result property="missingFields" column="missing_fields"/><result property="lastCheckedAt" column="last_checked_at"/>
+    </resultMap>
+
+    <sql id="selectDataQualityVo">
+        select id, program_id, year, has_score, has_plan, has_result, has_official_source, has_conflict, completeness_level, missing_fields, last_checked_at, created_at from program_year_data_quality
+    </sql>
+
+    <select id="selectDataQualityList" parameterType="DataQuality" resultMap="DataQualityResult">
+        <include refid="selectDataQualityVo"/>
+        <where>
+            <if test="programId != null"> and program_id = #{programId}</if>
+            <if test="year != null"> and year = #{year}</if>
+            <if test="completenessLevel != null"> and completeness_level = #{completenessLevel}</if>
+        </where>
+        order by year desc, id
+    </select>
+
+    <select id="selectDataQualityById" parameterType="Long" resultMap="DataQualityResult">
+        <include refid="selectDataQualityVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertDataQuality" parameterType="DataQuality" useGeneratedKeys="true" keyProperty="id">
+        insert into program_year_data_quality (program_id, year, has_score, has_plan, has_result, has_official_source, has_conflict, completeness_level, missing_fields, last_checked_at)
+        values (#{programId}, #{year}, #{hasScore}, #{hasPlan}, #{hasResult}, #{hasOfficialSource}, #{hasConflict}, #{completenessLevel}, #{missingFields}, #{lastCheckedAt})
+    </insert>
+
+    <update id="updateDataQuality" parameterType="DataQuality">
+        update data_quality
+        <set>
+            <if test="programId != null"> program_id = #{programId},</if>
+            <if test="year != null"> year = #{year},</if>
+            <if test="hasScore != null"> has_score = #{hasScore},</if>
+            <if test="hasPlan != null"> has_plan = #{hasPlan},</if>
+            <if test="hasResult != null"> has_result = #{hasResult},</if>
+            <if test="hasOfficialSource != null"> has_official_source = #{hasOfficialSource},</if>
+            <if test="hasConflict != null"> has_conflict = #{hasConflict},</if>
+            <if test="completenessLevel != null"> completeness_level = #{completenessLevel},</if>
+            <if test="missingFields != null"> missing_fields = #{missingFields},</if>
+            <if test="lastCheckedAt != null"> last_checked_at = #{lastCheckedAt},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteDataQualityById" parameterType="Long">
+        delete from program_year_data_quality where id = #{id}
+    </delete>
+
+    <delete id="deleteDataQualityByIds" parameterType="Long">
+        delete from program_year_data_quality where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

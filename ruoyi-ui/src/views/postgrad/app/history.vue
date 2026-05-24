@@ -53,9 +53,7 @@ export default {
 
 <style scoped>
 .app-page { min-height: 100vh; background: #f0f2f5; }
-.app-header { display: flex; justify-content: space-between; align-items: center; padding: 0 24px; height: 56px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
 
-.nav-link:hover, .router-link-active
 .app-body { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
 .app-body h3 { margin-bottom: 16px; }
 </style>

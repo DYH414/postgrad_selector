@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.AdmissionResultMapper">
+
+    <resultMap type="AdmissionResult" id="AdmissionResultResult">
+        <id property="id" column="id"/><result property="programId" column="program_id"/><result property="year" column="year"/><result property="admittedCount" column="admitted_count"/><result property="minAdmittedScore" column="min_admitted_score"/><result property="avgAdmittedScore" column="avg_admitted_score"/><result property="maxAdmittedScore" column="max_admitted_score"/><result property="hasTransfer" column="has_transfer"/><result property="verifyStatus" column="verify_status"/><result property="sourceId" column="source_id"/>
+    </resultMap>
+
+    <sql id="selectAdmissionResultVo">
+        select id, program_id, year, admitted_count, first_choice_admitted_count, min_admitted_score, avg_admitted_score, max_admitted_score, has_transfer, verify_status, source_id, created_at from admission_result
+    </sql>
+
+    <select id="selectAdmissionResultList" parameterType="AdmissionResult" resultMap="AdmissionResultResult">
+        <include refid="selectAdmissionResultVo"/>
+        <where>
+            <if test="programId != null"> and program_id = #{programId}</if>
+            <if test="year != null"> and year = #{year}</if>
+            <if test="verifyStatus != null"> and verify_status = #{verifyStatus}</if>
+        </where>
+        order by year desc, id
+    </select>
+
+    <select id="selectAdmissionResultById" parameterType="Long" resultMap="AdmissionResultResult">
+        <include refid="selectAdmissionResultVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertAdmissionResult" parameterType="AdmissionResult" useGeneratedKeys="true" keyProperty="id">
+        insert into admission_result (program_id, year, admitted_count, first_choice_admitted_count, min_admitted_score, avg_admitted_score, max_admitted_score, has_transfer, verify_status, source_id)
+        values (#{programId}, #{year}, #{admittedCount}, #{firstChoiceAdmittedCount}, #{minAdmittedScore}, #{avgAdmittedScore}, #{maxAdmittedScore}, #{hasTransfer}, #{verifyStatus}, #{sourceId})
+    </insert>
+
+    <update id="updateAdmissionResult" parameterType="AdmissionResult">
+        update admission_result
+        <set>
+            <if test="programId != null"> program_id = #{programId},</if>
+            <if test="year != null"> year = #{year},</if>
+            <if test="admittedCount != null"> admitted_count = #{admittedCount},</if>
+            <if test="firstChoiceAdmittedCount != null"> first_choice_admitted_count = #{firstChoiceAdmittedCount},</if>
+            <if test="minAdmittedScore != null"> min_admitted_score = #{minAdmittedScore},</if>
+            <if test="avgAdmittedScore != null"> avg_admitted_score = #{avgAdmittedScore},</if>
+            <if test="maxAdmittedScore != null"> max_admitted_score = #{maxAdmittedScore},</if>
+            <if test="hasTransfer != null"> has_transfer = #{hasTransfer},</if>
+            <if test="verifyStatus != null"> verify_status = #{verifyStatus},</if>
+            <if test="sourceId != null"> source_id = #{sourceId},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteAdmissionResultById" parameterType="Long">
+        delete from admission_result where id = #{id}
+    </delete>
+
+    <delete id="deleteAdmissionResultByIds" parameterType="Long">
+        delete from admission_result where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

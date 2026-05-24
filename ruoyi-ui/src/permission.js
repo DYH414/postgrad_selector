@@ -5,77 +5,97 @@ import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { getToken } from '@/utils/auth'
 import { getAppToken } from '@/utils/appAuth'
-import { isPathMatch } from '@/utils/validate'
 import { isRelogin } from '@/utils/request'
 
 NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login', '/register', '/app/login']
-
-const isWhiteList = (path) => {
-  return whiteList.some(pattern => isPathMatch(pattern, path))
-}
-
+/**
+ * 路由守卫 — 分三个域处理:
+ *   1. 管理后台 (有 admin token)
+ *   2. 用户端 /app/* (有 app token)
+ *   3. 未认证 (重定向到对应登录页)
+ */
 router.beforeEach((to, from, next) => {
   NProgress.start()
-  if (getToken()) {
-    to.meta.title && store.dispatch('settings/setTitle', to.meta.title)
-    const isLock = store.getters.isLock
-    /* has token*/
-    if (to.path === '/login') {
-      next({ path: '/' })
-      NProgress.done()
-    } else if (isWhiteList(to.path)) {
-      next()
-    } else if (isLock && to.path !== '/lock') {
-      next({ path: '/lock' })
-      NProgress.done()
-    } else if (!isLock && to.path === '/lock') {
-      next({ path: '/' })
-      NProgress.done()
-    } else {
-      if (store.getters.roles.length === 0) {
-        isRelogin.show = true
-        // 判断当前用户是否已拉取完user_info信息
-        store.dispatch('GetInfo').then(() => {
-          isRelogin.show = false
-          store.dispatch('GenerateRoutes').then(accessRoutes => {
-            // 根据roles权限生成可访问的路由表
-            router.addRoutes(accessRoutes) // 动态添加可访问路由表
-            next({ ...to, replace: true }) // hack方法 确保addRoutes已完成
-          })
-        }).catch(err => {
-            store.dispatch('LogOut').then(() => {
-              Message.error(err)
-              next({ path: '/' })
-            })
-          })
-      } else {
-        next()
-      }
-    }
-  } else if (to.path.startsWith('/app/')) {
-    // App端路由：使用app token校验
-    if (to.path === '/app/login') {
-      next()
-    } else if (getAppToken()) {
-      next()
-    } else {
-      next('/app/login?redirect=' + encodeURIComponent(to.fullPath))
-      NProgress.done()
-    }
-  } else {
-    // 没有token
-    if (isWhiteList(to.path)) {
-      // 在免登录白名单，直接进入
-      next()
-    } else {
-      next(`/login?redirect=${encodeURIComponent(to.fullPath)}`) // 否则全部重定向到登录页
-      NProgress.done()
-    }
+
+  const adminToken = getToken()
+  const appToken = getAppToken()
+  const isAppPath = to.path.startsWith('/app/')
+
+  // ── 管理后台 ──
+  if (adminToken) {
+    handleAdminRoute(to, from, next)
+  }
+  // ── 用户端 App ──
+  else if (isAppPath) {
+    handleAppRoute(to, next)
+  }
+  // ── 未认证 ──
+  else {
+    handleGuestRoute(to, next)
   }
 })
 
 router.afterEach(() => {
   NProgress.done()
 })
+
+// ═══════════════════════════════════════════
+// Admin Route Handler
+// ═══════════════════════════════════════════
+function handleAdminRoute(to, from, next) {
+  to.meta.title && store.dispatch('settings/setTitle', to.meta.title)
+
+  // 已登录跳到首页
+  if (to.path === '/login') return done(next, { path: '/' })
+  // 锁屏
+  const isLock = store.getters.isLock
+  if (isLock && to.path !== '/lock') return done(next, { path: '/lock' })
+  if (!isLock && to.path === '/lock') return done(next, { path: '/' })
+
+  // 动态路由已加载
+  if (store.getters.roles.length > 0) return next()
+
+  // 首次加载：拉角色 → 生成路由 → addRoutes
+  isRelogin.show = true
+  store.dispatch('GetInfo')
+    .then(() => {
+      isRelogin.show = false
+      return store.dispatch('GenerateRoutes')
+    })
+    .then(accessRoutes => {
+      router.addRoutes(accessRoutes)
+      next({ ...to, replace: true })
+    })
+    .catch(err => {
+      store.dispatch('LogOut').then(() => {
+        Message.error(err)
+        next({ path: '/' })
+      })
+    })
+}
+
+// ═══════════════════════════════════════════
+// App Route Handler
+// ═══════════════════════════════════════════
+function handleAppRoute(to, next) {
+  const appPrototypeWhiteList = ['/app/recommend', '/app/results']
+  if (appPrototypeWhiteList.includes(to.path)) return next()
+  if (to.path === '/app/login') return next()
+  if (getAppToken()) return next()
+  next('/app/login?redirect=' + encodeURIComponent(to.fullPath))
+}
+
+// ═══════════════════════════════════════════
+// Guest Route Handler
+// ═══════════════════════════════════════════
+function handleGuestRoute(to, next) {
+  const whiteList = ['/login', '/register']
+  if (whiteList.includes(to.path)) return next()
+  next(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+}
+
+function done(next, destination) {
+  next(destination)
+  NProgress.done()
+}

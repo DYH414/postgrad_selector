@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.SubjectMapper">
+
+    <resultMap type="Subject" id="SubjectResult">
+        <id property="id" column="id"/><result property="code" column="code"/><result property="name" column="name"/><result property="subjectType" column="subject_type"/><result property="examCategory" column="exam_category"/>
+    </resultMap>
+
+    <sql id="selectSubjectVo">
+        select id, code, name, subject_type, exam_category, created_at from subject
+    </sql>
+
+    <select id="selectSubjectList" parameterType="Subject" resultMap="SubjectResult">
+        <include refid="selectSubjectVo"/>
+        <where>
+            <if test="code != null and code != ''"> and code = #{code}</if>
+            <if test="name != null and name != ''"> and name like concat('%', #{name}, '%')</if>
+        </where>
+        order by code
+    </select>
+
+    <select id="selectSubjectById" parameterType="Long" resultMap="SubjectResult">
+        <include refid="selectSubjectVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertSubject" parameterType="Subject" useGeneratedKeys="true" keyProperty="id">
+        insert into subject (code, name, subject_type, exam_category)
+        values (#{code}, #{name}, #{subjectType}, #{examCategory})
+    </insert>
+
+    <update id="updateSubject" parameterType="Subject">
+        update subject
+        <set>
+            <if test="code != null"> code = #{code},</if>
+            <if test="name != null"> name = #{name},</if>
+            <if test="subjectType != null"> subject_type = #{subjectType},</if>
+            <if test="examCategory != null"> exam_category = #{examCategory},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteSubjectById" parameterType="Long">
+        delete from subject where id = #{id}
+    </delete>
+
+    <delete id="deleteSubjectByIds" parameterType="Long">
+        delete from subject where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

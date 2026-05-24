@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.AdmissionScoreMapper">
+
+    <resultMap type="AdmissionScore" id="AdmissionScoreResult">
+        <id property="id" column="id"/><result property="programId" column="program_id"/><result property="year" column="year"/><result property="scoreLine" column="score_line"/><result property="singleMath" column="single_math"/><result property="singleEnglish" column="single_english"/><result property="singlePolitics" column="single_politics"/><result property="singleProfessional" column="single_professional"/><result property="verifyStatus" column="verify_status"/><result property="sourceId" column="source_id"/>
+    </resultMap>
+
+    <sql id="selectAdmissionScoreVo">
+        select id, program_id, year, score_line, single_math, single_english, single_politics, single_professional, verify_status, source_id, created_at from admission_score
+    </sql>
+
+    <select id="selectAdmissionScoreList" parameterType="AdmissionScore" resultMap="AdmissionScoreResult">
+        <include refid="selectAdmissionScoreVo"/>
+        <where>
+            <if test="programId != null"> and program_id = #{programId}</if>
+            <if test="year != null"> and year = #{year}</if>
+            <if test="verifyStatus != null"> and verify_status = #{verifyStatus}</if>
+        </where>
+        order by year desc, id
+    </select>
+
+    <select id="selectAdmissionScoreById" parameterType="Long" resultMap="AdmissionScoreResult">
+        <include refid="selectAdmissionScoreVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertAdmissionScore" parameterType="AdmissionScore" useGeneratedKeys="true" keyProperty="id">
+        insert into admission_score (program_id, year, score_line, single_math, single_english, single_politics, single_professional, verify_status, source_id)
+        values (#{programId}, #{year}, #{scoreLine}, #{singleMath}, #{singleEnglish}, #{singlePolitics}, #{singleProfessional}, #{verifyStatus}, #{sourceId})
+    </insert>
+
+    <update id="updateAdmissionScore" parameterType="AdmissionScore">
+        update admission_score
+        <set>
+            <if test="programId != null"> program_id = #{programId},</if>
+            <if test="year != null"> year = #{year},</if>
+            <if test="scoreLine != null"> score_line = #{scoreLine},</if>
+            <if test="singleMath != null"> single_math = #{singleMath},</if>
+            <if test="singleEnglish != null"> single_english = #{singleEnglish},</if>
+            <if test="singlePolitics != null"> single_politics = #{singlePolitics},</if>
+            <if test="singleProfessional != null"> single_professional = #{singleProfessional},</if>
+            <if test="verifyStatus != null"> verify_status = #{verifyStatus},</if>
+            <if test="sourceId != null"> source_id = #{sourceId},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteAdmissionScoreById" parameterType="Long">
+        delete from admission_score where id = #{id}
+    </delete>
+
+    <delete id="deleteAdmissionScoreByIds" parameterType="Long">
+        delete from admission_score where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.AdmissionPlanMapper">
+
+    <resultMap type="AdmissionPlan" id="AdmissionPlanResult">
+        <id property="id" column="id"/><result property="programId" column="program_id"/><result property="year" column="year"/><result property="totalPlan" column="total_plan"/><result property="unifiedExamQuota" column="unified_exam_quota"/><result property="retestCount" column="retest_count"/><result property="verifyStatus" column="verify_status"/><result property="sourceId" column="source_id"/>
+    </resultMap>
+
+    <sql id="selectAdmissionPlanVo">
+        select id, program_id, year, total_plan, unified_exam_quota, retest_count, verify_status, source_id, created_at from admission_plan
+    </sql>
+
+    <select id="selectAdmissionPlanList" parameterType="AdmissionPlan" resultMap="AdmissionPlanResult">
+        <include refid="selectAdmissionPlanVo"/>
+        <where>
+            <if test="programId != null"> and program_id = #{programId}</if>
+            <if test="year != null"> and year = #{year}</if>
+            <if test="verifyStatus != null"> and verify_status = #{verifyStatus}</if>
+        </where>
+        order by year desc, id
+    </select>
+
+    <select id="selectAdmissionPlanById" parameterType="Long" resultMap="AdmissionPlanResult">
+        <include refid="selectAdmissionPlanVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertAdmissionPlan" parameterType="AdmissionPlan" useGeneratedKeys="true" keyProperty="id">
+        insert into admission_plan (program_id, year, total_plan, unified_exam_quota, retest_count, verify_status, source_id)
+        values (#{programId}, #{year}, #{totalPlan}, #{unifiedExamQuota}, #{retestCount}, #{verifyStatus}, #{sourceId})
+    </insert>
+
+    <update id="updateAdmissionPlan" parameterType="AdmissionPlan">
+        update admission_plan
+        <set>
+            <if test="programId != null"> program_id = #{programId},</if>
+            <if test="year != null"> year = #{year},</if>
+            <if test="totalPlan != null"> total_plan = #{totalPlan},</if>
+            <if test="unifiedExamQuota != null"> unified_exam_quota = #{unifiedExamQuota},</if>
+            <if test="retestCount != null"> retest_count = #{retestCount},</if>
+            <if test="verifyStatus != null"> verify_status = #{verifyStatus},</if>
+            <if test="sourceId != null"> source_id = #{sourceId},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteAdmissionPlanById" parameterType="Long">
+        delete from admission_plan where id = #{id}
+    </delete>
+
+    <delete id="deleteAdmissionPlanByIds" parameterType="Long">
+        delete from admission_plan where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

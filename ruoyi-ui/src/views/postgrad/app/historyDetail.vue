@@ -8,6 +8,14 @@
       <div v-loading="loading">
         <template v-if="result">
           <h3>推荐结果 <span style="font-size:14px;color:#909399;font-weight:400">共 {{ result.totalCandidates }} 个候选</span></h3>
+          <div class="risk-alert">
+            <i class="el-icon-warning-outline"></i>
+            <div>
+              <strong>风险提示</strong>
+              <p>复试线不是最低录取分；推荐学校不代表只有这些学校可以报。当前数据主要来源于 N诺（第三方整理），可能存在遗漏或错误，请以院校官网和招生公告为准。</p>
+              <p>N诺数据完整度 A：含复试线、拟录取区间、人数等字段；B：含主要分数字段，部分字段缺失；C：仅有复试线或基础字段。</p>
+            </div>
+          </div>
           <el-tabs v-model="activeTab">
             <el-tab-pane :label="'稳妥 (' + (result.steady||[]).length + ')'" name="steady" />
             <el-tab-pane :label="'重点关注 (' + (result.focus||[]).length + ')'" name="focus" />
@@ -90,11 +98,13 @@ export default {
 
 <style scoped>
 .app-page { min-height: 100vh; background: #f0f2f5; }
-.app-header { display: flex; justify-content: space-between; align-items: center; padding: 0 24px; height: 56px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
 
-.nav-link:hover, .router-link-active
 .app-body { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
 .app-body h3 { margin-bottom: 16px; }
+.risk-alert { display: grid; grid-template-columns: 32px 1fr; gap: 10px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid #ffdca8; border-radius: 8px; background: #fff8e8; color: #8a4b10; line-height: 1.55; }
+.risk-alert i { font-size: 22px; margin-top: 2px; color: #e07818; }
+.risk-alert strong { color: #bf6814; }
+.risk-alert p { margin: 4px 0 0; }
 .result-card { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .school-name { font-size: 16px; font-weight: 600; margin-right: 8px; }

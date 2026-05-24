@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>408 考研推荐平台 - 原型接口设计</title>
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --panel: #ffffff;
+      --panel-soft: #f9fbff;
+      --text: #111827;
+      --muted: #64748b;
+      --line: #dbe4f0;
+      --blue: #2563eb;
+      --blue-soft: #eaf1ff;
+      --green: #0f9f6e;
+      --green-soft: #eaf8f2;
+      --orange: #d97706;
+      --orange-soft: #fff7ed;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --purple: #6d5dfc;
+      --shadow: 0 14px 36px rgba(15, 23, 42, .08);
+      --radius: 12px;
+      --mono: "Cascadia Code", Consolas, "SFMono-Regular", monospace;
+      --font: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background: linear-gradient(180deg, #eef5ff 0, var(--bg) 260px);
+      line-height: 1.68;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      max-width: 1440px;
+      margin: 0 auto;
+      min-height: 100vh;
+    }
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+      background: rgba(255, 255, 255, .78);
+      backdrop-filter: blur(14px);
+      overflow: auto;
+    }
+    main { padding: 36px 44px 80px; }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 32px;
+      letter-spacing: 0;
+      line-height: 1.25;
+    }
+    h2 {
+      margin: 44px 0 16px;
+      font-size: 22px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    h3 { margin: 28px 0 12px; font-size: 17px; }
+    p { margin: 8px 0 12px; color: var(--muted); }
+    a { color: var(--blue); text-decoration: none; }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 22px;
+      font-weight: 800;
+      font-size: 18px;
+    }
+    .logo {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      color: #fff;
+      background: linear-gradient(135deg, #1d4ed8, #38bdf8);
+      font-weight: 900;
+    }
+    nav a {
+      display: block;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: #334155;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    nav a:hover { background: var(--blue-soft); color: var(--blue); }
+    .hero {
+      padding: 28px;
+      border: 1px solid rgba(37, 99, 235, .18);
+      border-radius: 18px;
+      background: rgba(255,255,255,.88);
+      box-shadow: var(--shadow);
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #475569;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .pill.blue { color: var(--blue); background: var(--blue-soft); border-color: #bfd3ff; }
+    .pill.green { color: var(--green); background: var(--green-soft); border-color: #b9ead7; }
+    .pill.orange { color: var(--orange); background: var(--orange-soft); border-color: #fed7aa; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 6px 18px rgba(15, 23, 42, .04);
+    }
+    .card h3 { margin-top: 0; }
+    .warn {
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      border: 1px solid #fed7aa;
+      background: var(--orange-soft);
+      color: #9a3412;
+    }
+    .warn strong { color: #7c2d12; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, .04);
+    }
+    th, td {
+      padding: 11px 13px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      background: #f1f5fb;
+      color: #334155;
+      font-weight: 800;
+    }
+    tr:last-child td { border-bottom: 0; }
+    code, pre {
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+    code {
+      color: #1d4ed8;
+      background: #eef4ff;
+      border: 1px solid #dbeafe;
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+    pre {
+      margin: 12px 0 20px;
+      padding: 16px;
+      color: #dbeafe;
+      background: #0f172a;
+      border-radius: var(--radius);
+      overflow: auto;
+      line-height: 1.55;
+    }
+    pre code {
+      color: inherit;
+      background: transparent;
+      border: 0;
+      padding: 0;
+    }
+    .tag {
+      display: inline-block;
+      min-width: 54px;
+      text-align: center;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .tag.get { color: #075985; background: #e0f2fe; }
+    .tag.post { color: #166534; background: #dcfce7; }
+    .tag.patch { color: #6d28d9; background: #ede9fe; }
+    .tag.delete { color: #991b1b; background: #fee2e2; }
+    .muted { color: var(--muted); }
+    .ok { color: var(--green); font-weight: 800; }
+    .todo { color: var(--orange); font-weight: 800; }
+    .danger { color: var(--red); font-weight: 800; }
+    .section-note {
+      padding: 13px 16px;
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius);
+      background: var(--blue-soft);
+      color: #1e40af;
+    }
+    ul { padding-left: 20px; }
+    li { margin: 5px 0; }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      main { padding: 24px 18px 56px; }
+      .grid, .grid.three { grid-template-columns: 1fr; }
+      h1 { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <div class="brand"><span class="logo">408</span><span>接口设计文档</span></div>
+      <nav>
+        <a href="#overview">1. 原型页面与接口边界</a>
+        <a href="#common">2. 通用约定</a>
+        <a href="#existing">3. 已有接口</a>
+        <a href="#new">4. MVP 新增接口</a>
+        <a href="#home">5. 首页推荐接口</a>
+        <a href="#result">6. 推荐结果数据</a>
+        <a href="#compare">7. 对比与备选</a>
+        <a href="#detail">8. 院校详情</a>
+        <a href="#data">9. 关键数据模型</a>
+        <a href="#priority">10. 开发优先级</a>
+      </nav>
+    </aside>
+
+    <main>
+      <section class="hero">
+        <h1>408 考研推荐平台原型接口设计</h1>
+        <p>面向当前 Vue 原型：首页快速推荐、推荐结果、院校详情、对比与备选、收藏历史。目标是把“页面上需要什么数据”落成后端接口契约。</p>
+        <div class="meta">
+          <span class="pill blue">RuoYi AjaxResult 响应</span>
+          <span class="pill green">App 端接口前缀 /app</span>
+          <span class="pill orange">数据来源：N诺（第三方整理）</span>
+          <span class="pill">文档日期：2026-05-23</span>
+        </div>
+      </section>
+
+      <h2 id="overview">原型页面与接口边界</h2>
+      <div class="warn">
+        <strong>全站必须固定返回并展示三条风险提示：</strong>
+        复试线不是最低录取分；推荐学校不代表只有这些学校可以报；N诺数据可能遗漏、过时或错误，最终以院校官方公告为准。
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>页面</th>
+            <th>核心数据</th>
+            <th>主要接口</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>首页 / 快速推荐</td>
+            <td>预计初试总分、考试组合、地区、学习方式、专业方向、风险偏好、使用须知</td>
+            <td><code>GET /app/recommendation/options</code><br><code>POST /app/recommendation/generate</code></td>
+          </tr>
+          <tr>
+            <td>推荐结果页</td>
+            <td>冲刺、稳中偏冲、稳妥候选、保底候选、数据不足分组；顶部黄条风险提示</td>
+            <td><code>GET /app/recommendation/result/{id}</code></td>
+          </tr>
+          <tr>
+            <td>院校详情页</td>
+            <td>基本信息、近三年复试线/拟录取均分趋势、分数差距、风险提示、数据来源</td>
+            <td><code>GET /app/programs/{programId}/detail</code></td>
+          </tr>
+          <tr>
+            <td>对比与备选页</td>
+            <td>完整考试组合、与复试线差距、与拟录取均分差距、适配等级、数据完整度、收藏分组</td>
+            <td><code>GET /app/programs/compare</code><br><code>GET /app/favorites</code><br><code>PATCH /app/favorites/{programId}</code></td>
+          </tr>
+          <tr>
+            <td>登录/我的</td>
+            <td>App 用户身份、个人画像、历史推荐、收藏</td>
+            <td><code>/app/auth/*</code><br><code>/app/profile</code><br><code>/app/recommendation/history</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="common">通用约定</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>认证方式</h3>
+          <p>App 端使用独立用户体系。登录后前端保存 token，请求头携带：</p>
+          <pre><code>Authorization: Bearer {token}</code></pre>
+          <p>未登录访问需要用户态数据的接口时返回 <code>code != 200</code>，<code>msg = "未登录"</code>。</p>
+        </div>
+        <div class="card">
+          <h3>响应格式</h3>
+          <p>沿用 RuoYi 的 <code>AjaxResult</code>，前端判断业务成功应看 <code>code</code>，不能只看 HTTP 200。</p>
+          <pre><code>{
+  "code": 200,
+  "msg": "操作成功",
+  "data": {}
+}</code></pre>
+        </div>
+      </div>
+      <h3>固定枚举</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>枚举值</th>
+            <th>展示文案</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>examCombo</code></td>
+            <td><code>11408</code> / <code>22408</code></td>
+            <td>11408：政治 + 英语一 + 数学一 + 408<br>22408：政治 + 英语二 + 数学二 + 408</td>
+          </tr>
+          <tr>
+            <td><code>studyMode</code></td>
+            <td><code>any</code> / <code>full_time</code> / <code>part_time</code></td>
+            <td>不限 / 全日制 / 非全日制</td>
+          </tr>
+          <tr>
+            <td><code>riskPreference</code></td>
+            <td><code>conservative</code> / <code>balanced</code> / <code>aggressive</code></td>
+            <td>稳妥优先 / 平衡兼顾 / 冲刺优先</td>
+          </tr>
+          <tr>
+            <td><code>fitLevel</code></td>
+            <td><code>sprint</code> / <code>balanced_sprint</code> / <code>steady</code> / <code>safe</code> / <code>insufficient_data</code></td>
+            <td>冲刺 / 稳中偏冲 / 稳妥候选 / 保底候选 / 数据不足</td>
+          </tr>
+          <tr>
+            <td><code>dataCompleteness</code></td>
+            <td><code>A</code> / <code>B</code> / <code>C</code></td>
+            <td>N诺数据完整度 A/B/C，不等同于官方可信度</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="existing">已有接口</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>状态</th>
+            <th>方法</th>
+            <th>路径</th>
+            <th>用途</th>
+            <th>原型使用建议</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="ok">已有</td>
+            <td><span class="tag post">POST</span></td>
+            <td><code>/app/auth/register</code></td>
+            <td>App 用户注册</td>
+            <td>登录/注册弹窗使用</td>
+          </tr>
+          <tr>
+            <td class="ok">已有</td>
+            <td><span class="tag post">POST</span></td>
+            <td><code>/app/auth/login</code></td>
+            <td>返回 <code>token</code> 和 <code>userId</code></td>
+            <td>登录成功后进入推荐/收藏能力</td>
+          </tr>
+          <tr>
+            <td class="ok">已有</td>
+            <td><span class="tag get">GET</span></td>
+            <td><code>/app/auth/me</code></td>
+            <td>当前用户与画像</td>
+            <td>页面刷新后恢复登录态</td>
+          </tr>
+          <tr>
+            <td class="ok">已有</td>
+            <td><span class="tag get">GET</span> / <span class="tag post">POST</span></td>
+            <td><code>/app/profile</code></td>
+            <td>读取/保存用户画像</td>
+            <td>保存预计分数、地区、风险偏好等表单值</td>
+          </tr>
+          <tr>
+            <td class="ok">已有</td>
+            <td><span class="tag get">GET</span></td>
+            <td><code>/app/recommendation/history</code></td>
+            <td>推荐历史列表</td>
+            <td>“我的-推荐历史”使用</td>
+          </tr>
+          <tr>
+            <td class="ok">已有</td>
+            <td><span class="tag get">GET</span></td>
+            <td><code>/app/recommendation/history/{id}</code></td>
+            <td>历史推荐快照详情</td>
+            <td>历史详情页复用</td>
+          </tr>
+          <tr>
+            <td class="ok">已有</td>
+            <td><span class="tag get">GET</span> / <span class="tag post">POST</span> / <span class="tag delete">DELETE</span></td>
+            <td><code>/app/favorites</code>、<code>/app/favorites/{programId}</code></td>
+            <td>收藏列表、加入收藏、取消收藏</td>
+            <td>原型备选清单可先用，分组能力需扩展</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="new">MVP 新增接口总览</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>优先级</th>
+            <th>方法</th>
+            <th>路径</th>
+            <th>解决页面问题</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>P0</td>
+            <td><span class="tag get">GET</span></td>
+            <td><code>/app/recommendation/options</code></td>
+            <td>首页筛选项、使用须知、N诺完整度定义</td>
+          </tr>
+          <tr>
+            <td>P0</td>
+            <td><span class="tag post">POST</span></td>
+            <td><code>/app/recommendation/generate</code></td>
+            <td>提交“预计初试总分”等条件，生成推荐结果</td>
+          </tr>
+          <tr>
+            <td>P0</td>
+            <td><span class="tag get">GET</span></td>
+            <td><code>/app/recommendation/result/{id}</code></td>
+            <td>刷新/分享/历史进入时读取推荐结果</td>
+          </tr>
+          <tr>
+            <td>P0</td>
+            <td><span class="tag get">GET</span></td>
+            <td><code>/app/programs/{programId}/detail</code></td>
+            <td>院校专业详情页</td>
+          </tr>
+          <tr>
+            <td>P0</td>
+            <td><span class="tag get">GET</span></td>
+            <td><code>/app/programs/compare</code></td>
+            <td>对比表，完整展示考试组合与分数差距</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td><span class="tag patch">PATCH</span></td>
+            <td><code>/app/favorites/{programId}</code></td>
+            <td>修改收藏分组、备注、排序</td>
+          </tr>
+          <tr>
+            <td>P1</td>
+            <td><span class="tag post">POST</span></td>
+            <td><code>/app/recommendation/export</code></td>
+            <td>导出推荐/对比清单</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="home">首页推荐接口</h2>
+      <h3>GET /app/recommendation/options</h3>
+      <p>首页进入时获取筛选项、默认说明文案和数据完整度定义。该接口可匿名访问，登录用户可额外返回个人画像默认值。</p>
+      <pre><code>{
+  "code": 200,
+  "data": {
+    "defaultProfile": {
+      "estimatedScore": 300,
+      "examCombo": "22408",
+      "targetRegions": ["福建"],
+      "studyMode": "any",
+      "riskPreference": "balanced"
+    },
+    "examCombos": [
+      {
+        "code": "11408",
+        "label": "11408",
+        "subjectsLabel": "政治 + 英语一 + 数学一 + 408",
+        "subjectCodes": ["101", "201", "301", "408"]
+      },
+      {
+        "code": "22408",
+        "label": "22408",
+        "subjectsLabel": "政治 + 英语二 + 数学二 + 408",
+        "subjectCodes": ["101", "204", "302", "408"]
+      }
+    ],
+    "regions": ["北京", "上海", "福建", "广东", "浙江"],
+    "studyModes": [
+      { "value": "any", "label": "不限" },
+      { "value": "full_time", "label": "全日制" },
+      { "value": "part_time", "label": "非全日制" }
+    ],
+    "dataCompletenessDefs": [
+      { "level": "A", "label": "数据完整度 A", "description": "含复试线、拟录取区间、人数等字段" },
+      { "level": "B", "label": "数据完整度 B", "description": "含主要分数字段，部分字段缺失" },
+      { "level": "C", "label": "数据完整度 C", "description": "仅有复试线或基础字段" }
+    ],
+    "globalWarnings": [
+      "复试线不是最低录取分。",
+      "推荐学校不代表只有这些学校可以报。",
+      "N诺数据可能遗漏、过时或错误，最终以院校官方公告为准。"
+    ]
+  }
+}</code></pre>
+
+      <h3>POST /app/recommendation/generate</h3>
+      <p>提交快速推荐表单。字段名称直接服务当前原型，重点把“目标分数”改为明确的 <code>estimatedScore</code>（预计初试总分）。</p>
+      <pre><code>{
+  "estimatedScore": 300,
+  "examCombo": "22408",
+  "targetRegions": ["福建", "广东"],
+  "studyMode": "any",
+  "majorDirections": ["081200", "085404"],
+  "riskPreference": "balanced",
+  "includeUnverified": false,
+  "includeIncompleteData": true,
+  "pageSizePerGroup": 12
+}</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>必填</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>estimatedScore</code></td>
+            <td>是</td>
+            <td>预计初试总分，408 默认按 500 分制校验，建议范围 150-500。</td>
+          </tr>
+          <tr>
+            <td><code>examCombo</code></td>
+            <td>是</td>
+            <td><code>11408</code> 或 <code>22408</code>，后端必须基于科目组合过滤，不只看“408”。</td>
+          </tr>
+          <tr>
+            <td><code>targetRegions</code></td>
+            <td>否</td>
+            <td>省份/地区数组，空数组表示不限。</td>
+          </tr>
+          <tr>
+            <td><code>riskPreference</code></td>
+            <td>是</td>
+            <td>决定冲刺/稳妥分组数量和排序权重，不改变数据事实。</td>
+          </tr>
+          <tr>
+            <td><code>includeIncompleteData</code></td>
+            <td>否</td>
+            <td>是否展示数据不足分组。默认 true，但不能混进主推荐分组。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="result">推荐结果数据</h2>
+      <h3>POST /app/recommendation/generate 响应 / GET /app/recommendation/result/{id}</h3>
+      <p>生成接口和结果读取接口建议返回同一份结构，便于刷新、历史详情和分享页复用。</p>
+      <pre><code>{
+  "code": 200,
+  "data": {
+    "recommendationId": 183,
+    "ruleVersion": "mvp-2026-05-23",
+    "dataVersion": "nnuo-2025",
+    "request": {
+      "estimatedScore": 300,
+      "examCombo": "22408",
+      "examSubjectsLabel": "政治 + 英语二 + 数学二 + 408",
+      "targetRegions": ["福建"],
+      "riskPreference": "balanced"
+    },
+    "summary": {
+      "totalCandidates": 24,
+      "mainRecommendationCount": 15,
+      "insufficientDataCount": 9
+    },
+    "globalWarnings": [
+      "复试线不是最低录取分。",
+      "推荐学校不代表只有这些学校可以报。",
+      "N诺数据可能遗漏、过时或错误，最终以院校官方公告为准。"
+    ],
+    "groups": [
+      {
+        "groupKey": "sprint",
+        "groupName": "冲刺",
+        "description": "录取概率较低，但仍有机会",
+        "items": []
+      },
+      {
+        "groupKey": "balanced_sprint",
+        "groupName": "稳中偏冲",
+        "description": "有一定机会，需合理评估",
+        "items": []
+      },
+      {
+        "groupKey": "steady",
+        "groupName": "稳妥候选",
+        "description": "录取概率较高，适合作为主力候选",
+        "items": []
+      },
+      {
+        "groupKey": "safe",
+        "groupName": "保底候选",
+        "description": "风险相对较低，但仍需看官方招生变化",
+        "items": []
+      },
+      {
+        "groupKey": "insufficient_data",
+        "groupName": "数据不足",
+        "description": "字段不完整，仅作补充线索，不进入主推荐池",
+        "items": []
+      }
+    ]
+  }
+}</code></pre>
+
+      <h3>推荐卡片字段</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>示例</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>programId</code> / <code>schoolId</code></td>
+            <td>1024 / 88</td>
+            <td>进入详情、收藏、对比。</td>
+          </tr>
+          <tr>
+            <td><code>schoolName</code> / <code>collegeName</code> / <code>programName</code></td>
+            <td>厦门大学 / 信息学院 / 计算机科学与技术</td>
+            <td>卡片主标题和副标题。</td>
+          </tr>
+          <tr>
+            <td><code>examCombo</code> / <code>examSubjectsLabel</code></td>
+            <td>22408 / 政治 + 英语二 + 数学二 + 408</td>
+            <td>避免对比表只显示“408计算机学科专业基础”。</td>
+          </tr>
+          <tr>
+            <td><code>scoreLine</code> / <code>scoreLineGap</code></td>
+            <td>320 / -20</td>
+            <td>你的分数与复试线差距。</td>
+          </tr>
+          <tr>
+            <td><code>avgAdmittedScore</code> / <code>avgScoreGap</code></td>
+            <td>342 / -42</td>
+            <td>你的分数与拟录取均分差距。</td>
+          </tr>
+          <tr>
+            <td><code>admissionRangeLabel</code></td>
+            <td>315-336</td>
+            <td>拟录取区间展示。</td>
+          </tr>
+          <tr>
+            <td><code>fitLevel</code> / <code>fitLevelLabel</code></td>
+            <td>balanced_sprint / 稳中偏冲</td>
+            <td>替代星星作为主要适配度表达。</td>
+          </tr>
+          <tr>
+            <td><code>dataCompleteness</code> / <code>dataCompletenessText</code></td>
+            <td>B / 含主要分数字段，部分字段缺失</td>
+            <td>表达 N诺数据完整度，不包装成官方可信度。</td>
+          </tr>
+          <tr>
+            <td><code>warnings</code></td>
+            <td>["复试线不代表最低录取分", "统考名额较少"]</td>
+            <td>卡片风险标签与详情页风险提示。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="compare">对比与备选</h2>
+      <h3>GET /app/programs/compare</h3>
+      <p>对比接口必须围绕“同一用户分数下的可解释差异”设计，新增两行：与复试线差距、与拟录取均分差距。</p>
+      <pre><code>GET /app/programs/compare?programIds=101,102,103,104&amp;estimatedScore=300</code></pre>
+      <pre><code>{
+  "code": 200,
+  "data": {
+    "estimatedScore": 300,
+    "globalWarnings": [
+      "复试线不是最低录取分。",
+      "推荐学校不代表只有这些学校可以报。",
+      "N诺数据可能遗漏、过时或错误，最终以院校官方公告为准。"
+    ],
+    "items": [
+      {
+        "programId": 101,
+        "schoolName": "复旦大学",
+        "programName": "计算机科学与技术",
+        "examCombo": "11408",
+        "examSubjectsLabel": "政治 + 英语一 + 数学一 + 408",
+        "scoreLine": 355,
+        "scoreLineGap": -55,
+        "avgAdmittedScore": 382,
+        "avgScoreGap": -82,
+        "admissionRangeLabel": "355-405",
+        "planCount": 120,
+        "dataCompleteness": "A",
+        "fitLevelLabel": "冲刺"
+      }
+    ],
+    "rows": [
+      { "key": "schoolName", "label": "学校" },
+      { "key": "programName", "label": "专业" },
+      { "key": "examSubjectsLabel", "label": "考试组合" },
+      { "key": "scoreLine", "label": "复试线" },
+      { "key": "scoreLineGap", "label": "与复试线差距" },
+      { "key": "avgScoreGap", "label": "与拟录取均分差距" },
+      { "key": "admissionRangeLabel", "label": "拟录取区间（总分）" },
+      { "key": "planCount", "label": "招生人数（含推免）" },
+      { "key": "dataCompleteness", "label": "N诺数据完整度" },
+      { "key": "fitLevelLabel", "label": "适配等级" }
+    ]
+  }
+}</code></pre>
+
+      <h3>收藏与备选分组扩展</h3>
+      <p>现有收藏接口只有增删查。原型里的“冲刺清单 / 稳妥清单 / 保底候选”需要给收藏加分组、备注、排序。</p>
+      <pre><code>PATCH /app/favorites/{programId}
+
+{
+  "groupType": "balanced_sprint",
+  "note": "专业实力强，但分数差距偏大",
+  "sortOrder": 20
+}</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>建议落库</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>group_type</code></td>
+            <td><code>user_favorite_program.group_type</code></td>
+            <td>收藏分组：冲刺、稳中偏冲、稳妥、保底、自定义。</td>
+          </tr>
+          <tr>
+            <td><code>note</code></td>
+            <td>已有字段可复用</td>
+            <td>用户自己的备注。</td>
+          </tr>
+          <tr>
+            <td><code>sort_order</code></td>
+            <td><code>user_favorite_program.sort_order</code></td>
+            <td>拖拽排序使用。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="detail">院校详情</h2>
+      <h3>GET /app/programs/{programId}/detail</h3>
+      <pre><code>GET /app/programs/101/detail?estimatedScore=300</code></pre>
+      <pre><code>{
+  "code": 200,
+  "data": {
+    "basic": {
+      "programId": 101,
+      "schoolName": "广州大学",
+      "schoolCode": "11078",
+      "collegeName": "计算机科学与网络工程学院",
+      "programCode": "081200",
+      "programName": "计算机科学与技术",
+      "studyMode": "full_time",
+      "studyModeLabel": "全日制",
+      "durationYears": 3,
+      "researchDirection": "不区分研究方向",
+      "examCombo": "11408",
+      "examSubjectsLabel": "政治 + 英语一 + 数学一 + 408"
+    },
+    "recommendationOverview": {
+      "estimatedScore": 300,
+      "fitLevel": "balanced_sprint",
+      "fitLevelLabel": "稳中偏冲",
+      "scoreLine": 260,
+      "scoreLineGap": 40,
+      "admissionRangeLabel": "262-364",
+      "avgAdmittedScore": 303,
+      "avgScoreGap": -3
+    },
+    "trends": [
+      { "year": 2022, "scoreLine": 250, "avgAdmittedScore": 292, "admissionLow": 253, "admissionHigh": 352, "admittedCount": 50 },
+      { "year": 2023, "scoreLine": 255, "avgAdmittedScore": 298, "admissionLow": 258, "admissionHigh": 358, "admittedCount": 52 },
+      { "year": 2024, "scoreLine": 260, "avgAdmittedScore": 303, "admissionLow": 262, "admissionHigh": 364, "admittedCount": 48 }
+    ],
+    "riskWarnings": [
+      "复试线只代表进入复试门槛，不代表最低录取分。",
+      "拟录取受招生计划、报考人数、试题难度、复试表现等因素影响。",
+      "N诺数据可能遗漏、过时或错误，请以院校官方公告为准。"
+    ],
+    "source": {
+      "sourceName": "N诺",
+      "sourceType": "third_party",
+      "dataYear": 2024,
+      "updatedAt": "2026-05-18",
+      "officialVerified": false
+    },
+    "dataCompleteness": {
+      "level": "A",
+      "label": "N诺数据完整度 A",
+      "description": "含复试线、拟录取区间、人数等字段"
+    }
+  }
+}</code></pre>
+
+      <h2 id="data">关键数据模型</h2>
+      <div class="section-note">
+        推荐接口不建议直接把后台管理表原样暴露给前端。建议由 Service 聚合 <code>school</code>、<code>college</code>、<code>program</code>、<code>program_subject</code>、<code>admission_score</code>、<code>admission_plan</code>、<code>admission_result</code>、<code>program_year_data_quality</code>，输出面向页面的 DTO。
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>数据</th>
+            <th>来源表/字段</th>
+            <th>接口输出字段</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>学校与专业基础信息</td>
+            <td><code>school</code>、<code>college</code>、<code>program</code></td>
+            <td><code>schoolName</code>、<code>province</code>、<code>collegeName</code>、<code>programCode</code>、<code>programName</code></td>
+          </tr>
+          <tr>
+            <td>考试组合</td>
+            <td><code>program_subject</code> + <code>subject</code></td>
+            <td><code>examCombo</code>、<code>subjectCodes</code>、<code>examSubjectsLabel</code></td>
+          </tr>
+          <tr>
+            <td>复试线</td>
+            <td><code>admission_score.score_line</code></td>
+            <td><code>scoreLine</code>、<code>scoreLineGap = estimatedScore - scoreLine</code></td>
+          </tr>
+          <tr>
+            <td>拟录取统计</td>
+            <td><code>admission_result</code></td>
+            <td><code>admissionLow</code>、<code>admissionHigh</code>、<code>avgAdmittedScore</code>、<code>avgScoreGap</code></td>
+          </tr>
+          <tr>
+            <td>招生计划</td>
+            <td><code>admission_plan</code></td>
+            <td><code>planCount</code>、<code>unifiedExamQuota</code>、<code>retestCount</code>、<code>admittedCount</code>、<code>retestAdmissionRatio</code></td>
+          </tr>
+          <tr>
+            <td>N诺数据完整度</td>
+            <td><code>program_year_data_quality</code></td>
+            <td><code>dataCompleteness</code>、<code>dataCompletenessText</code></td>
+          </tr>
+          <tr>
+            <td>推荐快照</td>
+            <td><code>recommendation_log</code></td>
+            <td><code>request</code>、<code>result</code>、<code>ruleVersion</code>、<code>dataVersion</code></td>
+          </tr>
+          <tr>
+            <td>用户收藏</td>
+            <td><code>user_favorite_program</code></td>
+            <td><code>favoriteId</code>、<code>groupType</code>、<code>note</code>、<code>sortOrder</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>数据完整度定义</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>等级</th>
+            <th>定义</th>
+            <th>推荐策略</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="pill green">A</span></td>
+            <td>含复试线、拟录取区间、人数等字段。</td>
+            <td>可进入主推荐池。</td>
+          </tr>
+          <tr>
+            <td><span class="pill blue">B</span></td>
+            <td>含主要分数字段，部分字段缺失。</td>
+            <td>可进入主推荐池，但必须展示缺失说明。</td>
+          </tr>
+          <tr>
+            <td><span class="pill orange">C</span></td>
+            <td>仅有复试线或基础字段。</td>
+            <td>默认进入“数据不足”分组，不进入主推荐池。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="priority">开发优先级</h2>
+      <div class="grid three">
+        <div class="card">
+          <h3>P0：先让原型跑通</h3>
+          <ul>
+            <li><code>GET /app/recommendation/options</code></li>
+            <li><code>POST /app/recommendation/generate</code></li>
+            <li><code>GET /app/recommendation/result/{id}</code></li>
+            <li><code>GET /app/programs/{programId}/detail</code></li>
+            <li><code>GET /app/programs/compare</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>P1：备选清单可用</h3>
+          <ul>
+            <li>收藏分组：冲刺/稳妥/保底。</li>
+            <li>收藏备注与排序。</li>
+            <li>结果导出为清单。</li>
+            <li>历史推荐可重新载入。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>P2：体验增强</h3>
+          <ul>
+            <li>院校/专业搜索建议。</li>
+            <li>多年度趋势筛选。</li>
+            <li>官方来源补录后覆盖 N诺字段。</li>
+            <li>对比列拖拽排序与持久化。</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>验收清单</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>检查项</th>
+            <th>通过标准</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>考试组合</td>
+            <td>所有卡片、详情、对比都显示完整组合：11408/22408 + 科目中文。</td>
+          </tr>
+          <tr>
+            <td>适配等级</td>
+            <td>主要表达使用“冲刺、稳中偏冲、稳妥候选、保底候选”，不以星星作为主判断。</td>
+          </tr>
+          <tr>
+            <td>分数差距</td>
+            <td>对比表与详情页都展示与复试线差距、与拟录取均分差距。</td>
+          </tr>
+          <tr>
+            <td>风险提示</td>
+            <td>首页使用须知、推荐结果顶部黄条、详情页风险提示三处都出现固定风险文案。</td>
+          </tr>
+          <tr>
+            <td>数据来源</td>
+            <td>文案统一为“N诺数据完整度”，不写“官方可信度 A”。</td>
+          </tr>
+          <tr>
+            <td>业务成功判断</td>
+            <td>前端统一判断 <code>code === 200</code>，失败时展示 <code>msg</code>。</td>
+          </tr>
+        </tbody>
+      </table>
+    </main>
+  </div>
+</body>
+</html>

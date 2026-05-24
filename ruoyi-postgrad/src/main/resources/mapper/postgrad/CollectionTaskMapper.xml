@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.CollectionTaskMapper">
+
+    <resultMap type="CollectionTask" id="CollectionTaskResult">
+        <id property="id" column="id"/><result property="programId" column="program_id"/><result property="taskType" column="task_type"/><result property="targetYear" column="target_year"/><result property="priority" column="priority"/><result property="status" column="status"/><result property="sourceHintUrl" column="source_hint_url"/><result property="failureReason" column="failure_reason"/><result property="createdBy" column="created_by"/><result property="assignedTo" column="assigned_to"/><result property="startedAt" column="started_at"/><result property="finishedAt" column="finished_at"/>
+    </resultMap>
+
+    <sql id="selectCollectionTaskVo">
+        select id, program_id, task_type, target_year, priority, status, source_hint_url, failure_reason, created_by, assigned_to, started_at, finished_at, created_at from data_collection_task
+    </sql>
+
+    <select id="selectCollectionTaskList" parameterType="CollectionTask" resultMap="CollectionTaskResult">
+        <include refid="selectCollectionTaskVo"/>
+        <where>
+            <if test="programId != null"> and program_id = #{programId}</if>
+            <if test="targetYear != null"> and target_year = #{targetYear}</if>
+            <if test="taskType != null"> and task_type = #{taskType}</if>
+            <if test="status != null"> and status = #{status}</if>
+        </where>
+        order by priority desc, id
+    </select>
+
+    <select id="selectCollectionTaskById" parameterType="Long" resultMap="CollectionTaskResult">
+        <include refid="selectCollectionTaskVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertCollectionTask" parameterType="CollectionTask" useGeneratedKeys="true" keyProperty="id">
+        insert into data_collection_task (program_id, task_type, target_year, priority, status, source_hint_url, failure_reason, created_by, assigned_to, started_at, finished_at)
+        values (#{programId}, #{taskType}, #{targetYear}, #{priority}, #{status}, #{sourceHintUrl}, #{failureReason}, #{createdBy}, #{assignedTo}, #{startedAt}, #{finishedAt})
+    </insert>
+
+    <update id="updateCollectionTask" parameterType="CollectionTask">
+        update collection_task
+        <set>
+            <if test="programId != null"> program_id = #{programId},</if>
+            <if test="taskType != null"> task_type = #{taskType},</if>
+            <if test="targetYear != null"> target_year = #{targetYear},</if>
+            <if test="priority != null"> priority = #{priority},</if>
+            <if test="status != null"> status = #{status},</if>
+            <if test="sourceHintUrl != null"> source_hint_url = #{sourceHintUrl},</if>
+            <if test="failureReason != null"> failure_reason = #{failureReason},</if>
+            <if test="createdBy != null"> created_by = #{createdBy},</if>
+            <if test="assignedTo != null"> assigned_to = #{assignedTo},</if>
+            <if test="startedAt != null"> started_at = #{startedAt},</if>
+            <if test="finishedAt != null"> finished_at = #{finishedAt},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteCollectionTaskById" parameterType="Long">
+        delete from data_collection_task where id = #{id}
+    </delete>
+
+    <delete id="deleteCollectionTaskByIds" parameterType="Long">
+        delete from data_collection_task where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

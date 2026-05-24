@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.CollegeMapper">
+
+    <resultMap type="College" id="CollegeResult">
+        <id property="id" column="id"/><result property="schoolId" column="school_id"/><result property="name" column="name"/>
+    </resultMap>
+
+    <sql id="selectCollegeVo">
+        select id, school_id, name, website, graduate_url, created_at from college
+    </sql>
+
+    <select id="selectCollegeList" parameterType="College" resultMap="CollegeResult">
+        <include refid="selectCollegeVo"/>
+        <where>
+            <if test="schoolId != null"> and school_id = #{schoolId}</if>
+            <if test="name != null and name != ''"> and name like concat('%', #{name}, '%')</if>
+        </where>
+        order by id
+    </select>
+
+    <select id="selectCollegeById" parameterType="Long" resultMap="CollegeResult">
+        <include refid="selectCollegeVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertCollege" parameterType="College" useGeneratedKeys="true" keyProperty="id">
+        insert into college (school_id, name, website, graduate_url)
+        values (#{schoolId}, #{name}, #{website}, #{graduateUrl})
+    </insert>
+
+    <update id="updateCollege" parameterType="College">
+        update college
+        <set>
+            <if test="schoolId != null"> school_id = #{schoolId},</if>
+            <if test="name != null"> name = #{name},</if>
+            <if test="website != null"> website = #{website},</if>
+            <if test="graduateUrl != null"> graduate_url = #{graduateUrl},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteCollegeById" parameterType="Long">
+        delete from college where id = #{id}
+    </delete>
+
+    <delete id="deleteCollegeByIds" parameterType="Long">
+        delete from college where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.DataSourceMapper">
+
+    <resultMap type="DataSource" id="DataSourceResult">
+        <id property="id" column="id"/><result property="sourceType" column="source_type"/><result property="url" column="url"/><result property="title" column="title"/><result property="sourceOwner" column="source_owner"/>
+    </resultMap>
+
+    <sql id="selectDataSourceVo">
+        select id, source_type, url, title, source_owner, publish_date, local_file_path, file_hash, page_hash, fetched_at, robots_checked, robots_allowed, terms_checked, commercial_use_risk, copyright_risk, created_at from data_source
+    </sql>
+
+    <select id="selectDataSourceList" parameterType="DataSource" resultMap="DataSourceResult">
+        <include refid="selectDataSourceVo"/>
+        <where>
+            <if test="sourceType != null"> and source_type = #{sourceType}</if>
+            <if test="title != null and title != ''"> and title like concat('%', #{title}, '%')</if>
+            <if test="sourceOwner != null"> and source_owner = #{sourceOwner}</if>
+        </where>
+        order by id desc
+    </select>
+
+    <select id="selectDataSourceById" parameterType="Long" resultMap="DataSourceResult">
+        <include refid="selectDataSourceVo"/> where id = #{id}
+    </select>
+
+    <insert id="insertDataSource" parameterType="DataSource" useGeneratedKeys="true" keyProperty="id">
+        insert into data_source (source_type, url, title, source_owner, publish_date, local_file_path, file_hash, page_hash, fetched_at, robots_checked, robots_allowed, terms_checked, commercial_use_risk, copyright_risk)
+        values (#{sourceType}, #{url}, #{title}, #{sourceOwner}, #{publishDate}, #{localFilePath}, #{fileHash}, #{pageHash}, #{fetchedAt}, #{robotsChecked}, #{robotsAllowed}, #{termsChecked}, #{commercialUseRisk}, #{copyrightRisk})
+    </insert>
+
+    <update id="updateDataSource" parameterType="DataSource">
+        update data_source
+        <set>
+            <if test="sourceType != null"> source_type = #{sourceType},</if>
+            <if test="url != null"> url = #{url},</if>
+            <if test="title != null"> title = #{title},</if>
+            <if test="sourceOwner != null"> source_owner = #{sourceOwner},</if>
+            <if test="publishDate != null"> publish_date = #{publishDate},</if>
+            <if test="localFilePath != null"> local_file_path = #{localFilePath},</if>
+            <if test="fileHash != null"> file_hash = #{fileHash},</if>
+            <if test="pageHash != null"> page_hash = #{pageHash},</if>
+            <if test="fetchedAt != null"> fetched_at = #{fetchedAt},</if>
+            <if test="robotsChecked != null"> robots_checked = #{robotsChecked},</if>
+            <if test="robotsAllowed != null"> robots_allowed = #{robotsAllowed},</if>
+            <if test="termsChecked != null"> terms_checked = #{termsChecked},</if>
+            <if test="commercialUseRisk != null"> commercial_use_risk = #{commercialUseRisk},</if>
+            <if test="copyrightRisk != null"> copyright_risk = #{copyrightRisk},</if>
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteDataSourceById" parameterType="Long">
+        delete from data_source where id = #{id}
+    </delete>
+
+    <delete id="deleteDataSourceByIds" parameterType="Long">
+        delete from data_source where id in
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

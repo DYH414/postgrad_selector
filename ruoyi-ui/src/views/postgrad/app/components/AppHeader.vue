@@ -1,34 +1,195 @@
 <template>
-  <div class="app-header">
-    <span class="app-logo" @click="$router.push('/app/recommend')">考研择校</span>
-    <div>
-      <router-link to="/app/profile" class="nav-link" :class="{ active: currentPage === 'profile' }">考研画像</router-link>
-      <router-link to="/app/recommend" class="nav-link" :class="{ active: currentPage === 'recommend' }">智能推荐</router-link>
-      <router-link to="/app/favorites" class="nav-link" :class="{ active: currentPage === 'favorites' }">我的收藏</router-link>
-      <router-link to="/app/history" class="nav-link" :class="{ active: currentPage === 'history' }">推荐历史</router-link>
-      <span class="nav-link logout" @click="handleLogout">退出</span>
+  <header class="app-header">
+    <div class="brand" @click="$router.push('/app/recommend')">
+      <span class="brand-mark">
+        <i class="el-icon-s-platform"></i>
+      </span>
+      <span>
+        <strong>408 考研推荐平台</strong>
+        <em>智能择校 · 精准推荐</em>
+      </span>
     </div>
-  </div>
+
+    <nav class="nav">
+      <router-link to="/app/recommend" class="nav-link" :class="{ active: currentPage === 'recommend' }">首页</router-link>
+      <router-link to="/app/results" class="nav-link" :class="{ active: currentPage === 'results' }">推荐</router-link>
+      <router-link to="/app/results?tab=compare" class="nav-link" :class="{ active: currentPage === 'compare' }">对比与备选</router-link>
+      <router-link to="/app/favorites" class="nav-link" :class="{ active: currentPage === 'favorites' }">我的</router-link>
+    </nav>
+
+    <div class="header-actions">
+      <div class="search-box">
+        <i class="el-icon-search"></i>
+        <span>搜索院校 / 专业 / 关键词</span>
+      </div>
+      <el-badge :value="12" class="notice-badge">
+        <el-button icon="el-icon-bell" circle size="mini"></el-button>
+      </el-badge>
+      <div class="user-chip">
+        <span class="avatar">408</span>
+        <span>408</span>
+        <i class="el-icon-arrow-down"></i>
+      </div>
+    </div>
+  </header>
 </template>
 
 <script>
-import { mapActions } from 'vuex'
 export default {
   name: 'AppHeader',
-  props: { currentPage: { type: String, default: '' } },
-  methods: {
-    ...mapActions('appUser', ['Logout']),
-    handleLogout() {
-      this.Logout().then(() => { this.$router.push('/app/login') })
-    }
-  }
+  props: { currentPage: { type: String, default: '' } }
 }
 </script>
 
 <style scoped>
-.app-header { display: flex; justify-content: space-between; align-items: center; padding: 0 24px; height: 56px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-.app-logo { font-size: 18px; font-weight: 700; color: #1890ff; cursor: pointer; }
-.nav-link { margin-left: 20px; color: #606266; text-decoration: none; font-size: 14px; }
-.nav-link:hover, .nav-link.active { color: #1890ff; }
-.nav-link.logout { cursor: pointer; }
+.app-header {
+  height: 58px;
+  padding: 0 24px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #e7edf8;
+  box-shadow: 0 8px 24px rgba(36, 78, 156, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+  cursor: pointer;
+  color: #111827;
+}
+
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #2f7bff, #1554e8);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.24);
+}
+
+.brand strong {
+  display: block;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.brand em {
+  display: block;
+  font-style: normal;
+  margin-top: 2px;
+  color: #7a8aa4;
+  font-size: 12px;
+}
+
+.nav {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  flex: 1;
+}
+
+.nav-link {
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  color: #111827;
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  color: #1769f6;
+  border-bottom-color: #1769f6;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.search-box {
+  width: 280px;
+  height: 34px;
+  border: 1px solid #dce4f2;
+  border-radius: 8px;
+  background: #fbfcff;
+  color: #9aa7bc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.notice-badge /deep/ .el-badge__content {
+  border: 0;
+  top: 5px;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #1f2937;
+  white-space: nowrap;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #eef2f7, #d6dbe4);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+@media (max-width: 960px) {
+  .app-header {
+    height: auto;
+    min-height: 68px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+  }
+
+  .brand {
+    min-width: auto;
+  }
+
+  .nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    gap: 22px;
+  }
+
+  .nav-link {
+    height: 42px;
+    white-space: nowrap;
+  }
+
+  .search-box {
+    display: none;
+  }
+}
 </style>
