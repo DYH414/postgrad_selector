@@ -42,7 +42,7 @@
               </div>
               <div class="score-item" :class="{ 'positive': item.scoreGap > 0, 'negative': item.scoreGap < 0 }">
                 <div class="score-val">{{ item.scoreGap > 0 ? '+' : '' }}{{ item.scoreGap }}</div>
-                <div class="score-label">分差</div>
+                <div class="score-label">最低录取分差</div>
               </div>
               <div class="score-item" v-if="item.minAdmittedScore">
                 <div class="score-val">{{ item.minAdmittedScore }}</div>
@@ -62,9 +62,9 @@
 </template>
 
 <script>
-import { historyDetail } from '@/api/postgrad/appRecommendation'
 import AppHeader from './components/AppHeader'
 import { mapActions } from 'vuex'
+import { getRecommendationHistoryDetail } from '@/api/postgrad/appRecommendation'
 
 export default {
   name: 'AppHistoryDetail',
@@ -82,13 +82,43 @@ export default {
     const id = this.$route.params.id
     if (id) {
       this.loading = true
-      historyDetail(id).then(res => {
-        this.result = res.data ? res.data.result : null
+      getRecommendationHistoryDetail(id).then(res => {
+        const payload = res.data ? res.data.result : null
+        this.result = payload && payload.groups ? this.normalizeResult(payload) : payload
       }).finally(() => { this.loading = false })
     }
   },
   methods: {
     ...mapActions('appUser', ['Logout']),
+    normalizeResult(payload) {
+      const groups = payload.groups || []
+      return {
+        totalCandidates: payload.summary ? payload.summary.totalCandidates : 0,
+        steady: this.groupItems(groups, 'steady'),
+        focus: this.groupItems(groups, 'balanced_sprint'),
+        reach: this.groupItems(groups, 'sprint'),
+        insufficient: this.groupItems(groups, 'insufficient_data')
+      }
+    },
+    groupItems(groups, key) {
+      const group = groups.find(item => item.groupKey === key)
+      return group ? (group.items || []).map(item => ({
+        schoolId: item.schoolId,
+        programId: item.programId,
+        schoolName: item.schoolName,
+        is985: item.is985,
+        is211: item.is211,
+        tier: item.schoolTier,
+        collegeName: item.collegeName,
+        programName: item.programName,
+        programCode: item.programCode,
+        effectiveScore: item.scoreLine,
+        scoreGap: item.admissionLowGap,
+        minAdmittedScore: item.admissionLow,
+        avgAdmittedScore: item.avgAdmittedScore,
+        scoreBasis: (item.examCombo || '') + ' ' + (item.examSubjectsLabel || '')
+      })) : []
+    },
     handleLogout() {
       this.Logout().then(() => { this.$router.push('/app/login') })
     }

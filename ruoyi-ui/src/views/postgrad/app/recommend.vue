@@ -39,34 +39,39 @@
 
           <div class="form-row">
             <div class="row-label"><i class="el-icon-location-outline"></i>地区</div>
-            <div class="row-control select-shell">福建、广东、浙江、上海 <i class="el-icon-arrow-down"></i></div>
+            <div class="row-control input-shell">
+              <el-select v-model="form.regions" multiple collapse-tags filterable clearable placeholder="不限地区，可选择报考地区">
+                <el-option v-for="region in regions" :key="region" :label="region" :value="region" />
+              </el-select>
+            </div>
           </div>
 
           <div class="form-row">
             <div class="row-label"><i class="el-icon-notebook-2"></i>学习方式</div>
             <div class="segmented">
-              <button :class="{ active: form.studyMode === '不限' }" @click="form.studyMode = '不限'">不限</button>
-              <button :class="{ active: form.studyMode === '全日制' }" @click="form.studyMode = '全日制'">全日制</button>
-              <button :class="{ active: form.studyMode === '非全日制' }" @click="form.studyMode = '非全日制'">非全日制</button>
+              <button :class="{ active: form.studyMode === 'any' }" @click="form.studyMode = 'any'">不限</button>
+              <button :class="{ active: form.studyMode === 'full_time' }" @click="form.studyMode = 'full_time'">全日制</button>
+              <button :class="{ active: form.studyMode === 'part_time' }" @click="form.studyMode = 'part_time'">非全日制</button>
             </div>
           </div>
 
           <div class="form-row">
             <div class="row-label"><i class="el-icon-collection-tag"></i>专业方向</div>
-            <div class="row-control select-shell">计算机科学与技术、软件工程、人工智能 <i class="el-icon-arrow-down"></i></div>
+            <div class="row-control input-shell">
+              <el-select v-model="form.majorDirections" multiple collapse-tags filterable placeholder="选择专业方向（可多选）">
+                <el-option label="计算机科学与技术（081200）" value="081200" />
+                <el-option label="软件工程（083500）" value="083500" />
+                <el-option label="电子信息-计算机方向（085404）" value="085404" />
+                <el-option label="电子信息-软件工程方向（085405）" value="085405" />
+              </el-select>
+            </div>
           </div>
 
           <div class="form-row">
             <div class="row-label"><i class="el-icon-success"></i>风险偏好</div>
-            <div class="segmented risk">
-              <button :class="{ active: form.risk === '稳妥优先' }" @click="form.risk = '稳妥优先'">
-                稳妥优先<small>录取把握更大</small>
-              </button>
-              <button :class="{ active: form.risk === '平衡兼顾' }" @click="form.risk = '平衡兼顾'">
-                平衡兼顾<small>冲稳保组合</small>
-              </button>
-              <button :class="{ active: form.risk === '冲刺优先' }" @click="form.risk = '冲刺优先'">
-                冲刺优先<small>挑战更高院校</small>
+            <div class="segmented risk single">
+              <button class="active" type="button">
+                冲稳保<small>自动生成冲刺、稳妥、保底组合</small>
               </button>
             </div>
           </div>
@@ -144,38 +149,7 @@
 
 <script>
 import AppHeader from './components/AppHeader'
-
-const mockResult = {
-  groups: [
-    {
-      name: '冲刺',
-      desc: '录取概率较低，但仍有机会',
-      schools: [
-        { schoolName: '厦门大学', badge: '985 211 双一流', collegeName: '信息学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 320, range: '315-336', confidence: 'B', tag: '冲刺', note: '近年复试线较高，300分有机会进入复试。', star: 4 },
-        { schoolName: '福州大学', badge: '211 双一流', collegeName: '计算机与大数据学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 305, range: '295-322', confidence: 'B', tag: '冲刺', note: '专业实力较强，竞争激烈，建议冲刺尝试。', star: 4 },
-        { schoolName: '华侨大学', badge: '中央部属', collegeName: '信息科学与工程学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 300, range: '290-316', confidence: 'B', tag: '冲刺', note: '复试线接近300分，存在机会，需关注复试表现。', star: 4 }
-      ]
-    },
-    {
-      name: '稳中偏冲',
-      desc: '有一定机会，需合理评估',
-      schools: [
-        { schoolName: '福建师范大学', badge: '省属重点', collegeName: '计算机与网络空间安全学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 285, range: '276-304', confidence: 'B', tag: '稳中偏冲', note: '复试线与分数匹配，近年录取较稳。', star: 4 },
-        { schoolName: '福建农林大学', badge: '省属重点', collegeName: '计算机与信息学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 280, range: '270-298', confidence: 'B', tag: '稳中偏冲', note: '拟录取区间与分数匹配，机会较大。', star: 4 },
-        { schoolName: '集美大学', badge: '省属重点', collegeName: '信息工程学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 275, range: '265-290', confidence: 'C', tag: '稳中偏冲', note: '录取相对稳定，建议作为稳中偏冲志愿。', star: 3 }
-      ]
-    },
-    {
-      name: '稳妥候选',
-      desc: '录取概率较高，适合作为保底',
-      schools: [
-        { schoolName: '福建工程学院', badge: '普通本科', collegeName: '计算机与数学学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 260, range: '250-275', confidence: 'C', tag: '稳妥候选', note: '录取门槛较低，录取机会较大。', star: 3 },
-        { schoolName: '闽江学院', badge: '普通本科', collegeName: '计算机与大数据学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 252, range: '242-268', confidence: 'C', tag: '稳妥候选', note: '近年录取较稳定，分数匹配度高。', star: 3 },
-        { schoolName: '莆田学院', badge: '普通本科', collegeName: '机电与信息工程学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 248, range: '238-262', confidence: 'C', tag: '稳妥候选', note: '录取机会较大，建议保底。', star: 3 }
-      ]
-    }
-  ]
-}
+import { generateRecommendation, getRecommendationOptions } from '@/api/postgrad/appRecommendation'
 
 export default {
   name: 'AppRecommend',
@@ -183,33 +157,59 @@ export default {
   data() {
     return {
       generating: false,
+      loadingOptions: false,
+      regions: ['福建', '广东', '浙江', '上海'],
       form: {
         score: 300,
         exam: '22408',
-        studyMode: '不限',
-        risk: '平衡兼顾'
+        regions: [],
+        studyMode: 'any',
+        majorDirections: [],
+        risk: 'balanced'
       }
     }
   },
+  created() {
+    this.loadOptions()
+  },
   methods: {
+    loadOptions() {
+      this.loadingOptions = true
+      getRecommendationOptions().then(res => {
+        const data = res.data || {}
+        this.regions = data.regions && data.regions.length ? data.regions : this.regions
+        if (data.defaultProfile) {
+          this.form.score = data.defaultProfile.estimatedScore || this.form.score
+          this.form.exam = data.defaultProfile.examCombo || this.form.exam
+          this.form.studyMode = data.defaultProfile.studyMode || this.form.studyMode
+          this.form.risk = 'balanced'
+        }
+      }).finally(() => { this.loadingOptions = false })
+    },
     startRecommend() {
+      if (!this.form.score) {
+        this.$message.warning('请输入预计初试总分')
+        return
+      }
       this.generating = true
       const payload = {
-        score: this.form.score || 300,
-        exam: this.form.exam,
+        estimatedScore: this.form.score || 300,
+        examCombo: this.form.exam,
+        targetRegions: this.form.regions,
         studyMode: this.form.studyMode,
-        risk: this.form.risk,
-        region: '福建',
-        source: 'N诺（第三方整理）',
-        generatedAt: '2026-05-23',
-        groups: mockResult.groups
+        majorDirections: this.form.majorDirections,
+        riskPreference: this.form.risk,
+        includeIncompleteData: true,
+        pageSizePerGroup: 12
       }
-      window.sessionStorage.setItem('app-recommend-result', JSON.stringify(payload))
-      window.sessionStorage.setItem('app-filter-scoreRange', '20')
-      setTimeout(() => {
-        this.generating = false
-        this.$router.push('/app/results')
-      }, 350)
+      generateRecommendation(payload).then(res => {
+        const data = res.data || {}
+        window.sessionStorage.setItem('app-recommend-result', JSON.stringify(data))
+        if (data.recommendationId) {
+          window.sessionStorage.setItem('app-recommend-id', data.recommendationId)
+        }
+        this.$router.push({ path: '/app/results', query: data.recommendationId ? { id: data.recommendationId } : {} })
+      }).finally(() => { this.generating = false })
     }
   }
 }
@@ -394,6 +394,10 @@ export default {
 
 .risk button {
   height: 38px;
+}
+
+.risk.single {
+  grid-template-columns: 1fr;
 }
 
 .primary-cta {

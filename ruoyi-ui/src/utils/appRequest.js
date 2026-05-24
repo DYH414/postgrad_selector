@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { Message } from 'element-ui'
 import { getAppToken, removeAppToken } from '@/utils/appAuth'
+import router from '@/router'
 
 const service = axios.create({
   baseURL: process.env.VUE_APP_BASE_API,
@@ -19,18 +20,30 @@ service.interceptors.request.use(config => {
 
 service.interceptors.response.use(res => {
   const code = res.data.code || 200
-  if (code === 401) {
-    removeAppToken()
-    Message({ message: '请先登录', type: 'warning' })
-    return Promise.reject('unauthorized')
+  const msg = res.data.msg || '请求失败'
+  if (code === 401 || msg === '未登录') {
+    redirectToAppLogin()
+    return Promise.reject(new Error('unauthorized'))
   } else if (code !== 200) {
-    Message({ message: res.data.msg || '请求失败', type: 'error' })
-    return Promise.reject(new Error(res.data.msg))
+    Message({ message: msg, type: 'error' })
+    return Promise.reject(new Error(msg))
   }
   return res.data
 }, error => {
   Message({ message: error.message || '网络异常', type: 'error', duration: 5000 })
   return Promise.reject(error)
 })
+
+function redirectToAppLogin() {
+  removeAppToken()
+  Message({ message: '请先登录后继续操作', type: 'warning' })
+  const current = router.currentRoute
+  if (current.path !== '/app/login') {
+    router.push({
+      path: '/app/login',
+      query: { redirect: current.fullPath }
+    })
+  }
+}
 
 export default service

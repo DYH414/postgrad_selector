@@ -25,9 +25,9 @@
 </template>
 
 <script>
-import { history } from '@/api/postgrad/appRecommendation'
 import AppHeader from './components/AppHeader'
 import { mapActions } from 'vuex'
+import { listRecommendationHistory } from '@/api/postgrad/appRecommendation'
 
 export default {
   name: 'AppHistory',
@@ -40,7 +40,7 @@ export default {
     ...mapActions('appUser', ['Logout']),
     fetchList() {
       this.loading = true
-      history().then(res => {
+      listRecommendationHistory().then(res => {
         this.logs = res.data || []
       }).finally(() => { this.loading = false })
     },

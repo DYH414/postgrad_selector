@@ -25,19 +25,47 @@
       <el-badge :value="12" class="notice-badge">
         <el-button icon="el-icon-bell" circle size="mini"></el-button>
       </el-badge>
-      <div class="user-chip">
+      <button v-if="!hasToken" class="login-entry" type="button" @click="goLogin">登录/注册</button>
+      <div v-else class="user-chip" @click="$router.push('/app/profile')">
         <span class="avatar">408</span>
-        <span>408</span>
+        <span>我的账号</span>
         <i class="el-icon-arrow-down"></i>
       </div>
+      <button v-if="hasToken" class="logout-entry" type="button" @click="logout">退出</button>
     </div>
   </header>
 </template>
 
 <script>
+import { getAppToken, removeAppToken } from '@/utils/appAuth'
+
 export default {
   name: 'AppHeader',
-  props: { currentPage: { type: String, default: '' } }
+  props: { currentPage: { type: String, default: '' } },
+  data() {
+    return { hasToken: !!getAppToken() }
+  },
+  watch: {
+    '$route.fullPath'() {
+      this.hasToken = !!getAppToken()
+    }
+  },
+  methods: {
+    goLogin() {
+      this.$router.push({
+        path: '/app/login',
+        query: { redirect: this.$route.fullPath }
+      })
+    },
+    logout() {
+      removeAppToken()
+      this.hasToken = false
+      this.$message.success('已退出登录')
+      if (!['/app/recommend', '/app/results'].includes(this.$route.path)) {
+        this.goLogin()
+      }
+    }
+  }
 }
 </script>
 
@@ -150,6 +178,7 @@ export default {
   font-size: 14px;
   color: #1f2937;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .avatar {
@@ -162,6 +191,33 @@ export default {
   align-items: center;
   justify-content: center;
   font-size: 12px;
+}
+
+.login-entry {
+  height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #2f7bff, #1554e8);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+}
+
+.logout-entry {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #dce4f2;
+  border-radius: 8px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.logout-entry:hover {
+  color: #1769f6;
+  border-color: #bfd3ff;
 }
 
 @media (max-width: 960px) {

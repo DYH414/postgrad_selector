@@ -6,16 +6,51 @@
       <aside class="filter-sidebar">
         <div class="sidebar-title">
           <strong>筛选条件</strong>
-          <button type="button">清空</button>
+          <button type="button" @click="resetFilters">清空</button>
         </div>
-        <div v-for="item in filters" :key="item.label" class="filter-group">
-          <label>{{ item.label }}</label>
-          <div class="filter-select">
-            <span>{{ item.value }}</span>
-            <i class="el-icon-arrow-down"></i>
-          </div>
+        <div class="filter-group">
+          <label>地区</label>
+          <el-select v-model="filterForm.region" clearable filterable placeholder="不限">
+            <el-option label="不限" value="" />
+            <el-option v-for="region in regionOptions" :key="region" :label="region" :value="region" />
+          </el-select>
         </div>
-        <el-button class="filter-button" type="primary">应用筛选</el-button>
+        <div class="filter-group">
+          <label>学校层次</label>
+          <el-select v-model="filterForm.tier" placeholder="全部层次">
+            <el-option label="全部层次" value="" />
+            <el-option label="985" value="985" />
+            <el-option label="211" value="211" />
+            <el-option label="双一流" value="double_first" />
+            <el-option label="普通院校" value="ordinary" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <label>考试组合</label>
+          <el-select v-model="filterForm.exam" clearable placeholder="不限">
+            <el-option label="不限" value="" />
+            <el-option label="11408" value="11408" />
+            <el-option label="22408" value="22408" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <label>是否有拟录取区间</label>
+          <el-select v-model="filterForm.hasAdmissionRange" placeholder="不限">
+            <el-option label="不限" value="" />
+            <el-option label="有拟录取区间" value="yes" />
+            <el-option label="暂无拟录取区间" value="no" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <label>N诺数据完整度</label>
+          <el-select v-model="filterForm.confidence" placeholder="全部">
+            <el-option label="全部" value="" />
+            <el-option label="完整度 A" value="A" />
+            <el-option label="完整度 B" value="B" />
+            <el-option label="完整度 C" value="C" />
+          </el-select>
+        </div>
+        <el-button class="filter-button" type="primary" @click="applyFilters">应用筛选</el-button>
         <div class="tip-box">
           <i class="el-icon-info"></i>
           <strong>小贴士</strong>
@@ -23,17 +58,19 @@
         </div>
       </aside>
 
-      <section class="result-main">
+      <section class="result-main" v-loading="loading">
         <div class="result-head">
           <div>
             <h1>{{ activeTab === 'compare' ? '对比与备选' : '推荐结果' }}</h1>
-            <span v-if="activeTab !== 'compare'">共 24 所院校</span>
+            <span v-if="activeTab !== 'compare'">共 {{ filteredTotal }} 个候选</span>
           </div>
           <div class="chips">
-            <span>分数 {{ result.score }} <i class="el-icon-close"></i></span>
-            <span>考试组合 {{ result.exam }} <i class="el-icon-close"></i></span>
-            <span>地区 {{ result.region }} <i class="el-icon-close"></i></span>
-            <span>学习方式 {{ result.studyMode }} <i class="el-icon-close"></i></span>
+            <span v-for="chip in headerChips" :key="chip.key">
+              {{ chip.label }}
+              <button v-if="chip.clearKey" type="button" @click="clearHeaderChip(chip.clearKey)">
+                <i class="el-icon-close"></i>
+              </button>
+            </span>
           </div>
           <el-button plain type="primary" icon="el-icon-download">导出结果</el-button>
         </div>
@@ -79,7 +116,7 @@
                       <span class="grade" :class="'grade-' + school.confidence.toLowerCase()">完整度 {{ school.confidence }}</span>
                       <small class="completeness-note">{{ dataCompletenessText(school.confidence) }}</small>
                     </template>
-                    <template v-else-if="row.type === 'action'"><button class="detail-link" type="button">查看详情</button></template>
+                    <template v-else-if="row.type === 'action'"><button class="detail-link" type="button" @click="openDetail(school.programId)">查看详情</button></template>
                     <template v-else>{{ school[row.key] }}</template>
                   </td>
                 </tr>
@@ -115,14 +152,15 @@
         </template>
 
         <template v-else>
-          <section v-for="group in result.groups" :key="group.name" class="school-section">
+          <section v-for="group in filteredGroups" :key="group.name" class="school-section">
             <div class="section-title">
               <strong>{{ group.name }}</strong>
               <span>（{{ group.schools.length }} 所） {{ group.desc }}</span>
               <button type="button">展开全部 <i class="el-icon-right"></i></button>
             </div>
 
-            <div class="school-grid">
+            <div v-if="group.schools.length === 0" class="empty-group">暂无该分组结果</div>
+            <div v-else class="school-grid">
               <article v-for="school in group.schools" :key="school.schoolName" class="school-card">
                 <div class="card-top">
                   <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
@@ -131,32 +169,80 @@
                     <p>{{ school.collegeName }} / {{ school.programName }}</p>
                     <span>{{ school.exam }} | {{ school.province }}</span>
                   </div>
-                  <button class="star-btn" type="button"><i class="el-icon-star-off"></i></button>
+                  <button class="star-btn" type="button" @click="handleFavorite(school)">
+                    <i class="el-icon-star-off"></i>
+                  </button>
                 </div>
 
                 <div class="score-line">
                   <div><span>复试线</span><strong>{{ school.scoreLine }}</strong></div>
+                  <div><span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong></div>
+                  <div><span>录取分差距</span><strong :class="{ positive: school.admissionLowGap >= 0, negative: school.admissionLowGap < 0 }">{{ formatDiff(school.admissionLowGap) }}</strong></div>
                   <div><span>拟录取区间</span><strong>{{ school.range }}</strong></div>
                 </div>
 
                 <div class="tags">
-                  <em class="source">N诺</em>
                   <em :class="'grade-' + school.confidence.toLowerCase()">完整度{{ school.confidence }}</em>
                   <em class="risk-tag">{{ school.tag }}</em>
                 </div>
 
-                <p class="card-note">{{ school.note }}</p>
+                <p v-if="school.note" class="card-note">{{ school.note }}</p>
+                <button class="detail-link card-detail" type="button" @click="openDetail(school.programId)">查看详情</button>
               </article>
             </div>
           </section>
         </template>
       </section>
     </main>
+
+    <el-drawer
+      title="院校专业详情"
+      :visible.sync="detailVisible"
+      size="520px"
+      append-to-body>
+      <div class="detail-drawer" v-loading="detailLoading">
+        <template v-if="detail">
+          <h2>{{ detail.basic.schoolName }}</h2>
+          <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
+          <div class="detail-tags">
+            <span>{{ detail.basic.examCombo }}：{{ detail.basic.examSubjectsLabel }}</span>
+            <span>{{ detail.basic.studyModeLabel }}</span>
+            <span>{{ detail.dataCompleteness.label }}</span>
+          </div>
+          <div class="detail-score-grid">
+            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine }}</strong></div>
+            <div><small>最低录取分</small><strong>{{ detail.recommendationOverview.admissionLow || '-' }}</strong></div>
+            <div><small>与最低录取分差距</small><strong>{{ formatDiff(detail.recommendationOverview.admissionLowGap) }}</strong></div>
+            <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
+            <div><small>与拟录取均分差距</small><strong>{{ formatDiff(detail.recommendationOverview.avgScoreGap) }}</strong></div>
+          </div>
+          <div class="drawer-warning">
+            <p v-for="warning in detail.riskWarnings" :key="warning">· {{ warning }}</p>
+          </div>
+          <table class="trend-table">
+            <thead>
+              <tr><th>年份</th><th>复试线</th><th>拟录取均分</th><th>录取区间</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in detail.trends" :key="item.year">
+                <td>{{ item.year }}</td>
+                <td>{{ item.scoreLine }}</td>
+                <td>{{ item.avgAdmittedScore || '-' }}</td>
+                <td>{{ item.admissionLow || '-' }} - {{ item.admissionHigh || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script>
 import AppHeader from './components/AppHeader'
+import { getRecommendationResult } from '@/api/postgrad/appRecommendation'
+import { comparePrograms, getProgramDetail } from '@/api/postgrad/appPrograms'
+import { addFavorite, listFavorites } from '@/api/postgrad/appFavorites'
 
 const fallbackResult = {
   score: 300,
@@ -199,21 +285,33 @@ export default {
   components: { AppHeader },
   data() {
     return {
+      loading: false,
+      detailVisible: false,
+      detailLoading: false,
+      detail: null,
       activeTab: this.$route.query.tab === 'compare' ? 'compare' : 'result',
       result: fallbackResult,
-      filters: [
-        { label: '地区', value: '福建' },
-        { label: '学校层次', value: '全部层次' },
-        { label: '考试组合', value: '22408' },
-        { label: '是否有拟录取区间', value: '不限' },
-        { label: 'N诺数据完整度', value: '全部' }
-      ],
+      filterForm: {
+        region: '',
+        tier: '',
+        exam: '',
+        hasAdmissionRange: '',
+        confidence: ''
+      },
+      appliedFilters: {
+        region: '',
+        tier: '',
+        exam: '',
+        hasAdmissionRange: '',
+        confidence: ''
+      },
       compareRows: [
         { label: '学校', type: 'name' },
         { label: '专业', key: 'program' },
         { label: '考试组合', key: 'exam' },
         { label: '复试线（2025）', key: 'score' },
-        { label: '与复试线差距', type: 'diff', key: 'scoreLineGap' },
+        { label: '最低录取分', key: 'admissionLow' },
+        { label: '与最低录取分差距', type: 'diff', key: 'admissionLowGap' },
         { label: '拟录取区间（总分）', key: 'range' },
         { label: '拟录取均分', key: 'avgScore' },
         { label: '与拟录取均分差距', type: 'diff', key: 'avgScoreGap' },
@@ -223,38 +321,273 @@ export default {
         { label: '操作', type: 'action' }
       ],
       compareSchools: [
-        { name: '复旦大学', program: '计算机科学与技术', exam: '11408：政治 + 英语一 + 数学一 + 408', score: 355, scoreLineGap: -55, range: '355-405', avgScore: 382, avgScoreGap: -82, quota: '120（含推免）', confidence: 'A', fitLevel: '冲刺', fitLevelClass: 'sprint', star: 5 },
-        { name: '上海交通大学', program: '计算机科学与技术', exam: '11408：政治 + 英语一 + 数学一 + 408', score: 350, scoreLineGap: -50, range: '350-402', avgScore: 376, avgScoreGap: -76, quota: '160（含推免）', confidence: 'A', fitLevel: '冲刺', fitLevelClass: 'sprint', star: 5 },
-        { name: '华东师范大学', program: '计算机科学与技术', exam: '22408：政治 + 英语二 + 数学二 + 408', score: 330, scoreLineGap: -30, range: '330-380', avgScore: 352, avgScoreGap: -52, quota: '85（含推免）', confidence: 'B', fitLevel: '稳中偏冲', fitLevelClass: 'balanced', star: 4 },
-        { name: '华中科技大学', program: '计算机科学与技术', exam: '22408：政治 + 英语二 + 数学二 + 408', score: 325, scoreLineGap: -25, range: '325-375', avgScore: 346, avgScoreGap: -46, quota: '110（含推免）', confidence: 'B', fitLevel: '稳中偏冲', fitLevelClass: 'balanced', star: 4 }
+        { name: '复旦大学', program: '计算机科学与技术', exam: '11408：政治 + 英语一 + 数学一 + 408', score: 355, admissionLow: 355, admissionLowGap: -55, range: '355-405', avgScore: 382, avgScoreGap: -82, quota: '120（含推免）', confidence: 'A', fitLevel: '冲刺', fitLevelClass: 'sprint', star: 5 },
+        { name: '上海交通大学', program: '计算机科学与技术', exam: '11408：政治 + 英语一 + 数学一 + 408', score: 350, admissionLow: 350, admissionLowGap: -50, range: '350-402', avgScore: 376, avgScoreGap: -76, quota: '160（含推免）', confidence: 'A', fitLevel: '冲刺', fitLevelClass: 'sprint', star: 5 },
+        { name: '华东师范大学', program: '计算机科学与技术', exam: '22408：政治 + 英语二 + 数学二 + 408', score: 330, admissionLow: 330, admissionLowGap: -30, range: '330-380', avgScore: 352, avgScoreGap: -52, quota: '85（含推免）', confidence: 'B', fitLevel: '稳中偏冲', fitLevelClass: 'balanced', star: 4 },
+        { name: '华中科技大学', program: '计算机科学与技术', exam: '22408：政治 + 英语二 + 数学二 + 408', score: 325, admissionLow: 325, admissionLowGap: -25, range: '325-375', avgScore: 346, avgScoreGap: -46, quota: '110（含推免）', confidence: 'B', fitLevel: '稳中偏冲', fitLevelClass: 'balanced', star: 4 }
       ],
-      backupGroups: [
-        { name: '冲刺清单', desc: '挑战更高目标，冲一冲更好的院校', theme: 'green', items: [{ name: '复旦大学 · 计算机科学与技术', grade: '完整度A' }, { name: '上海交通大学 · 计算机科学与技术', grade: '完整度A' }, { name: '南京大学 · 计算机科学与技术', grade: '完整度A' }, { name: '浙江大学 · 计算机科学与技术', grade: '完整度A' }] },
-        { name: '稳妥清单', desc: '匹配度较高，录取希望较大', theme: 'blue', items: [{ name: '华东师范大学 · 计算机科学与技术', grade: '完整度B' }, { name: '华中科技大学 · 计算机科学与技术', grade: '完整度B' }, { name: '北京邮电大学 · 计算机科学与技术', grade: '完整度B' }, { name: '西安电子科技大学 · 计算机科学与技术', grade: '完整度B' }] },
-        { name: '保底候选', desc: '确保有学可上，降低风险', theme: 'orange', items: [{ name: '杭州电子科技大学 · 计算机科学与技术', grade: '完整度C' }, { name: '成都信息工程大学 · 计算机科学与技术', grade: '完整度C' }, { name: '燕山大学 · 计算机科学与技术', grade: '完整度C' }] }
-      ]
+      backupGroups: []
     }
   },
   computed: {
     currentHeader() {
       return this.activeTab === 'compare' ? 'compare' : 'results'
+    },
+    headerChips() {
+      const chips = [
+        { key: 'score', label: `分数 ${this.result.score}` },
+        { key: 'exam', label: `考试组合 ${this.appliedFilters.exam || this.result.exam}`, clearKey: this.appliedFilters.exam ? 'exam' : '' },
+        { key: 'region', label: `地区 ${this.appliedFilters.region || this.result.region}`, clearKey: this.appliedFilters.region ? 'region' : '' },
+        { key: 'studyMode', label: `学习方式 ${this.result.studyMode}` }
+      ]
+      if (this.appliedFilters.tier) {
+        chips.push({ key: 'tier', label: `学校层次 ${this.tierLabel(this.appliedFilters.tier)}`, clearKey: 'tier' })
+      }
+      if (this.appliedFilters.hasAdmissionRange) {
+        chips.push({ key: 'hasAdmissionRange', label: `拟录取区间 ${this.admissionRangeLabel(this.appliedFilters.hasAdmissionRange)}`, clearKey: 'hasAdmissionRange' })
+      }
+      if (this.appliedFilters.confidence) {
+        chips.push({ key: 'confidence', label: `完整度 ${this.appliedFilters.confidence}`, clearKey: 'confidence' })
+      }
+      return chips
+    },
+    regionOptions() {
+      const regions = new Set()
+      ;(this.result.groups || []).forEach(group => {
+        ;(group.schools || []).forEach(school => {
+          if (school.province) regions.add(school.province)
+        })
+      })
+      return Array.from(regions).sort()
+    },
+    filteredGroups() {
+      const filters = this.appliedFilters
+      return (this.result.groups || []).map(group => ({
+        ...group,
+        schools: (group.schools || []).filter(school => this.matchSchoolFilters(school, filters))
+      }))
+    },
+    filteredTotal() {
+      return this.filteredGroups.reduce((sum, group) => sum + group.schools.length, 0)
     }
   },
   created() {
-    const cached = window.sessionStorage.getItem('app-recommend-result')
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached)
-        if (parsed && parsed.groups) this.result = parsed
-      } catch (e) {}
-    }
+    this.loadResult()
   },
   watch: {
     '$route.query.tab'(tab) {
       this.activeTab = tab === 'compare' ? 'compare' : 'result'
+      if (this.activeTab === 'compare') this.loadCompare()
+    },
+    '$route.query.programIds'() {
+      if (this.activeTab === 'compare') this.loadCompare()
+    },
+    '$route.query.id'() {
+      this.loadResult()
     }
   },
   methods: {
+    loadResult() {
+      const id = this.$route.query.id || window.sessionStorage.getItem('app-recommend-id')
+      const cached = window.sessionStorage.getItem('app-recommend-result')
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached)
+          this.result = this.normalizeResult(parsed)
+          if (this.activeTab === 'compare') {
+            this.loadCompare()
+            this.loadBackupGroups()
+          }
+        } catch (e) {}
+      }
+      if (!id) return
+      this.loading = true
+      getRecommendationResult(id).then(res => {
+        this.result = this.normalizeResult(res.data || {})
+        window.sessionStorage.setItem('app-recommend-result', JSON.stringify(res.data || {}))
+        if (this.activeTab === 'compare') {
+          this.loadCompare()
+          this.loadBackupGroups()
+        }
+      }).finally(() => { this.loading = false })
+    },
+    normalizeResult(data) {
+      if (!data || !data.groups) return fallbackResult
+      const request = data.request || {}
+      const groups = (data.groups || []).map(group => ({
+        name: group.groupName || group.name,
+        desc: group.description || group.desc,
+        schools: (group.items || group.schools || []).map(this.normalizeSchool)
+      }))
+      return {
+        recommendationId: data.recommendationId,
+        totalCandidates: data.summary ? data.summary.totalCandidates : groups.reduce((sum, group) => sum + group.schools.length, 0),
+        score: request.estimatedScore || data.score || 300,
+        exam: request.examCombo || data.exam || '22408',
+        region: request.targetRegions && request.targetRegions.length ? request.targetRegions.join('、') : '不限',
+        studyMode: this.studyModeText(request.studyMode || data.studyMode),
+        groups
+      }
+    },
+    normalizeSchool(item) {
+      return {
+        programId: item.programId,
+        schoolName: item.schoolName,
+        badge: this.schoolBadge(item),
+        tier: item.schoolTier,
+        is985: item.is985,
+        is211: item.is211,
+        isDoubleFirst: item.isDoubleFirst,
+        collegeName: item.collegeName,
+        programName: item.programName,
+        examCombo: item.examCombo,
+        exam: item.examCombo + '：' + item.examSubjectsLabel,
+        province: item.province,
+        scoreLine: item.scoreLine,
+        scoreLineGap: item.scoreLineGap,
+        admissionLow: item.admissionLow,
+        admissionLowGap: item.admissionLowGap,
+        range: item.admissionRangeLabel || '-',
+        avgScore: item.avgAdmittedScore || '-',
+        avgScoreGap: item.avgScoreGap,
+        confidence: item.dataCompleteness || 'C',
+        tag: item.fitLevelLabel || '数据不足',
+        fitLevelClass: item.fitLevel || 'insufficient_data',
+        hasAdmissionRange: item.admissionLow !== null && item.admissionLow !== undefined && item.admissionHigh !== null && item.admissionHigh !== undefined,
+        note: this.cardNote(item),
+        star: item.fitLevel === 'safe' ? 3 : item.fitLevel === 'steady' ? 4 : 5
+      }
+    },
+    schoolBadge(item) {
+      const badges = []
+      if (item.is985) badges.push('985')
+      if (item.is211) badges.push('211')
+      if (item.isDoubleFirst) badges.push('双一流')
+      return badges.join(' ')
+    },
+    studyModeText(value) {
+      const map = { any: '不限', full_time: '全日制', part_time: '非全日制' }
+      return map[value] || value || '不限'
+    },
+    tierLabel(value) {
+      const map = {
+        985: '985',
+        211: '211',
+        double_first: '双一流',
+        ordinary: '普通院校'
+      }
+      return map[value] || '全部层次'
+    },
+    admissionRangeLabel(value) {
+      const map = {
+        yes: '有',
+        no: '暂无'
+      }
+      return map[value] || '不限'
+    },
+    cardNote(item) {
+      const repeatedWarnings = [
+        '复试线不是最低录取分。',
+        '推荐学校不代表只有这些学校可以报。'
+      ]
+      const warnings = (item.warnings || []).filter(text => !repeatedWarnings.includes(text))
+      if (warnings.length) return warnings.join(' ')
+      return item.dataCompletenessText || ''
+    },
+    applyFilters() {
+      this.appliedFilters = { ...this.filterForm }
+    },
+    clearHeaderChip(key) {
+      if (!Object.prototype.hasOwnProperty.call(this.filterForm, key)) return
+      this.filterForm[key] = ''
+      this.applyFilters()
+    },
+    resetFilters() {
+      this.filterForm = {
+        region: '',
+        tier: '',
+        exam: '',
+        hasAdmissionRange: '',
+        confidence: ''
+      }
+      this.applyFilters()
+    },
+    matchSchoolFilters(school, filters) {
+      if (filters.region && school.province !== filters.region) return false
+      if (filters.exam && school.examCombo !== filters.exam) return false
+      if (filters.confidence && school.confidence !== filters.confidence) return false
+      if (filters.hasAdmissionRange === 'yes' && !school.hasAdmissionRange) return false
+      if (filters.hasAdmissionRange === 'no' && school.hasAdmissionRange) return false
+      if (filters.tier === '985' && !school.is985) return false
+      if (filters.tier === '211' && !school.is211) return false
+      if (filters.tier === 'double_first' && !school.isDoubleFirst) return false
+      if (filters.tier === 'ordinary' && (school.is985 || school.is211 || school.isDoubleFirst)) return false
+      return true
+    },
+    loadCompare() {
+      const ids = this.$route.query.programIds
+        ? String(this.$route.query.programIds).split(',').filter(Boolean).slice(0, 8)
+        : this.result.groups.flatMap(group => group.schools).map(item => item.programId).filter(Boolean).slice(0, 4)
+      if (!ids.length) return
+      const estimatedScore = this.$route.query.score || this.result.score
+      comparePrograms({ programIds: ids.join(','), estimatedScore }).then(res => {
+        const items = (res.data && res.data.items) || []
+        this.compareSchools = items.map(item => {
+          const school = this.normalizeSchool(item)
+          return {
+            programId: school.programId,
+            name: school.schoolName,
+            program: school.programName,
+            exam: school.exam,
+            score: school.scoreLine,
+            scoreLineGap: school.scoreLineGap,
+            admissionLow: school.admissionLow,
+            admissionLowGap: school.admissionLowGap,
+            range: school.range,
+            avgScore: school.avgScore,
+            avgScoreGap: school.avgScoreGap,
+            quota: item.planCount || '-',
+            confidence: school.confidence,
+            fitLevel: school.tag,
+            fitLevelClass: school.fitLevelClass,
+            star: school.star
+          }
+        })
+      })
+    },
+    loadBackupGroups() {
+      listFavorites().then(res => {
+        const items = (res.data || []).map(item => ({
+          name: item.school_name + ' · ' + item.program_name,
+          grade: item.program_code || '已收藏',
+          programId: item.program_id
+        }))
+        this.backupGroups = items.length
+          ? [{ name: '我的收藏', desc: '从推荐结果中收藏的院校专业', theme: 'blue', items }]
+          : []
+      }).catch(() => {
+        this.backupGroups = []
+      })
+    },
+    handleFavorite(school) {
+      if (!school.programId) return
+      addFavorite(school.programId).then(res => {
+        this.$message.success(res.msg || '已加入收藏')
+      })
+    },
+    openDetail(programId) {
+      if (!programId) return
+      this.detailVisible = true
+      this.detailLoading = true
+      this.detail = null
+      getProgramDetail(programId, { estimatedScore: this.result.score }).then(res => {
+        this.detail = res.data
+      }).finally(() => { this.detailLoading = false })
+    },
+    formatDiff(value) {
+      if (value === null || value === undefined) return '-'
+      return (value > 0 ? '+' : '') + value
+    },
     dataCompletenessText(level) {
       const map = {
         A: '含复试线、拟录取区间、人数等字段',
@@ -391,6 +724,16 @@ export default {
   color: #253044;
   border-radius: 6px;
   padding: 0 12px;
+}
+
+.chips button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 2px;
+  line-height: 1;
 }
 
 .data-alert {
@@ -541,11 +884,6 @@ export default {
   font-weight: 700;
 }
 
-.source {
-  color: #1769f6;
-  background: #eaf2ff;
-}
-
 .grade-a {
   color: #15803d;
   background: #e7f7ed;
@@ -661,6 +999,11 @@ export default {
 }
 
 .fit-balanced {
+  color: #d97706;
+  background: #fff7e6;
+}
+
+.fit-balanced_sprint {
   color: #d97706;
   background: #fff7e6;
 }
@@ -786,6 +1129,106 @@ export default {
   background: #fbfdff;
   cursor: pointer;
   font-weight: 700;
+}
+
+.empty-group {
+  border: 1px dashed #d8e2f0;
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #8a96a8;
+  background: #fbfdff;
+}
+
+.card-detail {
+  margin-top: 10px;
+}
+
+.positive {
+  color: #15803d;
+}
+
+.negative {
+  color: #d93025;
+}
+
+.detail-drawer {
+  padding: 0 24px 28px;
+}
+
+.detail-drawer h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.detail-drawer p {
+  margin: 0 0 12px;
+  color: #64748b;
+}
+
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+
+.detail-tags span {
+  padding: 5px 9px;
+  border-radius: 5px;
+  color: #1769f6;
+  background: #eef4ff;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.detail-score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.detail-score-grid div {
+  border: 1px solid #e5edf8;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.detail-score-grid small {
+  display: block;
+  color: #7a879a;
+  margin-bottom: 4px;
+}
+
+.detail-score-grid strong {
+  font-size: 22px;
+}
+
+.drawer-warning {
+  border: 1px solid #ffd7a8;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  background: #fff8e8;
+}
+
+.drawer-warning p {
+  color: #9a4d00;
+  margin: 4px 0;
+}
+
+.trend-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.trend-table th,
+.trend-table td {
+  border-bottom: 1px solid #e5edf8;
+  padding: 8px;
+  text-align: left;
 }
 
 @media (max-width: 1180px) {
