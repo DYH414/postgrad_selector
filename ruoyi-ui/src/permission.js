@@ -19,16 +19,17 @@ router.beforeEach((to, from, next) => {
   NProgress.start()
 
   const adminToken = getToken()
-  const appToken = getAppToken()
-  const isAppPath = to.path.startsWith('/app/')
+  const isAppPath = to.path === '/app' || to.path.startsWith('/app/')
+
+  // 用户端必须先分流，避免浏览器里残留 Admin-Token 时被管理端守卫接管。
+  if (isAppPath) {
+    handleAppRoute(to, next)
+    return
+  }
 
   // ── 管理后台 ──
   if (adminToken) {
     handleAdminRoute(to, from, next)
-  }
-  // ── 用户端 App ──
-  else if (isAppPath) {
-    handleAppRoute(to, next)
   }
   // ── 未认证 ──
   else {
@@ -79,11 +80,26 @@ function handleAdminRoute(to, from, next) {
 // App Route Handler
 // ═══════════════════════════════════════════
 function handleAppRoute(to, next) {
-  const appPrototypeWhiteList = ['/app/recommend', '/app/results']
-  if (appPrototypeWhiteList.includes(to.path)) return next()
+  to.meta.title && store.dispatch('settings/setTitle', to.meta.title)
+
   if (to.path === '/app/login') return next()
-  if (getAppToken()) return next()
-  next('/app/login?redirect=' + encodeURIComponent(to.fullPath))
+
+  const appPublicRoutes = ['/app/recommend']
+  if (appPublicRoutes.includes(to.path) && !getAppToken()) return next()
+
+  if (!getAppToken()) {
+    return done(next, '/app/login?redirect=' + encodeURIComponent(to.fullPath))
+  }
+
+  if (store.state.appUser && store.state.appUser.userId) return next()
+
+  store.dispatch('appUser/FetchMe')
+    .then(() => next())
+    .catch(() => {
+      store.dispatch('appUser/Logout').finally(() => {
+        done(next, '/app/login?redirect=' + encodeURIComponent(to.fullPath))
+      })
+    })
 }
 
 // ═══════════════════════════════════════════

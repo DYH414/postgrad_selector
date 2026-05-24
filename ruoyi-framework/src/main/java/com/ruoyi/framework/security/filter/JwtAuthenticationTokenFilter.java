@@ -28,6 +28,13 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter
     private TokenService tokenService;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request)
+    {
+        String path = request.getServletPath();
+        return path != null && path.startsWith("/app/");
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException
     {

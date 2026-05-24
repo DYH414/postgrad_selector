@@ -61,7 +61,7 @@ export default {
       removeAppToken()
       this.hasToken = false
       this.$message.success('已退出登录')
-      if (!['/app/recommend', '/app/results'].includes(this.$route.path)) {
+      if (this.$route.path !== '/app/recommend') {
         this.goLogin()
       }
     }

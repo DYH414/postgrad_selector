@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.UserFavoriteProgramMapper">
+
+    <resultMap type="UserFavoriteProgram" id="UserFavoriteProgramResult">
+        <id     property="id"        column="id"         />
+        <result property="userId"    column="user_id"    />
+        <result property="programId" column="program_id" />
+        <result property="note"      column="note"       />
+        <result property="createdAt" column="created_at" />
+        <result property="updatedAt" column="updated_at" />
+    </resultMap>
+
+    <select id="selectFavoriteListByUserId" parameterType="Long" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select ufp.id, ufp.user_id, ufp.program_id, ufp.note, ufp.created_at,
+               p.program_code, p.program_name, p.study_mode, p.degree_type,
+               s.id as school_id, s.name as school_name, s.province, s.tier as school_tier,
+               s.is_985, s.is_211, s.is_double_first,
+               c.name as college_name,
+               sc.score_line, sc.year as data_year,
+               ar.min_admitted_score, ar.avg_admitted_score, ar.max_admitted_score
+        from user_favorite_program ufp
+        join program p on p.id = ufp.program_id
+        join college c on c.id = p.college_id
+        join school s on s.id = c.school_id
+        left join admission_score sc on sc.program_id = p.id
+          and sc.year = (select max(sc2.year) from admission_score sc2
+                         where sc2.program_id = p.id and sc2.score_line is not null)
+        left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
+        where ufp.user_id = #{userId}
+        order by ufp.created_at desc
+    </select>
+
+    <select id="selectCountByUserIdAndProgramId" resultType="int">
+        select count(1) from user_favorite_program
+        where user_id = #{userId} and program_id = #{programId}
+    </select>
+
+    <insert id="insertUserFavoriteProgram" parameterType="UserFavoriteProgram" useGeneratedKeys="true" keyProperty="id">
+        insert into user_favorite_program(
+            <if test="userId != null">user_id,</if>
+            <if test="programId != null">program_id,</if>
+            <if test="note != null and note != ''">note,</if>
+            created_at, updated_at
+        )values(
+            <if test="userId != null">#{userId},</if>
+            <if test="programId != null">#{programId},</if>
+            <if test="note != null and note != ''">#{note},</if>
+            sysdate(), sysdate()
+        )
+    </insert>
+
+    <delete id="deleteUserFavoriteProgram">
+        delete from user_favorite_program
+        where user_id = #{userId} and program_id = #{programId}
+    </delete>
+
+</mapper>

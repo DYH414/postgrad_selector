@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.RecommendationRuleMapper">
+
+    <resultMap type="RecommendationRule" id="RecommendationRuleResult">
+        <id     property="id"                    column="id"                      />
+        <result property="ruleScope"             column="rule_scope"              />
+        <result property="steadyGapMin"          column="steady_gap_min"          />
+        <result property="focusGapMin"           column="focus_gap_min"           />
+        <result property="reachGapMin"           column="reach_gap_min"           />
+        <result property="smallPlanThreshold"    column="small_plan_threshold"    />
+        <result property="highScoreGapThreshold" column="high_score_gap_threshold"/>
+        <result property="waveThreshold"         column="wave_threshold"          />
+        <result property="retestRatioWarning"    column="retest_ratio_warning"    />
+        <result property="isActive"              column="is_active"               />
+        <result property="createdAt"             column="created_at"              />
+        <result property="updatedAt"             column="updated_at"              />
+    </resultMap>
+
+    <sql id="selectRuleVo">
+        select id, rule_scope, steady_gap_min, focus_gap_min, reach_gap_min,
+               small_plan_threshold, high_score_gap_threshold, wave_threshold,
+               retest_ratio_warning, is_active, created_at, updated_at
+        from recommendation_rule
+    </sql>
+
+    <select id="selectActiveRuleByScope" parameterType="String" resultMap="RecommendationRuleResult">
+        <include refid="selectRuleVo"/>
+        where rule_scope = #{ruleScope} and is_active = 1
+        limit 1
+    </select>
+
+</mapper>

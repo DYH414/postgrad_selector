@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.RecommendationMapper">
+
+    <select id="selectCandidates" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            p.id as programId, s.id as schoolId, s.name as schoolName,
+            s.province as province, s.city as city, s.tier as schoolTier,
+            s.is_985 as is985, s.is_211 as is211, s.is_double_first as isDoubleFirst,
+            c.name as collegeName,
+            p.program_code as programCode, p.program_name as programName,
+            p.research_direction as researchDirection,
+            p.study_mode as studyMode, p.degree_type as degreeType,
+            p.score_scale as scoreScale,
+            p.protects_first_choice as protectsFirstChoice,
+            p.is_joint_program as isJointProgram,
+            subj.subject_codes as subjectCodes,
+            subj.subject_names as subjectNames,
+            sc.year as dataYear, sc.score_line as scoreLine,
+            ap.total_plan as planCount, ap.unified_exam_quota as unifiedExamQuota,
+            ap.retest_count as retestCount,
+            ar.admitted_count as admittedCount,
+            ar.min_admitted_score as admissionLow,
+            ar.avg_admitted_score as avgAdmittedScore,
+            ar.max_admitted_score as admissionHigh,
+            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            q.has_official_source as officialVerified
+        from program p
+        join college c on p.college_id = c.id
+        join school s on c.school_id = s.id
+        left join (
+            select ps.program_id,
+                   group_concat(sub.code order by ps.subject_order separator ',') as subject_codes,
+                   group_concat(sub.name order by ps.subject_order separator ' + ') as subject_names
+            from program_subject ps
+            join subject sub on ps.subject_id = sub.id
+            group by ps.program_id
+        ) subj on subj.program_id = p.id
+        join admission_score sc on sc.program_id = p.id
+          and sc.year = (
+            select max(sc2.year) from admission_score sc2
+            where sc2.program_id = p.id and sc2.score_line is not null
+          )
+        left join admission_plan ap on ap.program_id = p.id and ap.year = sc.year
+        left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
+        left join program_year_data_quality q on q.program_id = p.id and q.year = sc.year
+        where p.status = 'active' and s.status = 'active' and p.is_408 = 1
+          and sc.score_line is not null
+          and subj.subject_codes = #{subjectCodes}
+        <if test="regions != null and regions.size() > 0">
+            and s.province in
+            <foreach collection="regions" item="region" open="(" separator="," close=")">
+                #{region}
+            </foreach>
+        </if>
+        <if test="studyMode != null and studyMode != 'any'">
+            and p.study_mode = #{studyMode}
+        </if>
+        <if test="programCodes != null and programCodes.size() > 0">
+            and p.program_code in
+            <foreach collection="programCodes" item="code" open="(" separator="," close=")">
+                #{code}
+            </foreach>
+        </if>
+        order by
+            case when ar.min_admitted_score is null then 1 else 0 end asc,
+            coalesce(q.completeness_level, 'C') asc,
+            abs(cast(ar.min_admitted_score as signed) - #{estimatedScore}) asc,
+            s.tier asc
+        limit 300
+    </select>
+
+    <select id="selectProgramForRecommendation" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            p.id as programId, s.id as schoolId, s.name as schoolName,
+            s.province as province, s.city as city, s.tier as schoolTier,
+            s.is_985 as is985, s.is_211 as is211, s.is_double_first as isDoubleFirst,
+            c.name as collegeName,
+            p.program_code as programCode, p.program_name as programName,
+            p.research_direction as researchDirection,
+            p.study_mode as studyMode, p.degree_type as degreeType,
+            p.score_scale as scoreScale,
+            p.protects_first_choice as protectsFirstChoice,
+            p.is_joint_program as isJointProgram,
+            subj.subject_codes as subjectCodes,
+            subj.subject_names as subjectNames,
+            sc.year as dataYear, sc.score_line as scoreLine,
+            ap.total_plan as planCount, ap.unified_exam_quota as unifiedExamQuota,
+            ap.retest_count as retestCount,
+            ar.admitted_count as admittedCount,
+            ar.min_admitted_score as admissionLow,
+            ar.avg_admitted_score as avgAdmittedScore,
+            ar.max_admitted_score as admissionHigh,
+            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            q.has_official_source as officialVerified
+        from program p
+        join college c on p.college_id = c.id
+        join school s on c.school_id = s.id
+        left join (
+            select ps.program_id,
+                   group_concat(sub.code order by ps.subject_order separator ',') as subject_codes,
+                   group_concat(sub.name order by ps.subject_order separator ' + ') as subject_names
+            from program_subject ps
+            join subject sub on ps.subject_id = sub.id
+            group by ps.program_id
+        ) subj on subj.program_id = p.id
+        join admission_score sc on sc.program_id = p.id
+          and sc.year = (
+            select max(sc2.year) from admission_score sc2
+            where sc2.program_id = p.id and sc2.score_line is not null
+          )
+        left join admission_plan ap on ap.program_id = p.id and ap.year = sc.year
+        left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
+        left join program_year_data_quality q on q.program_id = p.id and q.year = sc.year
+        where p.id = #{programId} and p.status = 'active' and s.status = 'active'
+    </select>
+
+    <select id="selectTrends" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select sc.year as year, sc.score_line as scoreLine,
+               ar.avg_admitted_score as avgAdmittedScore,
+               ar.min_admitted_score as admissionLow,
+               ar.max_admitted_score as admissionHigh,
+               ar.admitted_count as admittedCount
+        from admission_score sc
+        left join admission_result ar on ar.program_id = sc.program_id and ar.year = sc.year
+        where sc.program_id = #{programId} and sc.score_line is not null
+        order by sc.year desc
+        limit 3
+    </select>
+
+</mapper>

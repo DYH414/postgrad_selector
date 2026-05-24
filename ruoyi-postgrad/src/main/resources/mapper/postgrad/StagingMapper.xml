@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.StagingMapper">
+
+    <resultMap type="Staging" id="StagingResult">
+        <id     property="id"               column="id"                 />
+        <result property="taskId"           column="task_id"            />
+        <result property="sourceId"         column="source_id"          />
+        <result property="matchedProgramId" column="matched_program_id" />
+        <result property="sourceType"       column="source_type"        />
+        <result property="schoolName"       column="school_name"        />
+        <result property="collegeName"      column="college_name"       />
+        <result property="city"             column="city"               />
+        <result property="programCode"      column="program_code"       />
+        <result property="programName"      column="program_name"       />
+        <result property="examSubjects"     column="exam_subjects"      />
+        <result property="year"             column="year"               />
+        <result property="scoreLine"        column="score_line"         />
+        <result property="singleMath"       column="single_math"        />
+        <result property="singleEnglish"    column="single_english"     />
+        <result property="singlePolitics"   column="single_politics"    />
+        <result property="singleProfessional" column="single_professional"/>
+        <result property="minAdmitted"      column="min_admitted"       />
+        <result property="avgAdmitted"      column="avg_admitted"       />
+        <result property="planCount"        column="plan_count"         />
+        <result property="retestCount"      column="retest_count"       />
+        <result property="admittedCount"    column="admitted_count"     />
+        <result property="confidence"       column="confidence"         />
+        <result property="sourceUrl"        column="source_url"         />
+        <result property="rawText"          column="raw_text"           />
+        <result property="extractJson"      column="extract_json"       />
+        <result property="status"           column="status"             />
+        <result property="errorMessage"     column="error_message"      />
+        <result property="reviewerId"       column="reviewer_id"        />
+        <result property="reviewedAt"       column="reviewed_at"        />
+        <result property="reviewNote"       column="review_note"        />
+        <result property="createdAt"        column="created_at"         />
+        <result property="updatedAt"        column="updated_at"         />
+    </resultMap>
+
+    <sql id="selectStagingVo">
+        select st.id, st.source_type, st.school_name, st.college_name,
+               st.program_code, st.program_name, st.year, st.score_line,
+               st.single_politics, st.single_english, st.single_math,
+               st.single_professional, st.confidence, st.status,
+               st.source_url, st.created_at, st.updated_at, st.reviewed_at,
+               st.review_note, st.matched_program_id, st.source_id, st.task_id,
+               st.city, st.exam_subjects, st.min_admitted, st.avg_admitted,
+               st.plan_count, st.retest_count, st.admitted_count,
+               st.raw_text, st.extract_json, st.error_message, st.reviewer_id
+        from staging st
+    </sql>
+
+    <select id="selectStagingList" parameterType="Staging" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select st.id, st.source_type, st.school_name, st.college_name,
+               st.program_code, st.program_name, st.year, st.score_line,
+               st.single_politics, st.single_english, st.single_math,
+               st.single_professional, st.confidence, st.status,
+               st.source_url, st.created_at, st.updated_at, st.reviewed_at,
+               st.review_note, st.matched_program_id,
+               concat(coalesce(s.name,''), ' / ', coalesce(c.name,''), ' / ',
+                      coalesce(p.program_code,''), ' ', coalesce(p.program_name,''))
+               matched_program_label
+        from staging st
+        left join program p on p.id = st.matched_program_id
+        left join college c on c.id = p.college_id
+        left join school s on s.id = c.school_id
+        <where>
+            <if test="schoolName != null and schoolName != ''">
+                and st.school_name like concat('%', #{schoolName}, '%')
+            </if>
+            <if test="programCode != null and programCode != ''">
+                and st.program_code = #{programCode}
+            </if>
+            <if test="year != null">
+                and st.year = #{year}
+            </if>
+            <if test="status != null and status != ''">
+                and st.status = #{status}
+            </if>
+            <if test="confidence != null and confidence != ''">
+                and st.confidence = #{confidence}
+            </if>
+            <if test="sourceType != null and sourceType != ''">
+                and st.source_type = #{sourceType}
+            </if>
+            <if test="params.matchStatus != null and params.matchStatus != ''">
+                <choose>
+                    <when test="params.matchStatus == 'matched'">
+                        and st.matched_program_id is not null
+                    </when>
+                    <when test="params.matchStatus == 'unmatched'">
+                        and st.matched_program_id is null
+                    </when>
+                </choose>
+            </if>
+            <if test="params.is408 != null and params.is408 == true">
+                and st.exam_subjects like '%408%'
+            </if>
+        </where>
+        order by st.created_at desc
+    </select>
+
+    <select id="selectStagingCount" parameterType="Staging" resultType="Long">
+        select count(1) from staging st
+        <where>
+            <if test="schoolName != null and schoolName != ''">
+                and st.school_name like concat('%', #{schoolName}, '%')
+            </if>
+            <if test="programCode != null and programCode != ''">
+                and st.program_code = #{programCode}
+            </if>
+            <if test="year != null">
+                and st.year = #{year}
+            </if>
+            <if test="status != null and status != ''">
+                and st.status = #{status}
+            </if>
+            <if test="confidence != null and confidence != ''">
+                and st.confidence = #{confidence}
+            </if>
+            <if test="sourceType != null and sourceType != ''">
+                and st.source_type = #{sourceType}
+            </if>
+            <if test="params.matchStatus != null and params.matchStatus != ''">
+                <choose>
+                    <when test="params.matchStatus == 'matched'">
+                        and st.matched_program_id is not null
+                    </when>
+                    <when test="params.matchStatus == 'unmatched'">
+                        and st.matched_program_id is null
+                    </when>
+                </choose>
+            </if>
+            <if test="params.is408 != null and params.is408 == true">
+                and st.exam_subjects like '%408%'
+            </if>
+        </where>
+    </select>
+
+    <select id="selectStagingById" parameterType="Long" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select st.*,
+               concat(coalesce(s.name,''), ' / ', coalesce(c.name,''), ' / ',
+                      coalesce(p.program_code,''), ' ', coalesce(p.program_name,''))
+               matched_program_label
+        from staging st
+        left join program p on p.id = st.matched_program_id
+        left join college c on c.id = p.college_id
+        left join school s on s.id = c.school_id
+        where st.id = #{id}
+    </select>
+
+    <update id="updateStagingStatus">
+        update staging set status = #{status}, review_note = #{reviewNote},
+            reviewer_id = #{reviewerId}, reviewed_at = sysdate()
+        where id = #{id}
+    </update>
+
+    <select id="countByStatus" resultType="long">
+        select count(1) from staging
+        <if test="status != null">
+            where status = #{status}
+        </if>
+    </select>
+
+    <update id="autoApproveDirectory">
+        update staging set status = 'approved',
+            review_note = #{reviewNote},
+            reviewer_id = #{reviewerId},
+            reviewed_at = sysdate()
+        where status = 'pending'
+          and (
+            (score_line is null and plan_count is null and min_admitted is null)
+            or review_note like '%国家线回退%'
+          )
+    </update>
+
+    <update id="migrateAdmissionScore">
+        insert into admission_score (program_id, year, score_line,
+            single_politics, single_english, single_math, single_professional,
+            verify_status, source_id, created_at, updated_at)
+        values (#{programId}, #{year}, #{scoreLine},
+            #{singlePolitics}, #{singleEnglish}, #{singleMath}, #{singleProfessional},
+            'MANUAL_VERIFIED', #{sourceId}, sysdate(), sysdate())
+        on duplicate key update
+            score_line = values(score_line),
+            single_politics = coalesce(values(single_politics), single_politics),
+            single_english = coalesce(values(single_english), single_english),
+            single_math = coalesce(values(single_math), single_math),
+            single_professional = coalesce(values(single_professional), single_professional),
+            verify_status = 'MANUAL_VERIFIED',
+            source_id = coalesce(values(source_id), source_id),
+            updated_at = sysdate()
+    </update>
+
+    <update id="migrateAdmissionPlan">
+        insert into admission_plan (program_id, year, total_plan, unified_exam_quota,
+            retest_count, verify_status, source_id, created_at, updated_at)
+        values (#{programId}, #{year}, #{planCount}, #{planCount},
+            #{retestCount}, 'MANUAL_VERIFIED', #{sourceId}, sysdate(), sysdate())
+        on duplicate key update
+            total_plan = values(total_plan),
+            unified_exam_quota = coalesce(values(unified_exam_quota), unified_exam_quota),
+            retest_count = coalesce(values(retest_count), retest_count),
+            verify_status = 'MANUAL_VERIFIED',
+            source_id = coalesce(values(source_id), source_id),
+            updated_at = sysdate()
+    </update>
+
+    <update id="migrateAdmissionResult">
+        insert into admission_result (program_id, year, admitted_count,
+            min_admitted_score, avg_admitted_score, max_admitted_score,
+            verify_status, source_id, created_at, updated_at)
+        values (#{programId}, #{year}, #{admittedCount},
+            #{minAdmitted}, #{avgAdmitted}, #{maxAdmitted},
+            'MANUAL_VERIFIED', #{sourceId}, sysdate(), sysdate())
+        on duplicate key update
+            admitted_count = coalesce(values(admitted_count), admitted_count),
+            min_admitted_score = coalesce(values(min_admitted_score), min_admitted_score),
+            avg_admitted_score = coalesce(values(avg_admitted_score), avg_admitted_score),
+            max_admitted_score = coalesce(values(max_admitted_score), max_admitted_score),
+            verify_status = 'MANUAL_VERIFIED',
+            source_id = coalesce(values(source_id), source_id),
+            updated_at = sysdate()
+    </update>
+
+</mapper>

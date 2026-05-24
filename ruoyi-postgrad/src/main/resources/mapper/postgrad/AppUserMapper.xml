@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.AppUserMapper">
+
+    <resultMap type="AppUser" id="AppUserResult">
+        <id     property="id"           column="id"            />
+        <result property="phoneHash"    column="phone_hash"    />
+        <result property="emailHash"    column="email_hash"    />
+        <result property="passwordHash" column="password_hash" />
+        <result property="role"         column="role"          />
+        <result property="consentAt"    column="consent_at"    />
+        <result property="createdAt"    column="created_at"    />
+        <result property="updatedAt"    column="updated_at"    />
+        <result property="deletedAt"    column="deleted_at"    />
+    </resultMap>
+
+    <sql id="selectAppUserVo">
+        select id, phone_hash, email_hash, password_hash, role,
+               consent_at, created_at, updated_at, deleted_at
+        from app_user
+    </sql>
+
+    <select id="selectAppUserById" parameterType="Long" resultMap="AppUserResult">
+        <include refid="selectAppUserVo"/>
+        where id = #{id} and deleted_at is null
+    </select>
+
+    <select id="selectAppUserByPhoneHash" parameterType="String" resultMap="AppUserResult">
+        <include refid="selectAppUserVo"/>
+        where phone_hash = #{phoneHash} and deleted_at is null limit 1
+    </select>
+
+    <select id="selectAppUserByEmailHash" parameterType="String" resultMap="AppUserResult">
+        <include refid="selectAppUserVo"/>
+        where email_hash = #{emailHash} and deleted_at is null limit 1
+    </select>
+
+    <select id="selectCountByPhoneHash" parameterType="String" resultType="int">
+        select count(1) from app_user where phone_hash = #{phoneHash} and deleted_at is null
+    </select>
+
+    <select id="selectCountByEmailHash" parameterType="String" resultType="int">
+        select count(1) from app_user where email_hash = #{emailHash} and deleted_at is null
+    </select>
+
+    <insert id="insertAppUser" parameterType="AppUser" useGeneratedKeys="true" keyProperty="id">
+        insert into app_user(
+            <if test="phoneHash != null and phoneHash != ''">phone_hash,</if>
+            <if test="emailHash != null and emailHash != ''">email_hash,</if>
+            password_hash,
+            <if test="role != null and role != ''">role,</if>
+            <if test="consentAt != null">consent_at,</if>
+            created_at, updated_at
+        )values(
+            <if test="phoneHash != null and phoneHash != ''">#{phoneHash},</if>
+            <if test="emailHash != null and emailHash != ''">#{emailHash},</if>
+            #{passwordHash},
+            <if test="role != null and role != ''">#{role},</if>
+            <if test="consentAt != null">#{consentAt},</if>
+            sysdate(), sysdate()
+        )
+    </insert>
+
+</mapper>

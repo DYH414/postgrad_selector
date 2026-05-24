@@ -55,7 +55,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by province, city, name
     </select>
 
-    <select id="selectSchoolOverviewStats" parameterType="Long" resultType="java.util.Map">
+    <select id="selectSchoolOverviewStats" parameterType="Long" resultType="com.ruoyi.postgrad.domain.RowMap">
         select count(distinct c.id) collegeCount,
                count(distinct p.id) programCount,
                coalesce(sum(case when p.is_408 = 1 then 1 else 0 end), 0) program408Count,
@@ -68,7 +68,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where s.id = #{id}
     </select>
 
-    <select id="selectSchoolOverviewColleges" parameterType="Long" resultType="java.util.Map">
+    <select id="selectSchoolOverviewColleges" parameterType="Long" resultType="com.ruoyi.postgrad.domain.RowMap">
         select c.id,
                c.name,
                c.website,
@@ -82,7 +82,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by c.name
     </select>
 
-    <select id="selectSchoolOverviewPrograms" parameterType="Long" resultType="java.util.Map">
+    <select id="selectSchoolOverviewPrograms" parameterType="Long" resultType="com.ruoyi.postgrad.domain.RowMap">
         select p.id,
                c.name collegeName,
                p.program_code programCode,
@@ -174,4 +174,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             #{id}
         </foreach>
     </delete>
+
+    <select id="selectDistinctProvinces" resultType="String">
+        select distinct province from school
+        where status = 'active' and province is not null and province &lt;&gt; ''
+        order by province
+    </select>
+
 </mapper>

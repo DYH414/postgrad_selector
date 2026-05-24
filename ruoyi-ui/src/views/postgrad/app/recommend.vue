@@ -67,15 +67,6 @@
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="row-label"><i class="el-icon-success"></i>风险偏好</div>
-            <div class="segmented risk single">
-              <button class="active" type="button">
-                冲稳保<small>自动生成冲刺、稳妥、保底组合</small>
-              </button>
-            </div>
-          </div>
-
           <el-button class="primary-cta" type="primary" :loading="generating" @click="startRecommend">
             <i class="el-icon-magic-stick"></i> 开始推荐
           </el-button>
@@ -182,7 +173,6 @@ export default {
           this.form.score = data.defaultProfile.estimatedScore || this.form.score
           this.form.exam = data.defaultProfile.examCombo || this.form.exam
           this.form.studyMode = data.defaultProfile.studyMode || this.form.studyMode
-          this.form.risk = 'balanced'
         }
       }).finally(() => { this.loadingOptions = false })
     },
@@ -390,14 +380,6 @@ export default {
   margin-top: 2px;
   color: #718096;
   font-size: 11px;
-}
-
-.risk button {
-  height: 38px;
-}
-
-.risk.single {
-  grid-template-columns: 1fr;
 }
 
 .primary-cta {

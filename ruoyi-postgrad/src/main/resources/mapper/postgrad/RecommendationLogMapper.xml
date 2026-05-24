@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.RecommendationLogMapper">
+
+    <resultMap type="RecommendationLog" id="RecommendationLogResult">
+        <id     property="id"              column="id"               />
+        <result property="userId"          column="user_id"          />
+        <result property="profileSnapshot" column="profile_snapshot" />
+        <result property="resultJson"      column="result_json"      />
+        <result property="ruleVersion"     column="rule_version"     />
+        <result property="dataVersion"     column="data_version"     />
+        <result property="isPaid"          column="is_paid"          />
+        <result property="createdAt"       column="created_at"       />
+    </resultMap>
+
+    <sql id="selectLogVo">
+        select id, user_id, profile_snapshot, result_json, rule_version,
+               data_version, is_paid, created_at
+        from recommendation_log
+    </sql>
+
+    <select id="selectLogListByUserId" parameterType="Long" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select id, rule_version, data_version, is_paid, created_at
+        from recommendation_log
+        where user_id = #{userId}
+        order by created_at desc
+        limit 50
+    </select>
+
+    <select id="selectLogByIdAndUserId" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select * from recommendation_log
+        where id = #{id} and user_id = #{userId}
+    </select>
+
+    <insert id="insertRecommendationLog" parameterType="RecommendationLog" useGeneratedKeys="true" keyProperty="id">
+        insert into recommendation_log(
+            user_id, profile_snapshot, result_json, rule_version,
+            data_version, is_paid, created_at
+        )values(
+            #{userId}, #{profileSnapshot}, #{resultJson}, #{ruleVersion},
+            #{dataVersion}, #{isPaid}, sysdate()
+        )
+    </insert>
+
+</mapper>

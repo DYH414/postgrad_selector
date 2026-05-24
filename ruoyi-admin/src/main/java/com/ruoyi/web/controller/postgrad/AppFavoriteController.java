@@ -1,25 +1,26 @@
 package com.ruoyi.web.controller.postgrad;
 
-import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.postgrad.service.IUserFavoriteProgramService;
 
 @RestController
 @RequestMapping("/app/favorites")
 public class AppFavoriteController
 {
     @Autowired
-    private JdbcTemplate jdbc;
+    private IUserFavoriteProgramService favoriteService;
 
     @GetMapping
     public AjaxResult list()
@@ -27,40 +28,18 @@ public class AppFavoriteController
         AppLoginUser loginUser = getCurrentAppUser();
         if (loginUser == null) return AjaxResult.error("未登录");
 
-        List<Map<String, Object>> favorites = jdbc.queryForList(
-            "SELECT ufp.id, ufp.program_id, ufp.note, ufp.created_at, " +
-            "p.program_code, p.program_name, p.study_mode, p.degree_type, " +
-            "c.name college_name, s.name school_name, s.province, s.tier, s.is_985, s.is_211, s.is_double_first " +
-            "FROM user_favorite_program ufp " +
-            "JOIN program p ON ufp.program_id = p.id " +
-            "JOIN college c ON p.college_id = c.id " +
-            "JOIN school s ON c.school_id = s.id " +
-            "WHERE ufp.user_id = ? ORDER BY ufp.created_at DESC",
-            loginUser.getUserId());
-
-        return AjaxResult.success(favorites);
+        return AjaxResult.success(favoriteService.selectFavoriteListByUserId(loginUser.getUserId()));
     }
 
     @PostMapping("/{programId}")
-    public AjaxResult add(@PathVariable Long programId)
+    public AjaxResult add(@PathVariable Long programId, @RequestBody(required = false) Map<String, String> body)
     {
         AppLoginUser loginUser = getCurrentAppUser();
         if (loginUser == null) return AjaxResult.error("未登录");
 
-        // check duplicate
-        Integer count = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM user_favorite_program WHERE user_id = ? AND program_id = ?",
-            Integer.class, loginUser.getUserId(), programId);
-        if (count != null && count > 0)
-        {
-            return AjaxResult.success("已收藏");
-        }
-
-        jdbc.update(
-            "INSERT INTO user_favorite_program (user_id, program_id, created_at, updated_at) VALUES (?, ?, NOW(), NOW())",
-            loginUser.getUserId(), programId);
-
-        return AjaxResult.success("收藏成功");
+        String note = body != null ? body.get("note") : null;
+        int rows = favoriteService.addFavorite(loginUser.getUserId(), programId, note);
+        return rows > 0 ? AjaxResult.success("已加入收藏") : AjaxResult.success("已收藏，无需重复操作");
     }
 
     @DeleteMapping("/{programId}")
@@ -69,10 +48,7 @@ public class AppFavoriteController
         AppLoginUser loginUser = getCurrentAppUser();
         if (loginUser == null) return AjaxResult.error("未登录");
 
-        jdbc.update(
-            "DELETE FROM user_favorite_program WHERE user_id = ? AND program_id = ?",
-            loginUser.getUserId(), programId);
-
+        favoriteService.removeFavorite(loginUser.getUserId(), programId);
         return AjaxResult.success("已取消收藏");
     }
 
@@ -80,13 +56,13 @@ public class AppFavoriteController
     {
         try
         {
-            Object principal = SecurityUtils.getAuthentication().getPrincipal();
-            if (principal instanceof AppLoginUser) return (AppLoginUser) principal;
+            Authentication auth = SecurityUtils.getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof AppLoginUser)
+            {
+                return (AppLoginUser) auth.getPrincipal();
+            }
             return null;
         }
-        catch (Exception e)
-        {
-            return null;
-        }
+        catch (Exception e) { return null; }
     }
 }

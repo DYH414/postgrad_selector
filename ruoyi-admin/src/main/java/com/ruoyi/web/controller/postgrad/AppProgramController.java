@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.Anonymous;
 import com.ruoyi.common.core.domain.AjaxResult;
+import com.ruoyi.postgrad.service.IProgramRecommendationService;
 
 @Anonymous
 @RestController
@@ -18,14 +19,14 @@ import com.ruoyi.common.core.domain.AjaxResult;
 public class AppProgramController
 {
     @Autowired
-    private AppProgramAggregateService aggregateService;
+    private IProgramRecommendationService recommendationService;
 
     @GetMapping("/{programId}/detail")
     public AjaxResult detail(@PathVariable Long programId, @RequestParam(required = false) Integer estimatedScore)
     {
         try
         {
-            return AjaxResult.success(aggregateService.programDetail(programId, estimatedScore));
+            return AjaxResult.success(recommendationService.programDetail(programId, estimatedScore));
         }
         catch (Exception e)
         {
@@ -49,14 +50,8 @@ public class AppProgramController
         {
             return AjaxResult.error("对比项目 ID 格式不正确");
         }
-        if (ids.isEmpty())
-        {
-            return AjaxResult.error("请选择要对比的院校专业");
-        }
-        if (ids.size() > 8)
-        {
-            return AjaxResult.error("一次最多对比 8 个项目");
-        }
-        return AjaxResult.success(aggregateService.comparePrograms(ids, estimatedScore));
+        if (ids.isEmpty()) return AjaxResult.error("请选择要对比的院校专业");
+        if (ids.size() > 8) return AjaxResult.error("一次最多对比 8 个项目");
+        return AjaxResult.success(recommendationService.comparePrograms(ids, estimatedScore));
     }
 }

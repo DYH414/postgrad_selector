@@ -1,122 +1,47 @@
 package com.ruoyi.postgrad.service.impl;
 
 import java.util.*;
-
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.domain.Staging;
+import com.ruoyi.postgrad.mapper.StagingMapper;
 import com.ruoyi.postgrad.service.IReviewService;
 
-/**
- * 数据审核中心实现 —— staging 审核 + 迁移到正式表。
- */
 @Service
 public class ReviewServiceImpl implements IReviewService
 {
     @Autowired
-    private JdbcTemplate jdbc;
-
-    // ═══ List ═══
+    private StagingMapper stagingMapper;
 
     @Override
     public Map<String, Object> list(Map<String, String> params, int pageNum, int pageSize)
     {
-        StringBuilder where = new StringBuilder(" WHERE 1=1 ");
-        List<Object> args = new ArrayList<>();
+        Staging staging = toStaging(params);
 
-        if (has(params, "schoolName"))
-        {
-            where.append(" AND st.school_name LIKE ?");
-            args.add("%" + params.get("schoolName") + "%");
-        }
-        if (has(params, "programCode"))
-        {
-            where.append(" AND st.program_code = ?");
-            args.add(params.get("programCode"));
-        }
-        if (has(params, "year"))
-        {
-            where.append(" AND st.year = ?");
-            args.add(Integer.parseInt(params.get("year")));
-        }
-        if (has(params, "status"))
-        {
-            where.append(" AND st.status = ?");
-            args.add(params.get("status"));
-        }
-        if (has(params, "confidence"))
-        {
-            where.append(" AND st.confidence = ?");
-            args.add(params.get("confidence"));
-        }
-        if (has(params, "sourceType"))
-        {
-            where.append(" AND st.source_type = ?");
-            args.add(params.get("sourceType"));
-        }
-        if (has(params, "matchStatus"))
-        {
-            String ms = params.get("matchStatus");
-            if ("matched".equals(ms))
-                where.append(" AND st.matched_program_id IS NOT NULL");
-            else if ("unmatched".equals(ms))
-                where.append(" AND st.matched_program_id IS NULL");
-        }
-        if (has(params, "is408"))
-        {
-            where.append(" AND st.exam_subjects LIKE '%408%'");
-        }
+        Long total = stagingMapper.selectStagingCount(staging);
+        int offset = (pageNum - 1) * pageSize;
+        List<RowMap> rows = stagingMapper.selectStagingList(staging);
 
-        String countSql = "SELECT COUNT(1) FROM staging st" + where;
-        Long total = jdbc.queryForObject(countSql, Long.class, args.toArray());
-
-        String sql = """
-            SELECT st.id, st.source_type, st.school_name, st.college_name, st.program_code,
-                   st.program_name, st.year, st.score_line, st.single_politics, st.single_english,
-                   st.single_math, st.single_professional, st.confidence, st.status,
-                   st.source_url, st.created_at, st.updated_at, st.reviewed_at, st.review_note,
-                   st.matched_program_id,
-                   CONCAT(COALESCE(s.name,''), ' / ', COALESCE(c.name,''), ' / ',
-                          COALESCE(p.program_code,''), ' ', COALESCE(p.program_name,'')) matched_program_label
-            FROM staging st
-            LEFT JOIN program p ON p.id = st.matched_program_id
-            LEFT JOIN college c ON c.id = p.college_id
-            LEFT JOIN school s ON s.id = c.school_id
-            """ + where + " ORDER BY st.created_at DESC LIMIT ? OFFSET ?";
-        args.add(pageSize);
-        args.add((pageNum - 1) * pageSize);
-
-        List<Map<String, Object>> rows = jdbc.queryForList(sql, args.toArray());
+        // Manual paging since XML doesn't support LIMIT/OFFSET in this context
+        int fromIndex = Math.min(offset, rows.size());
+        int toIndex = Math.min(offset + pageSize, rows.size());
+        List<RowMap> paged = rows.subList(fromIndex, toIndex);
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("rows", rows);
+        result.put("rows", paged);
         result.put("total", total == null ? 0L : total);
         return result;
     }
 
-    // ═══ Detail ═══
-
     @Override
     public Map<String, Object> detail(Long id)
     {
-        String sql = """
-            SELECT st.*, CONCAT(COALESCE(s.name,''), ' / ', COALESCE(c.name,''), ' / ',
-                   COALESCE(p.program_code,''), ' ', COALESCE(p.program_name,'')) matched_program_label
-            FROM staging st
-            LEFT JOIN program p ON p.id = st.matched_program_id
-            LEFT JOIN college c ON c.id = p.college_id
-            LEFT JOIN school s ON s.id = c.school_id
-            WHERE st.id = ?
-            """;
-        List<Map<String, Object>> rows = jdbc.queryForList(sql, id);
-        return rows.isEmpty() ? Collections.emptyMap() : rows.get(0);
+        Map<String, Object> row = stagingMapper.selectStagingById(id);
+        return row == null ? Collections.emptyMap() : row;
     }
-
-    // ═══ Approve ═══
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -134,7 +59,7 @@ public class ReviewServiceImpl implements IReviewService
         }
 
         migrate(staging);
-        updateStatus(id, "approved", note);
+        stagingMapper.updateStagingStatus(id, "approved", note, 1L);
     }
 
     private void migrate(Map<String, Object> staging)
@@ -149,91 +74,51 @@ public class ReviewServiceImpl implements IReviewService
             throw new ServiceException("缺少专业或年份，无法迁移");
         }
 
-        // Migrate to admission_score (if score data)
-        if (scoreLine != null)
+        Long pid = ((Number) programId).longValue();
+        int y = ((Number) year).intValue();
+        Long srcId = sourceId instanceof Number ? ((Number) sourceId).longValue() : null;
+
+        if (scoreLine instanceof Number)
         {
-            String sql = """
-                INSERT INTO admission_score (program_id, year, score_line,
-                    single_politics, single_english, single_math, single_professional,
-                    verify_status, source_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'MANUAL_VERIFIED', ?, NOW(), NOW())
-                ON DUPLICATE KEY UPDATE
-                    score_line = VALUES(score_line),
-                    single_politics = COALESCE(VALUES(single_politics), single_politics),
-                    single_english = COALESCE(VALUES(single_english), single_english),
-                    single_math = COALESCE(VALUES(single_math), single_math),
-                    single_professional = COALESCE(VALUES(single_professional), single_professional),
-                    verify_status = 'MANUAL_VERIFIED',
-                    source_id = COALESCE(VALUES(source_id), source_id),
-                    updated_at = NOW()
-                """;
-            jdbc.update(sql, programId, ((Number) year).intValue(), ((Number) scoreLine).intValue(),
-                staging.get("single_politics"), staging.get("single_english"),
-                staging.get("single_math"), staging.get("single_professional"),
-                sourceId);
+            stagingMapper.migrateAdmissionScore(pid, y, ((Number) scoreLine).intValue(),
+                intOrNull(staging.get("single_politics")),
+                intOrNull(staging.get("single_english")),
+                intOrNull(staging.get("single_math")),
+                intOrNull(staging.get("single_professional")),
+                srcId);
         }
 
-        // Migrate plan_count to admission_plan
         Object planCount = staging.get("plan_count");
-        if (planCount != null)
+        if (planCount instanceof Number)
         {
-            String sql = """
-                INSERT INTO admission_plan (program_id, year, total_plan, unified_exam_quota,
-                    retest_count, verify_status, source_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'MANUAL_VERIFIED', ?, NOW(), NOW())
-                ON DUPLICATE KEY UPDATE
-                    total_plan = VALUES(total_plan),
-                    unified_exam_quota = COALESCE(VALUES(unified_exam_quota), unified_exam_quota),
-                    retest_count = COALESCE(VALUES(retest_count), retest_count),
-                    verify_status = 'MANUAL_VERIFIED',
-                    source_id = COALESCE(VALUES(source_id), source_id),
-                    updated_at = NOW()
-                """;
-            jdbc.update(sql, programId, ((Number) year).intValue(),
-                ((Number) planCount).intValue(),
-                planCount, // default unified_exam_quota = total_plan
-                staging.get("retest_count"),
-                sourceId);
+            stagingMapper.migrateAdmissionPlan(pid, y, ((Number) planCount).intValue(),
+                intOrNull(staging.get("retest_count")), srcId);
         }
 
-        // Migrate admitted data to admission_result
         Object admittedCount = staging.get("admitted_count");
         Object minAdmitted = staging.get("min_admitted");
         Object maxAdmitted = staging.get("max_admitted");
-        if (admittedCount != null || minAdmitted != null || maxAdmitted != null)
+        if (admittedCount instanceof Number || minAdmitted instanceof Number || maxAdmitted instanceof Number)
         {
-            String sql = """
-                INSERT INTO admission_result (program_id, year, admitted_count,
-                    min_admitted_score, avg_admitted_score, max_admitted_score,
-                    verify_status, source_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'MANUAL_VERIFIED', ?, NOW(), NOW())
-                ON DUPLICATE KEY UPDATE
-                    admitted_count = COALESCE(VALUES(admitted_count), admitted_count),
-                    min_admitted_score = COALESCE(VALUES(min_admitted_score), min_admitted_score),
-                    avg_admitted_score = COALESCE(VALUES(avg_admitted_score), avg_admitted_score),
-                    max_admitted_score = COALESCE(VALUES(max_admitted_score), max_admitted_score),
-                    verify_status = 'MANUAL_VERIFIED',
-                    source_id = COALESCE(VALUES(source_id), source_id),
-                    updated_at = NOW()
-                """;
-            jdbc.update(sql, programId, ((Number) year).intValue(),
-                admittedCount, minAdmitted, staging.get("avg_admitted"),
-                maxAdmitted, sourceId);
+            stagingMapper.migrateAdmissionResult(pid, y,
+                intOrNull(admittedCount),
+                intOrNull(minAdmitted),
+                decimalOrNull(staging.get("avg_admitted")),
+                intOrNull(maxAdmitted),
+                srcId);
         }
     }
-
-    // ═══ Reject / Skip ═══
 
     @Override
     public void reject(Long id, String note)
     {
-        updateStatus(id, "rejected", note);
+        stagingMapper.updateStagingStatus(id, "rejected", note, 1L);
     }
 
     @Override
     public void skip(Long id)
     {
-        updateStatus(id, "skipped", "管理员跳过");
+        stagingMapper.updateStagingStatus(id, "skipped", "管理员跳过", 1L);
     }
 
     @Override
@@ -246,56 +131,56 @@ public class ReviewServiceImpl implements IReviewService
         }
     }
 
-    // ═══ Stats ═══
-
     @Override
     public Map<String, Object> stats()
     {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("pending", countByStatus("pending"));
-        result.put("approved", countByStatus("approved"));
-        result.put("rejected", countByStatus("rejected"));
-        result.put("skipped", countByStatus("skipped"));
-        result.put("total", countByStatus(null));
+        result.put("pending", stagingMapper.countByStatus("pending"));
+        result.put("approved", stagingMapper.countByStatus("approved"));
+        result.put("rejected", stagingMapper.countByStatus("rejected"));
+        result.put("skipped", stagingMapper.countByStatus("skipped"));
+        result.put("total", stagingMapper.countByStatus(null));
         return result;
     }
-
-    // ═══ Auto-approve directory data ═══
 
     @Override
     public int autoApproveDirectory()
     {
-        String sql = """
-            UPDATE staging SET status='approved',
-                review_note='学校/专业目录数据自动通过',
-                reviewer_id=1, reviewed_at=NOW()
-            WHERE status='pending'
-              AND (
-                (score_line IS NULL AND plan_count IS NULL AND min_admitted IS NULL)
-                OR review_note LIKE '%国家线回退%'
-              )
-            """;
-        return jdbc.update(sql);
+        return stagingMapper.autoApproveDirectory("学校/专业目录数据自动通过", 1L);
     }
 
-    // ═══ Helpers ═══
-
-    private void updateStatus(Long id, String status, String note)
+    private Staging toStaging(Map<String, String> params)
     {
-        jdbc.update("UPDATE staging SET status=?, review_note=?, reviewer_id=1, reviewed_at=NOW() WHERE id=?",
-            status, note, id);
-    }
-
-    private long countByStatus(String status)
-    {
-        if (status == null)
-            return jdbc.queryForObject("SELECT COUNT(1) FROM staging", Long.class);
-        return jdbc.queryForObject("SELECT COUNT(1) FROM staging WHERE status=?", Long.class, status);
+        Staging staging = new Staging();
+        if (has(params, "schoolName")) staging.setSchoolName(params.get("schoolName"));
+        if (has(params, "programCode")) staging.setProgramCode(params.get("programCode"));
+        if (has(params, "year")) staging.setYear(Integer.parseInt(params.get("year")));
+        if (has(params, "status")) staging.setStatus(params.get("status"));
+        if (has(params, "confidence")) staging.setConfidence(params.get("confidence"));
+        if (has(params, "sourceType")) staging.setSourceType(params.get("sourceType"));
+        if (has(params, "matchStatus")) staging.getParams().put("matchStatus", params.get("matchStatus"));
+        if (has(params, "is408")) staging.getParams().put("is408", true);
+        return staging;
     }
 
     private boolean has(Map<String, String> params, String key)
     {
         String v = params.get(key);
         return v != null && !v.isEmpty();
+    }
+
+    private Integer intOrNull(Object val)
+    {
+        if (val == null) return null;
+        if (val instanceof Number) return ((Number) val).intValue();
+        try { return Integer.parseInt(String.valueOf(val)); } catch (Exception e) { return null; }
+    }
+
+    private java.math.BigDecimal decimalOrNull(Object val)
+    {
+        if (val == null) return null;
+        if (val instanceof java.math.BigDecimal) return (java.math.BigDecimal) val;
+        if (val instanceof Number) return java.math.BigDecimal.valueOf(((Number) val).doubleValue());
+        try { return new java.math.BigDecimal(String.valueOf(val)); } catch (Exception e) { return null; }
     }
 }

@@ -23,6 +23,13 @@ public class AppAuthenticationFilter extends OncePerRequestFilter
     private AppTokenService appTokenService;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request)
+    {
+        String path = request.getServletPath();
+        return path == null || !path.startsWith("/app/");
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException
     {

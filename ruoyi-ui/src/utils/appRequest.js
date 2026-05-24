@@ -30,6 +30,10 @@ service.interceptors.response.use(res => {
   }
   return res.data
 }, error => {
+  if (error.response && error.response.status === 401) {
+    redirectToAppLogin()
+    return Promise.reject(new Error('unauthorized'))
+  }
   Message({ message: error.message || '网络异常', type: 'error', duration: 5000 })
   return Promise.reject(error)
 })

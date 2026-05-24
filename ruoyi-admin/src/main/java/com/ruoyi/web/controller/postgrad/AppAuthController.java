@@ -4,9 +4,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,9 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.Anonymous;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
-import com.ruoyi.framework.web.service.AppTokenService;
-import org.springframework.security.core.Authentication;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.framework.web.service.AppTokenService;
+import com.ruoyi.postgrad.domain.AppUser;
+import com.ruoyi.postgrad.domain.UserProfile;
+import com.ruoyi.postgrad.service.IAppUserService;
+import com.ruoyi.postgrad.service.IUserProfileService;
 
 @Anonymous
 @RestController
@@ -26,7 +30,10 @@ import com.ruoyi.common.utils.SecurityUtils;
 public class AppAuthController
 {
     @Autowired
-    private JdbcTemplate jdbc;
+    private IAppUserService appUserService;
+
+    @Autowired
+    private IUserProfileService profileService;
 
     @Autowired
     private AppTokenService appTokenService;
@@ -50,36 +57,28 @@ public class AppAuthController
             return AjaxResult.error("密码至少6位");
         }
 
-        String phoneHash = null;
-        String emailHash = null;
-
+        AppUser user = new AppUser();
         if (phone != null && !phone.isBlank())
         {
-            phoneHash = sha256(phone.trim());
-            Integer count = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM app_user WHERE phone_hash = ? AND deleted_at IS NULL", Integer.class, phoneHash);
-            if (count != null && count > 0)
+            String phoneHash = sha256(phone.trim());
+            if (appUserService.selectCountByPhoneHash(phoneHash) > 0)
             {
                 return AjaxResult.error("该手机号已注册");
             }
+            user.setPhoneHash(phoneHash);
         }
-
         if (email != null && !email.isBlank())
         {
-            emailHash = sha256(email.trim().toLowerCase());
-            Integer count = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM app_user WHERE email_hash = ? AND deleted_at IS NULL", Integer.class, emailHash);
-            if (count != null && count > 0)
+            String emailHash = sha256(email.trim().toLowerCase());
+            if (appUserService.selectCountByEmailHash(emailHash) > 0)
             {
                 return AjaxResult.error("该邮箱已注册");
             }
+            user.setEmailHash(emailHash);
         }
 
-        String passwordHash = bCryptPasswordEncoder.encode(password);
-        jdbc.update(
-            "INSERT INTO app_user (phone_hash, email_hash, password_hash, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())",
-            phoneHash, emailHash, passwordHash);
-
+        user.setPasswordHash(bCryptPasswordEncoder.encode(password));
+        appUserService.insertAppUser(user);
         return AjaxResult.success("注册成功");
     }
 
@@ -96,31 +95,23 @@ public class AppAuthController
 
         String phoneHash = sha256(account.trim());
         String emailHash = sha256(account.trim().toLowerCase());
-
-        Map<String, Object> user = null;
-        try
+        AppUser user = appUserService.selectAppUserByPhoneHash(phoneHash);
+        if (user == null)
         {
-            user = jdbc.queryForMap(
-                "SELECT id, password_hash FROM app_user WHERE (phone_hash = ? OR email_hash = ?) AND deleted_at IS NULL LIMIT 1",
-                phoneHash, emailHash);
+            user = appUserService.selectAppUserByEmailHash(emailHash);
         }
-        catch (Exception e)
+
+        if (user == null || !bCryptPasswordEncoder.matches(password, user.getPasswordHash()))
         {
             return AjaxResult.error("账号或密码错误");
         }
 
-        if (user == null || !bCryptPasswordEncoder.matches(password, (String) user.get("password_hash")))
-        {
-            return AjaxResult.error("账号或密码错误");
-        }
-
-        Long userId = ((Number) user.get("id")).longValue();
-        AppLoginUser loginUser = new AppLoginUser(userId);
+        AppLoginUser loginUser = new AppLoginUser(user.getId());
         String token = appTokenService.createToken(loginUser);
 
         AjaxResult result = AjaxResult.success("登录成功");
         result.put("token", token);
-        result.put("userId", userId);
+        result.put("userId", user.getId());
         return result;
     }
 
@@ -139,27 +130,37 @@ public class AppAuthController
     public AjaxResult me()
     {
         AppLoginUser loginUser = getCurrentAppUser();
-        if (loginUser == null)
-        {
-            return AjaxResult.error("未登录");
-        }
-        Long userId = loginUser.getUserId();
-        Map<String, Object> profile = null;
-        try
-        {
-            profile = jdbc.queryForMap(
-                "SELECT up.* FROM user_profile up WHERE up.user_id = ?", userId);
-        }
-        catch (Exception ignored) {}
+        if (loginUser == null) return AjaxResult.error("未登录");
 
-        Map<String, Object> user = jdbc.queryForMap(
-            "SELECT id, role, created_at FROM app_user WHERE id = ? AND deleted_at IS NULL", userId);
+        Long userId = loginUser.getUserId();
+        AppUser user = appUserService.selectAppUserById(userId);
+        UserProfile profile = profileService.selectUserProfileByUserId(userId);
 
         AjaxResult result = AjaxResult.success();
         result.put("userId", userId);
-        result.put("role", user.get("role"));
-        result.put("createdAt", user.get("created_at"));
-        result.put("profile", profile);
+        result.put("role", user != null ? user.getRole() : "user");
+        result.put("createdAt", user != null ? user.getCreatedAt() : null);
+        if (profile != null)
+        {
+            Map<String, Object> profileMap = new LinkedHashMap<>();
+            profileMap.put("userId", profile.getUserId());
+            profileMap.put("estimatedScore", profile.getEstimatedScore());
+            profileMap.put("targetRegions", profile.getTargetRegions());
+            profileMap.put("acceptPartTime", profile.getAcceptPartTime());
+            profileMap.put("acceptTransfer", profile.getAcceptTransfer());
+            profileMap.put("acceptAcademic", profile.getAcceptAcademic());
+            profileMap.put("acceptJoint", profile.getAcceptJoint());
+            profileMap.put("riskPreference", profile.getRiskPreference());
+            profileMap.put("undergradTier", profile.getUndergradTier());
+            profileMap.put("undergraduateMajor", profile.getUndergraduateMajor());
+            profileMap.put("isCrossMajor", profile.getIsCrossMajor());
+            profileMap.put("mathLevel", profile.getMathLevel());
+            profileMap.put("englishLevel", profile.getEnglishLevel());
+            profileMap.put("csLevel", profile.getCsLevel());
+            profileMap.put("dailyStudyHours", profile.getDailyStudyHours());
+            profileMap.put("reviewProgress", profile.getReviewProgress());
+            result.put("profile", profileMap);
+        }
         return result;
     }
 
@@ -174,10 +175,7 @@ public class AppAuthController
             }
             return null;
         }
-        catch (Exception e)
-        {
-            return null;
-        }
+        catch (Exception e) { return null; }
     }
 
     private static String sha256(String input)

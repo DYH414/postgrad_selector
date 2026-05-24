@@ -151,6 +151,17 @@
           </section>
         </template>
 
+        <div v-if="result.aiAnalysis" class="ai-analysis-card">
+          <div class="ai-card-header">
+            <span class="ai-icon"><i class="el-icon-cpu"></i></span>
+            <strong>AI 推荐解读</strong>
+            <em>由 DeepSeek 生成，仅供参考</em>
+          </div>
+          <div class="ai-card-body">
+            <p v-for="(para, idx) in aiParagraphs" :key="idx">{{ para }}</p>
+          </div>
+        </div>
+
         <template v-else>
           <section v-for="group in filteredGroups" :key="group.name" class="school-section">
             <div class="section-title">
@@ -169,8 +180,13 @@
                     <p>{{ school.collegeName }} / {{ school.programName }}</p>
                     <span>{{ school.exam }} | {{ school.province }}</span>
                   </div>
-                  <button class="star-btn" type="button" @click="handleFavorite(school)">
-                    <i class="el-icon-star-off"></i>
+                  <button
+                    class="star-btn"
+                    :class="{ favorited: isFavorited(school), loading: favoriteLoadingIds.includes(favoriteKey(school)) }"
+                    type="button"
+                    @click="handleFavorite(school)"
+                    :aria-label="isFavorited(school) ? '取消收藏' : '加入收藏'">
+                    <i :class="isFavorited(school) ? 'el-icon-star-on' : 'el-icon-star-off'"></i>
                   </button>
                 </div>
 
@@ -242,7 +258,8 @@
 import AppHeader from './components/AppHeader'
 import { getRecommendationResult } from '@/api/postgrad/appRecommendation'
 import { comparePrograms, getProgramDetail } from '@/api/postgrad/appPrograms'
-import { addFavorite, listFavorites } from '@/api/postgrad/appFavorites'
+import { addFavorite, listFavorites, removeFavorite } from '@/api/postgrad/appFavorites'
+import { getAppToken } from '@/utils/appAuth'
 
 const fallbackResult = {
   score: 300,
@@ -291,6 +308,8 @@ export default {
       detail: null,
       activeTab: this.$route.query.tab === 'compare' ? 'compare' : 'result',
       result: fallbackResult,
+      favoriteProgramIds: [],
+      favoriteLoadingIds: [],
       filterForm: {
         region: '',
         tier: '',
@@ -369,10 +388,16 @@ export default {
     },
     filteredTotal() {
       return this.filteredGroups.reduce((sum, group) => sum + group.schools.length, 0)
+    },
+    aiParagraphs() {
+      const text = this.result.aiAnalysis
+      if (!text) return []
+      return text.split('\n').filter(p => p.trim()).map(p => p.replace(/^#+\s*/, ''))
     }
   },
   created() {
     this.loadResult()
+    this.loadFavoriteIds()
   },
   watch: {
     '$route.query.tab'(tab) {
@@ -426,6 +451,9 @@ export default {
         exam: request.examCombo || data.exam || '22408',
         region: request.targetRegions && request.targetRegions.length ? request.targetRegions.join('、') : '不限',
         studyMode: this.studyModeText(request.studyMode || data.studyMode),
+        aiAnalysis: data.aiAnalysis || null,
+        summary: data.summary || null,
+        globalWarnings: data.globalWarnings || [],
         groups
       }
     },
@@ -557,6 +585,7 @@ export default {
     },
     loadBackupGroups() {
       listFavorites().then(res => {
+        this.syncFavoriteIds(res.data || [])
         const items = (res.data || []).map(item => ({
           name: item.school_name + ' · ' + item.program_name,
           grade: item.program_code || '已收藏',
@@ -569,11 +598,61 @@ export default {
         this.backupGroups = []
       })
     },
+    loadFavoriteIds() {
+      listFavorites().then(res => {
+        this.syncFavoriteIds(res.data || [])
+      }).catch(() => {})
+    },
+    syncFavoriteIds(items) {
+      this.favoriteProgramIds = Array.from(new Set((items || [])
+        .map(item => Number(item.program_id || item.programId))
+        .filter(Boolean)
+        .map(id => `program:${id}`)))
+    },
+    favoriteKey(school) {
+      if (!school) return ''
+      return school.programId ? `program:${school.programId}` : `local:${school.schoolName}:${school.programName}`
+    },
+    isFavorited(school) {
+      return this.favoriteProgramIds.includes(this.favoriteKey(school))
+    },
     handleFavorite(school) {
-      if (!school.programId) return
-      addFavorite(school.programId).then(res => {
-        this.$message.success(res.msg || '已加入收藏')
-      })
+      const key = this.favoriteKey(school)
+      if (!key || this.favoriteLoadingIds.includes(key)) return
+      const programId = Number(school.programId)
+      const favorited = this.isFavorited(school)
+      if (!getAppToken() || !programId) {
+        this.favoriteProgramIds = favorited
+          ? this.favoriteProgramIds.filter(id => id !== key)
+          : [...this.favoriteProgramIds, key]
+        this.$message({
+          message: favorited ? '已取消收藏' : '已收藏，登录后可同步到我的收藏',
+          type: favorited ? 'success' : 'warning'
+        })
+        return
+      }
+      this.favoriteLoadingIds = [...this.favoriteLoadingIds, key]
+      if (favorited) {
+        this.favoriteProgramIds = this.favoriteProgramIds.filter(id => id !== key)
+        removeFavorite(programId).then(res => {
+          this.$message.success(res.msg || '已取消收藏')
+          if (this.activeTab === 'compare') this.loadBackupGroups()
+        }).catch(() => {
+          this.favoriteProgramIds = [...this.favoriteProgramIds, key]
+        }).finally(() => {
+          this.favoriteLoadingIds = this.favoriteLoadingIds.filter(id => id !== key)
+        })
+      } else {
+        this.favoriteProgramIds = [...this.favoriteProgramIds, key]
+        addFavorite(programId).then(res => {
+          this.$message.success(res.msg || '已加入收藏')
+          if (this.activeTab === 'compare') this.loadBackupGroups()
+        }).catch(() => {
+          this.favoriteProgramIds = this.favoriteProgramIds.filter(id => id !== key)
+        }).finally(() => {
+          this.favoriteLoadingIds = this.favoriteLoadingIds.filter(id => id !== key)
+        })
+      }
     },
     openDetail(programId) {
       if (!programId) return
@@ -755,6 +834,42 @@ export default {
   color: #bf6814;
 }
 
+.ai-analysis-card {
+  border: 1px solid #c4d6ff;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f5f8ff 0%, #eef4ff 100%);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.ai-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #dbe5ff;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.ai-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #6650d8, #7c5ce7);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.ai-card-header strong { font-size: 16px; color: #1e2740; }
+.ai-card-header em { margin-left: auto; font-style: normal; color: #8b97b0; font-size: 12px; }
+
+.ai-card-body { padding: 16px 20px; line-height: 1.85; color: #37445a; font-size: 14px; }
+.ai-card-body p { margin: 0 0 10px; }
+.ai-card-body p:last-child { margin-bottom: 0; }
+
 .school-section {
   margin-bottom: 24px;
 }
@@ -844,6 +959,22 @@ export default {
   color: #42526b;
   cursor: pointer;
   font-size: 22px;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+
+.star-btn:hover {
+  color: #f5a400;
+  transform: scale(1.08);
+}
+
+.star-btn.favorited,
+.star-btn.favorited i {
+  color: #f5a400;
+}
+
+.star-btn.loading {
+  pointer-events: none;
+  opacity: 0.72;
 }
 
 .score-line {

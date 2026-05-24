@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.UserProfileMapper">
+
+    <resultMap type="UserProfile" id="UserProfileResult">
+        <id     property="id"                 column="id"                  />
+        <result property="userId"             column="user_id"             />
+        <result property="estimatedScore"     column="estimated_score"     />
+        <result property="targetRegions"      column="target_regions"      />
+        <result property="acceptPartTime"     column="accept_part_time"    />
+        <result property="acceptTransfer"     column="accept_transfer"     />
+        <result property="acceptAcademic"     column="accept_academic"     />
+        <result property="acceptJoint"        column="accept_joint"        />
+        <result property="riskPreference"     column="risk_preference"     />
+        <result property="undergradTier"      column="undergrad_tier"      />
+        <result property="undergraduateMajor" column="undergraduate_major" />
+        <result property="isCrossMajor"       column="is_cross_major"      />
+        <result property="mathLevel"          column="math_level"          />
+        <result property="englishLevel"       column="english_level"       />
+        <result property="csLevel"            column="cs_level"            />
+        <result property="dailyStudyHours"    column="daily_study_hours"   />
+        <result property="reviewProgress"     column="review_progress"     />
+    </resultMap>
+
+    <sql id="selectUserProfileVo">
+        select id, user_id, estimated_score, target_regions, accept_part_time,
+               accept_transfer, accept_academic, accept_joint, risk_preference,
+               undergrad_tier, undergraduate_major, is_cross_major, math_level,
+               english_level, cs_level, daily_study_hours, review_progress
+        from user_profile
+    </sql>
+
+    <select id="selectUserProfileByUserId" parameterType="Long" resultMap="UserProfileResult">
+        <include refid="selectUserProfileVo"/>
+        where user_id = #{userId}
+    </select>
+
+    <insert id="insertUserProfile" parameterType="UserProfile" useGeneratedKeys="true" keyProperty="id">
+        insert into user_profile(
+            <if test="userId != null">user_id,</if>
+            <if test="estimatedScore != null">estimated_score,</if>
+            <if test="targetRegions != null">target_regions,</if>
+            <if test="acceptPartTime != null">accept_part_time,</if>
+            <if test="acceptTransfer != null">accept_transfer,</if>
+            <if test="acceptAcademic != null">accept_academic,</if>
+            <if test="acceptJoint != null">accept_joint,</if>
+            <if test="riskPreference != null">risk_preference,</if>
+            <if test="undergradTier != null">undergrad_tier,</if>
+            <if test="undergraduateMajor != null">undergraduate_major,</if>
+            <if test="isCrossMajor != null">is_cross_major,</if>
+            <if test="mathLevel != null">math_level,</if>
+            <if test="englishLevel != null">english_level,</if>
+            <if test="csLevel != null">cs_level,</if>
+            <if test="dailyStudyHours != null">daily_study_hours,</if>
+            <if test="reviewProgress != null">review_progress,</if>
+            created_at, updated_at
+        )values(
+            <if test="userId != null">#{userId},</if>
+            <if test="estimatedScore != null">#{estimatedScore},</if>
+            <if test="targetRegions != null">#{targetRegions},</if>
+            <if test="acceptPartTime != null">#{acceptPartTime},</if>
+            <if test="acceptTransfer != null">#{acceptTransfer},</if>
+            <if test="acceptAcademic != null">#{acceptAcademic},</if>
+            <if test="acceptJoint != null">#{acceptJoint},</if>
+            <if test="riskPreference != null">#{riskPreference},</if>
+            <if test="undergradTier != null">#{undergradTier},</if>
+            <if test="undergraduateMajor != null">#{undergraduateMajor},</if>
+            <if test="isCrossMajor != null">#{isCrossMajor},</if>
+            <if test="mathLevel != null">#{mathLevel},</if>
+            <if test="englishLevel != null">#{englishLevel},</if>
+            <if test="csLevel != null">#{csLevel},</if>
+            <if test="dailyStudyHours != null">#{dailyStudyHours},</if>
+            <if test="reviewProgress != null">#{reviewProgress},</if>
+            sysdate(), sysdate()
+        )
+    </insert>
+
+    <update id="updateUserProfile" parameterType="UserProfile">
+        update user_profile
+        <set>
+            <if test="estimatedScore != null">estimated_score = #{estimatedScore},</if>
+            <if test="targetRegions != null">target_regions = #{targetRegions},</if>
+            <if test="acceptPartTime != null">accept_part_time = #{acceptPartTime},</if>
+            <if test="acceptTransfer != null">accept_transfer = #{acceptTransfer},</if>
+            <if test="acceptAcademic != null">accept_academic = #{acceptAcademic},</if>
+            <if test="acceptJoint != null">accept_joint = #{acceptJoint},</if>
+            <if test="riskPreference != null">risk_preference = #{riskPreference},</if>
+            <if test="undergradTier != null">undergrad_tier = #{undergradTier},</if>
+            <if test="undergraduateMajor != null">undergraduate_major = #{undergraduateMajor},</if>
+            <if test="isCrossMajor != null">is_cross_major = #{isCrossMajor},</if>
+            <if test="mathLevel != null">math_level = #{mathLevel},</if>
+            <if test="englishLevel != null">english_level = #{englishLevel},</if>
+            <if test="csLevel != null">cs_level = #{csLevel},</if>
+            <if test="dailyStudyHours != null">daily_study_hours = #{dailyStudyHours},</if>
+            <if test="reviewProgress != null">review_progress = #{reviewProgress},</if>
+            updated_at = sysdate()
+        </set>
+        where user_id = #{userId}
+    </update>
+
+    <delete id="deleteUserProfileByUserId" parameterType="Long">
+        delete from user_profile where user_id = #{userId}
+    </delete>
+
+</mapper>
