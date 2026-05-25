@@ -5,9 +5,9 @@
       <h3>推荐历史</h3>
       <el-table :data="logs" v-loading="loading" style="width:100%">
         <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="rule_version" label="规则版本" width="100" />
-        <el-table-column prop="created_at" label="生成时间" width="180">
-          <template slot-scope="scope">{{ scope.row.created_at }}</template>
+        <el-table-column prop="ruleVersion" label="规则版本" width="100" />
+        <el-table-column prop="createdAt" label="生成时间" width="180">
+          <template slot-scope="scope">{{ scope.row.createdAt }}</template>
         </el-table-column>
         <el-table-column label="操作" width="120">
           <template slot-scope="scope">

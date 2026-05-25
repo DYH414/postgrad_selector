@@ -39,11 +39,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         data.put("defaultProfile", loadDefaultProfile(userId));
         data.put("examCombos", examCombos());
         data.put("regions", queryRegions());
-        data.put("studyModes", Arrays.asList(
-            option("any", "不限"),
-            option("full_time", "全日制"),
-            option("part_time", "非全日制")
-        ));
         data.put("riskPreferences", Arrays.asList(
             option("conservative", "稳妥优先"),
             option("balanced", "平衡兼顾"),
@@ -64,7 +59,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             throw new IllegalArgumentException("预计初试总分应在 150-500 之间");
 
         String examCombo = stringVal(request.get("examCombo"), "11408");
-        String studyMode = stringVal(request.get("studyMode"), "any");
         String riskPreference = stringVal(request.get("riskPreference"), "balanced");
         boolean includeIncompleteData = boolVal(request.get("includeIncompleteData"), true);
         int pageSizePerGroup = Math.max(3, Math.min(intVal(request.get("pageSizePerGroup"), 12), 50));
@@ -72,7 +66,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         List<String> regions = stringList(request.get("targetRegions"));
         List<String> majorDirections = stringList(request.get("majorDirections"));
 
-        List<Map<String, Object>> candidates = fetchCandidates(examCombo, regions, studyMode, majorDirections, estimatedScore);
+        List<Map<String, Object>> candidates = fetchCandidates(examCombo, regions, majorDirections, estimatedScore);
         List<Map<String, Object>> normalized = candidates.stream()
             .map(row -> normalizeProgram(row, estimatedScore))
             .collect(Collectors.toList());
@@ -102,7 +96,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         requestSnapshot.put("examCombo", examCombo);
         requestSnapshot.put("examSubjectsLabel", subjectsLabel(examCombo));
         requestSnapshot.put("targetRegions", regions);
-        requestSnapshot.put("studyMode", studyMode);
         requestSnapshot.put("majorDirections", majorDirections);
         requestSnapshot.put("riskPreference", riskPreference);
 
@@ -177,13 +170,12 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     // ---- fetch helpers ----
 
     private List<Map<String, Object>> fetchCandidates(String examCombo, List<String> regions,
-        String studyMode, List<String> majorDirections, int estimatedScore)
+        List<String> majorDirections, int estimatedScore)
     {
         String subjectCodes = subjectCodes(examCombo);
         List<String> regionParam = (regions == null || regions.isEmpty()) ? null : regions;
-        String modeParam = studyMode;
         List<String> codesParam = (majorDirections == null || majorDirections.isEmpty()) ? null : majorDirections;
-        return new ArrayList<>(recommendationMapper.selectCandidates(subjectCodes, regionParam, modeParam, codesParam, estimatedScore));
+        return new ArrayList<>(recommendationMapper.selectCandidates(subjectCodes, regionParam, codesParam, estimatedScore));
     }
 
     private List<Map<String, Object>> computeTrends(Long programId, int estimatedScore)
@@ -197,6 +189,8 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             row.put("scoreLineGap", scoreLine == null || estimatedScore <= 0 ? null : estimatedScore - scoreLine);
             Integer low = nullableInt(row.get("admissionLow"));
             row.put("admissionLowGap", low == null || estimatedScore <= 0 ? null : estimatedScore - low);
+            Integer high = nullableInt(row.get("admissionHigh"));
+            row.put("admissionHighGap", high == null || estimatedScore <= 0 ? null : estimatedScore - high);
             row.put("avgScoreGap", avg == null || estimatedScore <= 0 ? null : estimatedScore - avg.intValue());
         }
         return rows;
@@ -221,7 +215,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         defaults.put("estimatedScore", 300);
         defaults.put("examCombo", "11408");
         defaults.put("targetRegions", new ArrayList<>());
-        defaults.put("studyMode", "any");
         defaults.put("riskPreference", "balanced");
 
         if (userId == null) return defaults;
@@ -262,15 +255,16 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
 
         Integer scoreLineGap = scoreLine == null || estimatedScore <= 0 ? null : estimatedScore - scoreLine;
         Integer admissionLowGap = low == null || estimatedScore <= 0 ? null : estimatedScore - low;
+        Integer admissionHighGap = high == null || estimatedScore <= 0 ? null : estimatedScore - high;
         Integer avgScoreGap = avgScore == null || estimatedScore <= 0 ? null : estimatedScore - avgScore.intValue();
-        String fitLevel = fitLevel(admissionLowGap, completeness);
+        String fitLevel = fitLevel(admissionLowGap, admissionHighGap, completeness);
 
         item.put("examCombo", examCombo);
         item.put("examSubjectsLabel", subjectsLabel(examCombo));
-        item.put("studyModeLabel", studyModeLabel(stringVal(row.get("studyMode"), "")));
         item.put("degreeTypeLabel", degreeTypeLabel(stringVal(row.get("degreeType"), "")));
         item.put("scoreLineGap", scoreLineGap);
         item.put("admissionLowGap", admissionLowGap);
+        item.put("admissionHighGap", admissionHighGap);
         item.put("avgScoreGap", avgScoreGap);
         item.put("admissionRangeLabel", rangeLabel(low, high));
         item.put("retestAdmissionRatio", ratio(retestCount, admittedCount));
@@ -281,6 +275,9 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         item.put("warnings", warnings(item, completeness));
         item.put("sourceName", "N诺");
         item.put("sourceType", "third_party");
+        item.put("sourceUrl", row.get("sourceUrl"));
+        item.put("sourceTitle", row.get("sourceTitle"));
+        item.put("sourceOwner", row.get("sourceOwner"));
         item.put("officialVerified", boolVal(row.get("officialVerified"), false));
         return item;
     }
@@ -351,22 +348,21 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         return warnings;
     }
 
-    private String fitLevel(Integer admissionLowGap, String completeness)
+    private String fitLevel(Integer admissionLowGap, Integer admissionHighGap, String completeness)
     {
         if (!"A".equals(completeness) && !"B".equals(completeness)) return "insufficient_data";
         if (admissionLowGap == null) return "insufficient_data";
         if (admissionLowGap < -20) return "sprint";
         if (admissionLowGap < 5) return "balanced_sprint";
-        if (admissionLowGap < 35) return "steady";
-        return "safe";
+        if (admissionHighGap != null && admissionHighGap > 0) return "safe";
+        return "steady";
     }
 
     private Map<String, Object> basicInfo(Map<String, Object> item)
     {
         Map<String, Object> basic = new LinkedHashMap<>();
         for (String key : Arrays.asList("programId", "schoolId", "schoolName", "province", "city", "collegeName",
-            "programCode", "programName", "researchDirection", "studyMode", "studyModeLabel", "degreeType",
-            "degreeTypeLabel", "examCombo", "examSubjectsLabel", "dataYear"))
+            "programCode", "programName", "researchDirection", "degreeType", "degreeTypeLabel", "examCombo", "examSubjectsLabel", "dataYear"))
             basic.put(key, item.get(key));
         return basic;
     }
@@ -376,7 +372,8 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         Map<String, Object> overview = new LinkedHashMap<>();
         for (String key : Arrays.asList("fitLevel", "fitLevelLabel", "scoreLine", "scoreLineGap",
             "admissionLow", "admissionLowGap", "admissionRangeLabel", "avgAdmittedScore", "avgScoreGap",
-            "planCount", "unifiedExamQuota", "retestCount", "admittedCount", "retestAdmissionRatio"))
+            "admissionHigh", "admissionHighGap", "planCount", "unifiedExamQuota", "retestCount",
+            "admittedCount", "retestAdmissionRatio"))
             overview.put(key, item.get(key));
         return overview;
     }
@@ -387,6 +384,9 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         source.put("sourceName", "N诺");
         source.put("sourceType", "third_party");
         source.put("dataYear", item.get("dataYear"));
+        source.put("sourceUrl", item.get("sourceUrl"));
+        source.put("sourceTitle", item.get("sourceTitle"));
+        source.put("sourceOwner", item.get("sourceOwner"));
         source.put("officialVerified", item.get("officialVerified"));
         return source;
     }
@@ -412,7 +412,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             case "sprint": return "录取概率较低，但仍有机会";
             case "balanced_sprint": return "有一定机会，需合理评估";
             case "steady": return "录取概率较高，适合作为主力候选";
-            case "safe": return "风险相对较低，但仍需看官方招生变化";
+            case "safe": return "预计分数高于历史最高录取分，但仍需看官方招生变化";
             default: return "字段不完整，仅作补充线索，不进入主推荐池";
         }
     }
@@ -475,9 +475,10 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             row("schoolName", "学校"), row("programName", "专业"),
             row("examSubjectsLabel", "考试组合"), row("scoreLine", "复试线"),
             row("admissionLow", "最低录取分"), row("admissionLowGap", "与最低录取分差距"),
+            row("admissionHigh", "最高录取分"), row("admissionHighGap", "与最高录取分差距"),
             row("avgScoreGap", "与拟录取均分差距"), row("admissionRangeLabel", "拟录取区间（总分）"),
             row("planCount", "招生人数（含推免）"), row("dataCompleteness", "N诺数据完整度"),
-            row("fitLevelLabel", "适配等级"));
+            row("sourceUrl", "N诺来源"), row("fitLevelLabel", "适配等级"));
     }
 
     private Map<String, Object> option(String value, String label)
@@ -506,7 +507,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     private String examComboBySubjects(String subjectCodes) { return "101,204,302,408".equals(subjectCodes) ? "22408" : "11408"; }
 
     private String subjectsLabel(String examCombo) { return "22408".equals(examCombo) ? "政治 + 英语二 + 数学二 + 408" : "政治 + 英语一 + 数学一 + 408"; }
-    private String studyModeLabel(String s) { return "part_time".equals(s) ? "非全日制" : "全日制"; }
     private String degreeTypeLabel(String s) { return "academic".equals(s) ? "学硕" : "专硕"; }
 
     private String rangeLabel(Integer low, Integer high)

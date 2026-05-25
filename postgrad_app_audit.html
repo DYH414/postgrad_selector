@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>考研择校模块问题审查报告</title>
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #dbe4f0;
+    }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 32px 20px 60px; }
+    .hero { background: linear-gradient(135deg, #1d4ed8, #4f46e5); color: #fff; border-radius: 18px; padding: 28px; box-shadow: 0 16px 34px rgba(37, 99, 235, 0.22); }
+    .hero h1 { margin: 0 0 8px; font-size: 30px; }
+    .hero p { margin: 0; line-height: 1.75; opacity: 0.96; }
+    .meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .meta .box { background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.18); border-radius: 12px; padding: 12px 14px; }
+    .meta .k { display:block; font-size: 12px; opacity: .8; margin-bottom: 4px; }
+    .meta .v { font-weight: 700; }
+    .section { margin-top: 22px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 10px 24px rgba(15,23,42,0.04); overflow: hidden; }
+    .section h2 { margin: 0; padding: 18px 20px; border-bottom: 1px solid var(--border); font-size: 20px; }
+    .section .content { padding: 18px 20px 22px; }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .pill { border-radius: 14px; padding: 14px; color: #fff; }
+    .pill.red { background: linear-gradient(135deg, #ef4444, #b91c1c); }
+    .pill.yellow { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .pill.blue { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+    .pill.green { background: linear-gradient(135deg, #10b981, #059669); }
+    .pill .n { font-size: 28px; font-weight: 800; line-height: 1; margin-bottom: 6px; }
+    .pill .t { font-size: 13px; opacity: .95; line-height: 1.5; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5edf7; padding: 12px 10px; text-align: left; vertical-align: top; }
+    th { background: #f8fbff; font-size: 13px; color: #374151; }
+    td { font-size: 14px; line-height: 1.55; }
+    .tag { display:inline-block; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .high { background: #fee2e2; color: #991b1b; }
+    .mid { background: #fef3c7; color: #92400e; }
+    .low { background: #dbeafe; color: #1d4ed8; }
+    .footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
+    .code { font-family: ui-monospace,SFMono-Regular,Consolas,monospace; background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+    @media (max-width: 900px) { .meta, .summary { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>考研择校模块问题审查报告</h1>
+      <p>本报告覆盖前端页面、接口调用、后端逻辑、数据一致性、交互体验与潜在安全风险。内容以当前代码仓库中“考研择校”相关模块为准，重点关注 <span class="code">recommend</span>、<span class="code">results</span>、<span class="code">favorites</span>、<span class="code">history</span>、<span class="code">profile</span> 及推荐接口链路。</p>
+      <div class="meta">
+        <div class="box"><span class="k">审查范围</span><span class="v">前端 Vue + 后端 Java + Mapper SQL</span></div>
+        <div class="box"><span class="k">主要风险</span><span class="v">逻辑错误 / 数据不一致 / UX 缺陷 / 安全隐患</span></div>
+        <div class="box"><span class="k">结论</span><span class="v">存在多处可见问题，建议分批修复</span></div>
+        <div class="box"><span class="k">建议优先级</span><span class="v">先修数据链路，再修 UI 与安全</span></div>
+      </div>
+    </div>
+
+    <section class="section">
+      <h2>一、问题总览</h2>
+      <div class="content summary">
+        <div class="pill red"><div class="n">6</div><div class="t">高风险问题：会直接影响结果正确性、数据安全或稳定性</div></div>
+        <div class="pill yellow"><div class="n">7</div><div class="t">中风险问题：会导致部分功能失效、误导用户或产生维护隐患</div></div>
+        <div class="pill blue"><div class="n">6</div><div class="t">低风险问题：不一定报错，但会降低可用性与体验</div></div>
+        <div class="pill green"><div class="n">19</div><div class="t">共识别问题：可作为后续整改清单的基础</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>二、后端逻辑与接口问题</h2>
+      <div class="content">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:70px">级别</th>
+              <th style="width:220px">问题</th>
+              <th>表现 / 影响</th>
+              <th style="width:240px">建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="tag high">高</span></td><td>推荐结果快照字段与前端展示不完全一致</td><td>历史详情页与结果页依赖不同的数据结构，部分字段名使用驼峰/下划线混杂，容易出现页面某些列空白、标签丢失或回显不一致的问题。</td><td>统一推荐结果 DTO/JSON schema，前后端只使用一套标准字段命名。</td></tr>
+            <tr><td><span class="tag high">高</span></td><td>收藏、历史、详情接口返回结构依赖隐式字段</td><td>例如历史页直接展示 <span class="code">rule_version</span>、<span class="code">created_at</span>，若后端返回为驼峰命名就会空白；同类问题在收藏页也可能出现。</td><td>后端统一响应序列化策略，前端增加兜底格式化。</td></tr>
+            <tr><td><span class="tag high">高</span></td><td>结果分页/分组逻辑可能造成用户误解</td><td>推荐结果按组切分后只展示前若干条，用户以为“没有更多”，但实际上只是分页截断；同时结果页存在“展开全部”按钮但未实现真正展开。</td><td>明确标识“当前仅展示前 N 条”，或补充分页/加载更多接口。</td></tr>
+            <tr><td><span class="tag high">高</span></td><td>后端允许依赖客户端传入的评分与筛选条件</td><td>预计分数、专业方向、地区等均从请求体传入，若缺少校验或风控策略，用户可构造异常请求，得到不符合常识的推荐结果。</td><td>对关键参数做范围校验、类型校验和业务白名单限制。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>推荐结果缓存依赖 sessionStorage</td><td>页面切换后可能读取到旧数据；当用户重新生成推荐但未刷新时，历史和当前结果容易串线。</td><td>缓存应携带版本号或 recommendationId，并在进入结果页时优先以服务端为准。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>API 错误处理偏弱</td><td>多个页面只做了 then/finally，缺少统一的 catch 提示与兜底状态，接口失败时页面可能仅停留在 loading 或空白区域。</td><td>在页面层增加统一错误提示、空态和重试按钮。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>历史详情展示和结果详情存在重复逻辑</td><td>历史页与结果页分别解析推荐 payload，若后端结构变化会维护两处，容易不一致。</td><td>抽出统一的数据适配层或公共展示组件。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>旧“学习方式”字段仍可能残留</td><td>当前已决定隐藏该维度，但若后端、缓存或历史数据里仍保留字段，容易让数据含义混乱。</td><td>彻底删除后端接口、SQL、前端展示、缓存中的相关字段。</td></tr>
+            <tr><td><span class="tag low">低</span></td><td>部分接口未显式标注参数默认值</td><td>例如历史/详情接口在前端看不出必填与选填边界，后续维护容易误传参数。</td><td>补充接口文档与参数说明。</td></tr>
+            <tr><td><span class="tag low">低</span></td><td>推荐等级/分组命名不统一</td><td>页面中有“冲刺/稳中偏冲/稳妥候选/保底候选”，历史页又是“稳妥/重点关注/可冲/数据不足”，语义映射不一致。</td><td>统一分组命名和映射规则。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>三、安全问题</h2>
+      <div class="content">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:70px">级别</th>
+              <th style="width:220px">问题</th>
+              <th>风险说明</th>
+              <th style="width:240px">建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="tag high">高</span></td><td>Token 可能存放于浏览器可读存储</td><td>当前前端通过本地存储读取 token，如果页面存在 XSS 漏洞，攻击脚本可直接读取并冒用用户身份。</td><td>改用 HttpOnly Cookie 或增加更严格的 CSP、防 XSS 处理。</td></tr>
+            <tr><td><span class="tag high">高</span></td><td>推荐结果包含敏感画像信息</td><td>画像、目标地区、分数、风险偏好等会被保存为历史记录；若权限校验不严，可能被越权查看。</td><td>历史记录接口必须做用户归属校验与最小字段返回。</td></tr>
+            <tr><td><span class="tag high">高</span></td><td>前端内容未体现输出编码策略</td><td>多处将后端返回的字符串直接渲染到页面，如果后端数据源污染，可能放大 XSS 风险。</td><td>后端输出净化，前端避免使用不安全的 HTML 渲染方式。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>仅依赖前端登录态控制收藏操作</td><td>未登录时前端允许“假收藏”，登录后再同步，容易让用户误以为已成功持久化。</td><td>未登录时应明确提示并阻止持久化动作，或提供清晰的临时态说明。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>接口缺少明显的限流与审计痕迹</td><td>生成推荐、查看详情、列表接口可能被批量刷取，带来数据爬取与资源消耗风险。</td><td>对核心接口加限流、监控和审计。</td></tr>
+            <tr><td><span class="tag low">低</span></td><td>外链跳转未进行站点白名单管理</td><td>部分页面直接打开来源链接，虽然当前是 N诺来源，但长期看可能引入不安全外链。</td><td>统一外链白名单或提示二次确认。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>四、前端 UI 与交互问题</h2>
+      <div class="content">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:70px">级别</th>
+              <th style="width:220px">问题</th>
+              <th>表现</th>
+              <th style="width:240px">建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="tag high">高</span></td><td>结果页存在静态“占位式”按钮</td><td>“导出结果”“调整列”“一键对比”等按钮看起来像真实功能，但若未接通实际逻辑，会给用户造成误导。</td><td>未实现时请禁用或隐藏，并标注“开发中”。</td></tr>
+            <tr><td><span class="tag high">高</span></td><td>部分关键空态处理不足</td><td>接口失败、无数据、结果过少等状态没有统一的视觉反馈，用户容易认为页面卡死。</td><td>增加空状态、错误状态与重试入口。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>结果页“推荐结果/对比与备选”切换逻辑略混乱</td><td>页面通过 query 和内部状态共同控制，若刷新、回退或直接分享链接，tab 状态容易不一致。</td><td>将 tab 状态完全由路由 query 驱动，减少本地状态分叉。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>筛选器布局在中小屏较拥挤</td><td>左侧筛选栏在宽屏下较好，但移动端/平板下会变成纵向堆叠，信息密度高且操作疲劳。</td><td>把筛选面板改为折叠抽屉或顶部弹层。</td></tr>
+            <tr><td><span class="tag mid">中</span></td><td>历史页、收藏页表格字段过宽</td><td>专业名称、学院名称、代码、学位等列很多，窄屏时横向滚动体验差。</td><td>支持列配置、主次信息分层展示。</td></tr>
+            <tr><td><span class="tag low">低</span></td><td>说明文案重复且偏长</td><td>风险提示、N诺说明在多个页面反复出现，用户会产生“信息噪音”。</td><td>合并为统一的提示组件或侧栏说明卡片。</td></tr>
+            <tr><td><span class="tag low">低</span></td><td>视觉风格局部不统一</td><td>一些页面偏“营销风”，另一些页面偏“管理系统风”，字体大小、按钮风格与阴影层次有差异。</td><td>统一设计语言与组件规范。</td></tr>
+            <tr><td><span class="tag low">低</span></td><td>图标与状态提示不够明确</td><td>收藏、加载、结果说明、警告图标较多，但缺少统一状态语义，易混淆。</td><td>制定图标语义表与颜色规范。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>五、可维护性与代码质量问题</h2>
+      <div class="content">
+        <ul>
+          <li><strong>数据适配逻辑分散。</strong> 推荐页、结果页、历史页、收藏页都在各自处理字段映射，建议抽出统一的适配器。</li>
+          <li><strong>重复提示文案过多。</strong> 例如“复试线不是最低录取分”“N诺数据仅供参考”等多处重复，后期改文案成本高。</li>
+          <li><strong>部分页面缺少统一错误边界。</strong> 异步接口失败后没有通用降级策略。</li>
+          <li><strong>旧功能残留较多。</strong> 例如被移除的学习方式相关字段，前后端、缓存、历史数据可能还残留，需要一次性清理。</li>
+          <li><strong>接口与 UI 耦合较重。</strong> 页面直接依赖后端字段名和枚举值，导致后端小改动即可引发前端展示问题。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>六、建议整改顺序</h2>
+      <div class="content">
+        <ol style="line-height:1.9; margin:0 0 0 22px;">
+          <li><strong>先修数据链路：</strong>统一推荐结果、历史记录、收藏详情的字段命名与结构，消除前后端不一致。</li>
+          <li><strong>再修安全：</strong>收紧 token 存储方式、越权校验、接口限流与审计。</li>
+          <li><strong>然后修交互：</strong>补齐空态、错误态、按钮真实能力与加载反馈。</li>
+          <li><strong>最后做体验优化：</strong>统一视觉规范、合并说明文案、优化中小屏布局。</li>
+        </ol>
+      </div>
+    </section>
+
+    <div class="footer">说明：本报告基于当前仓库可见代码静态审查生成，未运行完整端到端测试；部分问题属于“高概率风险”或“设计缺陷”，需要结合实际运行进一步确认。</div>
+  </div>
+</body>
+</html>

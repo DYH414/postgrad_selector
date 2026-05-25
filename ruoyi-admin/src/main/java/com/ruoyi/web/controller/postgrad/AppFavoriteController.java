@@ -1,5 +1,8 @@
 package com.ruoyi.web.controller.postgrad;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
@@ -28,7 +31,7 @@ public class AppFavoriteController
         AppLoginUser loginUser = getCurrentAppUser();
         if (loginUser == null) return AjaxResult.error("未登录");
 
-        return AjaxResult.success(favoriteService.selectFavoriteListByUserId(loginUser.getUserId()));
+        return AjaxResult.success(normalizeFavorites(favoriteService.selectFavoriteListByUserId(loginUser.getUserId())));
     }
 
     @PostMapping("/{programId}")
@@ -63,6 +66,32 @@ public class AppFavoriteController
             }
             return null;
         }
-        catch (Exception e) { return null; }
+        catch (Exception e)
+        {
+            return null;
+        }
+    }
+
+    private List<Map<String, Object>> normalizeFavorites(List<Map<String, Object>> favorites)
+    {
+        List<Map<String, Object>> list = new ArrayList<>();
+        if (favorites == null) return list;
+        for (Map<String, Object> row : favorites)
+        {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", row.get("id"));
+            item.put("programId", row.get("program_id"));
+            item.put("schoolName", row.get("school_name"));
+            item.put("tier", row.get("tier"));
+            item.put("collegeName", row.get("college_name"));
+            item.put("programName", row.get("program_name"));
+            item.put("programCode", row.get("program_code"));
+            item.put("degreeType", row.get("degree_type"));
+            item.put("studyMode", row.get("study_mode"));
+            item.put("createdAt", row.get("created_at"));
+            item.put("note", row.get("note"));
+            list.add(item);
+        }
+        return list;
     }
 }

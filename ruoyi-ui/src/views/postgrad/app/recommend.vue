@@ -47,15 +47,6 @@
           </div>
 
           <div class="form-row">
-            <div class="row-label"><i class="el-icon-notebook-2"></i>学习方式</div>
-            <div class="segmented">
-              <button :class="{ active: form.studyMode === 'any' }" @click="form.studyMode = 'any'">不限</button>
-              <button :class="{ active: form.studyMode === 'full_time' }" @click="form.studyMode = 'full_time'">全日制</button>
-              <button :class="{ active: form.studyMode === 'part_time' }" @click="form.studyMode = 'part_time'">非全日制</button>
-            </div>
-          </div>
-
-          <div class="form-row">
             <div class="row-label"><i class="el-icon-collection-tag"></i>专业方向</div>
             <div class="row-control input-shell">
               <el-select v-model="form.majorDirections" multiple collapse-tags filterable placeholder="选择专业方向（可多选）">
@@ -154,7 +145,6 @@ export default {
         score: 300,
         exam: '22408',
         regions: [],
-        studyMode: 'any',
         majorDirections: [],
         risk: 'balanced'
       }
@@ -172,7 +162,6 @@ export default {
         if (data.defaultProfile) {
           this.form.score = data.defaultProfile.estimatedScore || this.form.score
           this.form.exam = data.defaultProfile.examCombo || this.form.exam
-          this.form.studyMode = data.defaultProfile.studyMode || this.form.studyMode
         }
       }).finally(() => { this.loadingOptions = false })
     },
@@ -186,7 +175,6 @@ export default {
         estimatedScore: this.form.score || 300,
         examCombo: this.form.exam,
         targetRegions: this.form.regions,
-        studyMode: this.form.studyMode,
         majorDirections: this.form.majorDirections,
         riskPreference: this.form.risk,
         includeIncompleteData: true,

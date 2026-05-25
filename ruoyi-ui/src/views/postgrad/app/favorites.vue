@@ -11,19 +11,14 @@
       </div>
       <el-table :data="favorites" v-loading="loading" style="width:100%" @selection-change="selectedRows = $event">
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="school_name" label="学校" />
+        <el-table-column prop="schoolName" label="学校" />
         <el-table-column prop="tier" label="层次" width="80" />
-        <el-table-column prop="college_name" label="学院" />
-        <el-table-column prop="program_name" label="专业" />
-        <el-table-column prop="program_code" label="专业代码" width="100" />
-        <el-table-column prop="study_mode" label="学习方式" width="90">
+        <el-table-column prop="collegeName" label="学院" />
+        <el-table-column prop="programName" label="专业" />
+        <el-table-column prop="programCode" label="专业代码" width="100" />
+        <el-table-column prop="degreeType" label="学位" width="70">
           <template slot-scope="scope">
-            {{ scope.row.study_mode === 'full_time' ? '全日制' : '非全日制' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="degree_type" label="学位" width="70">
-          <template slot-scope="scope">
-            {{ scope.row.degree_type === 'professional' ? '专硕' : '学硕' }}
+            {{ scope.row.degreeType === 'professional' ? '专硕' : '学硕' }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="150">
@@ -91,13 +86,13 @@ export default {
       }).finally(() => { this.loading = false })
     },
     handleRemove(row) {
-      removeFavorite(row.program_id).then(() => {
+      removeFavorite(row.programId).then(() => {
         this.$message.success('已取消收藏')
-        this.favorites = this.favorites.filter(f => f.program_id !== row.program_id)
+        this.favorites = this.favorites.filter(f => f.programId !== row.programId)
       })
     },
     compareSelected() {
-      const ids = this.selectedRows.map(row => row.program_id).filter(Boolean)
+      const ids = this.selectedRows.map(row => row.programId).filter(Boolean)
       if (ids.length < 2) {
         this.$message.warning('至少选择 2 个项目进行对比')
         return
@@ -111,7 +106,7 @@ export default {
       this.detailVisible = true
       this.detailLoading = true
       this.detail = null
-      getProgramDetail(row.program_id).then(res => {
+      getProgramDetail(row.programId).then(res => {
         this.detail = res.data
       }).finally(() => { this.detailLoading = false })
     },

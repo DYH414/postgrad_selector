@@ -10,8 +10,7 @@
         </div>
         <div class="filter-group">
           <label>地区</label>
-          <el-select v-model="filterForm.region" clearable filterable placeholder="不限">
-            <el-option label="不限" value="" />
+          <el-select v-model="filterForm.regions" multiple collapse-tags clearable filterable placeholder="不限">
             <el-option v-for="region in regionOptions" :key="region" :label="region" :value="region" />
           </el-select>
         </div>
@@ -99,13 +98,10 @@
               <tbody>
                 <tr v-for="row in compareRows" :key="row.label">
                   <th>{{ row.label }}</th>
-                  <td v-for="school in compareSchools" :key="school.name + row.label">
+                  <td v-for="school in compareSchools" :key="school.compareKey + row.label">
                     <template v-if="row.type === 'name'"><strong>{{ school.name }}</strong></template>
                     <template v-else-if="row.type === 'fit'">
                       <span class="fit-tag" :class="'fit-' + school.fitLevelClass">{{ school.fitLevel }}</span>
-                      <span class="fit-stars" aria-hidden="true">
-                        <span v-for="n in 5" :key="n" class="star" :class="{ light: n <= school.star }">★</span>
-                      </span>
                     </template>
                     <template v-else-if="row.type === 'diff'">
                       <span class="score-diff" :class="{ positive: school[row.key] >= 0, negative: school[row.key] < 0 }">
@@ -113,8 +109,17 @@
                       </span>
                     </template>
                     <template v-else-if="row.type === 'confidence'">
-                      <span class="grade" :class="'grade-' + school.confidence.toLowerCase()">完整度 {{ school.confidence }}</span>
-                      <small class="completeness-note">{{ dataCompletenessText(school.confidence) }}</small>
+                      <span
+                        class="grade completeness-tip"
+                        :class="'grade-' + school.confidence.toLowerCase()"
+                        tabindex="0"
+                        :data-tip="dataCompletenessText(school.confidence)">
+                        完整度 {{ school.confidence }}
+                      </span>
+                    </template>
+                    <template v-else-if="row.type === 'source'">
+                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="school.sourceUrl" target="_blank" rel="noopener noreferrer">N诺来源</a>
+                      <span v-else>-</span>
                     </template>
                     <template v-else-if="row.type === 'action'"><button class="detail-link" type="button" @click="openDetail(school.programId)">查看详情</button></template>
                     <template v-else>{{ school[row.key] }}</template>
@@ -151,7 +156,7 @@
           </section>
         </template>
 
-        <div v-if="result.aiAnalysis" class="ai-analysis-card">
+        <div v-if="activeTab !== 'compare' && result.aiAnalysis" class="ai-analysis-card">
           <div class="ai-card-header">
             <span class="ai-icon"><i class="el-icon-cpu"></i></span>
             <strong>AI 推荐解读</strong>
@@ -162,7 +167,7 @@
           </div>
         </div>
 
-        <template v-else>
+        <template v-if="activeTab !== 'compare' && !result.aiAnalysis">
           <section v-for="group in filteredGroups" :key="group.name" class="school-section">
             <div class="section-title">
               <strong>{{ group.name }}</strong>
@@ -172,7 +177,7 @@
 
             <div v-if="group.schools.length === 0" class="empty-group">暂无该分组结果</div>
             <div v-else class="school-grid">
-              <article v-for="school in group.schools" :key="school.schoolName" class="school-card">
+              <article v-for="school in group.schools" :key="school.cardKey" class="school-card">
                 <div class="card-top">
                   <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
                   <div>
@@ -191,10 +196,18 @@
                 </div>
 
                 <div class="score-line">
-                  <div><span>复试线</span><strong>{{ school.scoreLine }}</strong></div>
-                  <div><span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong></div>
-                  <div><span>录取分差距</span><strong :class="{ positive: school.admissionLowGap >= 0, negative: school.admissionLowGap < 0 }">{{ formatDiff(school.admissionLowGap) }}</strong></div>
-                  <div><span>拟录取区间</span><strong>{{ school.range }}</strong></div>
+                  <div class="score-metric" tabindex="0" data-tip="院校公布的进入复试基本分数线，不等于最低录取分。">
+                    <span>复试线</span><strong>{{ school.scoreLine }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，通常比复试线更接近录取风险。">
+                    <span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="你的预计初试总分减去最低录取分，负数代表低于历史最低录取分。">
+                    <span>最低录取差距</span><strong :class="{ positive: school.admissionLowGap >= 0, negative: school.admissionLowGap < 0 }">{{ formatDiff(school.admissionLowGap) }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
+                    <span>拟录取区间</span><strong>{{ school.range }}</strong>
+                  </div>
                 </div>
 
                 <div class="tags">
@@ -203,6 +216,14 @@
                 </div>
 
                 <p v-if="school.note" class="card-note">{{ school.note }}</p>
+                <a
+                  v-if="school.sourceUrl"
+                  class="source-link"
+                  :href="school.sourceUrl"
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  <i class="el-icon-link"></i> N诺来源
+                </a>
                 <button class="detail-link card-detail" type="button" @click="openDetail(school.programId)">查看详情</button>
               </article>
             </div>
@@ -222,7 +243,6 @@
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
             <span>{{ detail.basic.examCombo }}：{{ detail.basic.examSubjectsLabel }}</span>
-            <span>{{ detail.basic.studyModeLabel }}</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
@@ -235,6 +255,14 @@
           <div class="drawer-warning">
             <p v-for="warning in detail.riskWarnings" :key="warning">· {{ warning }}</p>
           </div>
+          <a
+            v-if="detail.source && detail.source.sourceUrl"
+            class="drawer-source-link"
+            :href="detail.source.sourceUrl"
+            target="_blank"
+            rel="noopener noreferrer">
+            <i class="el-icon-link"></i> 查看 N诺来源
+          </a>
           <table class="trend-table">
             <thead>
               <tr><th>年份</th><th>复试线</th><th>拟录取均分</th><th>录取区间</th></tr>
@@ -261,11 +289,19 @@ import { comparePrograms, getProgramDetail } from '@/api/postgrad/appPrograms'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/postgrad/appFavorites'
 import { getAppToken } from '@/utils/appAuth'
 
+const FILTER_STORAGE_PREFIX = 'app-results-filters'
+const emptyFilters = () => ({
+  regions: [],
+  tier: '',
+  exam: '',
+  hasAdmissionRange: '',
+  confidence: ''
+})
+
 const fallbackResult = {
   score: 300,
   exam: '22408',
   region: '福建',
-  studyMode: '全日制',
   groups: [
     {
       name: '冲刺',
@@ -310,20 +346,8 @@ export default {
       result: fallbackResult,
       favoriteProgramIds: [],
       favoriteLoadingIds: [],
-      filterForm: {
-        region: '',
-        tier: '',
-        exam: '',
-        hasAdmissionRange: '',
-        confidence: ''
-      },
-      appliedFilters: {
-        region: '',
-        tier: '',
-        exam: '',
-        hasAdmissionRange: '',
-        confidence: ''
-      },
+      filterForm: emptyFilters(),
+      appliedFilters: emptyFilters(),
       compareRows: [
         { label: '学校', type: 'name' },
         { label: '专业', key: 'program' },
@@ -336,6 +360,7 @@ export default {
         { label: '与拟录取均分差距', type: 'diff', key: 'avgScoreGap' },
         { label: '招生人数（含推免）', key: 'quota' },
         { label: 'N诺数据完整度', type: 'confidence' },
+        { label: 'N诺来源', type: 'source' },
         { label: '推荐等级', type: 'fit' },
         { label: '操作', type: 'action' }
       ],
@@ -356,8 +381,7 @@ export default {
       const chips = [
         { key: 'score', label: `分数 ${this.result.score}` },
         { key: 'exam', label: `考试组合 ${this.appliedFilters.exam || this.result.exam}`, clearKey: this.appliedFilters.exam ? 'exam' : '' },
-        { key: 'region', label: `地区 ${this.appliedFilters.region || this.result.region}`, clearKey: this.appliedFilters.region ? 'region' : '' },
-        { key: 'studyMode', label: `学习方式 ${this.result.studyMode}` }
+        { key: 'region', label: `地区 ${this.regionFilterLabel}`, clearKey: this.appliedFilters.regions.length ? 'regions' : '' },
       ]
       if (this.appliedFilters.tier) {
         chips.push({ key: 'tier', label: `学校层次 ${this.tierLabel(this.appliedFilters.tier)}`, clearKey: 'tier' })
@@ -370,8 +394,14 @@ export default {
       }
       return chips
     },
+    regionFilterLabel() {
+      return this.appliedFilters.regions.length ? this.appliedFilters.regions.join('、') : this.result.region
+    },
     regionOptions() {
       const regions = new Set()
+      ;(this.result.requestFilters && this.result.requestFilters.regions || []).forEach(region => {
+        if (region) regions.add(region)
+      })
       ;(this.result.groups || []).forEach(group => {
         ;(group.schools || []).forEach(school => {
           if (school.province) regions.add(school.province)
@@ -419,6 +449,7 @@ export default {
         try {
           const parsed = JSON.parse(cached)
           this.result = this.normalizeResult(parsed)
+          this.restoreFilters(parsed)
           if (this.activeTab === 'compare') {
             this.loadCompare()
             this.loadBackupGroups()
@@ -429,6 +460,7 @@ export default {
       this.loading = true
       getRecommendationResult(id).then(res => {
         this.result = this.normalizeResult(res.data || {})
+        this.restoreFilters(res.data || {})
         window.sessionStorage.setItem('app-recommend-result', JSON.stringify(res.data || {}))
         if (this.activeTab === 'compare') {
           this.loadCompare()
@@ -454,12 +486,16 @@ export default {
         aiAnalysis: data.aiAnalysis || null,
         summary: data.summary || null,
         globalWarnings: data.globalWarnings || [],
+        requestFilters: this.defaultFiltersFromRequest(request),
         groups
       }
     },
     normalizeSchool(item) {
       return {
         programId: item.programId,
+        cardKey: item.programId
+          ? `program:${item.programId}`
+          : `local:${item.schoolName}:${item.collegeName}:${item.programName}:${item.examCombo}`,
         schoolName: item.schoolName,
         badge: this.schoolBadge(item),
         tier: item.schoolTier,
@@ -478,6 +514,9 @@ export default {
         range: item.admissionRangeLabel || '-',
         avgScore: item.avgAdmittedScore || '-',
         avgScoreGap: item.avgScoreGap,
+        sourceUrl: item.sourceUrl,
+        sourceTitle: item.sourceTitle,
+        sourceOwner: item.sourceOwner,
         confidence: item.dataCompleteness || 'C',
         tag: item.fitLevelLabel || '数据不足',
         fitLevelClass: item.fitLevel || 'insufficient_data',
@@ -522,26 +561,76 @@ export default {
       if (warnings.length) return warnings.join(' ')
       return item.dataCompletenessText || ''
     },
+    filterStorageKey(data = {}) {
+      const id = this.$route.query.id || data.recommendationId || this.result.recommendationId || window.sessionStorage.getItem('app-recommend-id') || 'latest'
+      return `${FILTER_STORAGE_PREFIX}:${id}`
+    },
+    sanitizeFilters(filters = {}) {
+      const normalized = emptyFilters()
+      Object.keys(normalized).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null) {
+          normalized[key] = Array.isArray(normalized[key])
+            ? (Array.isArray(filters[key]) ? filters[key].filter(Boolean).map(String) : [String(filters[key])].filter(Boolean))
+            : String(filters[key])
+        }
+      })
+      if (!normalized.regions.length && filters.region) {
+        normalized.regions = [String(filters.region)]
+      }
+      return normalized
+    },
+    defaultFiltersFromRequest(request = {}) {
+      const filters = emptyFilters()
+      if (request.examCombo) filters.exam = request.examCombo
+      if (Array.isArray(request.targetRegions) && request.targetRegions.length) {
+        filters.regions = request.targetRegions.filter(Boolean).map(String)
+      }
+      return filters
+    },
+    restoreFilters(data = {}) {
+      const defaults = this.defaultFiltersFromRequest(data.request || {})
+      let filters = defaults
+      try {
+        const saved = window.localStorage.getItem(this.filterStorageKey(data))
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          const savedFilters = parsed && parsed.filters ? parsed.filters : parsed
+          const isLegacyEmpty = !parsed.version && Object.values(this.sanitizeFilters(savedFilters)).every(value => Array.isArray(value) ? value.length === 0 : value === '')
+          if (!isLegacyEmpty) {
+            filters = {
+              ...defaults,
+              ...this.sanitizeFilters(savedFilters)
+            }
+          }
+        }
+      } catch (e) {}
+      this.filterForm = { ...filters }
+      this.appliedFilters = { ...filters }
+    },
+    persistFilters() {
+      try {
+        window.localStorage.setItem(this.filterStorageKey(), JSON.stringify({
+          version: 2,
+          filters: this.appliedFilters,
+          updatedAt: Date.now()
+        }))
+      } catch (e) {}
+    },
     applyFilters() {
       this.appliedFilters = { ...this.filterForm }
+      this.persistFilters()
     },
     clearHeaderChip(key) {
       if (!Object.prototype.hasOwnProperty.call(this.filterForm, key)) return
-      this.filterForm[key] = ''
+      this.filterForm[key] = Array.isArray(this.filterForm[key]) ? [] : ''
       this.applyFilters()
     },
     resetFilters() {
-      this.filterForm = {
-        region: '',
-        tier: '',
-        exam: '',
-        hasAdmissionRange: '',
-        confidence: ''
-      }
+      this.filterForm = emptyFilters()
       this.applyFilters()
     },
     matchSchoolFilters(school, filters) {
-      if (filters.region && school.province !== filters.region) return false
+      if (filters.regions.length && !filters.regions.includes(school.province)) return false
       if (filters.exam && school.examCombo !== filters.exam) return false
       if (filters.confidence && school.confidence !== filters.confidence) return false
       if (filters.hasAdmissionRange === 'yes' && !school.hasAdmissionRange) return false
@@ -564,6 +653,9 @@ export default {
           const school = this.normalizeSchool(item)
           return {
             programId: school.programId,
+            compareKey: school.programId
+              ? `program:${school.programId}`
+              : `local:${school.schoolName}:${school.collegeName}:${school.programName}:${school.examCombo}`,
             name: school.schoolName,
             program: school.programName,
             exam: school.exam,
@@ -575,6 +667,7 @@ export default {
             avgScore: school.avgScore,
             avgScoreGap: school.avgScoreGap,
             quota: item.planCount || '-',
+            sourceUrl: item.sourceUrl,
             confidence: school.confidence,
             fitLevel: school.tag,
             fitLevelClass: school.fitLevelClass,
@@ -986,10 +1079,59 @@ export default {
   padding: 10px 0;
 }
 
-.score-line div {
+.score-metric {
+  position: relative;
   display: flex;
   justify-content: space-between;
+  gap: 10px;
   padding-right: 18px;
+  cursor: help;
+  border-radius: 6px;
+  outline: none;
+}
+
+.score-metric:hover,
+.score-metric:focus,
+.score-metric:focus-visible {
+  background: #f5f8ff;
+}
+
+.score-metric::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 8;
+  width: max-content;
+  max-width: min(280px, 78vw);
+  padding: 7px 9px;
+  border: 1px solid #dbe7ff;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 37, 76, 0.14);
+  color: #526278;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+  pointer-events: none;
+}
+
+.score-metric:nth-child(2n)::after {
+  right: 18px;
+  left: auto;
+}
+
+.score-metric:hover::after,
+.score-metric:focus::after,
+.score-metric:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 .score-line strong {
@@ -1032,12 +1174,43 @@ export default {
   background: #fff3dd;
 }
 
-.completeness-note {
-  display: block;
-  margin-top: 5px;
-  color: #6b778a;
+.completeness-tip {
+  position: relative;
+  cursor: help;
+  outline: none;
+}
+
+.completeness-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 10;
+  width: max-content;
+  max-width: min(260px, 72vw);
+  padding: 7px 9px;
+  border: 1px solid #dbe7ff;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 37, 76, 0.14);
+  color: #526278;
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.45;
+  font-weight: 400;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+  pointer-events: none;
+}
+
+.completeness-tip:hover::after,
+.completeness-tip:focus::after,
+.completeness-tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
 }
 
 .risk-tag {
@@ -1047,6 +1220,31 @@ export default {
 
 .card-note {
   font-size: 14px;
+}
+
+.source-link,
+.drawer-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #1769f6;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.source-link {
+  margin-right: 14px;
+}
+
+.compare-source {
+  margin-right: 0;
+  justify-content: center;
+}
+
+.source-link:hover,
+.drawer-source-link:hover {
+  color: #0f4fd1;
 }
 
 .compare-panel,
@@ -1348,6 +1546,10 @@ export default {
 .drawer-warning p {
   color: #9a4d00;
   margin: 4px 0;
+}
+
+.drawer-source-link {
+  margin: 0 0 18px;
 }
 
 .trend-table {
