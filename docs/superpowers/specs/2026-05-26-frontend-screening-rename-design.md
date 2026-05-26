@@ -2,25 +2,30 @@
 
 ## Goal
 
-Change the user-facing product language in the postgraduate app from "推荐" to "筛选" for the current condition-based candidate finder.
+Change the most visible user-facing language in the current condition-based candidate finder from "推荐" to "筛选".
 
 This keeps the current feature positioned as a data filtering tool, leaving "AI 推荐" available for a later dedicated module.
 
 ## Scope
 
-Rename the frontend product layer only:
+Rename only the current screening flow's visible copy:
 
-- Top navigation labels.
-- App route meta titles.
-- Recommendation entry page headings, helper text, CTA, login prompt, and privacy text.
-- Results page title, empty states, caution text, export filename, and action labels.
-- History, detail, favorites, and profile entry copy.
-- AI explanation block copy, renamed from "AI 推荐解读" to "AI 分析解读".
-- Brand copy changed from "408 考研推荐平台" to "408 考研择校平台" where shown to users.
+- Recommendation entry page heading, CTA, login prompt, and immediate helper text.
+- Results page title, empty state, caution text, and export filename.
+- Navigation label that points to the current result list.
+- Small page metadata labels where they directly describe the current flow.
 
 ## Out Of Scope
 
-Do not rename backend APIs, database tables, Java classes, internal request fields, or storage keys in this pass.
+Do not perform a broad product migration in this pass.
+
+Keep these areas unchanged unless they are immediately confusing in the current flow:
+
+- Brand name.
+- History/detail/favorites/profile page concepts.
+- Existing route paths.
+- Backend APIs, database tables, Java classes, internal request fields, or storage keys.
+- Future AI recommendation module design.
 
 The following can remain internally named `recommendation` for compatibility:
 
@@ -40,7 +45,7 @@ The current flow should read as:
 3. User clicks "开始筛选".
 4. If not logged in, the login prompt says screening requires login and will continue after login.
 5. User lands on "筛选结果".
-6. Empty, history, favorite, and export states all use "筛选" wording.
+6. Empty and export states in the current result page use "筛选" wording.
 
 The intended mental model is:
 
@@ -52,13 +57,9 @@ The intended mental model is:
 - "快速推荐" -> "快速筛选"
 - "开始推荐" -> "开始筛选"
 - "推荐结果" -> "筛选结果"
-- "推荐历史" -> "筛选记录"
-- "推荐详情" -> "筛选详情"
 - "还没有真实推荐结果" -> "还没有筛选结果"
 - "生成推荐需要登录" -> "生成筛选结果需要登录"
-- "AI 推荐解读" -> "AI 分析解读"
 - "考研择校推荐结果" -> "考研择校筛选结果"
-- "408 考研推荐平台" -> "408 考研择校平台"
 
 ## Implementation Notes
 
@@ -76,6 +77,6 @@ Avoid changing backend Java, mapper XML, or API names for this rename.
 After implementation:
 
 - Run `npm run build:prod` in `ruoyi-ui`.
-- Search the app frontend for user-facing stale phrases such as "开始推荐", "推荐结果", "推荐历史", and "AI 推荐解读".
+- Search the current flow for stale phrases such as "快速推荐", "开始推荐", "生成推荐需要登录", and "还没有真实推荐结果".
 - Verify `/app/recommend` in the browser shows "快速筛选" and "开始筛选".
 - Verify `/app/results` user-facing title/empty state uses "筛选结果" where reachable.
