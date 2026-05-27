@@ -186,7 +186,10 @@
                   <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
                   <div>
                     <h3>{{ school.schoolName }} <small>{{ school.badge }}</small></h3>
-                    <p>{{ school.collegeName }} / {{ school.programName }}</p>
+                    <p>
+                      <span :class="{ 'pending-field': isPendingCollege(school.collegeName) }">{{ displayCollegeName(school.collegeName) }}</span>
+                      / {{ school.programName }}
+                    </p>
                     <span>{{ school.exam }} | {{ school.province }}</span>
                   </div>
                   <button
@@ -216,7 +219,6 @@
 
                 <div class="tags">
                   <em :class="'grade-' + school.confidence.toLowerCase()">完整度{{ school.confidence }}</em>
-                  <em class="risk-tag">{{ school.tag }}</em>
                 </div>
 
                 <p v-if="school.note" class="card-note">{{ school.note }}</p>
@@ -228,6 +230,9 @@
                   rel="noopener noreferrer">
                   <i class="el-icon-link"></i> N诺来源
                 </a>
+                <span v-else class="source-link source-missing">
+                  <i class="el-icon-link"></i> N诺数据（来源待补）
+                </span>
                 <button class="detail-link card-detail" type="button" @click="openDetail(school.programId)">查看详情</button>
               </article>
             </div>
@@ -523,6 +528,12 @@ export default {
       if (item.is211) badges.push('211')
       if (item.isDoubleFirst) badges.push('双一流')
       return badges.join(' ')
+    },
+    isPendingCollege(name) {
+      return !name || name === '未知学院'
+    },
+    displayCollegeName(name) {
+      return this.isPendingCollege(name) ? '学院待核验' : name
     },
     studyModeText(value) {
       const map = { any: '不限', full_time: '全日制', part_time: '非全日制' }
@@ -1110,6 +1121,11 @@ export default {
   line-height: 1.6;
 }
 
+.school-card .pending-field {
+  color: #d46b08;
+  font-weight: 600;
+}
+
 .star-btn {
   border: 0;
   background: transparent;
@@ -1277,11 +1293,6 @@ export default {
   transform: translate(-50%, 0);
 }
 
-.risk-tag {
-  color: #ef4444;
-  background: #fff0f0;
-}
-
 .card-note {
   font-size: 14px;
 }
@@ -1299,6 +1310,11 @@ export default {
 
 .source-link {
   margin-right: 14px;
+}
+
+.source-missing {
+  color: #8a97aa;
+  font-weight: 600;
 }
 
 .compare-source {

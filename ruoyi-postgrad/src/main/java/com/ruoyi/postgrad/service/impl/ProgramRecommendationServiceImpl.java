@@ -150,7 +150,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         detail.put("trends", computeTrends(programId, score));
         detail.put("riskWarnings", Arrays.asList(
             "复试线只代表进入复试门槛，不代表最低录取分。",
-            "推荐学校不代表只有这些学校可以报，平台结果仅是基于现有数据的候选线索。",
+            "筛选学校不代表只有这些学校可以报，平台结果仅是基于现有数据的候选线索。",
             "N诺数据可能遗漏、过时或错误，请以院校官方公告为准。"
         ));
         detail.put("source", sourceInfo(item));
@@ -374,7 +374,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     {
         List<String> warnings = new ArrayList<>();
         warnings.add("复试线不是最低录取分。");
-        warnings.add("推荐学校不代表只有这些学校可以报。");
+        warnings.add("筛选学校不代表只有这些学校可以报。");
         if (!"A".equals(completeness)) warnings.add("N诺数据字段不完整，请重点核对院校官方公告。");
         Integer quota = nullableInt(item.get("unifiedExamQuota"));
         if (quota != null && quota < 10) warnings.add("统考名额较少，波动风险较高。");
