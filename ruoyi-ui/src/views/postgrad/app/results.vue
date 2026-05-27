@@ -156,7 +156,14 @@
           </section>
         </template>
 
-        <div v-if="activeTab !== 'compare' && result.aiAnalysis" class="ai-analysis-card">
+        <div v-if="activeTab !== 'compare' && !hasResult" class="empty-result">
+          <i class="el-icon-document"></i>
+          <strong>还没有筛选结果</strong>
+          <p>请先填写报考条件开始筛选；系统不会用演示院校替代你的真实结果。</p>
+          <el-button type="primary" @click="$router.push('/app/recommend')">去开始筛选</el-button>
+        </div>
+
+        <div v-if="activeTab !== 'compare' && hasResult && result.aiAnalysis" class="ai-analysis-card">
           <div class="ai-card-header">
             <span class="ai-icon"><i class="el-icon-cpu"></i></span>
             <strong>AI 推荐解读</strong>
@@ -167,7 +174,7 @@
           </div>
         </div>
 
-        <template v-if="activeTab !== 'compare' && !result.aiAnalysis">
+        <template v-if="activeTab !== 'compare' && hasResult && !result.aiAnalysis">
           <section v-for="group in filteredGroups" :key="group.name" class="school-section">
             <div class="section-title">
               <strong>{{ group.name }}</strong>
@@ -196,14 +203,14 @@
                 </div>
 
                 <div class="score-line">
-                  <div class="score-metric" tabindex="0" data-tip="院校公布的进入复试基本分数线，不等于最低录取分。">
-                    <span>复试线</span><strong>{{ school.scoreLine }}</strong>
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的平均总分，是本次筛选范围的主依据。">
+                    <span>拟录取均分</span><strong>{{ school.avgScore || '-' }}</strong>
                   </div>
-                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，通常比复试线更接近录取风险。">
+                  <div class="score-metric" tabindex="0" data-tip="你的预计初试总分减去拟录取均分，负数代表低于历史均分。">
+                    <span>均分差距</span><strong :class="{ positive: school.avgScoreGap >= 0, negative: school.avgScoreGap < 0 }">{{ formatDiff(school.avgScoreGap) }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，仅作风险边界参考。">
                     <span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong>
-                  </div>
-                  <div class="score-metric" tabindex="0" data-tip="你的预计初试总分减去最低录取分，负数代表低于历史最低录取分。">
-                    <span>最低录取差距</span><strong :class="{ positive: school.admissionLowGap >= 0, negative: school.admissionLowGap < 0 }">{{ formatDiff(school.admissionLowGap) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
                     <span>拟录取区间</span><strong>{{ school.range }}</strong>
@@ -298,40 +305,20 @@ const emptyFilters = () => ({
   confidence: ''
 })
 
-const fallbackResult = {
-  score: 300,
-  exam: '22408',
-  region: '福建',
-  groups: [
-    {
-      name: '冲刺',
-      desc: '录取概率较低，但仍有机会',
-      schools: [
-        { schoolName: '厦门大学', badge: '985 211 双一流', collegeName: '信息学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 320, range: '315-336', confidence: 'B', tag: '冲刺', note: '近年复试线较高，报考热度大，300分有机会进入复试。', star: 4 },
-        { schoolName: '福州大学', badge: '211 双一流', collegeName: '计算机与大数据学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 305, range: '295-322', confidence: 'B', tag: '冲刺', note: '专业实力较强，竞争激烈，建议冲刺尝试。', star: 4 },
-        { schoolName: '华侨大学', badge: '中央部属', collegeName: '信息科学与工程学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 300, range: '290-316', confidence: 'B', tag: '冲刺', note: '复试线接近300分，存在机会，需关注复试表现。', star: 4 }
-      ]
-    },
-    {
-      name: '稳中偏冲',
-      desc: '有一定机会，需合理评估',
-      schools: [
-        { schoolName: '福建师范大学', badge: '省属重点', collegeName: '计算机与网络空间安全学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 285, range: '276-304', confidence: 'B', tag: '稳中偏冲', note: '复试线与分数匹配，近年录取较稳，建议作为稳中偏冲选择。', star: 4 },
-        { schoolName: '福建农林大学', badge: '省属重点', collegeName: '计算机与信息学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 280, range: '270-298', confidence: 'B', tag: '稳中偏冲', note: '录取区间与分数匹配，机会较大，建议重点关注。', star: 4 },
-        { schoolName: '集美大学', badge: '省属重点', collegeName: '信息工程学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 275, range: '265-290', confidence: 'C', tag: '稳中偏冲', note: '复试线偏低，录取较稳定，建议作为稳中偏冲志愿。', star: 3 }
-      ]
-    },
-    {
-      name: '稳妥候选',
-      desc: '录取概率较高，适合作为保底',
-      schools: [
-        { schoolName: '福建工程学院', badge: '普通本科', collegeName: '计算机与数学学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 260, range: '250-275', confidence: 'C', tag: '稳妥候选', note: '录取门槛较低，录取机会较大，适合作为保底选择。', star: 3 },
-        { schoolName: '闽江学院', badge: '普通本科', collegeName: '计算机与大数据学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 252, range: '242-268', confidence: 'C', tag: '稳妥候选', note: '近年录取较稳定，分数匹配度高，建议保底。', star: 3 },
-        { schoolName: '莆田学院', badge: '普通本科', collegeName: '机电与信息工程学院', programName: '计算机科学与技术', exam: '22408', province: '福建', scoreLine: 248, range: '238-262', confidence: 'C', tag: '稳妥候选', note: '录取门槛较低，录取机会较大，建议保底。', star: 3 }
-      ]
-    }
-  ]
-}
+const emptyResult = () => ({
+  recommendationId: null,
+  totalCandidates: 0,
+  score: '-',
+  exam: '-',
+  region: '不限',
+  studyMode: '不限',
+  scoreRange: null,
+  aiAnalysis: null,
+  summary: null,
+  globalWarnings: [],
+  requestFilters: emptyFilters(),
+  groups: []
+})
 
 export default {
   name: 'AppResults',
@@ -343,7 +330,7 @@ export default {
       detailLoading: false,
       detail: null,
       activeTab: this.$route.query.tab === 'compare' ? 'compare' : 'result',
-      result: fallbackResult,
+      result: emptyResult(),
       favoriteProgramIds: [],
       favoriteLoadingIds: [],
       filterForm: emptyFilters(),
@@ -364,18 +351,16 @@ export default {
         { label: '推荐等级', type: 'fit' },
         { label: '操作', type: 'action' }
       ],
-      compareSchools: [
-        { name: '复旦大学', program: '计算机科学与技术', exam: '11408：政治 + 英语一 + 数学一 + 408', score: 355, admissionLow: 355, admissionLowGap: -55, range: '355-405', avgScore: 382, avgScoreGap: -82, quota: '120（含推免）', confidence: 'A', fitLevel: '冲刺', fitLevelClass: 'sprint', star: 5 },
-        { name: '上海交通大学', program: '计算机科学与技术', exam: '11408：政治 + 英语一 + 数学一 + 408', score: 350, admissionLow: 350, admissionLowGap: -50, range: '350-402', avgScore: 376, avgScoreGap: -76, quota: '160（含推免）', confidence: 'A', fitLevel: '冲刺', fitLevelClass: 'sprint', star: 5 },
-        { name: '华东师范大学', program: '计算机科学与技术', exam: '22408：政治 + 英语二 + 数学二 + 408', score: 330, admissionLow: 330, admissionLowGap: -30, range: '330-380', avgScore: 352, avgScoreGap: -52, quota: '85（含推免）', confidence: 'B', fitLevel: '稳中偏冲', fitLevelClass: 'balanced', star: 4 },
-        { name: '华中科技大学', program: '计算机科学与技术', exam: '22408：政治 + 英语二 + 数学二 + 408', score: 325, admissionLow: 325, admissionLowGap: -25, range: '325-375', avgScore: 346, avgScoreGap: -46, quota: '110（含推免）', confidence: 'B', fitLevel: '稳中偏冲', fitLevelClass: 'balanced', star: 4 }
-      ],
+      compareSchools: [],
       backupGroups: []
     }
   },
   computed: {
     currentHeader() {
       return this.activeTab === 'compare' ? 'compare' : 'results'
+    },
+    hasResult() {
+      return (this.result.groups || []).some(group => (group.schools || []).length > 0)
     },
     headerChips() {
       const chips = [
@@ -391,6 +376,9 @@ export default {
       }
       if (this.appliedFilters.confidence) {
         chips.push({ key: 'confidence', label: `完整度 ${this.appliedFilters.confidence}`, clearKey: 'confidence' })
+      }
+      if (this.result.scoreRange != null) {
+        chips.push({ key: 'scoreRange', label: `筛选范围 均分+${this.result.scoreRange}` })
       }
       return chips
     },
@@ -469,7 +457,7 @@ export default {
       }).finally(() => { this.loading = false })
     },
     normalizeResult(data) {
-      if (!data || !data.groups) return fallbackResult
+      if (!data || !data.groups) return emptyResult()
       const request = data.request || {}
       const groups = (data.groups || []).map(group => ({
         name: group.groupName || group.name,
@@ -483,6 +471,7 @@ export default {
         exam: request.examCombo || data.exam || '22408',
         region: request.targetRegions && request.targetRegions.length ? request.targetRegions.join('、') : '不限',
         studyMode: this.studyModeText(request.studyMode || data.studyMode),
+        scoreRange: request.scoreRange != null ? request.scoreRange : null,
         aiAnalysis: data.aiAnalysis || null,
         summary: data.summary || null,
         globalWarnings: data.globalWarnings || [],
@@ -1467,6 +1456,29 @@ export default {
   text-align: center;
   color: #8a96a8;
   background: #fbfdff;
+}
+
+.empty-result {
+  min-height: 300px;
+  border: 1px dashed #cbd8ea;
+  border-radius: 8px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #65748b;
+}
+
+.empty-result i {
+  font-size: 36px;
+  color: #9db2d0;
+}
+
+.empty-result strong {
+  color: #1e293b;
+  font-size: 18px;
 }
 
 .card-detail {

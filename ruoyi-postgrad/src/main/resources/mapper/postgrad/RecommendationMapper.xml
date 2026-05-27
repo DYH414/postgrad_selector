@@ -66,11 +66,21 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 #{code}
             </foreach>
         </if>
+        <if test="scoreRange != null">
+            and ar.avg_admitted_score is not null
+            and #{estimatedScore} &gt;= cast(ar.avg_admitted_score as signed) - #{scoreRange}
+        </if>
         order by
             case when sc.score_line is null then 1 else 0 end asc,
             case when ar.min_admitted_score is null then 1 else 0 end asc,
             coalesce(q.completeness_level, 'C') asc,
-            abs(cast(ar.min_admitted_score as signed) - #{estimatedScore}) asc,
+            case
+                when #{scoreRange} is not null and ar.avg_admitted_score is not null
+                    then abs((cast(ar.avg_admitted_score as signed) - #{scoreRange}) - #{estimatedScore})
+                when ar.min_admitted_score is not null
+                    then abs(cast(ar.min_admitted_score as signed) - #{estimatedScore})
+                else 999
+            end asc,
             s.tier asc
         limit 300
     </select>

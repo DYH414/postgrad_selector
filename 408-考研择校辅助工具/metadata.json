@@ -1,0 +1,6 @@
+{
+  "name": "408 考研择校辅助工具",
+  "description": "面向计算机考研学子的 408 考研择校辅助决策平台，汇聚历年录取分数与拟录取区间，提供冲稳保梯度推荐、多校横向对比与收藏备忘功能。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

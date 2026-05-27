@@ -60,35 +60,48 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
 
         String examCombo = stringVal(request.get("examCombo"), "11408");
         String riskPreference = stringVal(request.get("riskPreference"), "balanced");
+        Integer scoreRange = nullableInt(request.get("scoreRange"));
         boolean includeIncompleteData = boolVal(request.get("includeIncompleteData"), true);
         int pageSizePerGroup = Math.max(3, Math.min(intVal(request.get("pageSizePerGroup"), 12), 50));
 
         List<String> regions = stringList(request.get("targetRegions"));
         List<String> majorDirections = stringList(request.get("majorDirections"));
 
-        List<Map<String, Object>> candidates = fetchCandidates(examCombo, regions, majorDirections, estimatedScore);
+        List<Map<String, Object>> candidates = fetchCandidates(examCombo, regions, majorDirections, estimatedScore, scoreRange);
         List<Map<String, Object>> normalized = candidates.stream()
             .map(row -> normalizeProgram(row, estimatedScore))
             .collect(Collectors.toList());
 
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
-        for (String key : Arrays.asList("sprint", "balanced_sprint", "steady", "safe", "insufficient_data"))
-            grouped.put(key, new ArrayList<>());
-
-        for (Map<String, Object> item : normalized)
+        if (scoreRange != null)
         {
-            String groupKey = stringVal(item.get("fitLevel"), "insufficient_data");
-            if ("insufficient_data".equals(groupKey) && !includeIncompleteData) continue;
-            grouped.get(groupKey).add(item);
+            normalized = normalized.stream()
+                .filter(item -> matchesAverageDive(item, scoreRange))
+                .collect(Collectors.toList());
+            grouped.put("matches", new ArrayList<>(normalized));
+            grouped.values().forEach(list -> list.sort(averageDiveRiskComparator(scoreRange)));
         }
-
-        grouped.values().forEach(list -> list.sort(recommendationComparator(riskPreference)));
+        else
+        {
+            for (String key : Arrays.asList("sprint", "balanced_sprint", "steady", "safe", "insufficient_data"))
+                grouped.put(key, new ArrayList<>());
+            for (Map<String, Object> item : normalized)
+            {
+                String groupKey = stringVal(item.get("fitLevel"), "insufficient_data");
+                if ("insufficient_data".equals(groupKey) && !includeIncompleteData) continue;
+                grouped.get(groupKey).add(item);
+            }
+            grouped.values().forEach(list -> list.sort(recommendationComparator(riskPreference)));
+        }
 
         List<Map<String, Object>> groups = new ArrayList<>();
         for (String groupKey : grouped.keySet())
         {
             List<Map<String, Object>> items = grouped.get(groupKey);
-            groups.add(group(groupKey, items.stream().limit(pageSizePerGroup).collect(Collectors.toList())));
+            List<Map<String, Object>> visibleItems = scoreRange == null
+                ? items.stream().limit(pageSizePerGroup).collect(Collectors.toList())
+                : items;
+            groups.add(group(groupKey, visibleItems));
         }
 
         Map<String, Object> requestSnapshot = new LinkedHashMap<>();
@@ -98,6 +111,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         requestSnapshot.put("targetRegions", regions);
         requestSnapshot.put("majorDirections", majorDirections);
         requestSnapshot.put("riskPreference", riskPreference);
+        requestSnapshot.put("scoreRange", scoreRange);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ruleVersion", RULE_VERSION);
@@ -170,12 +184,12 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     // ---- fetch helpers ----
 
     private List<Map<String, Object>> fetchCandidates(String examCombo, List<String> regions,
-        List<String> majorDirections, int estimatedScore)
+        List<String> majorDirections, int estimatedScore, Integer scoreRange)
     {
         String subjectCodes = subjectCodes(examCombo);
         List<String> regionParam = (regions == null || regions.isEmpty()) ? null : regions;
         List<String> codesParam = (majorDirections == null || majorDirections.isEmpty()) ? null : majorDirections;
-        return new ArrayList<>(recommendationMapper.selectCandidates(subjectCodes, regionParam, codesParam, estimatedScore));
+        return new ArrayList<>(recommendationMapper.selectCandidates(subjectCodes, regionParam, codesParam, estimatedScore, scoreRange));
     }
 
     private List<Map<String, Object>> computeTrends(Long programId, int estimatedScore)
@@ -321,17 +335,38 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         };
     }
 
+    private boolean matchesAverageDive(Map<String, Object> item, int scoreRange)
+    {
+        Integer avgScoreGap = nullableInt(item.get("avgScoreGap"));
+        return avgScoreGap != null && avgScoreGap >= -scoreRange;
+    }
+
+    private Comparator<Map<String, Object>> averageDiveRiskComparator(int scoreRange)
+    {
+        return (a, b) -> {
+            int gapA = intVal(a.get("avgScoreGap"), 999);
+            int gapB = intVal(b.get("avgScoreGap"), 999);
+            int distanceA = Math.abs(gapA + scoreRange);
+            int distanceB = Math.abs(gapB + scoreRange);
+            if (distanceA != distanceB) return Integer.compare(distanceA, distanceB);
+            int avgA = intVal(a.get("avgAdmittedScore"), 0);
+            int avgB = intVal(b.get("avgAdmittedScore"), 0);
+            if (avgA != avgB) return Integer.compare(avgB, avgA);
+            return stringVal(a.get("schoolName"), "").compareTo(stringVal(b.get("schoolName"), ""));
+        };
+    }
+
     private Map<String, Object> summary(Map<String, List<Map<String, Object>>> grouped, int totalCandidates)
     {
         Map<String, Object> summary = new LinkedHashMap<>();
-        int insufficient = grouped.get("insufficient_data").size();
+        int insufficient = grouped.getOrDefault("insufficient_data", Collections.emptyList()).size();
         summary.put("totalCandidates", totalCandidates);
         summary.put("mainRecommendationCount", totalCandidates - insufficient);
         summary.put("insufficientDataCount", insufficient);
-        summary.put("sprintCount", grouped.get("sprint").size());
-        summary.put("balancedSprintCount", grouped.get("balanced_sprint").size());
-        summary.put("steadyCount", grouped.get("steady").size());
-        summary.put("safeCount", grouped.get("safe").size());
+        summary.put("sprintCount", grouped.getOrDefault("sprint", Collections.emptyList()).size());
+        summary.put("balancedSprintCount", grouped.getOrDefault("balanced_sprint", Collections.emptyList()).size());
+        summary.put("steadyCount", grouped.getOrDefault("steady", Collections.emptyList()).size());
+        summary.put("safeCount", grouped.getOrDefault("safe", Collections.emptyList()).size());
         return summary;
     }
 
@@ -397,6 +432,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     {
         switch (key)
         {
+            case "matches": return "匹配院校";
             case "sprint": return "冲刺";
             case "balanced_sprint": return "稳中偏冲";
             case "steady": return "稳妥候选";
@@ -409,6 +445,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     {
         switch (groupKey)
         {
+            case "matches": return "符合筛选范围的院校";
             case "sprint": return "录取概率较低，但仍有机会";
             case "balanced_sprint": return "有一定机会，需合理评估";
             case "steady": return "录取概率较高，适合作为主力候选";

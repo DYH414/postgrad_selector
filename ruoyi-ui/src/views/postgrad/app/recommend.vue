@@ -13,8 +13,8 @@
       <section class="main-grid">
         <div class="recommend-panel">
           <div class="panel-title">
-            <strong>快速推荐</strong>
-            <span>填写你的报考意向，获取个性化择校建议</span>
+            <strong>快速筛选</strong>
+            <span>填写你的报考意向，筛出更匹配的候选院校</span>
           </div>
 
           <div class="form-row score-row">
@@ -24,7 +24,7 @@
                 <template slot="append">分（满分500）</template>
               </el-input>
             </div>
-            <button class="plain-help" type="button">如何设定目标分数?</button>
+            <button class="plain-help" type="button" @click="showScoreHelp">如何设定目标分数?</button>
           </div>
 
           <div class="form-row">
@@ -58,10 +58,41 @@
             </div>
           </div>
 
+          <div class="form-row">
+            <div class="row-label range-label">
+              <i class="el-icon-odometer"></i>
+              筛选范围
+              <el-tooltip
+                effect="dark"
+                content="按拟录取平均分筛学校。数字表示允许候选均分比你的预计分最多高多少。"
+                placement="top"
+              >
+                <i class="el-icon-question range-help"></i>
+              </el-tooltip>
+            </div>
+            <div class="segmented five">
+              <el-tooltip effect="dark" content="拟录取平均分不高于预计分+5的候选都会进入，范围较窄。" placement="top">
+                <button :class="{ active: form.scoreRange === 5 }" @click="form.scoreRange = 5">均分+5</button>
+              </el-tooltip>
+              <el-tooltip effect="dark" content="拟录取平均分不高于预计分+10的候选都会进入，适合小幅冲刺。" placement="top">
+                <button :class="{ active: form.scoreRange === 10 }" @click="form.scoreRange = 10">均分+10</button>
+              </el-tooltip>
+              <el-tooltip effect="dark" content="拟录取平均分不高于预计分+15的候选都会进入，默认冲刺范围。" placement="top">
+                <button :class="{ active: form.scoreRange === 15 }" @click="form.scoreRange = 15">均分+15</button>
+              </el-tooltip>
+              <el-tooltip effect="dark" content="拟录取平均分不高于预计分+20的候选都会进入，范围更宽、风险更高。" placement="top">
+                <button :class="{ active: form.scoreRange === 20 }" @click="form.scoreRange = 20">均分+20</button>
+              </el-tooltip>
+              <el-tooltip effect="dark" content="不按拟录取平均分限制范围，候选更多，需要自己再判断风险。" placement="top">
+                <button :class="{ active: form.scoreRange === null }" @click="form.scoreRange = null">不限</button>
+              </el-tooltip>
+            </div>
+          </div>
+
           <el-button class="primary-cta" type="primary" :loading="generating" @click="startRecommend">
-            <i class="el-icon-magic-stick"></i> 开始推荐
+            <i class="el-icon-magic-stick"></i> 开始筛选
           </el-button>
-          <div class="privacy-note"><i class="el-icon-lock"></i> 信息仅用于推荐，不会泄露或用于其他用途</div>
+          <div class="privacy-note"><i class="el-icon-lock"></i> 信息仅用于筛选，不会泄露或用于其他用途</div>
         </div>
 
         <aside class="notice-panel">
@@ -146,7 +177,8 @@ export default {
         exam: '22408',
         regions: [],
         majorDirections: [],
-        risk: 'balanced'
+        risk: 'balanced',
+        scoreRange: 15
       }
     }
   },
@@ -165,6 +197,13 @@ export default {
         }
       }).finally(() => { this.loadingOptions = false })
     },
+    showScoreHelp() {
+      this.$alert(
+        '筛选范围按拟录取平均分判断。比如预计分300、选择“均分+15”，系统会筛出拟录取平均分315及以下的候选；数字越大，能进入的候选越多，也更适合找冲刺学校。',
+        '筛选范围说明',
+        { confirmButtonText: '知道了' }
+      )
+    },
     startRecommend() {
       if (!this.form.score) {
         this.$message.warning('请输入预计初试总分')
@@ -177,6 +216,7 @@ export default {
         targetRegions: this.form.regions,
         majorDirections: this.form.majorDirections,
         riskPreference: this.form.risk,
+        scoreRange: this.form.scoreRange,
         includeIncompleteData: true,
         pageSizePerGroup: 12
       }
@@ -344,6 +384,20 @@ export default {
 
 .segmented.wide {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.segmented.five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.range-label {
+  gap: 8px;
+}
+
+.range-help {
+  font-size: 15px;
+  color: #7aa8ff;
+  cursor: help;
 }
 
 .segmented button {
@@ -603,7 +657,8 @@ export default {
   }
 
   .segmented,
-  .segmented.wide {
+  .segmented.wide,
+  .segmented.five {
     grid-template-columns: 1fr;
     padding-top: 12px;
   }
