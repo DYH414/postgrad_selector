@@ -9,58 +9,55 @@
           <button type="button" @click="resetFilters">清空</button>
         </div>
         <div class="filter-group">
+          <label>预计初试总分</label>
+          <el-input v-model.number="filterForm.score" placeholder="请输入分数">
+            <template slot="append">分</template>
+          </el-input>
+        </div>
+        <div class="filter-group">
+          <label>考试组合</label>
+          <el-select v-model="filterForm.exam" placeholder="请选择考试组合">
+            <el-option label="11408（数学一 + 英语一 + 408）" value="11408" />
+            <el-option label="22408（数学二 + 英语二 + 408）" value="22408" />
+          </el-select>
+        </div>
+        <div class="filter-group">
           <label>地区</label>
-          <el-select v-model="filterForm.regions" multiple collapse-tags clearable filterable placeholder="不限">
+          <el-select v-model="filterForm.regions" multiple collapse-tags clearable filterable placeholder="不限地区">
             <el-option v-for="region in regionOptions" :key="region" :label="region" :value="region" />
           </el-select>
         </div>
         <div class="filter-group">
-          <label>学校层次</label>
-          <el-select v-model="filterForm.tier" placeholder="全部层次">
-            <el-option label="全部层次" value="" />
-            <el-option label="985" value="985" />
-            <el-option label="211" value="211" />
-            <el-option label="双一流" value="double_first" />
-            <el-option label="普通院校" value="ordinary" />
+          <label>专业方向</label>
+          <el-select v-model="filterForm.majorDirections" multiple collapse-tags clearable filterable placeholder="不限专业方向">
+            <el-option label="计算机科学与技术（081200）" value="081200" />
+            <el-option label="软件工程（083500）" value="083500" />
+            <el-option label="电子信息-计算机方向（085404）" value="085404" />
+            <el-option label="电子信息-软件工程方向（085405）" value="085405" />
           </el-select>
         </div>
         <div class="filter-group">
-          <label>考试组合</label>
-          <el-select v-model="filterForm.exam" clearable placeholder="不限">
-            <el-option label="不限" value="" />
-            <el-option label="11408" value="11408" />
-            <el-option label="22408" value="22408" />
-          </el-select>
+          <label>筛选范围</label>
+          <div class="range-buttons">
+            <button :class="{ active: filterForm.scoreRange === 5 }" type="button" @click="filterForm.scoreRange = 5">均分+5</button>
+            <button :class="{ active: filterForm.scoreRange === 10 }" type="button" @click="filterForm.scoreRange = 10">均分+10</button>
+            <button :class="{ active: filterForm.scoreRange === 15 }" type="button" @click="filterForm.scoreRange = 15">均分+15</button>
+            <button :class="{ active: filterForm.scoreRange === 20 }" type="button" @click="filterForm.scoreRange = 20">均分+20</button>
+            <button :class="{ active: filterForm.scoreRange === null }" type="button" @click="filterForm.scoreRange = null">不限</button>
+          </div>
         </div>
-        <div class="filter-group">
-          <label>是否有拟录取区间</label>
-          <el-select v-model="filterForm.hasAdmissionRange" placeholder="不限">
-            <el-option label="不限" value="" />
-            <el-option label="有拟录取区间" value="yes" />
-            <el-option label="暂无拟录取区间" value="no" />
-          </el-select>
-        </div>
-        <div class="filter-group">
-          <label>N诺数据完整度</label>
-          <el-select v-model="filterForm.confidence" placeholder="全部">
-            <el-option label="全部" value="" />
-            <el-option label="完整度 A" value="A" />
-            <el-option label="完整度 B" value="B" />
-            <el-option label="完整度 C" value="C" />
-          </el-select>
-        </div>
-        <el-button class="filter-button" type="primary" @click="applyFilters">应用筛选</el-button>
+        <el-button class="filter-button" type="primary" :loading="filtering" @click="applyFilters">应用筛选</el-button>
         <div class="tip-box">
           <i class="el-icon-info"></i>
           <strong>小贴士</strong>
-          <p>推荐结果不是唯一可报范围，复试线也不是最低录取分；N诺数据可能遗漏或错误，请结合院校官网复核。</p>
+          <p>筛选结果不是唯一可报范围，复试线也不是最低录取分；N诺数据可能遗漏或错误，请结合院校官网复核。</p>
         </div>
       </aside>
 
       <section class="result-main" v-loading="loading">
         <div class="result-head">
           <div>
-            <h1>{{ activeTab === 'compare' ? '对比与备选' : '推荐结果' }}</h1>
+            <h1>{{ activeTab === 'compare' ? '对比与备选' : '筛选结果' }}</h1>
             <span v-if="activeTab !== 'compare'">共 {{ filteredTotal }} 个候选</span>
           </div>
           <div class="chips">
@@ -76,7 +73,7 @@
 
         <div class="data-alert">
           <i class="el-icon-warning"></i>
-          复试线不是最低录取分；推荐学校不代表只有这些学校可以报。当前数据主要来源于 N诺（第三方整理），可能存在遗漏或错误，请以院校官网为准。
+          复试线不是最低录取分；筛选学校不代表只有这些学校可以报。当前数据主要来源于 N诺（第三方整理），可能存在遗漏或错误，请以院校官网为准。
           <button type="button" @click="activeTab = 'compare'">查看说明 <i class="el-icon-info"></i></button>
         </div>
 
@@ -291,18 +288,18 @@
 
 <script>
 import AppHeader from './components/AppHeader'
-import { getRecommendationResult } from '@/api/postgrad/appRecommendation'
+import { generateRecommendation, getRecommendationOptions, getRecommendationResult } from '@/api/postgrad/appRecommendation'
 import { comparePrograms, getProgramDetail } from '@/api/postgrad/appPrograms'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/postgrad/appFavorites'
 import { getAppToken } from '@/utils/appAuth'
 
 const FILTER_STORAGE_PREFIX = 'app-results-filters'
 const emptyFilters = () => ({
+  score: 300,
   regions: [],
-  tier: '',
-  exam: '',
-  hasAdmissionRange: '',
-  confidence: ''
+  exam: '11408',
+  majorDirections: [],
+  scoreRange: 15
 })
 
 const emptyResult = () => ({
@@ -311,6 +308,7 @@ const emptyResult = () => ({
   score: '-',
   exam: '-',
   region: '不限',
+  majorDirections: [],
   studyMode: '不限',
   scoreRange: null,
   aiAnalysis: null,
@@ -326,6 +324,7 @@ export default {
   data() {
     return {
       loading: false,
+      filtering: false,
       detailVisible: false,
       detailLoading: false,
       detail: null,
@@ -335,6 +334,7 @@ export default {
       favoriteLoadingIds: [],
       filterForm: emptyFilters(),
       appliedFilters: emptyFilters(),
+      optionRegions: ['福建', '广东', '浙江', '上海'],
       compareRows: [
         { label: '学校', type: 'name' },
         { label: '专业', key: 'program' },
@@ -348,7 +348,7 @@ export default {
         { label: '招生人数（含推免）', key: 'quota' },
         { label: 'N诺数据完整度', type: 'confidence' },
         { label: 'N诺来源', type: 'source' },
-        { label: '推荐等级', type: 'fit' },
+        { label: '筛选标签', type: 'fit' },
         { label: '操作', type: 'action' }
       ],
       compareSchools: [],
@@ -365,17 +365,11 @@ export default {
     headerChips() {
       const chips = [
         { key: 'score', label: `分数 ${this.result.score}` },
-        { key: 'exam', label: `考试组合 ${this.appliedFilters.exam || this.result.exam}`, clearKey: this.appliedFilters.exam ? 'exam' : '' },
-        { key: 'region', label: `地区 ${this.regionFilterLabel}`, clearKey: this.appliedFilters.regions.length ? 'regions' : '' },
+        { key: 'exam', label: `考试组合 ${this.result.exam}` },
+        { key: 'region', label: `地区 ${this.regionFilterLabel}` },
       ]
-      if (this.appliedFilters.tier) {
-        chips.push({ key: 'tier', label: `学校层次 ${this.tierLabel(this.appliedFilters.tier)}`, clearKey: 'tier' })
-      }
-      if (this.appliedFilters.hasAdmissionRange) {
-        chips.push({ key: 'hasAdmissionRange', label: `拟录取区间 ${this.admissionRangeLabel(this.appliedFilters.hasAdmissionRange)}`, clearKey: 'hasAdmissionRange' })
-      }
-      if (this.appliedFilters.confidence) {
-        chips.push({ key: 'confidence', label: `完整度 ${this.appliedFilters.confidence}`, clearKey: 'confidence' })
+      if (this.result.majorDirections && this.result.majorDirections.length) {
+        chips.push({ key: 'majorDirections', label: `专业方向 ${this.result.majorDirections.join('、')}` })
       }
       if (this.result.scoreRange != null) {
         chips.push({ key: 'scoreRange', label: `筛选范围 均分+${this.result.scoreRange}` })
@@ -387,6 +381,9 @@ export default {
     },
     regionOptions() {
       const regions = new Set()
+      this.optionRegions.forEach(region => {
+        if (region) regions.add(region)
+      })
       ;(this.result.requestFilters && this.result.requestFilters.regions || []).forEach(region => {
         if (region) regions.add(region)
       })
@@ -398,11 +395,7 @@ export default {
       return Array.from(regions).sort()
     },
     filteredGroups() {
-      const filters = this.appliedFilters
-      return (this.result.groups || []).map(group => ({
-        ...group,
-        schools: (group.schools || []).filter(school => this.matchSchoolFilters(school, filters))
-      }))
+      return (this.result.groups || []).filter(group => (group.schools || []).length)
     },
     filteredTotal() {
       return this.filteredGroups.reduce((sum, group) => sum + group.schools.length, 0)
@@ -414,6 +407,7 @@ export default {
     }
   },
   created() {
+    this.loadOptions()
     this.loadResult()
     this.loadFavoriteIds()
   },
@@ -430,6 +424,14 @@ export default {
     }
   },
   methods: {
+    loadOptions() {
+      getRecommendationOptions().then(res => {
+        const data = res.data || {}
+        if (data.regions && data.regions.length) {
+          this.optionRegions = data.regions
+        }
+      }).catch(() => {})
+    },
     loadResult() {
       const id = this.$route.query.id || window.sessionStorage.getItem('app-recommend-id')
       const cached = window.sessionStorage.getItem('app-recommend-result')
@@ -470,6 +472,7 @@ export default {
         score: request.estimatedScore || data.score || 300,
         exam: request.examCombo || data.exam || '22408',
         region: request.targetRegions && request.targetRegions.length ? request.targetRegions.join('、') : '不限',
+        majorDirections: Array.isArray(request.majorDirections) ? request.majorDirections : [],
         studyMode: this.studyModeText(request.studyMode || data.studyMode),
         scoreRange: request.scoreRange != null ? request.scoreRange : null,
         aiAnalysis: data.aiAnalysis || null,
@@ -544,7 +547,8 @@ export default {
     cardNote(item) {
       const repeatedWarnings = [
         '复试线不是最低录取分。',
-        '推荐学校不代表只有这些学校可以报。'
+        '推荐学校不代表只有这些学校可以报。',
+        '筛选学校不代表只有这些学校可以报。'
       ]
       const warnings = (item.warnings || []).filter(text => !repeatedWarnings.includes(text))
       if (warnings.length) return warnings.join(' ')
@@ -557,10 +561,16 @@ export default {
     sanitizeFilters(filters = {}) {
       const normalized = emptyFilters()
       Object.keys(normalized).forEach(key => {
-        if (filters[key] !== undefined && filters[key] !== null) {
-          normalized[key] = Array.isArray(normalized[key])
-            ? (Array.isArray(filters[key]) ? filters[key].filter(Boolean).map(String) : [String(filters[key])].filter(Boolean))
-            : String(filters[key])
+        if (filters[key] !== undefined) {
+          if (Array.isArray(normalized[key])) {
+            normalized[key] = Array.isArray(filters[key]) ? filters[key].filter(Boolean).map(String) : [String(filters[key])].filter(Boolean)
+          } else if (key === 'score') {
+            normalized[key] = Number(filters[key]) || normalized[key]
+          } else if (key === 'scoreRange') {
+            normalized[key] = filters[key] === null ? null : Number(filters[key])
+          } else if (filters[key] !== null) {
+            normalized[key] = String(filters[key])
+          }
         }
       })
       if (!normalized.regions.length && filters.region) {
@@ -570,10 +580,15 @@ export default {
     },
     defaultFiltersFromRequest(request = {}) {
       const filters = emptyFilters()
+      if (request.estimatedScore) filters.score = Number(request.estimatedScore)
       if (request.examCombo) filters.exam = request.examCombo
       if (Array.isArray(request.targetRegions) && request.targetRegions.length) {
         filters.regions = request.targetRegions.filter(Boolean).map(String)
       }
+      if (Array.isArray(request.majorDirections) && request.majorDirections.length) {
+        filters.majorDirections = request.majorDirections.filter(Boolean).map(String)
+      }
+      if (request.scoreRange !== undefined) filters.scoreRange = request.scoreRange === null ? null : Number(request.scoreRange)
       return filters
     },
     restoreFilters(data = {}) {
@@ -599,15 +614,47 @@ export default {
     persistFilters() {
       try {
         window.localStorage.setItem(this.filterStorageKey(), JSON.stringify({
-          version: 2,
+          version: 3,
           filters: this.appliedFilters,
           updatedAt: Date.now()
         }))
       } catch (e) {}
     },
     applyFilters() {
-      this.appliedFilters = { ...this.filterForm }
-      this.persistFilters()
+      if (!this.filterForm.score) {
+        this.$message.warning('请输入预计初试总分')
+        return
+      }
+      const filters = this.sanitizeFilters(this.filterForm)
+      this.filtering = true
+      this.loading = true
+      const payload = {
+        estimatedScore: filters.score,
+        examCombo: filters.exam,
+        targetRegions: filters.regions,
+        majorDirections: filters.majorDirections,
+        riskPreference: 'balanced',
+        scoreRange: filters.scoreRange,
+        includeIncompleteData: true,
+        pageSizePerGroup: 12
+      }
+      generateRecommendation(payload).then(res => {
+        const data = res.data || {}
+        this.result = this.normalizeResult(data)
+        this.restoreFilters(data)
+        this.appliedFilters = filters
+        this.filterForm = { ...filters }
+        this.persistFilters()
+        window.sessionStorage.setItem('app-recommend-result', JSON.stringify(data))
+        if (data.recommendationId) {
+          window.sessionStorage.setItem('app-recommend-id', data.recommendationId)
+          this.$router.replace({ path: '/app/results', query: { ...this.$route.query, id: data.recommendationId } }).catch(() => {})
+        }
+        this.$message.success('筛选结果已更新')
+      }).finally(() => {
+        this.filtering = false
+        this.loading = false
+      })
     },
     clearHeaderChip(key) {
       if (!Object.prototype.hasOwnProperty.call(this.filterForm, key)) return
@@ -674,7 +721,7 @@ export default {
           programId: item.program_id
         }))
         this.backupGroups = items.length
-          ? [{ name: '我的收藏', desc: '从推荐结果中收藏的院校专业', theme: 'blue', items }]
+          ? [{ name: '我的收藏', desc: '从筛选结果中收藏的院校专业', theme: 'blue', items }]
           : []
       }).catch(() => {
         this.backupGroups = []
@@ -813,6 +860,11 @@ export default {
   font-weight: 600;
 }
 
+.filter-group ::v-deep .el-select,
+.filter-group ::v-deep .el-input {
+  width: 100%;
+}
+
 .filter-select {
   height: 44px;
   border: 1px solid #dce5f3;
@@ -822,6 +874,29 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 0 14px;
+}
+
+.range-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.range-buttons button {
+  min-height: 36px;
+  border: 1px solid #d8e5f6;
+  border-radius: 6px;
+  background: #fbfdff;
+  color: #284263;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.range-buttons button.active {
+  border-color: #1f7aff;
+  background: #eaf3ff;
+  color: #1769f6;
+  box-shadow: 0 0 0 2px rgba(31, 122, 255, 0.08);
 }
 
 .filter-button {

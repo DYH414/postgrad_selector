@@ -5,14 +5,14 @@
         <i class="el-icon-s-platform"></i>
       </span>
       <span>
-        <strong>408 考研推荐平台</strong>
-        <em>智能择校 · 精准推荐</em>
+        <strong>408 考研筛选平台</strong>
+        <em>智能择校 · 精准筛选</em>
       </span>
     </div>
 
     <nav class="nav">
       <router-link to="/app/recommend" class="nav-link" :class="{ active: currentPage === 'recommend' }">首页</router-link>
-      <router-link to="/app/results" class="nav-link" :class="{ active: currentPage === 'results' }">推荐</router-link>
+      <router-link to="/app/results" class="nav-link" :class="{ active: currentPage === 'results' }">筛选</router-link>
       <router-link to="/app/results?tab=compare" class="nav-link" :class="{ active: currentPage === 'compare' }">对比与备选</router-link>
       <router-link to="/app/favorites" class="nav-link" :class="{ active: currentPage === 'favorites' }">我的</router-link>
     </nav>
