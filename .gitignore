@@ -49,6 +49,7 @@ nbdist/
 ######################################################################
 # Local crawler/runtime artifacts
 
+/.worktrees/
 /.venv/
 /data/
 /scripts/
