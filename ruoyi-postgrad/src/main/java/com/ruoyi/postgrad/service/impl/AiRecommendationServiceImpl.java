@@ -274,25 +274,33 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         logMapper.insertRecommendationLog(log);
         Long reportId = log.getId();
 
-        Map<String, Object> mqMsg = new LinkedHashMap<>();
-        mqMsg.put("reportId", reportId);
-        mqMsg.put("conversationId", conversationId);
-        mqMsg.put("userId", userId);
-        mqMsg.put("estimatedScore", estimatedScore);
+        // 同步生成报告（MQ 可用时改为异步）
         try {
-            if (rabbitTemplate != null) {
-                rabbitTemplate.convertAndSend("ai.report.queue", mqMsg);
-            }
+            String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+            String reportPrompt = buildReportPrompt(convJson);
+            ChatModel chatModel = buildChatModel();
+            String aiResponse = chatModel.chat(reportPrompt);
+            Map<String, Object> reportJson = JSON.parseObject(aiResponse);
+            injectMatchScores(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
+            String resultJson = JSON.toJSONString(reportJson);
+
+            redisTemplate.opsForValue().set("ai:report:" + reportId, resultJson, REPORT_TTL_DAYS, TimeUnit.DAYS);
+            log.setResultJson(resultJson);
+            logMapper.insertConversationState(log.getId(), conversationId, resultJson);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("reportId", reportId);
+            result.put("status", "DONE");
+            result.put("result", reportJson);
+            return result;
         } catch (Exception e) {
-            // RabbitMQ 不可用时，报告保存在 Redis + DB 中已足够
+            redisTemplate.opsForValue().set("ai:report:" + reportId, "{\"error\":\"" + e.getMessage() + "\"}", REPORT_TTL_DAYS, TimeUnit.DAYS);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("reportId", reportId);
+            result.put("status", "ERROR");
+            result.put("error", e.getMessage());
+            return result;
         }
-
-        redisTemplate.opsForValue().set("ai:report:" + reportId, "PENDING", REPORT_TTL_DAYS, TimeUnit.DAYS);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("reportId", reportId);
-        result.put("status", "PENDING");
-        return result;
     }
 
     @Override
@@ -565,6 +573,64 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
         }
         return options;
+    }
+
+    private String buildReportPrompt(String convJson) {
+        return """
+            基于以下对话历史生成考研择校推荐报告。
+
+            ## 对话历史
+            %s
+
+            ## 输出格式（严格 JSON）
+            {
+              "summary": "一句话总结",
+              "tiers": [
+                {"level": "reach", "label": "冲刺档", "schools": [{"programId":1,"schoolName":"...","programName":"...","reason":"推荐理由","risk":"high","pros":[],"cons":[]}]},
+                {"level": "steady", "label": "稳妥档", "schools": []},
+                {"level": "safe", "label": "保底档", "schools": []}
+              ]
+            }
+            """.formatted(convJson);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void injectMatchScores(Map<String, Object> report, int estimatedScore, String poolJson) {
+        List<Map<String, Object>> pool = new ArrayList<>();
+        for (Object item : JSON.parseArray(poolJson)) {
+            pool.add((Map<String, Object>) item);
+        }
+        Map<Long, Double> avgScoreMap = new LinkedHashMap<>();
+        for (Map<String, Object> p : pool) {
+            Object idObj = p.get("programId");
+            long pid = idObj instanceof Number ? ((Number) idObj).longValue()
+                : Long.parseLong(String.valueOf(idObj));
+            Object avgObj = p.get("avgAdmittedScore");
+            Double avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : null;
+            if (avg != null) avgScoreMap.put(pid, avg);
+        }
+
+        List<Map<String, Object>> tiers = (List<Map<String, Object>>) report.get("tiers");
+        if (tiers == null) return;
+        for (Map<String, Object> tier : tiers) {
+            List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
+            if (schools == null) continue;
+            String level = (String) tier.getOrDefault("level", "steady");
+            for (Map<String, Object> school : schools) {
+                Object pidObj = school.get("programId");
+                long pid = pidObj instanceof Number ? ((Number) pidObj).longValue()
+                    : Long.parseLong(String.valueOf(pidObj));
+                Double avg = avgScoreMap.get(pid);
+                if (avg != null && estimatedScore > 0) {
+                    double gap = Math.abs(estimatedScore - avg);
+                    double weight = "reach".equals(level) ? 0.5 : 0.3;
+                    int score = (int) Math.max(0, 100 - gap * weight);
+                    school.put("matchScore", score);
+                } else {
+                    school.put("matchScore", 50);
+                }
+            }
+        }
     }
 
     private ChatModel buildChatModel() {

@@ -70,11 +70,12 @@ export default {
   },
   computed: {
     result() {
-      if (!this.report || !this.report.result) return { summary: '', tiers: [] }
-      if (typeof this.report.result === 'string') {
-        try { return JSON.parse(this.report.result) } catch (e) { return { summary: '', tiers: [] } }
+      if (!this.report) return { summary: '', tiers: [] }
+      const data = this.report.result || this.report
+      if (typeof data === 'string') {
+        try { return JSON.parse(data) } catch (e) { return { summary: '', tiers: [] } }
       }
-      return this.report.result
+      return data
     }
   },
   created() {
