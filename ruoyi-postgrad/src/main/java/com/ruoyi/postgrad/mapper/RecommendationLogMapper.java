@@ -10,4 +10,9 @@ public interface RecommendationLogMapper
     List<RowMap> selectLogListByUserId(@Param("userId") Long userId);
     RowMap selectLogByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
     int insertRecommendationLog(RecommendationLog log);
+
+    int insertConversationState(@Param("id") Long id, @Param("conversationId") String conversationId,
+        @Param("state") String state);
+    String selectConversationState(@Param("conversationId") String conversationId);
+    List<RowMap> selectAiReportListByUserId(@Param("userId") Long userId);
 }

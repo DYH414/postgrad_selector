@@ -44,4 +44,22 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         )
     </insert>
 
+    <update id="insertConversationState">
+        update recommendation_log set result_json = #{state} where id = #{id}
+    </update>
+
+    <select id="selectConversationState" resultType="String">
+        select result_json from recommendation_log
+        where id = (select max(id) from recommendation_log
+                    where result_json like concat('%', #{conversationId}, '%')
+                    and rule_version = 'ai-conversation-state')
+    </select>
+
+    <select id="selectAiReportListByUserId" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select id, profile_snapshot, result_json, created_at
+        from recommendation_log
+        where user_id = #{userId} and rule_version = 'ai-conversation'
+        order by created_at desc limit 20
+    </select>
+
 </mapper>
