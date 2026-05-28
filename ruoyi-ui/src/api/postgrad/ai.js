@@ -1,4 +1,4 @@
-import request from '@/utils/request'
+import request from '@/utils/appRequest'
 
 export function postAiStart(data) {
   return request({ url: '/app/ai-recommend/start', method: 'post', data })
