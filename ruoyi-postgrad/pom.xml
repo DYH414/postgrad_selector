@@ -47,6 +47,12 @@
             <artifactId>langchain4j-community-dashscope</artifactId>
         </dependency>
 
+        <!-- langchain4j OpenAI (千问兼容模式, Tool calling 更稳定) -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+        </dependency>
+
         <!-- RabbitMQ -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

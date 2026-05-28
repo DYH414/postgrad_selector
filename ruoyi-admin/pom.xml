@@ -54,6 +54,12 @@
             <artifactId>langchain4j</artifactId>
         </dependency>
 
+        <!-- langchain4j OpenAI client (千问兼容模式) -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+        </dependency>
+
         <!-- 定时任务-->
         <dependency>
             <groupId>com.ruoyi</groupId>

@@ -5,8 +5,8 @@ import com.alibaba.fastjson2.JSONObject;
 import com.ruoyi.framework.config.RabbitMQConfig;
 import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
-import dev.langchain4j.community.model.dashscope.QwenChatModel;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -42,7 +42,8 @@ public class AiReportConsumer {
             String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
 
             // 2. Generate report via AI (with full candidate pool in prompt)
-            ChatModel chatModel = QwenChatModel.builder()
+            ChatModel chatModel = OpenAiChatModel.builder()
+                .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
                 .modelName("qwen-plus")
                 .build();

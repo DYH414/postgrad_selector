@@ -24,8 +24,8 @@ import com.ruoyi.postgrad.mapper.UserProfileMapper;
 import com.ruoyi.postgrad.service.IAiRecommendationService;
 import com.ruoyi.postgrad.tool.AiRecommendationTools;
 
-import dev.langchain4j.community.model.dashscope.QwenChatModel;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
@@ -756,7 +756,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     private ChatModel buildChatModel() {
         String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        return QwenChatModel.builder()
+        return OpenAiChatModel.builder()
+            .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
             .apiKey(apiKey)
             .modelName("qwen-plus")
             .build();
