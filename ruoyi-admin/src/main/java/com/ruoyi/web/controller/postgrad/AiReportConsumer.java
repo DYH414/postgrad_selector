@@ -8,7 +8,10 @@ import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import dev.langchain4j.community.model.dashscope.QwenChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -18,6 +21,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Component
+@ConditionalOnBean(ConnectionFactory.class)
+@ConditionalOnProperty(name = "app.rabbitmq.enabled", havingValue = "true", matchIfMissing = true)
 public class AiReportConsumer {
 
     @Autowired private StringRedisTemplate redisTemplate;

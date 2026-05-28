@@ -73,7 +73,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
-    @Autowired
+    @Autowired(required = false)
     private RabbitTemplate rabbitTemplate;
 
     @Override
@@ -279,7 +279,13 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         mqMsg.put("conversationId", conversationId);
         mqMsg.put("userId", userId);
         mqMsg.put("estimatedScore", estimatedScore);
-        rabbitTemplate.convertAndSend("ai.report.queue", mqMsg);
+        try {
+            if (rabbitTemplate != null) {
+                rabbitTemplate.convertAndSend("ai.report.queue", mqMsg);
+            }
+        } catch (Exception e) {
+            // RabbitMQ 不可用时，报告保存在 Redis + DB 中已足够
+        }
 
         redisTemplate.opsForValue().set("ai:report:" + reportId, "PENDING", REPORT_TTL_DAYS, TimeUnit.DAYS);
 

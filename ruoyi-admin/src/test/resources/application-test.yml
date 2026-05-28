@@ -1,0 +1,10 @@
+# Test profile — 禁用自定义 RabbitMQ 组件（测试环境无 MQ）
+app:
+  rabbitmq:
+    enabled: false
+
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false

@@ -604,7 +604,7 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Performance indicators - custom strip */}
+                {/* Database-backed indicators - custom strip */}
                 <div 
                   className="w-screen bg-white/70 py-[28px] px-10 relative left-1/2 right-1/2 -translate-x-1/2 select-none"
                   style={{
@@ -615,24 +615,24 @@ export default function App() {
                 >
                   <div className="max-w-4xl mx-auto flex flex-row items-center justify-between">
                     <div className="flex-1 text-center font-sans">
-                      <span className="text-2xl md:text-3xl font-extrabold font-mono text-[#2563eb]">100%</span>
-                      <span className="text-[14px] text-[#475569] block mt-1.5 font-sans font-medium">CS 统考科目全覆盖</span>
+                      <span className="text-3xl md:text-4xl font-extrabold font-mono text-[#2563eb]">154所</span>
+                      <span className="text-[14px] text-[#475569] block mt-1.5 font-sans font-medium">408 招生院校入库</span>
                     </div>
                     <div 
                       className="w-[1px] h-10 shrink-0 self-center" 
                       style={{ backgroundColor: 'rgba(37,99,235,0.12)' }}
                     />
                     <div className="flex-1 text-center font-sans">
-                      <span className="text-2xl md:text-3xl font-extrabold font-mono text-[#0f172a]">21所</span>
-                      <span className="text-[14px] text-[#475569] block mt-1.5 font-sans font-medium">首批重点院校真数据</span>
+                      <span className="text-3xl md:text-4xl font-extrabold font-mono text-[#0f172a]">1176个</span>
+                      <span className="text-[14px] text-[#475569] block mt-1.5 font-sans font-medium">408 专业方向入库</span>
                     </div>
                     <div 
                       className="w-[1px] h-10 shrink-0 self-center" 
                       style={{ backgroundColor: 'rgba(37,99,235,0.12)' }}
                     />
                     <div className="flex-1 text-center font-sans">
-                      <span className="text-2xl md:text-3xl font-extrabold font-mono text-[#2563eb]">100%</span>
-                      <span className="text-[14px] text-[#475569] block mt-1.5 font-sans font-medium">招生出处真实可追溯</span>
+                      <span className="text-3xl md:text-4xl font-extrabold font-mono text-[#2563eb]">6059条</span>
+                      <span className="text-[14px] text-[#475569] block mt-1.5 font-sans font-medium">复试线/计划/拟录取记录</span>
                     </div>
                   </div>
                 </div>
@@ -647,10 +647,8 @@ export default function App() {
 
             {/* SCREEN 2: ESTIMATION SIMULATOR PANEL */}
             {activeSection === 'simulator-section' && (
-              <div className="w-full h-full flex flex-col justify-center py-4 mt-2 max-h-[85vh]">
-                <div className="bg-white rounded-3xl p-3 md:p-6 border border-[#d7e3f8] shadow-2xl overflow-y-auto max-h-[81vh] scrollbar-thin scrollbar-track-slate-50 scrollbar-thumb-slate-200">
-                  <Simulator />
-                </div>
+              <div className="w-full h-full flex flex-col justify-center py-4 mt-2 xl:pr-28 2xl:pr-0">
+                <Simulator />
               </div>
             )}
 

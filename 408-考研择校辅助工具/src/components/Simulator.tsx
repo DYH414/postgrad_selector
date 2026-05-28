@@ -1041,18 +1041,18 @@ export default function Simulator() {
   });
 
   return (
-    <div className="bg-white rounded-3xl p-6 lg:p-8 border border-[#d7e3f8] shadow-md relative" id="simulator-interactive-section">
+    <div className="relative w-full" id="simulator-interactive-section">
       {/* Decorative subtle blue ambient bubble */}
       <div className="absolute top-1/2 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-      <div className="text-center max-w-2xl mx-auto mb-10">
-        <div className="flex flex-wrap items-center justify-center gap-3 mb-4">
+      <div className="text-center max-w-2xl mx-auto mb-6">
+        <div className="flex flex-wrap items-center justify-center gap-3 mb-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#eff6ff] border border-[#d7e3f8] text-[#2563eb] text-xs font-mono">
             <Sparkles className="w-3.5 h-3.5 text-[#2563eb]" />
             <span>2026年研招数据 · 条件筛选召回匹配院校</span>
           </div>
         </div>
-        <h2 className="text-3xl lg:text-4xl font-sans font-semibold text-[#0f172a] mb-3">
+        <h2 className="text-2xl lg:text-3xl font-sans font-semibold text-[#0f172a] mb-2">
           按你的画像，精准召回符合条件的院校
         </h2>
         <p className="text-[#64748b] text-sm leading-relaxed font-light">
@@ -1060,9 +1060,9 @@ export default function Simulator() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Control Panel */}
-        <div className="lg:col-span-4 bg-white border border-[#d7e3f8] rounded-2xl p-6 space-y-6 shadow-sm select-none">
+        <div className="lg:col-span-4 bg-white/95 border border-[#d7e3f8] rounded-2xl p-5 space-y-4 shadow-sm select-none">
           <div className="flex items-center justify-between border-b border-[#d7e3f8] pb-3">
             <h3 className="text-base font-sans font-semibold text-[#0f172a] flex items-center gap-2">
               <Sliders className="w-4 h-4 text-[#2563eb]" />
@@ -1084,7 +1084,7 @@ export default function Simulator() {
           </div>
 
           {/* Range Slider for estimatedScore */}
-          <div className="p-2.5 rounded-xl space-y-2">
+          <div className="p-2 rounded-xl space-y-2">
             <div className="flex justify-between items-center text-xs">
               <span className="text-[#0f172a] font-semibold">初试预估总分 (考研408)</span>
               <span className="font-mono text-[#2563eb] font-bold text-sm bg-[#eff6ff] px-2 py-0.5 rounded border border-[#d7e3f8]">
@@ -1114,7 +1114,7 @@ export default function Simulator() {
           </div>
 
           {/* Filters Preferred Group for Step 3 */}
-          <div className="p-2.5 rounded-xl space-y-4">
+          <div className="p-2 rounded-xl space-y-3">
             {/* Regional filter preference */}
             <div className="space-y-2">
               <label className="text-xs text-[#0f172a] font-semibold block">地理意向偏好 (多省市过滤)</label>
@@ -1171,7 +1171,7 @@ export default function Simulator() {
           </div>
 
           {/* Risk preference */}
-          <div className="p-2.5 rounded-xl space-y-2">
+          <div className="p-2 rounded-xl space-y-2">
             <label className="text-xs text-[#0f172a] font-semibold block flex items-center gap-1">
               <span>择校偏好与风控评级</span>
               <HelpCircle className="w-3 h-3 text-[#64748b] cursor-help" title="保守型：大幅强化录取底线防护，收紧优势区；均衡型：基于往年波动极值计算；冲刺型：放开择校阈值，挖掘低概率捡漏可能。" />
@@ -1207,8 +1207,8 @@ export default function Simulator() {
             </div>
           </div>
         </div>
-        <div className="lg:col-span-8 space-y-4 p-2 select-none">
-          <div className="flex justify-between items-center bg-slate-50 px-4 py-2.5 rounded-xl border border-[#d7e3f8] shadow-sm">
+        <div className="lg:col-span-8 space-y-4 select-none">
+          <div className="flex justify-between items-center bg-white/85 px-4 py-2.5 rounded-xl border border-[#d7e3f8] shadow-sm backdrop-blur-sm">
             <span className="text-xs text-[#64748b] font-mono">
               经条件筛选，共召回符合报考方向的院校专业：<span className="text-[#0f172a] font-bold">{results.length}</span> 所
             </span>
@@ -1218,7 +1218,7 @@ export default function Simulator() {
             </div>
           </div>
 
-          <div className="space-y-4 max-h-[580px] overflow-y-auto pr-1 select-none">
+          <div className="space-y-4 max-h-[min(520px,calc(100vh-360px))] overflow-y-auto pr-1 select-none">
             <AnimatePresence mode="popLayout">
               {results.length > 0 ? (
                 results.map(res => {

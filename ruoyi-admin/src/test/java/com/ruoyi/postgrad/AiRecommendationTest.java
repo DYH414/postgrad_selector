@@ -4,12 +4,14 @@ import com.ruoyi.postgrad.service.IAiRecommendationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles({"test", "druid"})
 public class AiRecommendationTest {
 
     @Autowired
@@ -47,9 +49,8 @@ public class AiRecommendationTest {
     @Test
     public void testConversationExpired() {
         String fakeConvId = UUID.randomUUID().toString();
-        assertThatThrownBy(() -> aiService.chat(1L, fakeConvId, "hello"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("过期");
+        Map<String, Object> result = aiService.chat(1L, fakeConvId, "hello");
+        assertThat(result).containsEntry("status", "expired");
     }
 
     @Test
