@@ -54,15 +54,17 @@ public class AiReportConsumer {
             String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
             injectMatchScores(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
 
-            // 4. Save to Redis (7 days)
+            // 4. Save to Redis (7 days) — do this first so report is visible even if DB update fails
+            String resultJsonStr = reportJson.toJSONString();
             redisTemplate.opsForValue().set("ai:report:" + reportId,
-                reportJson.toJSONString(), 7, TimeUnit.DAYS);
+                resultJsonStr, 7, TimeUnit.DAYS);
 
-            // 5. Update DB
-            RecommendationLog log = new RecommendationLog();
-            log.setId(reportId);
-            log.setResultJson(reportJson.toJSONString());
-            logMapper.insertRecommendationLog(log);
+            // 5. Update DB — best-effort, don't clobber Redis on failure
+            try {
+                logMapper.updateReportResult(reportId, resultJsonStr);
+            } catch (Exception dbEx) {
+                // DB update failure shouldn't hide the report that's already in Redis
+            }
 
         } catch (Exception e) {
             redisTemplate.opsForValue().set("ai:report:" + reportId,
@@ -112,17 +114,14 @@ public class AiReportConsumer {
     }
 
     private void injectMatchScores(JSONObject report, int estimatedScore, String poolJson) {
-        // Parse pool data for real avgAdmittedScore values
         @SuppressWarnings({"unchecked", "rawtypes"})
         List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
-        Map<Long, Double> avgScoreMap = new LinkedHashMap<>();
+        Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
         for (Map<String, Object> p : pool) {
             Object idObj = p.get("programId");
             long pid = idObj instanceof Number ? ((Number) idObj).longValue()
                 : Long.parseLong(String.valueOf(idObj));
-            Object avgObj = p.get("avgAdmittedScore");
-            Double avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : null;
-            if (avg != null) avgScoreMap.put(pid, avg);
+            poolMap.put(pid, p);
         }
 
         var tiers = report.getJSONArray("tiers");
@@ -135,16 +134,43 @@ public class AiReportConsumer {
             for (int j = 0; j < schools.size(); j++) {
                 var school = schools.getJSONObject(j);
                 long pid = school.getLongValue("programId");
-                Double avg = avgScoreMap.get(pid);
+                Map<String, Object> stats = poolMap.get(pid);
+
+                Double avg = null;
+                if (stats != null) {
+                    Object avgObj = stats.get("avgAdmittedScore");
+                    avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : null;
+                }
+
                 if (avg != null && estimatedScore > 0) {
                     double gap = Math.abs(estimatedScore - avg);
                     double weight = "reach".equals(level) ? 0.5 : 0.3;
-                    int score = (int) Math.max(0, 100 - gap * weight);
-                    school.put("matchScore", score);
+                    school.put("matchScore", (int) Math.max(0, 100 - gap * weight));
                 } else {
                     school.put("matchScore", 50);
                 }
+
+                if (stats != null) {
+                    injectStat(school, stats, "scoreLine");
+                    injectStat(school, stats, "avgAdmittedScore");
+                    injectStat(school, stats, "admissionLow");
+                    injectStat(school, stats, "admissionHigh");
+                    injectStat(school, stats, "admittedCount");
+                    injectStat(school, stats, "planCount");
+                    injectStat(school, stats, "retestCount");
+                    injectStat(school, stats, "dataYear");
+                    injectStat(school, stats, "dataCompleteness");
+                    injectStat(school, stats, "sourceUrl");
+                    injectStat(school, stats, "sourceOwner");
+                }
             }
+        }
+    }
+
+    private void injectStat(JSONObject school, Map<String, Object> stats, String key) {
+        Object val = stats.get(key);
+        if (val != null) {
+            school.put(key, val);
         }
     }
 }

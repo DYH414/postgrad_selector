@@ -53,6 +53,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
         where p.status = 'active' and s.status = 'active' and p.is_408 = 1
+        <choose>
+            <when test="studyMode != null">
+                and p.study_mode = #{studyMode}
+            </when>
+            <otherwise>
+                and p.study_mode = 'full_time'
+            </otherwise>
+        </choose>
           and subj.subject_codes = #{subjectCodes}
         <if test="regions != null and regions.size() > 0">
             and s.province in
@@ -202,6 +210,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             #{id}
         </foreach>
         and p.status = 'active' and s.status = 'active'
+        and p.study_mode = 'full_time'
     </select>
 
 </mapper>

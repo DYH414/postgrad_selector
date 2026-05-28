@@ -10,7 +10,8 @@ public interface RecommendationMapper
         @Param("regions") List<String> regions,
         @Param("programCodes") List<String> programCodes,
         @Param("estimatedScore") int estimatedScore,
-        @Param("scoreRange") Integer scoreRange);
+        @Param("scoreRange") Integer scoreRange,
+        @Param("studyMode") String studyMode);
 
     RowMap selectProgramForRecommendation(@Param("programId") Long programId);
 

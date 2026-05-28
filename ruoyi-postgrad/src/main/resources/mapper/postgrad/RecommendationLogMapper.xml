@@ -59,7 +59,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select id, profile_snapshot, result_json, created_at
         from recommendation_log
         where user_id = #{userId} and rule_version = 'ai-conversation'
+          and result_json like '%"summary"%'
         order by created_at desc limit 20
     </select>
+
+    <update id="updateReportResult">
+        update recommendation_log set result_json = #{resultJson} where id = #{id}
+    </update>
 
 </mapper>

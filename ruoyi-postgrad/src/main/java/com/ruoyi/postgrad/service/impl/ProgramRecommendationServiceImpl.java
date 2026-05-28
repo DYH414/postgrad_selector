@@ -64,10 +64,13 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         boolean includeIncompleteData = boolVal(request.get("includeIncompleteData"), true);
         int pageSizePerGroup = Math.max(3, Math.min(intVal(request.get("pageSizePerGroup"), 12), 50));
 
+        boolean acceptPartTime = readAcceptPartTime(userId);
+        String studyMode = acceptPartTime ? null : "full_time";
+
         List<String> regions = stringList(request.get("targetRegions"));
         List<String> majorDirections = stringList(request.get("majorDirections"));
 
-        List<Map<String, Object>> candidates = fetchCandidates(examCombo, regions, majorDirections, estimatedScore, scoreRange);
+        List<Map<String, Object>> candidates = fetchCandidates(examCombo, regions, majorDirections, estimatedScore, scoreRange, studyMode);
         List<Map<String, Object>> normalized = candidates.stream()
             .map(row -> normalizeProgram(row, estimatedScore))
             .collect(Collectors.toList());
@@ -184,12 +187,12 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     // ---- fetch helpers ----
 
     private List<Map<String, Object>> fetchCandidates(String examCombo, List<String> regions,
-        List<String> majorDirections, int estimatedScore, Integer scoreRange)
+        List<String> majorDirections, int estimatedScore, Integer scoreRange, String studyMode)
     {
         String subjectCodes = subjectCodes(examCombo);
         List<String> regionParam = (regions == null || regions.isEmpty()) ? null : regions;
         List<String> codesParam = (majorDirections == null || majorDirections.isEmpty()) ? null : majorDirections;
-        return new ArrayList<>(recommendationMapper.selectCandidates(subjectCodes, regionParam, codesParam, estimatedScore, scoreRange));
+        return new ArrayList<>(recommendationMapper.selectCandidates(subjectCodes, regionParam, codesParam, estimatedScore, scoreRange, studyMode));
     }
 
     private List<Map<String, Object>> computeTrends(Long programId, int estimatedScore)
@@ -221,6 +224,19 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         log.setIsPaid(0);
         logMapper.insertRecommendationLog(log);
         return log.getId();
+    }
+
+    private boolean readAcceptPartTime(Long userId)
+    {
+        if (userId == null) return false;
+        try
+        {
+            var profile = userProfileMapper.selectUserProfileByUserId(userId);
+            if (profile != null && profile.getAcceptPartTime() != null)
+                return profile.getAcceptPartTime() == 1;
+        }
+        catch (Exception ignored) {}
+        return false;
     }
 
     private Map<String, Object> loadDefaultProfile(Long userId)

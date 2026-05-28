@@ -617,14 +617,12 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         for (Object item : JSON.parseArray(poolJson)) {
             pool.add((Map<String, Object>) item);
         }
-        Map<Long, Double> avgScoreMap = new LinkedHashMap<>();
+        Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
         for (Map<String, Object> p : pool) {
             Object idObj = p.get("programId");
             long pid = idObj instanceof Number ? ((Number) idObj).longValue()
                 : Long.parseLong(String.valueOf(idObj));
-            Object avgObj = p.get("avgAdmittedScore");
-            Double avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : null;
-            if (avg != null) avgScoreMap.put(pid, avg);
+            poolMap.put(pid, p);
         }
 
         List<Map<String, Object>> tiers = (List<Map<String, Object>>) report.get("tiers");
@@ -637,16 +635,43 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 Object pidObj = school.get("programId");
                 long pid = pidObj instanceof Number ? ((Number) pidObj).longValue()
                     : Long.parseLong(String.valueOf(pidObj));
-                Double avg = avgScoreMap.get(pid);
+                Map<String, Object> stats = poolMap.get(pid);
+
+                Double avg = null;
+                if (stats != null) {
+                    Object avgObj = stats.get("avgAdmittedScore");
+                    avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : null;
+                }
+
                 if (avg != null && estimatedScore > 0) {
                     double gap = Math.abs(estimatedScore - avg);
                     double weight = "reach".equals(level) ? 0.5 : 0.3;
-                    int score = (int) Math.max(0, 100 - gap * weight);
-                    school.put("matchScore", score);
+                    school.put("matchScore", (int) Math.max(0, 100 - gap * weight));
                 } else {
                     school.put("matchScore", 50);
                 }
+
+                if (stats != null) {
+                    copyIfNotNull(school, stats, "scoreLine");
+                    copyIfNotNull(school, stats, "avgAdmittedScore");
+                    copyIfNotNull(school, stats, "admissionLow");
+                    copyIfNotNull(school, stats, "admissionHigh");
+                    copyIfNotNull(school, stats, "admittedCount");
+                    copyIfNotNull(school, stats, "planCount");
+                    copyIfNotNull(school, stats, "retestCount");
+                    copyIfNotNull(school, stats, "dataYear");
+                    copyIfNotNull(school, stats, "dataCompleteness");
+                    copyIfNotNull(school, stats, "sourceUrl");
+                    copyIfNotNull(school, stats, "sourceOwner");
+                }
             }
+        }
+    }
+
+    private void copyIfNotNull(Map<String, Object> target, Map<String, Object> source, String key) {
+        Object val = source.get(key);
+        if (val != null) {
+            target.put(key, val);
         }
     }
 

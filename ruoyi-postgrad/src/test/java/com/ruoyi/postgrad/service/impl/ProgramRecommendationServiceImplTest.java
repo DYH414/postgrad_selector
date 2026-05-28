@@ -54,7 +54,7 @@ class ProgramRecommendationServiceImplTest
         @Test
         void shouldMatchByAverageScoreDiveLowerBound()
         {
-            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15)))
+            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15), eq("full_time")))
                 .thenReturn(rows(
                     row(1L, "浙江大学", "电子信息", 315),
                     row(2L, "南京理工大学", "智能科学与技术", 316)
@@ -71,7 +71,7 @@ class ProgramRecommendationServiceImplTest
         @Test
         void shouldMatchAllAverageScoresNotAboveUpperLimit()
         {
-            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15)))
+            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15), eq("full_time")))
                 .thenReturn(rows(
                     row(1L, "低均分大学", "电子信息", 274),
                     row(2L, "更低均分大学", "电子信息", 250),
@@ -89,7 +89,7 @@ class ProgramRecommendationServiceImplTest
         @Test
         void shouldNotLimitFlatScreeningResultsToPageSizePerGroup()
         {
-            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15)))
+            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15), eq("full_time")))
                 .thenReturn(numberedRows(13, 280));
 
             Map<String, Object> result = service.generateRecommendation(1L, request(300, 15));
@@ -100,7 +100,7 @@ class ProgramRecommendationServiceImplTest
         @Test
         void shouldExcludeMissingAverageScoreInScoreRangeMode()
         {
-            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15)))
+            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15), eq("full_time")))
                 .thenReturn(rows(
                     row(1L, "缺均分大学", "电子信息", null),
                     row(2L, "有均分大学", "电子信息", 314)
@@ -116,7 +116,7 @@ class ProgramRecommendationServiceImplTest
         @Test
         void shouldSortScoreRangeByRiskDescending()
         {
-            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15)))
+            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(15), eq("full_time")))
                 .thenReturn(rows(
                     row(1L, "稳一点大学", "电子信息", 303),
                     row(2L, "刚好冲刺大学", "电子信息", 314),

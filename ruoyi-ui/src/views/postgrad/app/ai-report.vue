@@ -44,6 +44,46 @@
                   <el-progress :percentage="school.matchScore || 0"
                     :color="matchColor(school.matchScore)" />
                 </div>
+
+                <div v-if="school.scoreLine || school.avgAdmittedScore" class="stats-grid">
+                  <div class="stat-item" v-if="school.scoreLine">
+                    <span class="stat-label">复试线</span>
+                    <span class="stat-val">{{ school.scoreLine }}</span>
+                  </div>
+                  <div class="stat-item" v-if="school.avgAdmittedScore">
+                    <span class="stat-label">录取均分</span>
+                    <span class="stat-val">{{ school.avgAdmittedScore }}</span>
+                  </div>
+                  <div class="stat-item" v-if="school.admissionLow">
+                    <span class="stat-label">最低分</span>
+                    <span class="stat-val">{{ school.admissionLow }}</span>
+                  </div>
+                  <div class="stat-item" v-if="school.admissionHigh">
+                    <span class="stat-label">最高分</span>
+                    <span class="stat-val">{{ school.admissionHigh }}</span>
+                  </div>
+                  <div class="stat-item" v-if="school.planCount">
+                    <span class="stat-label">招生计划</span>
+                    <span class="stat-val">{{ school.planCount }}</span>
+                  </div>
+                  <div class="stat-item" v-if="school.admittedCount">
+                    <span class="stat-label">录取人数</span>
+                    <span class="stat-val">{{ school.admittedCount }}</span>
+                  </div>
+                </div>
+
+                <div v-if="school.dataYear || school.dataCompleteness" class="data-meta">
+                  <span v-if="school.dataYear">{{ school.dataYear }}年数据</span>
+                  <span v-if="school.dataCompleteness" class="completeness-tag"
+                    :class="'completeness-' + school.dataCompleteness">
+                    完整度 {{ school.dataCompleteness }}
+                  </span>
+                </div>
+
+                <a v-if="school.sourceUrl" class="source-link"
+                  :href="school.sourceUrl" target="_blank" @click.stop>
+                  数据来源: {{ school.sourceOwner || 'N诺' }} →
+                </a>
               </el-card>
             </el-col>
           </el-row>
@@ -144,4 +184,18 @@ export default {
 .match-bar { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
 .match-bar span { font-size: 12px; color: #909399; white-space: nowrap; }
 .report-actions { text-align: center; padding: 24px 0 48px; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
+.stat-item { text-align: center; padding: 4px 2px; background: #f8fafc; border-radius: 4px; }
+.stat-label { display: block; font-size: 11px; color: #909399; }
+.stat-val { font-size: 15px; font-weight: 700; color: #303133; }
+
+.data-meta { margin-top: 8px; font-size: 12px; color: #909399; display: flex; gap: 8px; align-items: center; }
+.completeness-tag { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: 11px; }
+.completeness-A { background: #f0f9eb; color: #67c23a; }
+.completeness-B { background: #fdf6ec; color: #e6a23c; }
+.completeness-C { background: #fef0f0; color: #f56c6c; }
+
+.source-link { display: block; margin-top: 8px; font-size: 11px; color: #409eff; text-decoration: none; }
+.source-link:hover { text-decoration: underline; }
 </style>

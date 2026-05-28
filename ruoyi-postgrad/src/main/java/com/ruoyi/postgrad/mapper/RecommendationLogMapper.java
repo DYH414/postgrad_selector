@@ -15,4 +15,5 @@ public interface RecommendationLogMapper
         @Param("state") String state);
     String selectConversationState(@Param("conversationId") String conversationId);
     List<RowMap> selectAiReportListByUserId(@Param("userId") Long userId);
+    int updateReportResult(@Param("id") Long id, @Param("resultJson") String resultJson);
 }
