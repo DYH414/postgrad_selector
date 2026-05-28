@@ -25,33 +25,38 @@ import com.ruoyi.postgrad.service.IAiRecommendationService;
 import com.ruoyi.postgrad.tool.AiRecommendationTools;
 
 import dev.langchain4j.community.model.dashscope.QwenChatModel;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.memory.ChatMemory;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.service.AiServices;
 
 @Service
 public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     private static final String SYSTEM_PROMPT = ""
-        + "你是考研408计算机专业择校顾问。\n\n"
-        + "## 你的角色\n"
-        + "帮助考生从候选学校池中挑选最匹配的目标院校。\n"
-        + "风格：数据驱动、诚实、简洁。不画饼，不说\"努力就能上\"。\n"
-        + "每轮只聚焦一个维度。\n\n"
+        + "你是考研择校顾问。回复简洁（2-4句），不自我介绍，不讲客套话。每轮聚焦一个问题。\n\n"
         + "## 用户画像\n"
         + "- 预估总分: %d\n"
         + "- 本科层次: %s\n"
         + "- 跨考: %s\n"
-        + "- 风险偏好: %s\n"
-        + "- 目标地区: %s\n"
-        + "- 数学水平: %s，英语水平: %s\n\n"
+        + "- 目标地区: %s\n\n"
         + "## 候选学校摘要\n"
         + "%s\n\n"
-        + "## 可用工具\n"
-        + "- getProgramDetail(programId): 获取完整录取数据\n"
-        + "- searchPrograms(filters): 在候选池内筛选\n"
-        + "- comparePrograms(ids): 横向对比多校\n\n"
+        + "## 可用工具（必须使用）\n"
+        + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
+        + "- searchPrograms(filters): 在候选池内按城市、学校层次、分数范围等条件筛选。filters 为 JSON，如 {\"city\":\"上海\",\"tier\":\"211\",\"minScore\":290,\"maxScore\":310}\n"
+        + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n\n"
+        + "## 工具使用规则\n"
+        + "1. 讨论具体学校时，必须先调用 getProgramDetail 获取真实数据再回复\n"
+        + "2. 用户要求筛选/过滤/列清单时，必须调用 searchPrograms，不要凭摘要信息推测\n"
+        + "3. 对比学校时，必须调用 comparePrograms 获取详细对比数据\n"
+        + "4. 回复中引用数据时，确保数据来自工具返回结果，不要编造数字\n\n"
         + "## 对话节奏\n"
         + "第1轮: 了解最看重的维度（学校层次/专业排名/城市/上岸率）\n"
-        + "第2-3轮: 用具体数据讨论 2-3 所目标校\n"
+        + "第2-3轮: 用具体数据讨论 2-3 所目标校（必须调工具获取数据）\n"
         + "第4-5轮: 确认冲刺/稳妥/保底意向\n\n"
         + "## 输出格式\n"
         + "每轮回复含简短文字(2-4句)。\n"
@@ -75,6 +80,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Autowired(required = false)
     private RabbitTemplate rabbitTemplate;
+
+    @Autowired
+    private AiRecommendationTools aiRecommendationTools;
 
     @Override
     public Map<String, Object> startConversation(Long userId, Map<String, Object> request) {
@@ -101,10 +109,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             estimatedScore,
             profile.getOrDefault("undergradTier", "双非"),
             profile.getOrDefault("isCrossMajor", "否"),
-            profile.getOrDefault("riskPreference", "中等"),
             profile.getOrDefault("targetRegions", "不限"),
-            profile.getOrDefault("mathLevel", "中等"),
-            profile.getOrDefault("englishLevel", "中等"),
             summaryText);
 
         String conversationId = UUID.randomUUID().toString();
@@ -115,13 +120,20 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         systemMsg.put("content", systemPrompt);
         messages.add(systemMsg);
 
-        String fullPrompt = buildChatPrompt(messages);
         ChatModel chatModel = buildChatModel();
+        ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(20);
+
+        RecommendationAssistant assistant = AiServices.builder(RecommendationAssistant.class)
+            .chatModel(chatModel)
+            .tools(aiRecommendationTools)
+            .chatMemory(chatMemory)
+            .systemMessageProvider(ignored -> systemPrompt)
+            .build();
 
         String aiResponse;
         try {
             AiRecommendationTools.setConversationId(conversationId);
-            aiResponse = chatModel.chat(fullPrompt);
+            aiResponse = assistant.chat("开始择校对话。不要自我介绍，直接询问用户最看重哪个维度（学校层次/专业实力/城市/上岸率）。");
         } finally {
             AiRecommendationTools.clear();
         }
@@ -174,36 +186,73 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> messages = JSON.parseObject(convJson, List.class);
 
-        Map<String, Object> userMsg = new LinkedHashMap<>();
-        userMsg.put("role", "user");
-        userMsg.put("content", "<user_input>" + message + "</user_input>");
-        messages.add(userMsg);
+        // Extract system prompt from history
+        String systemPrompt = "";
+        for (Map<String, Object> m : messages) {
+            if ("system".equals(m.get("role"))) {
+                systemPrompt = (String) m.get("content");
+                break;
+            }
+        }
+        final String finalSystemPrompt = systemPrompt;
 
-        String fullPrompt = buildChatPrompt(messages);
+        // Build chat memory from non-system messages
+        ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(20);
+        for (Map<String, Object> m : messages) {
+            String role = (String) m.get("role");
+            String content = (String) m.get("content");
+            if ("assistant".equals(role)) {
+                chatMemory.add(AiMessage.from(content));
+            } else if ("user".equals(role)) {
+                chatMemory.add(UserMessage.from(content));
+            }
+        }
+
         ChatModel chatModel = buildChatModel();
+        RecommendationAssistant assistant = AiServices.builder(RecommendationAssistant.class)
+            .chatModel(chatModel)
+            .tools(aiRecommendationTools)
+            .chatMemory(chatMemory)
+            .systemMessageProvider(ignored -> finalSystemPrompt)
+            .build();
 
         String aiResponse;
         try {
             AiRecommendationTools.setConversationId(conversationId);
-            aiResponse = chatModel.chat(fullPrompt);
+            aiResponse = assistant.chat("<user_input>" + message + "</user_input>");
         } catch (Exception e) {
             try {
-                aiResponse = chatModel.chat(fullPrompt);
+                AiRecommendationTools.setConversationId(conversationId);
+                aiResponse = assistant.chat("<user_input>" + message + "</user_input>");
             } catch (Exception e2) {
                 Map<String, Object> fallback = new LinkedHashMap<>();
                 fallback.put("fallback", true);
                 fallback.put("message", "AI 服务暂时不可用，请稍后重试");
                 fallback.put("options", Collections.emptyList());
+                AiRecommendationTools.clear();
                 return fallback;
             }
         } finally {
             AiRecommendationTools.clear();
         }
 
-        Map<String, Object> assistantMsg = new LinkedHashMap<>();
-        assistantMsg.put("role", "assistant");
-        assistantMsg.put("content", aiResponse);
-        messages.add(assistantMsg);
+        // Rebuild messages from memory + system prompt for Redis persistence
+        messages = new ArrayList<>();
+        Map<String, Object> sysMsg = new LinkedHashMap<>();
+        sysMsg.put("role", "system");
+        sysMsg.put("content", finalSystemPrompt);
+        messages.add(sysMsg);
+        for (ChatMessage cm : chatMemory.messages()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            if (cm instanceof AiMessage) {
+                m.put("role", "assistant");
+                m.put("content", ((AiMessage) cm).text());
+            } else if (cm instanceof UserMessage) {
+                m.put("role", "user");
+                m.put("content", ((UserMessage) cm).singleText());
+            }
+            if (!m.isEmpty()) messages.add(m);
+        }
 
         convJson = JSON.toJSONString(messages);
         redisTemplate.opsForValue().set("ai:conv:" + conversationId, convJson, TTL_SECONDS, TimeUnit.SECONDS);
@@ -294,7 +343,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         // 降级：同步生成
         try {
             String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
-            String reportPrompt = buildReportPrompt(convJson);
+            String reportPrompt = buildReportPrompt(convJson, poolJson != null ? poolJson : "[]");
             ChatModel chatModel = buildChatModel();
             String aiResponse = chatModel.chat(reportPrompt);
             Map<String, Object> reportJson = JSON.parseObject(aiResponse);
@@ -470,18 +519,12 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             profile.put("estimatedScore", up.getEstimatedScore() != null ? up.getEstimatedScore() : 300);
             profile.put("undergradTier", up.getUndergradTier() != null ? up.getUndergradTier() : "双非");
             profile.put("isCrossMajor", (up.getIsCrossMajor() != null && up.getIsCrossMajor() == 1) ? "是" : "否");
-            profile.put("riskPreference", up.getRiskPreference() != null ? up.getRiskPreference() : "中等");
             profile.put("targetRegions", up.getTargetRegions() != null ? up.getTargetRegions() : "不限");
-            profile.put("mathLevel", up.getMathLevel() != null ? up.getMathLevel() : "中等");
-            profile.put("englishLevel", up.getEnglishLevel() != null ? up.getEnglishLevel() : "中等");
         } else {
             profile.put("estimatedScore", 300);
             profile.put("undergradTier", "双非");
             profile.put("isCrossMajor", "否");
-            profile.put("riskPreference", "中等");
             profile.put("targetRegions", "不限");
-            profile.put("mathLevel", "中等");
-            profile.put("englishLevel", "中等");
         }
         return profile;
     }
@@ -542,11 +585,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             sb.append(" | ").append(item.get("programName"));
             sb.append(" | ").append(item.get("schoolTier"));
             sb.append(" | ").append(item.get("city"));
-            sb.append(" | 均分:").append(item.get("avgAdmittedScore"));
-            Object gap = item.get("gap");
-            if (gap != null) {
-                sb.append(" | 差距:").append(gap);
-            }
             sb.append("\n");
         }
         return sb.toString();
@@ -592,12 +630,21 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return options;
     }
 
-    private String buildReportPrompt(String convJson) {
+    private String buildReportPrompt(String convJson, String poolJson) {
+        String poolSummary = buildPoolSummary(poolJson);
         return """
-            基于以下对话历史生成考研择校推荐报告。
+            基于用户偏好和完整候选学校列表，生成考研择校推荐报告。
 
-            ## 对话历史
+            ## 完整候选学校列表（请从这里选学校）
             %s
+
+            ## 对话历史（用户偏好参考）
+            %s
+
+            ## 要求
+            1. 从上面的候选列表中选学校，不要推荐列表之外的学校
+            2. programId 必须与候选列表中的 ID 一致
+            3. 按冲刺/稳妥/保底三档推荐，每档 1-3 所学校
 
             ## 输出格式（严格 JSON）
             {
@@ -608,7 +655,39 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 {"level": "safe", "label": "保底档", "schools": []}
               ]
             }
-            """.formatted(convJson);
+            """.formatted(poolSummary, convJson);
+    }
+
+    private String buildPoolSummary(String poolJson) {
+        if (poolJson == null || poolJson.isEmpty() || "[]".equals(poolJson)) {
+            return "（无候选学校数据）";
+        }
+        try {
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+            StringBuilder sb = new StringBuilder();
+            int idx = 1;
+            for (Map<String, Object> p : pool) {
+                sb.append(idx).append(". ID:").append(p.get("programId"));
+                sb.append(" | ").append(p.getOrDefault("schoolName", "?"));
+                sb.append(" | ").append(p.getOrDefault("programName", ""));
+                sb.append(" | ").append(p.getOrDefault("schoolTier", ""));
+                sb.append(" | ").append(p.getOrDefault("city", ""));
+                Object avgObj = p.get("avgAdmittedScore");
+                sb.append(" | 均分:");
+                sb.append(avgObj instanceof Number ? ((Number) avgObj).intValue() : avgObj);
+                Object gapObj = p.get("gap");
+                if (gapObj instanceof Number) {
+                    int gap = ((Number) gapObj).intValue();
+                    sb.append(" | 差距:").append(gap > 0 ? "+" : "").append(gap);
+                }
+                sb.append("\n");
+                idx++;
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "（候选学校数据解析失败）";
+        }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -699,5 +778,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             logMapper.insertRecommendationLog(log);
         } catch (Exception ignored) {
         }
+    }
+
+    /** langchain4j AiServices interface — enables real Tool invocation */
+    private interface RecommendationAssistant {
+        String chat(String message);
     }
 }

@@ -48,6 +48,12 @@
             <artifactId>ruoyi-postgrad</artifactId>
         </dependency>
 
+        <!-- langchain4j AiServices + ChatMemory (runtime dependency, needed at service start) -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+        </dependency>
+
         <!-- 定时任务-->
         <dependency>
             <groupId>com.ruoyi</groupId>

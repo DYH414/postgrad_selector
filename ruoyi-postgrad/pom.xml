@@ -29,6 +29,12 @@
             <artifactId>langchain4j-core</artifactId>
         </dependency>
 
+        <!-- langchain4j AiServices + ChatMemory -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+        </dependency>
+
         <!-- Redis -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

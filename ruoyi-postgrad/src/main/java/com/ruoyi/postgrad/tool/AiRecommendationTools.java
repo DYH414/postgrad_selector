@@ -3,6 +3,8 @@ package com.ruoyi.postgrad.tool;
 import com.alibaba.fastjson2.JSON;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -15,6 +17,7 @@ import java.util.stream.Collectors;
 @Component
 public class AiRecommendationTools {
 
+    private static final Logger log = LoggerFactory.getLogger(AiRecommendationTools.class);
     private static final ThreadLocal<String> CURRENT_CONVERSATION = new ThreadLocal<>();
 
     @Autowired
@@ -31,6 +34,7 @@ public class AiRecommendationTools {
     @Tool("获取指定学校的完整录取数据，包括近三年复试线、小分、招生计划、录取均分")
     public String getProgramDetail(@P("学校 programId") long programId) {
         String conversationId = CURRENT_CONVERSATION.get();
+        log.info("[Tool] getProgramDetail called — conversationId={}, programId={}", conversationId, programId);
         if (conversationId == null) return "{}";
 
         String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
@@ -51,6 +55,7 @@ public class AiRecommendationTools {
     @Tool("在候选池内按条件筛选学校，如按城市、学校层次、分数范围过滤")
     public String searchPrograms(@P("筛选条件，JSON 格式，如 {\"city\":\"北京\",\"tier\":\"985\",\"minScore\":300,\"maxScore\":400}") String filters) {
         String conversationId = CURRENT_CONVERSATION.get();
+        log.info("[Tool] searchPrograms called — conversationId={}, filters={}", conversationId, filters);
         if (conversationId == null) return "[]";
 
         String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
@@ -86,6 +91,7 @@ public class AiRecommendationTools {
     @Tool("横向对比多所学校的录取数据，返回详细对比")
     public String comparePrograms(@P("学校 programId 列表") List<Long> ids) {
         String conversationId = CURRENT_CONVERSATION.get();
+        log.info("[Tool] comparePrograms called — conversationId={}, ids={}", conversationId, ids);
         if (conversationId == null) return "[]";
 
         String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);

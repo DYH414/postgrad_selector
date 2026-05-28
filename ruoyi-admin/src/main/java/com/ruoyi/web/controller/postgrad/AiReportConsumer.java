@@ -32,26 +32,26 @@ public class AiReportConsumer {
         int estimatedScore = ((Number) msg.get("estimatedScore")).intValue();
 
         try {
-            // 1. Read conversation from Redis
+            // 1. Read conversation and pool from Redis
             String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
             if (convJson == null) {
                 redisTemplate.opsForValue().set("ai:report:" + reportId,
                     "{\"error\": \"对话已过期\"}", 7, TimeUnit.DAYS);
                 return;
             }
+            String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
 
-            // 2. Generate report via AI
+            // 2. Generate report via AI (with full candidate pool in prompt)
             ChatModel chatModel = QwenChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
                 .modelName("qwen-plus")
                 .build();
 
-            String reportPrompt = buildReportPrompt(convJson);
+            String reportPrompt = buildReportPrompt(convJson, poolJson != null ? poolJson : "[]");
             String aiResponse = chatModel.chat(reportPrompt);
             JSONObject reportJson = JSON.parseObject(aiResponse);
 
             // 3. Calculate and inject matchScore from pool data (NOT from AI)
-            String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
             injectMatchScores(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
 
             // 4. Save to Redis (7 days) — do this first so report is visible even if DB update fails
@@ -72,12 +72,21 @@ public class AiReportConsumer {
         }
     }
 
-    private String buildReportPrompt(String convJson) {
+    private String buildReportPrompt(String convJson, String poolJson) {
+        String poolSummary = buildPoolSummary(poolJson);
         return """
-            基于以下对话历史生成考研择校推荐报告。
+            基于用户偏好和完整候选学校列表，生成考研择校推荐报告。
 
-            ## 对话历史
+            ## 完整候选学校列表（请从这里选学校）
             %s
+
+            ## 对话历史（用户偏好参考）
+            %s
+
+            ## 要求
+            1. 从上面的候选列表中选学校，不要推荐列表之外的学校
+            2. programId 必须与候选列表中的 ID 一致
+            3. 按冲刺/稳妥/保底三档推荐，每档 1-3 所学校
 
             ## 输出格式（严格 JSON）
             {
@@ -110,7 +119,44 @@ public class AiReportConsumer {
                 }
               ]
             }
-            """.formatted(convJson);
+            """.formatted(poolSummary, convJson);
+    }
+
+    private String buildPoolSummary(String poolJson) {
+        if (poolJson == null || poolJson.isEmpty() || "[]".equals(poolJson)) {
+            return "（无候选学校数据）";
+        }
+        try {
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+            StringBuilder sb = new StringBuilder();
+            int i = 1;
+            for (Map<String, Object> p : pool) {
+                Object pid = p.get("programId");
+                sb.append(i).append(". ID:").append(pid);
+                sb.append(" | ").append(p.getOrDefault("schoolName", "?"));
+                sb.append(" | ").append(p.getOrDefault("programName", ""));
+                sb.append(" | ").append(p.getOrDefault("schoolTier", ""));
+                sb.append(" | ").append(p.getOrDefault("city", ""));
+                Object avgObj = p.get("avgAdmittedScore");
+                sb.append(" | 均分:");
+                if (avgObj instanceof Number) {
+                    sb.append(((Number) avgObj).intValue());
+                } else {
+                    sb.append(avgObj);
+                }
+                Object gapObj = p.get("gap");
+                if (gapObj instanceof Number) {
+                    int gap = ((Number) gapObj).intValue();
+                    sb.append(" | 差距:").append(gap > 0 ? "+" : "").append(gap);
+                }
+                sb.append("\n");
+                i++;
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "（候选学校数据解析失败）";
+        }
     }
 
     private void injectMatchScores(JSONObject report, int estimatedScore, String poolJson) {
