@@ -274,7 +274,24 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         logMapper.insertRecommendationLog(log);
         Long reportId = log.getId();
 
-        // 同步生成报告（MQ 可用时改为异步）
+        // 异步投递 RabbitMQ；MQ 不可用时同步降级
+        if (rabbitTemplate != null) {
+            Map<String, Object> msg = new LinkedHashMap<>();
+            msg.put("reportId", reportId);
+            msg.put("conversationId", conversationId);
+            msg.put("userId", userId);
+            msg.put("estimatedScore", estimatedScore);
+            rabbitTemplate.convertAndSend("ai.report.queue", msg);
+
+            redisTemplate.opsForValue().set("ai:report:" + reportId, "PENDING", REPORT_TTL_DAYS, TimeUnit.DAYS);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("reportId", reportId);
+            result.put("status", "PENDING");
+            return result;
+        }
+
+        // 降级：同步生成
         try {
             String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
             String reportPrompt = buildReportPrompt(convJson);
