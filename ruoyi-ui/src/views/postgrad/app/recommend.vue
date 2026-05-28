@@ -157,16 +157,20 @@
         本平台专注计算机考研（408统考）数据分析与择校推荐，覆盖院校、专业、分数、人数等核心维度。
       </footer>
     </main>
+
+    <AiChatPanel :visible="aiChatVisible" :candidateIds="candidateResultIds"
+      @close="aiChatVisible = false" @fallback="handleAiFallback" />
   </div>
 </template>
 
 <script>
 import AppHeader from './components/AppHeader'
+import AiChatPanel from './components/AiChatPanel'
 import { generateRecommendation, getRecommendationOptions } from '@/api/postgrad/appRecommendation'
 
 export default {
   name: 'AppRecommend',
-  components: { AppHeader },
+  components: { AppHeader, AiChatPanel },
   data() {
     return {
       generating: false,
@@ -179,7 +183,9 @@ export default {
         majorDirections: [],
         risk: 'balanced',
         scoreRange: 15
-      }
+      },
+      aiChatVisible: false,
+      candidateResultIds: []
     }
   },
   created() {

@@ -119,6 +119,13 @@ export const constantRoutes = [
     meta: { title: '智能推荐' }
   },
   {
+    path: '/app/ai-report/:id',
+    component: () => import('@/views/postgrad/app/ai-report'),
+    name: 'AiReport',
+    hidden: true,
+    meta: { title: 'AI 推荐报告', noCache: true }
+  },
+  {
     path: '/app/results',
     component: () => import('@/views/postgrad/app/results'),
     hidden: true,

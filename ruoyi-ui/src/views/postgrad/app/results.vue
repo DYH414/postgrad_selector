@@ -69,6 +69,8 @@
             </span>
           </div>
           <el-button plain type="primary" icon="el-icon-download">导出结果</el-button>
+          <el-button v-if="hasResult" type="warning" icon="el-icon-cpu"
+            @click="aiChatVisible = true">AI 智能推荐</el-button>
         </div>
 
         <div class="data-alert">
@@ -288,11 +290,15 @@
         </template>
       </div>
     </el-drawer>
+
+    <AiChatPanel :visible="aiChatVisible" :candidateIds="candidateResultIds"
+      @close="aiChatVisible = false" @fallback="handleAiFallback" />
   </div>
 </template>
 
 <script>
 import AppHeader from './components/AppHeader'
+import AiChatPanel from './components/AiChatPanel'
 import { generateRecommendation, getRecommendationOptions, getRecommendationResult } from '@/api/postgrad/appRecommendation'
 import { comparePrograms, getProgramDetail } from '@/api/postgrad/appPrograms'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/postgrad/appFavorites'
@@ -325,7 +331,7 @@ const emptyResult = () => ({
 
 export default {
   name: 'AppResults',
-  components: { AppHeader },
+  components: { AppHeader, AiChatPanel },
   data() {
     return {
       loading: false,
@@ -340,6 +346,7 @@ export default {
       filterForm: emptyFilters(),
       appliedFilters: emptyFilters(),
       optionRegions: ['福建', '广东', '浙江', '上海'],
+      aiChatVisible: false,
       compareRows: [
         { label: '学校', type: 'name' },
         { label: '专业', key: 'program' },
@@ -366,6 +373,11 @@ export default {
     },
     hasResult() {
       return (this.result.groups || []).some(group => (group.schools || []).length > 0)
+    },
+    candidateResultIds() {
+      return (this.result.groups || []).flatMap(g =>
+        (g.schools || []).map(s => s.programId).filter(Boolean)
+      )
     },
     headerChips() {
       const chips = [
@@ -429,6 +441,10 @@ export default {
     }
   },
   methods: {
+    handleAiFallback() {
+      this.aiChatVisible = false
+      this.$message.warning('AI 暂不可用，当前为规则推荐结果')
+    },
     loadOptions() {
       getRecommendationOptions().then(res => {
         const data = res.data || {}
