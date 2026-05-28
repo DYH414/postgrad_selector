@@ -178,6 +178,15 @@
                 <version>${ruoyi.version}</version>
             </dependency>
 
+            <!-- langchain4j BOM -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>1.15.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- langchain4j-community BOM -->
             <dependency>
                 <groupId>dev.langchain4j</groupId>
