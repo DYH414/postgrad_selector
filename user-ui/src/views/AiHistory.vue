@@ -1,63 +1,120 @@
 <template>
-  <div class="app-page">
-    <AppHeader />
-    <div class="app-body">
-      <div class="page-title"><h3>AI 推荐记录</h3></div>
-      <el-card v-loading="loading">
-        <el-empty v-if="!loading && reports.length === 0" description="暂无 AI 推荐记录" />
-        <div v-else>
-          <el-table :data="reports" stripe>
-            <el-table-column prop="title" label="报告标题" />
-            <el-table-column prop="createdAt" label="生成时间" width="180" />
-            <el-table-column label="操作" width="100">
-              <template #default="{ row }">
-                <el-button size="small" type="primary" @click="$router.push('/ai-report/' + row.id)">查看</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-pagination
-            v-if="total > 0"
-            style="margin-top:16px;text-align:right"
-            :current-page="pageNum" :page-size="pageSize" :total="total"
-            layout="total, prev, pager, next" @current-change="fetchPage" />
+  <div class="ai-history-page">
+    <AppHeader current-page="history" />
+
+    <div class="page-body">
+      <div class="page-title">
+        <h2>AI 推荐报告记录</h2>
+        <el-button type="primary" size="small" icon="el-icon-plus" @click="$router.push('/recommend')">
+          新建推荐
+        </el-button>
+      </div>
+
+      <div v-loading="loading" class="report-list">
+        <div v-if="!loading && reports.length === 0" class="empty-state">
+          <i class="el-icon-document"></i>
+          <p>暂无 AI 推荐报告</p>
+          <el-button type="primary" @click="$router.push('/recommend')">去生成推荐</el-button>
         </div>
-      </el-card>
+
+        <div v-for="report in reports" :key="report.id" class="report-card"
+          @click="$router.push('/ai-report/' + report.id)">
+          <div class="card-main">
+            <div class="card-summary">{{ report.summary || 'AI 择校推荐报告' }}</div>
+            <div class="card-meta">
+              <span class="meta-item">
+                <i class="el-icon-date"></i>
+                {{ report.createdAt || '-' }}
+              </span>
+              <span v-if="report.tierSummary" class="meta-item tier-summary">
+                {{ report.tierSummary }}
+              </span>
+            </div>
+          </div>
+          <div class="card-arrow">
+            <i class="el-icon-arrow-right"></i>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
 import { getAiReports } from '@/api/ai'
 
-const loading = ref(false)
 const reports = ref([])
-const total = ref(0)
-const pageNum = ref(1)
-const pageSize = ref(20)
+const loading = ref(false)
 
-async function fetchReports(page) {
+function parseReport(raw) {
+  const report = { id: raw.id, createdAt: raw.created_at || raw.createdAt || '' }
+  try {
+    let resultJson = raw.result_json || raw.resultJson || '{}'
+    if (typeof resultJson === 'string') {
+      resultJson = JSON.parse(resultJson)
+    }
+    report.summary = resultJson.summary || ''
+    if (resultJson.tiers && Array.isArray(resultJson.tiers)) {
+      const parts = resultJson.tiers.map(t => {
+        const count = t.schools ? t.schools.length : 0
+        return t.label + ' ' + count + '所'
+      })
+      report.tierSummary = parts.join(' · ')
+    }
+  } catch (e) {
+    report.summary = 'AI 择校推荐报告'
+  }
+  return report
+}
+
+async function fetchReports() {
   loading.value = true
   try {
-    const res = await getAiReports(page)
-    reports.value = res.data?.rows || res.rows || res.data || []
-    total.value = res.total || 0
-  } catch (e) { /* ignore */ }
-  finally { loading.value = false }
+    const res = await getAiReports()
+    const raw = res.data && res.data.reports ? res.data.reports : (res.data || [])
+    reports.value = raw.map(r => parseReport(r))
+  } catch (e) {
+    ElMessage.error('加载报告列表失败')
+  } finally {
+    loading.value = false
+  }
 }
 
-function fetchPage(page) {
-  pageNum.value = page
-  fetchReports(page)
-}
-
-onMounted(() => fetchReports(1))
+onMounted(() => {
+  fetchReports()
+})
 </script>
 
 <style scoped>
-.app-page { min-height: 100vh; background: #f0f2f5; }
-.app-body { max-width: 800px; margin: 24px auto; padding: 0 16px; }
-.page-title { margin-bottom: 16px; }
-.page-title h3 { margin: 0; }
+.ai-history-page { min-height: 100vh; background: #f5f7fa; }
+
+.page-body { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+
+.page-title {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;
+}
+.page-title h2 { margin: 0; font-size: 20px; color: #303133; }
+
+.empty-state { text-align: center; padding: 80px 0; color: #909399; }
+.empty-state i { font-size: 48px; display: block; margin-bottom: 16px; }
+
+.report-card {
+  background: #fff; border-radius: 10px; padding: 20px 24px; margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 1px 6px rgba(0,0,0,.06); cursor: pointer; transition: box-shadow .2s;
+}
+.report-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+
+.card-main { flex: 1; min-width: 0; }
+.card-summary {
+  font-size: 15px; font-weight: 600; color: #303133; margin-bottom: 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-meta { display: flex; gap: 20px; flex-wrap: wrap; }
+.meta-item { font-size: 13px; color: #909399; display: flex; align-items: center; gap: 4px; }
+.tier-summary { color: #606266; }
+.card-arrow { color: #c0c4cc; font-size: 18px; flex-shrink: 0; margin-left: 16px; }
 </style>

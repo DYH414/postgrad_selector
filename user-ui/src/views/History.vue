@@ -1,50 +1,59 @@
 <template>
   <div class="app-page">
-    <AppHeader />
+    <AppHeader current-page="history" />
     <div class="app-body">
-      <div class="page-title"><h3>推荐历史</h3></div>
-      <el-card v-loading="loading">
-        <el-empty v-if="!loading && history.length === 0" description="暂无推荐记录" />
-        <el-timeline v-else>
-          <el-timeline-item
-            v-for="item in history" :key="item.id" :timestamp="item.createdAt"
-            placement="top">
-            <el-card shadow="hover">
-              <p>预估分: {{ item.estimatedScore || '-' }} | 目标地区: {{ item.targetRegions || '不限' }}</p>
-              <el-button size="small" type="primary" @click="$router.push('/history/' + item.id)">查看详情</el-button>
-            </el-card>
-          </el-timeline-item>
-        </el-timeline>
-      </el-card>
+      <h3>推荐历史</h3>
+      <el-table :data="logs" v-loading="loading" style="width:100%">
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column prop="ruleVersion" label="规则版本" width="100" />
+        <el-table-column prop="createdAt" label="生成时间" width="180">
+          <template #default="{ row }">{{ row.createdAt }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <el-button type="text" size="small" @click="$router.push('/history/' + row.id)">查看详情</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="!loading && logs.length === 0" style="text-align:center;padding:60px;color:#909399">
+        暂无推荐记录
+        <br /><br />
+        <el-button type="primary" @click="$router.push('/recommend')">去生成推荐</el-button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
+import { useUserStore } from '@/stores/user'
 import { listRecommendationHistory } from '@/api/recommendation'
 
-const loading = ref(false)
-const history = ref([])
+const router = useRouter()
+const userStore = useUserStore()
 
-onMounted(async () => {
+const logs = ref([])
+const loading = ref(false)
+
+function fetchList() {
   loading.value = true
-  try {
-    const res = await listRecommendationHistory()
-    history.value = res.data || res.rows || []
-  } catch (e) {
-    ElMessage.error('加载历史失败')
-  } finally {
-    loading.value = false
-  }
-})
+  listRecommendationHistory().then(res => {
+    logs.value = res.data || []
+  }).finally(() => { loading.value = false })
+}
+
+function handleLogout() {
+  userStore.logoutAction().then(() => { router.push('/login') })
+}
+
+onMounted(() => { fetchList() })
 </script>
 
 <style scoped>
 .app-page { min-height: 100vh; background: #f0f2f5; }
-.app-body { max-width: 800px; margin: 24px auto; padding: 0 16px; }
-.page-title { margin-bottom: 16px; }
-.page-title h3 { margin: 0; }
+
+.app-body { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+.app-body h3 { margin-bottom: 16px; }
 </style>
