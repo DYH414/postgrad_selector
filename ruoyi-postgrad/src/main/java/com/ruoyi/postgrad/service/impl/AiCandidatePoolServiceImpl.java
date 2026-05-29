@@ -1,0 +1,212 @@
+package com.ruoyi.postgrad.service.impl;
+
+import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.service.IAiCandidatePoolService;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
+{
+    private static final int DEFAULT_SCORE_RANGE = 30;
+    private static final int DEFAULT_POOL_LIMIT = 50;
+
+    @Autowired
+    private RecommendationMapper recommendationMapper;
+
+    @Override
+    public List<RowMap> buildPool(Map<String, Object> request, Map<String, Object> profile, int estimatedScore)
+    {
+        List<Long> candidateIds = parseCandidateIds(request == null ? null : request.get("candidateIds"));
+        if (!candidateIds.isEmpty())
+        {
+            return limit(recommendationMapper.selectProgramsByIds(candidateIds, estimatedScore));
+        }
+
+        List<String> regions = parseTargetRegions(profile == null ? null : profile.get("targetRegions"));
+        List<RowMap> pool = recommendationMapper.selectCandidates("408", regions, null, estimatedScore,
+            DEFAULT_SCORE_RANGE, "full_time");
+        if ((pool == null || pool.isEmpty()) && !regions.isEmpty())
+        {
+            pool = recommendationMapper.selectCandidates("408", Collections.emptyList(), null, estimatedScore,
+                DEFAULT_SCORE_RANGE, "full_time");
+        }
+        return limit(pool);
+    }
+
+    private List<Long> parseCandidateIds(Object value)
+    {
+        List<Long> ids = new ArrayList<>();
+        for (Object item : flattenValue(value))
+        {
+            Long id = parsePositiveLong(item);
+            if (id != null)
+            {
+                ids.add(id);
+            }
+        }
+        return ids;
+    }
+
+    private List<String> parseTargetRegions(Object value)
+    {
+        if (value == null)
+        {
+            return Collections.emptyList();
+        }
+        if (value instanceof Collection<?> collection)
+        {
+            return cleanRegions(collection);
+        }
+        if (value.getClass().isArray())
+        {
+            return cleanRegions(flattenValue(value));
+        }
+
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty() || "[]".equals(text) || "不限".equals(text))
+        {
+            return Collections.emptyList();
+        }
+
+        if (text.startsWith("[") && text.endsWith("]"))
+        {
+            try
+            {
+                return cleanRegions(JSON.parseArray(text, Object.class));
+            }
+            catch (RuntimeException ignored)
+            {
+                text = text.substring(1, text.length() - 1);
+            }
+        }
+
+        String[] parts = text.split("[,，、]");
+        List<String> regions = new ArrayList<>();
+        for (String part : parts)
+        {
+            String region = part.trim();
+            if (!region.isEmpty() && !"不限".equals(region))
+            {
+                regions.add(region);
+            }
+        }
+        return regions;
+    }
+
+    private List<String> cleanRegions(Collection<?> values)
+    {
+        if (values == null)
+        {
+            return Collections.emptyList();
+        }
+
+        List<String> regions = new ArrayList<>();
+        for (Object value : values)
+        {
+            if (value == null)
+            {
+                continue;
+            }
+            String region = String.valueOf(value).trim();
+            if (!region.isEmpty() && !"不限".equals(region))
+            {
+                regions.add(region);
+            }
+        }
+        return regions;
+    }
+
+    private List<Object> flattenValue(Object value)
+    {
+        if (value == null)
+        {
+            return Collections.emptyList();
+        }
+        if (value instanceof Collection<?> collection)
+        {
+            return new ArrayList<>(collection);
+        }
+        if (value.getClass().isArray())
+        {
+            List<Object> items = new ArrayList<>();
+            int length = Array.getLength(value);
+            for (int i = 0; i < length; i++)
+            {
+                items.add(Array.get(value, i));
+            }
+            return items;
+        }
+        return Collections.singletonList(value);
+    }
+
+    private Long parsePositiveLong(Object value)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+        if (value instanceof Number number)
+        {
+            return parseIntegralNumber(number);
+        }
+        try
+        {
+            long id = Long.parseLong(String.valueOf(value).trim());
+            return id > 0 ? id : null;
+        }
+        catch (NumberFormatException ignored)
+        {
+            return null;
+        }
+    }
+
+    private Long parseIntegralNumber(Number number)
+    {
+        BigDecimal decimal;
+        try
+        {
+            decimal = new BigDecimal(number.toString());
+        }
+        catch (NumberFormatException ex)
+        {
+            return null;
+        }
+        try
+        {
+            BigInteger integer = decimal.toBigIntegerExact();
+            if (integer.signum() <= 0 || integer.bitLength() >= Long.SIZE)
+            {
+                return null;
+            }
+            return integer.longValue();
+        }
+        catch (ArithmeticException ex)
+        {
+            return null;
+        }
+    }
+
+    private List<RowMap> limit(List<RowMap> rows)
+    {
+        if (rows == null || rows.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        if (rows.size() <= DEFAULT_POOL_LIMIT)
+        {
+            return rows;
+        }
+        return new ArrayList<>(rows.subList(0, DEFAULT_POOL_LIMIT));
+    }
+}
