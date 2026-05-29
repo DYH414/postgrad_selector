@@ -22,8 +22,8 @@ import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.domain.UserProfile;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
-import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.mapper.UserProfileMapper;
+import com.ruoyi.postgrad.service.IAiCandidatePoolService;
 import com.ruoyi.postgrad.service.IAiRecommendationService;
 import com.ruoyi.postgrad.tool.AiRecommendationTools;
 
@@ -40,7 +40,7 @@ import dev.langchain4j.service.AiServices;
 public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     private static final String SYSTEM_PROMPT = ""
-        + "你是考研择校顾问。回复简洁（2-4句），不自我介绍，不讲客套话。每轮聚焦一个问题。\n\n"
+        + "你是独立的 AI 择校顾问。当前对话主要依据用户画像和系统自动候选池，不依赖筛选页或对比页的临时条件。回复简洁（2-4句），不自我介绍，不讲客套话。每轮聚焦一个问题。\n\n"
         + "## 用户画像\n"
         + "- 预估总分: %d\n"
         + "- 本科层次: %s\n"
@@ -83,7 +83,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     private static final long REPORT_TTL_DAYS = 7L;
 
     @Autowired
-    private RecommendationMapper recommendationMapper;
+    private IAiCandidatePoolService aiCandidatePoolService;
 
     @Autowired
     private RecommendationLogMapper logMapper;
@@ -105,18 +105,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         Map<String, Object> profile = loadUserProfile(userId);
         int estimatedScore = getEstimatedScore(request, profile);
 
-        @SuppressWarnings("unchecked")
-        List<Long> candidateIds = (List<Long>) request.get("candidateIds");
-        if (candidateIds == null) {
-            candidateIds = Collections.emptyList();
-        }
-
-        List<RowMap> pool;
-        if (!candidateIds.isEmpty()) {
-            pool = recommendationMapper.selectProgramsByIds(candidateIds, estimatedScore);
-        } else {
-            pool = Collections.emptyList();
-        }
+        List<RowMap> pool = aiCandidatePoolService.buildPool(request, profile, estimatedScore);
 
         List<Map<String, Object>> summaryList = buildSummaryList(pool, estimatedScore);
         String summaryText = buildSummaryText(summaryList);
@@ -173,6 +162,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         result.put("conversationId", conversationId);
         result.put("message", messageText);
         result.put("options", options);
+        result.put("profileBasis", buildProfileBasis(profile, estimatedScore));
+        result.put("candidateCount", summaryList.size());
         return result;
     }
 
@@ -564,6 +555,16 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
         }
         return s;
+    }
+
+    private Map<String, Object> buildProfileBasis(Map<String, Object> profile, int estimatedScore) {
+        Map<String, Object> basis = new LinkedHashMap<>();
+        basis.put("estimatedScore", estimatedScore);
+        basis.put("targetRegions", formatProfileField(profile, "targetRegions", "不限"));
+        basis.put("undergradTier", formatProfileField(profile, "undergradTier", "双非"));
+        basis.put("isCrossMajor", formatProfileField(profile, "isCrossMajor", "否"));
+        basis.put("candidateScope", "系统按画像自动选择最多 50 个具备录取数据的 408 项目作为 AI 初始候选池");
+        return basis;
     }
 
     private int getEstimatedScore(Map<String, Object> request, Map<String, Object> profile) {
