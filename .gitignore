@@ -5528,3 +5528,6 @@ prototype-snapshot*.md
 *.swp
 *.swo
 *~
+
+# Node modules
+node_modules/
