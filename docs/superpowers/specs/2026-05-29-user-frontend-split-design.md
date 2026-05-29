@@ -65,24 +65,39 @@ user-ui/
 Flat route table — no dynamic routes, no backend-driven menu generation:
 
 ```
-/login       → Login.vue
-/register    → Register.vue
-/             → Home.vue
-/profile      → Profile.vue        (auth required)
-/recommend    → Recommend.vue      (auth required)
-/ai-report/:id → AiReport.vue      (auth required)
-/ai-history   → AiHistory.vue      (auth required)
-/results      → Results.vue        (auth required)
-/favorites    → Favorites.vue      (auth required)
-/history      → History.vue        (auth required)
-/history/:id  → HistoryDetail.vue  (auth required)
+PUBLIC (no App-Token required):
+/login         → Login.vue
+/register      → Register.vue
+
+AUTHENTICATED (App-Token required):
+/               → Home.vue
+/profile        → Profile.vue
+/recommend      → Recommend.vue
+/ai-report/:id  → AiReport.vue
+/ai-history     → AiHistory.vue
+/results        → Results.vue
+/favorites      → Favorites.vue
+/history        → History.vue
+/history/:id    → HistoryDetail.vue
 ```
 
-Single route guard: if `to.meta.requiresAuth` and no token → redirect to `/login?redirect=...`.
+Single route guard: public routes pass through; all others redirect to `/login?redirect=...` when no App-Token is present.
 
 ## Backend — No Changes
 
-The backend already exposes clean user-facing APIs under `/app/*` via `@Anonymous` controllers:
+The backend already exposes clean user-facing APIs under `/app/*`. Two independent auth layers operate on these endpoints:
+
+| Layer | Mechanism | What it does |
+|---|---|---|
+| `@Anonymous` | Controller annotation | Bypasses RuoYi admin permission checks (Spring Security `@PreAuthorize`) — necessary because app users don't have admin roles |
+| `App-Token` | `AppAuthenticationFilter` + JWT | Validates the student's own login session. The filter runs only for `/app/*` paths, extracts `Authorization: Bearer <token>`, and looks up `app_login_tokens:<uuid>` from Redis |
+
+`@Anonymous` does NOT mean "no auth required." It means "skip the admin permission system." Every `/app/*` endpoint that needs a logged-in user (e.g., `/app/profile`, `/app/favorite`, `/app/recommendation`, `/app/ai-history`) must still verify the App-Token. The filter sets `SecurityContext`, and controller methods check for a valid `AppLoginUser` — without it they return an error or empty result.
+
+Unauthenticated (no App-Token required): `/app/auth/login`, `/app/auth/register`
+Authenticated (App-Token required): `/app/auth/me`, `/app/profile`, `/app/favorite/*`, `/app/recommendation/*`, `/app/ai-*`, `/app/programs/*`
+
+Existing controllers:
 - `AppAuthController` — register, login, logout, me
 - `AppProfileController` — get/update profile
 - `AppRecommendationController` — recommendations
@@ -90,7 +105,7 @@ The backend already exposes clean user-facing APIs under `/app/*` via `@Anonymou
 - `AppProgramController` — program listings
 - `AppAiRecommendationController` — AI recommendation endpoints
 
-These use `App-Token` (independent JWT mechanism) and are fully decoupled from RuoYi's Spring Security permission system. No backend changes needed.
+No backend changes needed.
 
 ## Build & Deployment
 
