@@ -158,6 +158,63 @@ Mobile-first single-column layout (top nav + content area), responsive via Eleme
 
 ## Implementation Order
 
+**Phase 0 — Backend Contract Check:** Verify every `/app/*` endpoint works correctly with `Authorization: Bearer <App-Token>` before writing any frontend code.
+
+Check each endpoint using curl or a comparable tool:
+
+```
+# 1. Register a test user
+curl -X POST http://localhost:8080/app/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"13800000001","password":"test123456"}'
+
+# 2. Login and capture the token
+curl -X POST http://localhost:8080/app/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"account":"13800000001","password":"test123456"}'
+# → extract TOKEN from response
+
+# 3. Verify /me with token
+curl http://localhost:8080/app/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+
+# 4. Verify /profile
+curl http://localhost:8080/app/profile \
+  -H "Authorization: Bearer $TOKEN"
+
+# 5. Verify favorites
+curl http://localhost:8080/app/favorite/list \
+  -H "Authorization: Bearer $TOKEN"
+
+# 6. Verify programs
+curl http://localhost:8080/app/programs/list \
+  -H "Authorization: Bearer $TOKEN"
+
+# 7. Verify recommendation (if endpoint requires optional params, just test auth)
+curl http://localhost:8080/app/recommendation/options \
+  -H "Authorization: Bearer $TOKEN"
+
+# 8. Verify /me WITHOUT token → should return error (not 200 with data)
+curl http://localhost:8080/app/auth/me
+
+# 9. Logout
+curl -X POST http://localhost:8080/app/auth/logout \
+  -H "Authorization: Bearer $TOKEN"
+
+# 10. Verify token is dead after logout
+curl http://localhost:8080/app/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+# → should fail
+```
+
+Confirmations from this phase:
+- `AppAuthenticationFilter` correctly extracts the token from the header
+- authenticated endpoints reject requests with missing/invalid tokens
+- logout invalidates the token in Redis
+- response format is consistent (JSON, predictable field names)
+
+If any endpoint doesn't behave as expected, fix it before moving on. This phase should take half a day at most.
+
 **Phase 1 — Scaffold:** Create `user-ui/` project with Vite + Vue 3 + Element Plus + Pinia + axios. Get `npm run dev` working on port 8082 with proxy to backend.
 
 **Phase 2 — Auth:** Login, Register, `/app/auth/me` restore, logout, route guard, token expiry handling.
@@ -178,12 +235,13 @@ Do NOT delete ruoyi-ui app code before user-ui is verified. Keep the fallback.
 
 ## Acceptance Checklist
 
-1. `user-ui` can start independently with `npm install && npm run dev`
-2. Login writes `App-Token` to localStorage
-3. All authenticated requests carry `Authorization: Bearer <token>` header
-4. Accessing `/profile` without token redirects to `/login`
-5. Expired token (HTTP 401 or code=401) clears localStorage and redirects to `/login`
-6. `GET /app/auth/me` restores user info and profile on app init
-7. `ruoyi-ui` admin panel is unaffected
-8. `user-ui` (8082) and `ruoyi-ui` (8081) can run simultaneously
-9. After cleanup, `ruoyi-ui` admin functions still work correctly
+1. **Phase 0:** All 10 contract-check steps pass — endpoints correctly accept/reject App-Token
+2. `user-ui` can start independently with `npm install && npm run dev`
+3. Login writes `App-Token` to localStorage
+4. All authenticated requests carry `Authorization: Bearer <token>` header
+5. Accessing `/profile` without token redirects to `/login`
+6. Expired token (HTTP 401 or code=401) clears localStorage and redirects to `/login`
+7. `GET /app/auth/me` restores user info and profile on app init
+8. `ruoyi-ui` admin panel is unaffected
+9. `user-ui` (8082) and `ruoyi-ui` (8081) can run simultaneously
+10. After cleanup, `ruoyi-ui` admin functions still work correctly
