@@ -33,6 +33,12 @@ const routes = [
     meta: { title: '智能推荐' }
   },
   {
+    path: '/ai-recommend',
+    name: 'AiRecommend',
+    component: () => import('@/views/AiRecommend.vue'),
+    meta: { title: 'AI 推荐' }
+  },
+  {
     path: '/ai-report/:id',
     name: 'AiReport',
     component: () => import('@/views/AiReport.vue'),

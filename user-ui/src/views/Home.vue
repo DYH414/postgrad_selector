@@ -1,6 +1,6 @@
 <template>
   <div class="app-page">
-    <AppHeader />
+    <AppHeader current-page="home" />
     <div class="home-body">
       <h2>欢迎使用考研择校决策平台</h2>
       <p>智能分析，精准匹配你的目标院校</p>

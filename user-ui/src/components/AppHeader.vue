@@ -11,10 +11,12 @@
     </div>
 
     <nav class="nav">
-      <router-link to="/" class="nav-link" :class="{ active: currentPage === 'recommend' }">首页</router-link>
-      <router-link to="/results" class="nav-link" :class="{ active: currentPage === 'results' }">筛选</router-link>
+      <router-link to="/" class="nav-link" :class="{ active: currentPage === 'home' }">首页</router-link>
+      <router-link to="/recommend" class="nav-link" :class="{ active: currentPage === 'recommend' }">规则筛选</router-link>
+      <router-link to="/results" class="nav-link" :class="{ active: currentPage === 'results' }">筛选结果</router-link>
       <router-link to="/results?tab=compare" class="nav-link" :class="{ active: currentPage === 'compare' }">对比与备选</router-link>
-      <router-link to="/ai-history" class="nav-link" :class="{ active: currentPage === 'history' }">AI 记录</router-link>
+      <router-link to="/ai-recommend" class="nav-link" :class="{ active: currentPage === 'ai' }">AI 推荐</router-link>
+      <router-link to="/ai-history" class="nav-link" :class="{ active: currentPage === 'ai-history' }">AI 记录</router-link>
       <router-link to="/favorites" class="nav-link" :class="{ active: currentPage === 'favorites' }">我的</router-link>
     </nav>
 

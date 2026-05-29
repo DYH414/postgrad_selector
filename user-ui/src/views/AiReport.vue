@@ -1,6 +1,6 @@
 <template>
   <div class="ai-report-page">
-    <AppHeader current-page="recommend" />
+    <AppHeader current-page="ai" />
 
     <div class="report-container" v-if="report">
       <!-- PENDING: Terminal loading + tier card skeleton -->
