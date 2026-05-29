@@ -94,7 +94,8 @@ These use `App-Token` (independent JWT mechanism) and are fully decoupled from R
 
 ## Build & Deployment
 
-- Dev server: port 8080, proxy `/dev-api` → `http://localhost:8080`
+- Dev server: port 8082, proxy `/dev-api` → `http://localhost:8080`
+- Production: deploy to port 80/443 (yourdomain.com)
 - Production build: `npm run build` → `dist/`
 
 ## Layout
