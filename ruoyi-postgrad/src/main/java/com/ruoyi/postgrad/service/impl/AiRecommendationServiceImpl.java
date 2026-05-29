@@ -3,6 +3,9 @@ package com.ruoyi.postgrad.service.impl;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,12 +46,17 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "- 本科层次: %s\n"
         + "- 跨考: %s\n"
         + "- 目标地区: %s\n\n"
+        + "## 地区规则\n"
+        + "- 目标地区为\"不限\"时：只在候选池内推荐，不主动提及候选池外的城市，快捷选项不要主动引导用户去看某个具体城市\n"
+        + "- 目标地区有具体城市时：优先推荐该城市学校，其他城市只在用户主动询问时才讨论\n\n"
         + "## 候选学校摘要\n"
         + "%s\n\n"
         + "## 可用工具（必须使用）\n"
         + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
         + "- searchPrograms(filters): 在候选池内按城市、学校层次、分数范围等条件筛选。filters 为 JSON，如 {\"city\":\"上海\",\"tier\":\"211\",\"minScore\":290,\"maxScore\":310}\n"
         + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n\n"
+        + "## 展示规则\n"
+        + "回复中绝对不要出现学校的 programId 或任何数字 ID，用户只需要看到学校名称。\n\n"
         + "## 工具使用规则\n"
         + "1. 讨论具体学校时，必须先调用 getProgramDetail 获取真实数据再回复\n"
         + "2. 用户要求筛选/过滤/列清单时，必须调用 searchPrograms，不要凭摘要信息推测\n"
@@ -56,13 +64,21 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "4. 回复中引用数据时，确保数据来自工具返回结果，不要编造数字\n\n"
         + "## 对话节奏\n"
         + "第1轮: 了解最看重的维度（学校层次/专业排名/城市/上岸率）\n"
-        + "第2-3轮: 用具体数据讨论 2-3 所目标校（必须调工具获取数据）\n"
+        + "第2-3轮: 深入分析1-2所目标校（必须调工具获取数据），不要一轮分析3所以上\n"
         + "第4-5轮: 确认冲刺/稳妥/保底意向\n\n"
         + "## 输出格式\n"
         + "每轮回复含简短文字(2-4句)。\n"
         + "回复末尾附 2-3 个快捷选项，用 \"---OPTIONS---\" 分隔，每行一个选项。\n"
+        + "## 快捷选项规则（重要）\n"
+        + "快捷选项必须是用户偏好/决策类，如\"看重上岸率\"\"愿意冲刺\"\"稳妥为主\"\"优先211\"\"限定上海\"。\n"
+        + "选项应顺着你的分析结论往前推进，不要重复已讨论过的内容或给出与分析矛盾的选择。\n"
+        + "好的选项示例: \"确认XX为稳妥目标\" \"再看看保底选择\" \"换一个城市看看\"\n"
+        + "禁止将工具调用作为快捷选项。以下选项禁止出现：\n"
+        + "- \"查看XX学校详细数据\" \"查看XX专业分数线\" \"对比XX和XX\" — 这些都是工具调用，由你自动完成\n"
+        + "- \"🔍\" \"📊\" 等带工具图标的选项\n"
         + "用户说\"出报告\"时，只回复\"好的，正在为你生成报告...\"，不要附带选项。\n";
 
+    private static final Logger log = LoggerFactory.getLogger(AiRecommendationServiceImpl.class);
     private static final long TTL_SECONDS = 1800L;
     private static final long REPORT_TTL_DAYS = 7L;
 
@@ -107,9 +123,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
         String systemPrompt = String.format(SYSTEM_PROMPT,
             estimatedScore,
-            profile.getOrDefault("undergradTier", "双非"),
-            profile.getOrDefault("isCrossMajor", "否"),
-            profile.getOrDefault("targetRegions", "不限"),
+            formatProfileField(profile, "undergradTier", "双非"),
+            formatProfileField(profile, "isCrossMajor", "否"),
+            formatProfileField(profile, "targetRegions", "不限"),
             summaryText);
 
         String conversationId = UUID.randomUUID().toString();
@@ -342,11 +358,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
         // 降级：同步生成
         try {
+            // 裁剪掉最后两轮（"出报告" + "好的，正在为你生成报告..."）
+            // 避免 AI 看到这段后误以为报告已经生成完毕
+            String cleanedConvJson = stripTailExchange(convJson);
             String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
-            String reportPrompt = buildReportPrompt(convJson, poolJson != null ? poolJson : "[]");
+            String reportPrompt = buildReportPrompt(cleanedConvJson, poolJson != null ? poolJson : "[]");
             ChatModel chatModel = buildChatModel();
-            String aiResponse = chatModel.chat(reportPrompt);
-            Map<String, Object> reportJson = JSON.parseObject(aiResponse);
+            Map<String, Object> reportJson = parseReportJson(chatModel, reportPrompt,
+                poolJson != null ? poolJson : "[]");
             injectMatchScores(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
             String resultJson = JSON.toJSONString(reportJson);
 
@@ -529,6 +548,24 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return profile;
     }
 
+    private String formatProfileField(Map<String, Object> profile, String key, String defaultText) {
+        Object val = profile.getOrDefault(key, defaultText);
+        if (val == null) return defaultText;
+        String s = val.toString();
+        if (s.isBlank() || "[]".equals(s) || "null".equals(s)) return defaultText;
+        // Parse JSON array like ["福建","上海"] → "福建、上海"
+        if (s.startsWith("[") && s.endsWith("]")) {
+            try {
+                List<String> items = JSON.parseArray(s, String.class);
+                if (items == null || items.isEmpty()) return defaultText;
+                return String.join("、", items);
+            } catch (Exception e) {
+                return s;
+            }
+        }
+        return s;
+    }
+
     private int getEstimatedScore(Map<String, Object> request, Map<String, Object> profile) {
         if (request != null && request.containsKey("estimatedScore")) {
             Object scoreObj = request.get("estimatedScore");
@@ -633,7 +670,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     private String buildReportPrompt(String convJson, String poolJson) {
         String poolSummary = buildPoolSummary(poolJson);
         return """
-            基于用户偏好和完整候选学校列表，生成考研择校推荐报告。
+            这不是对话。请直接输出推荐报告JSON，不要回复\"好的\"\"正在生成\"或其他确认语。
 
             ## 完整候选学校列表（请从这里选学校）
             %s
@@ -747,6 +784,110 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Map<String, Object> parseReportJson(ChatModel chatModel, String reportPrompt, String poolJson) {
+        String aiResponse = chatModel.chat(reportPrompt);
+        log.info("[Report] AI raw response (first 500 chars): {}",
+            aiResponse != null ? aiResponse.substring(0, Math.min(500, aiResponse.length())) : "null");
+        try {
+            Map<String, Object> result = JSON.parseObject(aiResponse);
+            if (!result.containsKey("tiers")) {
+                log.warn("[Report] Valid JSON but missing 'tiers' — triggering retry");
+                throw new IllegalArgumentException("missing tiers");
+            }
+            log.info("[Report] Successfully parsed with {} tiers",
+                ((List<?>) result.get("tiers")).size());
+            return result;
+        } catch (Exception e) {
+            log.warn("[Report] Parse/validation failed: {} — retrying with fix prompt", e.getMessage());
+            try {
+                String fixPrompt = "你的上一次回复不是合法JSON。请只返回合法JSON，不要任何额外文字。严格按照以下格式：\n{\"summary\":\"...\",\"tiers\":[{\"level\":\"reach\",\"label\":\"冲刺档\",\"schools\":[...]},...]}。\n\n上一次回复：\n" + aiResponse;
+                String fixed = chatModel.chat(fixPrompt);
+                log.info("[Report] Fix response (first 300 chars): {}",
+                    fixed != null ? fixed.substring(0, Math.min(300, fixed.length())) : "null");
+                Map<String, Object> result = JSON.parseObject(fixed);
+                if (!result.containsKey("tiers")) {
+                    log.error("[Report] Fix also failed — falling back to rule-based");
+                    throw new IllegalArgumentException("retry missing tiers");
+                }
+                log.info("[Report] Fix succeeded");
+                return result;
+            } catch (Exception e2) {
+                log.error("[Report] All attempts failed, using rule-based fallback");
+                return ruleBasedFallback(poolJson);
+            }
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Map<String, Object> ruleBasedFallback(String poolJson) {
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("summary", "AI 报告生成失败，以下为基于分数差距自动分配的结果");
+
+        List<Map<String, Object>> reachList = new ArrayList<>();
+        List<Map<String, Object>> steadyList = new ArrayList<>();
+        List<Map<String, Object>> safeList = new ArrayList<>();
+
+        if (poolJson != null && !poolJson.isEmpty() && !"[]".equals(poolJson)) {
+            List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+            for (Map<String, Object> p : pool) {
+                Map<String, Object> school = new LinkedHashMap<>();
+                school.put("programId", p.get("programId"));
+                school.put("schoolName", p.getOrDefault("schoolName", "?"));
+                school.put("programName", p.getOrDefault("programName", ""));
+                school.put("reason", "自动分配（AI 报告生成失败）");
+                school.put("risk", "medium");
+                school.put("pros", Arrays.asList(p.getOrDefault("schoolTier",""), p.getOrDefault("city","")));
+                school.put("cons", Collections.emptyList());
+
+                Object gapObj = p.get("gap");
+                int gap = gapObj instanceof Number ? ((Number) gapObj).intValue() : 0;
+                if (gap <= -10) {
+                    reachList.add(school);
+                } else if (gap <= 5) {
+                    steadyList.add(school);
+                } else {
+                    safeList.add(school);
+                }
+            }
+        }
+
+        Map<String, Object> tierReach = new LinkedHashMap<>();
+        tierReach.put("level", "reach");
+        tierReach.put("label", "冲刺档");
+        tierReach.put("schools", reachList);
+        Map<String, Object> tierSteady = new LinkedHashMap<>();
+        tierSteady.put("level", "steady");
+        tierSteady.put("label", "稳妥档");
+        tierSteady.put("schools", steadyList);
+        Map<String, Object> tierSafe = new LinkedHashMap<>();
+        tierSafe.put("level", "safe");
+        tierSafe.put("label", "保底档");
+        tierSafe.put("schools", safeList);
+
+        report.put("tiers", Arrays.asList(tierReach, tierSteady, tierSafe));
+        return report;
+    }
+
+    /** 裁剪对话最后两轮（用户"出报告" + AI"好的..."），避免 AI 误以为报告已生成 */
+    @SuppressWarnings("unchecked")
+    private String stripTailExchange(String convJson) {
+        try {
+            List<Map<String, Object>> msgs = JSON.parseObject(convJson, List.class);
+            if (msgs != null && msgs.size() >= 2) {
+                // 移除最后一条 user 消息和最后一条 assistant 消息
+                Map<String, Object> last = msgs.get(msgs.size() - 1);
+                Map<String, Object> prev = msgs.get(msgs.size() - 2);
+                if ("user".equals(prev.get("role")) && "assistant".equals(last.get("role"))) {
+                    msgs = msgs.subList(0, msgs.size() - 2);
+                }
+            }
+            return JSON.toJSONString(msgs);
+        } catch (Exception e) {
+            return convJson;
+        }
+    }
+
     private void copyIfNotNull(Map<String, Object> target, Map<String, Object> source, String key) {
         Object val = source.get(key);
         if (val != null) {
@@ -759,7 +900,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return OpenAiChatModel.builder()
             .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
             .apiKey(apiKey)
-            .modelName("qwen-plus")
+            .modelName("qwen-max")
             .build();
     }
 

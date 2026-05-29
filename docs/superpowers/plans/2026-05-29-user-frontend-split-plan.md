@@ -79,20 +79,20 @@ Expected: `{"code":200,"data":...}` (data may be null/empty — that's OK, the u
 - [ ] **Step 7: Verify /favorite/list with token**
 
 ```bash
-curl -s http://localhost:8080/app/favorite/list \
+curl -s http://localhost:8080/app/favorites \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Expected: `{"code":200,...}` (may return empty list).
+Expected: `{"code":200,"data":[...]}` (may return empty list).
 
 - [ ] **Step 8: Verify /programs/list with token**
 
 ```bash
-curl -s 'http://localhost:8080/app/programs/list?pageNum=1&pageSize=5' \
+curl -s 'http://localhost:8080/app/programs/1/detail' \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Expected: `{"code":200,"rows":[...],"total":<N>}` or similar paginated response.
+Expected: Auth filter passes. May return 500 with "专业不存在" if program ID 1 doesn't exist — that's OK, we're testing auth, not data.
 
 - [ ] **Step 9: Verify /recommendation/options with token**
 

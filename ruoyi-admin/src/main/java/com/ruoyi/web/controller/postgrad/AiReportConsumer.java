@@ -1,7 +1,11 @@
 package com.ruoyi.web.controller.postgrad;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.ruoyi.framework.config.RabbitMQConfig;
 import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
@@ -21,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 @Component
 @ConditionalOnProperty(name = "app.rabbitmq.enabled", havingValue = "true", matchIfMissing = true)
 public class AiReportConsumer {
+
+    private static final Logger log = LoggerFactory.getLogger(AiReportConsumer.class);
 
     @Autowired private StringRedisTemplate redisTemplate;
     @Autowired private RecommendationLogMapper logMapper;
@@ -45,12 +51,13 @@ public class AiReportConsumer {
             ChatModel chatModel = OpenAiChatModel.builder()
                 .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
+                .modelName("qwen-max")
                 .build();
 
-            String reportPrompt = buildReportPrompt(convJson, poolJson != null ? poolJson : "[]");
-            String aiResponse = chatModel.chat(reportPrompt);
-            JSONObject reportJson = JSON.parseObject(aiResponse);
+            // Strip trailing "出报告" exchange to avoid AI thinking report is already done
+            String cleanedConvJson = stripTailExchange(convJson);
+            String reportPrompt = buildReportPrompt(cleanedConvJson, poolJson != null ? poolJson : "[]");
+            JSONObject reportJson = parseReportJson(chatModel, reportPrompt, poolJson);
 
             // 3. Calculate and inject matchScore from pool data (NOT from AI)
             injectMatchScores(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
@@ -76,7 +83,7 @@ public class AiReportConsumer {
     private String buildReportPrompt(String convJson, String poolJson) {
         String poolSummary = buildPoolSummary(poolJson);
         return """
-            基于用户偏好和完整候选学校列表，生成考研择校推荐报告。
+            这不是对话。请直接输出推荐报告JSON，不要回复\"好的\"\"正在生成\"或其他确认语。
 
             ## 完整候选学校列表（请从这里选学校）
             %s
@@ -123,6 +130,23 @@ public class AiReportConsumer {
             """.formatted(poolSummary, convJson);
     }
 
+    @SuppressWarnings("unchecked")
+    private String stripTailExchange(String convJson) {
+        try {
+            List<Map<String, Object>> msgs = JSON.parseObject(convJson, List.class);
+            if (msgs != null && msgs.size() >= 2) {
+                Map<String, Object> last = msgs.get(msgs.size() - 1);
+                Map<String, Object> prev = msgs.get(msgs.size() - 2);
+                if ("user".equals(prev.get("role")) && "assistant".equals(last.get("role"))) {
+                    msgs = msgs.subList(0, msgs.size() - 2);
+                }
+            }
+            return JSON.toJSONString(msgs);
+        } catch (Exception e) {
+            return convJson;
+        }
+    }
+
     private String buildPoolSummary(String poolJson) {
         if (poolJson == null || poolJson.isEmpty() || "[]".equals(poolJson)) {
             return "（无候选学校数据）";
@@ -158,6 +182,100 @@ public class AiReportConsumer {
         } catch (Exception e) {
             return "（候选学校数据解析失败）";
         }
+    }
+
+    private JSONObject parseReportJson(ChatModel chatModel, String reportPrompt, String poolJson) {
+        String aiResponse = chatModel.chat(reportPrompt);
+        log.info("[Report-Consumer] AI raw response (first 500 chars): {}",
+            aiResponse != null ? aiResponse.substring(0, Math.min(500, aiResponse.length())) : "null");
+        try {
+            JSONObject result = JSON.parseObject(aiResponse);
+            if (!result.containsKey("tiers")) {
+                log.warn("[Report-Consumer] Valid JSON but missing 'tiers' — triggering retry");
+                throw new IllegalArgumentException("missing tiers");
+            }
+            log.info("[Report-Consumer] Successfully parsed with {} tiers", result.getJSONArray("tiers").size());
+            return result;
+        } catch (Exception e) {
+            log.warn("[Report-Consumer] Parse/validation failed: {} — retrying with fix prompt", e.getMessage());
+            try {
+                String fixPrompt = "你的上一次回复不是合法JSON。请只返回合法JSON，不要任何额外文字。严格按照之前要求的格式：\n\n上一次回复：\n" + aiResponse;
+                String fixed = chatModel.chat(fixPrompt);
+                log.info("[Report-Consumer] Fix response (first 300 chars): {}",
+                    fixed != null ? fixed.substring(0, Math.min(300, fixed.length())) : "null");
+                JSONObject result = JSON.parseObject(fixed);
+                if (!result.containsKey("tiers")) {
+                    log.error("[Report-Consumer] Fix also failed — falling back to rule-based");
+                    throw new IllegalArgumentException("retry missing tiers");
+                }
+                log.info("[Report-Consumer] Fix succeeded");
+                return result;
+            } catch (Exception e2) {
+                log.error("[Report-Consumer] All attempts failed, using rule-based fallback");
+                return ruleBasedFallback(poolJson);
+            }
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private JSONObject ruleBasedFallback(String poolJson) {
+        JSONObject report = new JSONObject();
+        report.put("summary", "AI 报告生成失败，以下为基于分数差距自动分配的结果");
+
+        JSONArray tiers = new JSONArray();
+        JSONArray reachSchools = new JSONArray();
+        JSONArray steadySchools = new JSONArray();
+        JSONArray safeSchools = new JSONArray();
+
+        if (poolJson != null && !poolJson.isEmpty() && !"[]".equals(poolJson)) {
+            List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+            for (Map<String, Object> p : pool) {
+                JSONObject school = new JSONObject();
+                long pid = ((Number) p.get("programId")).longValue();
+                school.put("programId", pid);
+                school.put("schoolName", p.getOrDefault("schoolName", "?"));
+                school.put("programName", p.getOrDefault("programName", ""));
+                school.put("reason", "自动分配（AI 报告生成失败）");
+                school.put("risk", "medium");
+
+                JSONArray pros = new JSONArray();
+                pros.add(p.getOrDefault("schoolTier", ""));
+                pros.add(p.getOrDefault("city", ""));
+                school.put("pros", pros);
+                school.put("cons", new JSONArray());
+
+                Object gapObj = p.get("gap");
+                int gap = gapObj instanceof Number ? ((Number) gapObj).intValue() : 0;
+                if (gap <= -10) {
+                    reachSchools.add(school);
+                } else if (gap <= 5) {
+                    steadySchools.add(school);
+                } else {
+                    safeSchools.add(school);
+                }
+            }
+        }
+
+        JSONObject tierReach = new JSONObject();
+        tierReach.put("level", "reach");
+        tierReach.put("label", "冲刺档");
+        tierReach.put("schools", reachSchools);
+        tiers.add(tierReach);
+
+        JSONObject tierSteady = new JSONObject();
+        tierSteady.put("level", "steady");
+        tierSteady.put("label", "稳妥档");
+        tierSteady.put("schools", steadySchools);
+        tiers.add(tierSteady);
+
+        JSONObject tierSafe = new JSONObject();
+        tierSafe.put("level", "safe");
+        tierSafe.put("label", "保底档");
+        tierSafe.put("schools", safeSchools);
+        tiers.add(tierSafe);
+
+        report.put("tiers", tiers);
+        return report;
     }
 
     private void injectMatchScores(JSONObject report, int estimatedScore, String poolJson) {

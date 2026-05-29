@@ -150,7 +150,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
-import { getAiReport } from '@/api/postgrad/ai'
+import { getAiReport } from '@/api/ai'
 
 const router = useRouter()
 const route = useRoute()
@@ -252,7 +252,7 @@ function matchColor(score) {
 }
 
 function restartRecommend() {
-  router.push({ name: 'AppRecommend' })
+  router.push({ name: 'Recommend' })
 }
 
 onMounted(() => {
