@@ -3,12 +3,59 @@
     <AppHeader current-page="recommend" />
 
     <div class="report-container" v-if="report">
-      <div v-if="report.status === 'PENDING'" class="pending-state">
-        <i class="el-icon-loading" />
-        <p>AI 正在为你生成推荐报告...</p>
-        <p style="color:#909399;font-size:12px">预计需要 10-30 秒</p>
+      <!-- PENDING: Terminal loading + tier card skeleton -->
+      <div v-if="report.status === 'PENDING'" class="loading-layout">
+        <!-- LEFT: Terminal window -->
+        <div class="terminal-panel">
+          <div class="terminal-chrome">
+            <span class="chrome-dot red" />
+            <span class="chrome-dot yellow" />
+            <span class="chrome-dot green" />
+            <span class="chrome-title">408-RECRUIT-ENGINE</span>
+            <span class="chrome-pulse" />
+          </div>
+          <div class="terminal-body">
+            <div v-for="(line, idx) in displayLogs" :key="idx" class="terminal-line"
+              :class="{ latest: idx === displayLogs.length - 1 && !allDone }">
+              <span class="terminal-prompt">❯</span>
+              <span>{{ line }}</span>
+            </div>
+            <div v-if="!allDone" class="terminal-line active">
+              <span class="terminal-prompt">❯</span>
+              <span>{{ typingLine }}</span>
+              <span class="cursor-blink" />
+            </div>
+          </div>
+          <div class="terminal-footer">
+            <span>MODEL: AI-RECOMMEND-V2</span>
+            <span>STATUS: {{ allDone ? 'COMPLETED' : 'PROCESSING...' }}</span>
+          </div>
+        </div>
+
+        <!-- RIGHT: Tier card skeletons -->
+        <div class="skeleton-cards">
+          <div class="skeleton-card reach">
+            <span class="sk-badge red">冲刺档</span>
+            <div class="sk-bar" />
+            <div class="sk-bar short" />
+            <div class="sk-bar short" />
+          </div>
+          <div class="skeleton-card steady">
+            <span class="sk-badge blue">稳妥档</span>
+            <div class="sk-bar" />
+            <div class="sk-bar short" />
+            <div class="sk-bar short" />
+          </div>
+          <div class="skeleton-card safe">
+            <span class="sk-badge green">保底档</span>
+            <div class="sk-bar" />
+            <div class="sk-bar short" />
+            <div class="sk-bar short" />
+          </div>
+        </div>
       </div>
 
+      <!-- COMPLETED: Full report -->
       <template v-else>
         <div class="report-header">
           <h2>你的 AI 择校推荐报告</h2>
@@ -102,11 +149,25 @@
 import AppHeader from './components/AppHeader'
 import { getAiReport } from '@/api/postgrad/ai'
 
+const LOGS = [
+  '[SYS_INIT] 正在连接 408 统考主数据池...',
+  '[DATA_LOAD] 读取历年高校 408 复试线与录取数据...',
+  '[FILTERS] 自适应匹配省份与学位类型偏好...',
+  '[ALIGNMENT] 用户预估分与历史录取库对齐...',
+  '[WEIGHTS] 启动研招知识图谱加权决策引擎...',
+  '[AI_COGNITIVE] AI 综合研判冲/稳/保三档分类...',
+  '[SECURITY] 数据加密沙盒隔离，已阻断敏感泄露...',
+  '[COMPLETED] 冲顶/稳妥/保底三档推荐装载就绪！'
+]
+
 export default {
   name: 'AiReport',
   components: { AppHeader },
   data() {
-    return { report: null, pollTimer: null }
+    return {
+      report: null, pollTimer: null, typeTimer: null,
+      displayLogs: [], logIdx: 0, charIdx: 0, typingLine: '', allDone: false
+    }
   },
   computed: {
     result() {
@@ -123,6 +184,7 @@ export default {
   },
   beforeDestroy() {
     if (this.pollTimer) clearInterval(this.pollTimer)
+    if (this.typeTimer) clearInterval(this.typeTimer)
   },
   methods: {
     async fetchReport() {
@@ -130,15 +192,55 @@ export default {
         const res = await getAiReport(this.$route.params.id)
         this.report = res.data
         if (res.data.status === 'PENDING') {
+          this.startTypewriter()
           this.pollTimer = setInterval(async () => {
             const r = await getAiReport(this.$route.params.id)
             this.report = r.data
-            if (r.data.status !== 'PENDING') clearInterval(this.pollTimer)
+            if (r.data.status !== 'PENDING') {
+              this.finishTypewriter()
+              clearInterval(this.pollTimer)
+            }
           }, 3000)
         }
       } catch (e) {
         this.$message.error('加载报告失败')
       }
+    },
+
+    startTypewriter() {
+      this.displayLogs = []
+      this.logIdx = 0
+      this.charIdx = 0
+      this.typingLine = ''
+      this.allDone = false
+      this.tickType()
+    },
+
+    tickType() {
+      if (this.logIdx >= LOGS.length) {
+        this.allDone = true
+        return
+      }
+      const target = LOGS[this.logIdx]
+      if (this.charIdx < target.length) {
+        this.typingLine += target.charAt(this.charIdx)
+        this.charIdx++
+        this.typeTimer = setTimeout(() => this.tickType(), 25)
+      } else {
+        this.displayLogs.push(target)
+        this.logIdx++
+        this.charIdx = 0
+        this.typingLine = ''
+        this.typeTimer = setTimeout(() => this.tickType(), 400)
+      }
+    },
+
+    finishTypewriter() {
+      if (this.typeTimer) clearTimeout(this.typeTimer)
+      // Flash all remaining lines
+      this.displayLogs = [...LOGS]
+      this.typingLine = ''
+      this.allDone = true
     },
 
     riskType(risk) {
@@ -163,8 +265,68 @@ export default {
 <style scoped>
 .ai-report-page { min-height: 100vh; background: #f5f7fa; }
 .report-container { max-width: 1100px; margin: 0 auto; padding: 24px; }
-.pending-state { text-align: center; padding: 120px 0; }
-.pending-state i { font-size: 48px; color: #409eff; }
+
+/* ===== PENDING: Terminal + Skeleton layout ===== */
+.loading-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+
+/* Terminal panel */
+.terminal-panel {
+  background: #1e293b; border-radius: 16px; overflow: hidden;
+  font-family: 'Courier New', Courier, monospace; box-shadow: 0 8px 32px rgba(0,0,0,.12);
+}
+.terminal-chrome {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  background: #0f172a; border-bottom: 1px solid #334155;
+}
+.chrome-dot { width: 10px; height: 10px; border-radius: 50%; }
+.chrome-dot.red { background: #f87171; }
+.chrome-dot.yellow { background: #fbbf24; }
+.chrome-dot.green { background: #34d399; }
+.chrome-title { color: #94a3b8; font-size: 11px; letter-spacing: 2px; margin-left: 8px; flex: 1; }
+.chrome-pulse { width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.terminal-body { padding: 20px 16px; min-height: 280px; font-size: 12px; line-height: 2; }
+.terminal-line { color: #94a3b8; display: flex; gap: 8px; }
+.terminal-line.latest { color: #34d399; font-weight: 600; }
+.terminal-line.active { color: #38bdf8; display: flex; gap: 8px; }
+.terminal-prompt { color: #38bdf8; flex-shrink: 0; }
+.cursor-blink { display: inline-block; width: 8px; height: 15px; background: #38bdf8; animation: blink 1s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+.terminal-footer {
+  display: flex; justify-content: space-between; padding: 10px 16px;
+  border-top: 1px solid #334155; color: #64748b; font-size: 10px;
+}
+
+/* Skeleton cards */
+.skeleton-cards { display: flex; flex-direction: column; gap: 16px; }
+.skeleton-card {
+  background: #fff; border-radius: 14px; padding: 24px; position: relative;
+  overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.06);
+}
+.skeleton-card.reach { border-left: 4px solid #f56c6c; }
+.skeleton-card.steady { border-left: 4px solid #409eff; }
+.skeleton-card.safe { border-left: 4px solid #67c23a; }
+.sk-badge {
+  font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 4px;
+  display: inline-block; margin-bottom: 16px; letter-spacing: 1px;
+}
+.sk-badge.red { background: #fef0f0; color: #f56c6c; }
+.sk-badge.blue { background: #ecf5ff; color: #409eff; }
+.sk-badge.green { background: #f0f9eb; color: #67c23a; }
+.sk-bar {
+  height: 14px; border-radius: 4px; background: #f0f2f5;
+  margin-bottom: 10px; animation: shimmer 1.8s infinite;
+}
+.sk-bar.short { width: 60%; }
+@keyframes shimmer {
+  0% { background: #f0f2f5; }
+  50% { background: #e4e7ed; }
+  100% { background: #f0f2f5; }
+}
+
+/* ===== Report (unchanged) ===== */
 .report-header { margin-bottom: 32px; }
 .report-header h2 { margin-bottom: 8px; }
 .summary { color: #606266; font-size: 15px; }
@@ -198,4 +360,8 @@ export default {
 
 .source-link { display: block; margin-top: 8px; font-size: 11px; color: #409eff; text-decoration: none; }
 .source-link:hover { text-decoration: underline; }
+
+@media (max-width: 768px) {
+  .loading-layout { grid-template-columns: 1fr; }
+}
 </style>

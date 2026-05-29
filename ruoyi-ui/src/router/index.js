@@ -93,68 +93,6 @@ export const constantRoutes = [
         meta: { title: '个人中心', icon: 'user' }
       }
     ]
-  },
-  // App端路由
-  {
-    path: '/app',
-    redirect: '/app/login',
-    hidden: true
-  },
-  {
-    path: '/app/login',
-    component: () => import('@/views/postgrad/app/login'),
-    hidden: true,
-    meta: { title: '考研择校 - 登录' }
-  },
-  {
-    path: '/app/profile',
-    component: () => import('@/views/postgrad/app/profile'),
-    hidden: true,
-    meta: { title: '考研画像' }
-  },
-  {
-    path: '/app/recommend',
-    component: () => import('@/views/postgrad/app/recommend'),
-    hidden: true,
-    meta: { title: '智能推荐' }
-  },
-  {
-    path: '/app/ai-report/:id',
-    component: () => import('@/views/postgrad/app/ai-report'),
-    name: 'AiReport',
-    hidden: true,
-    meta: { title: 'AI 推荐报告', noCache: true }
-  },
-  {
-    path: '/app/ai-history',
-    component: () => import('@/views/postgrad/app/ai-history'),
-    name: 'AiHistory',
-    hidden: true,
-    meta: { title: 'AI 推荐记录' }
-  },
-  {
-    path: '/app/results',
-    component: () => import('@/views/postgrad/app/results'),
-    hidden: true,
-    meta: { title: '推荐结果' }
-  },
-  {
-    path: '/app/favorites',
-    component: () => import('@/views/postgrad/app/favorites'),
-    hidden: true,
-    meta: { title: '我的收藏' }
-  },
-  {
-    path: '/app/history',
-    component: () => import('@/views/postgrad/app/history'),
-    hidden: true,
-    meta: { title: '推荐历史' }
-  },
-  {
-    path: '/app/history/:id',
-    component: () => import('@/views/postgrad/app/historyDetail'),
-    hidden: true,
-    meta: { title: '推荐详情' }
   }
 ]
 

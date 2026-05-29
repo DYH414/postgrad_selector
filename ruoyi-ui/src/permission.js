@@ -4,7 +4,7 @@ import { Message } from 'element-ui'
 import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { getToken } from '@/utils/auth'
-import { getAppToken } from '@/utils/appAuth'
+
 import { isRelogin } from '@/utils/request'
 
 NProgress.configure({ showSpinner: false })
@@ -19,14 +19,6 @@ router.beforeEach((to, from, next) => {
   NProgress.start()
 
   const adminToken = getToken()
-  const isAppPath = to.path === '/app' || to.path.startsWith('/app/')
-
-  // 用户端必须先分流，避免浏览器里残留 Admin-Token 时被管理端守卫接管。
-  if (isAppPath) {
-    handleAppRoute(to, next)
-    return
-  }
-
   // ── 管理后台 ──
   if (adminToken) {
     handleAdminRoute(to, from, next)
@@ -72,32 +64,6 @@ function handleAdminRoute(to, from, next) {
       store.dispatch('LogOut').then(() => {
         Message.error(err)
         next({ path: '/' })
-      })
-    })
-}
-
-// ═══════════════════════════════════════════
-// App Route Handler
-// ═══════════════════════════════════════════
-function handleAppRoute(to, next) {
-  to.meta.title && store.dispatch('settings/setTitle', to.meta.title)
-
-  if (to.path === '/app/login') return next()
-
-  const appPublicRoutes = ['/app/recommend']
-  if (appPublicRoutes.includes(to.path) && !getAppToken()) return next()
-
-  if (!getAppToken()) {
-    return done(next, '/app/login?redirect=' + encodeURIComponent(to.fullPath))
-  }
-
-  if (store.state.appUser && store.state.appUser.userId) return next()
-
-  store.dispatch('appUser/FetchMe')
-    .then(() => next())
-    .catch(() => {
-      store.dispatch('appUser/Logout').finally(() => {
-        done(next, '/app/login?redirect=' + encodeURIComponent(to.fullPath))
       })
     })
 }
