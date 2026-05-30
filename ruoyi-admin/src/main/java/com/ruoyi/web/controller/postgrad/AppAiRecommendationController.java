@@ -96,6 +96,17 @@ public class AppAiRecommendationController {
         }
     }
 
+    @PostMapping("/analyze")
+    public AjaxResult analyze() {
+        AppLoginUser user = getCurrentAppUser();
+        if (user == null) return AjaxResult.error("未登录");
+        try {
+            return AjaxResult.success(aiService.analyze(user.getUserId()));
+        } catch (Exception e) {
+            return AjaxResult.error(e.getMessage());
+        }
+    }
+
     private AppLoginUser getCurrentAppUser() {
         try {
             Object principal = SecurityUtils.getAuthentication().getPrincipal();
