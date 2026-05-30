@@ -2,13 +2,11 @@ package com.ruoyi.postgrad.service;
 
 import com.ruoyi.postgrad.domain.RowMap;
 import java.util.List;
+import java.util.Map;
 
-/**
- * Candidate pool building service for AI recommendation.
- */
 public interface IAiCandidatePoolService
 {
-    List<RowMap> buildPool(int estimatedScore, List<String> regions);
+    List<RowMap> buildPool(Map<String, Object> request, Map<String, Object> profile, int estimatedScore);
 
     List<RowMap> buildAnalysisPool(int estimatedScore, List<String> regions);
 }

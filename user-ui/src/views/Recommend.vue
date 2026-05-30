@@ -145,9 +145,9 @@
         <div class="feature-item">
           <span class="feature-icon bot"><i class="el-icon-cpu"></i></span>
           <div>
-            <h3>AI 推荐解读</h3>
-            <p>不仅给出推荐结果，更提供录取概率分析、分数趋势和报考建议。</p>
-            <em>更懂你的 AI 助手</em>
+            <h3>AI 推荐独立使用</h3>
+            <p>需要 AI 顾问时请进入顶部「AI 推荐」，系统会按你的画像说明推荐依据。</p>
+            <em>筛选页只保留规则筛选</em>
           </div>
         </div>
       </section>
@@ -158,8 +158,6 @@
       </footer>
     </main>
 
-    <AiChatPanel :visible="aiChatVisible" :candidateIds="candidateResultIds"
-      @close="aiChatVisible = false" @fallback="handleAiFallback" />
   </div>
 </template>
 
@@ -169,7 +167,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import AppHeader from '@/components/AppHeader.vue'
-import AiChatPanel from '@/components/AiChatPanel.vue'
 import { generateRecommendation, getRecommendationOptions } from '@/api/recommendation'
 
 const router = useRouter()
@@ -186,9 +183,6 @@ const form = reactive({
   risk: 'balanced',
   scoreRange: 15
 })
-const aiChatVisible = ref(false)
-const candidateResultIds = ref([])
-
 function loadOptions() {
   loadingOptions.value = true
   getRecommendationOptions().then(res => {
@@ -233,10 +227,6 @@ function startRecommend() {
     }
     router.push({ path: '/results', query: data.recommendationId ? { id: data.recommendationId } : {} })
   }).finally(() => { generating.value = false })
-}
-
-function handleAiFallback() {
-  // Fallback to rule-based recommendation
 }
 
 onMounted(() => {

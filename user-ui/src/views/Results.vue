@@ -69,8 +69,6 @@
             </span>
           </div>
           <el-button plain type="primary" icon="el-icon-download">导出结果</el-button>
-          <el-button v-if="hasResult" type="warning" icon="el-icon-cpu"
-            @click="aiChatVisible = true">AI 智能推荐</el-button>
         </div>
 
         <div class="data-alert">
@@ -291,8 +289,6 @@
       </div>
     </el-drawer>
 
-    <AiChatPanel :visible="aiChatVisible" :candidateIds="candidateResultIds"
-      @close="aiChatVisible = false" @fallback="handleAiFallback" />
   </div>
 </template>
 
@@ -301,7 +297,6 @@ import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
-import AiChatPanel from '@/components/AiChatPanel.vue'
 import { generateRecommendation, getRecommendationOptions, getRecommendationResult } from '@/api/recommendation'
 import { comparePrograms, getProgramDetail } from '@/api/programs'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
@@ -348,8 +343,6 @@ const favoriteLoadingIds = ref([])
 const filterForm = ref(emptyFilters())
 const appliedFilters = ref(emptyFilters())
 const optionRegions = ref(['福建', '广东', '浙江', '上海'])
-const aiChatVisible = ref(false)
-
 const compareRows = [
   { label: '学校', type: 'name' },
   { label: '专业', key: 'program' },
@@ -376,12 +369,6 @@ const currentHeader = computed(() => {
 
 const hasResult = computed(() => {
   return (result.value.groups || []).some(group => (group.schools || []).length > 0)
-})
-
-const candidateResultIds = computed(() => {
-  return (result.value.groups || []).flatMap(g =>
-    (g.schools || []).map(s => s.programId).filter(Boolean)
-  )
 })
 
 const headerChips = computed(() => {
@@ -434,11 +421,6 @@ const aiParagraphs = computed(() => {
 })
 
 // --- methods ---
-
-function handleAiFallback() {
-  aiChatVisible.value = false
-  ElMessage.warning('AI 暂不可用，当前为规则推荐结果')
-}
 
 function loadOptions() {
   getRecommendationOptions().then(res => {

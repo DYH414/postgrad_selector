@@ -1,6 +1,6 @@
 <template>
   <div class="ai-history-page">
-    <AppHeader current-page="history" />
+    <AppHeader current-page="ai-history" />
 
     <div class="page-body">
       <div class="page-title">

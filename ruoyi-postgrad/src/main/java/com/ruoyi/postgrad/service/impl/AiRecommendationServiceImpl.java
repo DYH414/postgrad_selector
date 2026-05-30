@@ -22,7 +22,6 @@ import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.domain.UserProfile;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
-import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.mapper.UserProfileMapper;
 import com.ruoyi.postgrad.service.IAiCandidatePoolService;
 import com.ruoyi.postgrad.service.IAiRecommendationService;
@@ -41,16 +40,25 @@ import dev.langchain4j.service.AiServices;
 public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     private static final String SYSTEM_PROMPT = ""
-        + "你是考研择校顾问。回复简洁（2-4句），不自我介绍，不讲客套话。每轮聚焦一个问题。\n\n"
+        + "你是独立的 AI 择校顾问。当前对话主要依据用户画像和系统自动候选池，不依赖筛选页或对比页的临时条件。回复简洁（2-4句），不自我介绍，不讲客套话。每轮聚焦一个问题。\n\n"
         + "## 用户画像\n"
         + "- 预估总分: %d\n"
         + "- 本科层次: %s\n"
         + "- 跨考: %s\n"
         + "- 目标地区: %s\n\n"
+        + "## 分数差距与上岸率规则（重要）\n"
+        + "候选学校中的「差距」= 用户预估分 - 学校录取均分。正数越大上岸率越高。\n"
+        + "| 差距 | 分类 | 上岸率 |\n"
+        + "| ≥ +15 | 保底 | 高，推荐给看重上岸率的用户 |\n"
+        + "| +5 ~ +14 | 稳妥 | 中高 |\n"
+        + "| -10 ~ +4 | 可冲刺 | 中等，需努力 |\n"
+        + "| < -10 | 难度高 | 低，风险大 |\n"
+        + "当用户说「看重上岸率」时，必须优先推荐差距 ≥ +5 的学校（稳妥/保底档）。\n"
+        + "讨论学校时必须明确说出其录取均分和差距，不要只说学校名字。\n\n"
         + "## 地区规则\n"
         + "- 目标地区为\"不限\"时：只在候选池内推荐，不主动提及候选池外的城市，快捷选项不要主动引导用户去看某个具体城市\n"
         + "- 目标地区有具体城市时：优先推荐该城市学校，其他城市只在用户主动询问时才讨论\n\n"
-        + "## 候选学校摘要\n"
+        + "## 候选学校摘要（每行含均分和差距，差距越大上岸率越高）\n"
         + "%s\n\n"
         + "## 可用工具（必须使用）\n"
         + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
@@ -62,10 +70,11 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "1. 讨论具体学校时，必须先调用 getProgramDetail 获取真实数据再回复\n"
         + "2. 用户要求筛选/过滤/列清单时，必须调用 searchPrograms，不要凭摘要信息推测\n"
         + "3. 对比学校时，必须调用 comparePrograms 获取详细对比数据\n"
-        + "4. 回复中引用数据时，确保数据来自工具返回结果，不要编造数字\n\n"
+        + "4. 回复中引用数据时，确保数据来自工具返回结果，不要编造数字\n"
+        + "5. 每次推荐学校时，必须说明该校的录取均分和差距（数据来自工具返回的 avgAdmittedScore 和 gap 字段）\n\n"
         + "## 对话节奏\n"
         + "第1轮: 了解最看重的维度（学校层次/专业排名/城市/上岸率）\n"
-        + "第2-3轮: 深入分析1-2所目标校（必须调工具获取数据），不要一轮分析3所以上\n"
+        + "第2-3轮: 如果用户最看重上岸率，用 searchPrograms(maxScore=预估分+5) 筛稳妥/保底校；如果用户愿意冲刺，用 searchPrograms(minScore=预估分-10) 筛冲刺校。每次只分析1-2所\n"
         + "第4-5轮: 确认冲刺/稳妥/保底意向\n\n"
         + "## 输出格式\n"
         + "每轮回复含简短文字(2-4句)。\n"
@@ -84,7 +93,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     private static final long REPORT_TTL_DAYS = 7L;
 
     @Autowired
-    private RecommendationMapper recommendationMapper;
+    private IAiCandidatePoolService aiCandidatePoolService;
 
     @Autowired
     private RecommendationLogMapper logMapper;
@@ -109,18 +118,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         Map<String, Object> profile = loadUserProfile(userId);
         int estimatedScore = getEstimatedScore(request, profile);
 
-        @SuppressWarnings("unchecked")
-        List<Long> candidateIds = (List<Long>) request.get("candidateIds");
-        if (candidateIds == null) {
-            candidateIds = Collections.emptyList();
-        }
-
-        List<RowMap> pool;
-        if (!candidateIds.isEmpty()) {
-            pool = recommendationMapper.selectProgramsByIds(candidateIds, estimatedScore);
-        } else {
-            pool = Collections.emptyList();
-        }
+        List<RowMap> pool = aiCandidatePoolService.buildPool(request, profile, estimatedScore);
 
         List<Map<String, Object>> summaryList = buildSummaryList(pool, estimatedScore);
         String summaryText = buildSummaryText(summaryList);
@@ -177,6 +175,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         result.put("conversationId", conversationId);
         result.put("message", messageText);
         result.put("options", options);
+        result.put("profileBasis", buildProfileBasis(profile, estimatedScore));
+        result.put("candidateCount", summaryList.size());
         return result;
     }
 
@@ -657,6 +657,16 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return s;
     }
 
+    private Map<String, Object> buildProfileBasis(Map<String, Object> profile, int estimatedScore) {
+        Map<String, Object> basis = new LinkedHashMap<>();
+        basis.put("estimatedScore", estimatedScore);
+        basis.put("targetRegions", formatProfileField(profile, "targetRegions", "不限"));
+        basis.put("undergradTier", formatProfileField(profile, "undergradTier", "双非"));
+        basis.put("isCrossMajor", formatProfileField(profile, "isCrossMajor", "否"));
+        basis.put("candidateScope", "系统按画像自动选择最多 50 个具备录取数据的 408 项目作为 AI 初始候选池");
+        return basis;
+    }
+
     private int getEstimatedScore(Map<String, Object> request, Map<String, Object> profile) {
         if (request != null && request.containsKey("estimatedScore")) {
             Object scoreObj = request.get("estimatedScore");
@@ -713,6 +723,13 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             sb.append(" | ").append(item.get("programName"));
             sb.append(" | ").append(item.get("schoolTier"));
             sb.append(" | ").append(item.get("city"));
+            sb.append(" | 均分:").append(item.get("avgAdmittedScore"));
+            Object gap = item.get("gap");
+            if (gap instanceof Number num) {
+                int g = num.intValue();
+                sb.append(" | 差距:").append(g > 0 ? "+" : "").append(g);
+                sb.append("分（").append(g >= 15 ? "保底" : g >= 5 ? "稳妥" : g >= -10 ? "可冲刺" : "难度高").append("）");
+            }
             sb.append("\n");
         }
         return sb.toString();
@@ -933,13 +950,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
                 Object gapObj = p.get("gap");
                 int gap = gapObj instanceof Number ? ((Number) gapObj).intValue() : 0;
-                if (gap <= -10) {
-                    reachList.add(school);
-                } else if (gap <= 5) {
-                    steadyList.add(school);
-                } else {
+                if (gap >= 15) {
                     safeList.add(school);
+                } else if (gap >= 5) {
+                    steadyList.add(school);
+                } else if (gap >= -10) {
+                    reachList.add(school);
                 }
+                // gap < -10: skip, difficulty too high
             }
         }
 

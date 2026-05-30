@@ -1,6 +1,6 @@
 <template>
   <div class="ai-report-page">
-    <AppHeader current-page="recommend" />
+    <AppHeader current-page="ai" />
 
     <div class="report-container" v-if="report">
       <!-- PENDING: Terminal loading + tier card skeleton -->
@@ -127,6 +127,12 @@
                   </span>
                 </div>
 
+                <div class="school-actions">
+                  <el-button size="small" @click.stop="goDetail(school)">查看详情</el-button>
+                  <el-button size="small" @click.stop="addCompare(school)">加入对比</el-button>
+                  <el-button size="small" type="primary" @click.stop="favoriteSchool(school)">收藏</el-button>
+                </div>
+
                 <a v-if="school.sourceUrl" class="source-link"
                   :href="school.sourceUrl" target="_blank" @click.stop>
                   数据来源: {{ school.sourceOwner || 'N诺' }} →
@@ -149,6 +155,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { addFavorite } from '@/api/favorites'
 import AppHeader from '@/components/AppHeader.vue'
 import { getAiReport } from '@/api/ai'
 
@@ -253,6 +260,50 @@ function matchColor(score) {
 
 function restartRecommend() {
   router.push({ name: 'Recommend' })
+}
+
+function goDetail(school) {
+  if (!school || !school.programId) {
+    ElMessage.warning('该推荐缺少专业 ID，暂时无法查看详情')
+    return
+  }
+  router.push({
+    path: '/results',
+    query: {
+      tab: 'compare',
+      programIds: String(school.programId),
+      score: result.value.score || ''
+    }
+  })
+}
+
+function addCompare(school) {
+  if (!school || !school.programId) {
+    ElMessage.warning('该推荐缺少专业 ID，暂时无法加入对比')
+    return
+  }
+  const key = 'app-compare-program-ids'
+  const current = JSON.parse(localStorage.getItem(key) || '[]')
+  const next = Array.from(new Set([...current, school.programId])).slice(0, 8)
+  localStorage.setItem(key, JSON.stringify(next))
+  router.push({
+    path: '/results',
+    query: {
+      tab: 'compare',
+      programIds: next.join(','),
+      score: result.value.score || ''
+    }
+  })
+}
+
+function favoriteSchool(school) {
+  if (!school || !school.programId) {
+    ElMessage.warning('该推荐缺少专业 ID，暂时无法收藏')
+    return
+  }
+  addFavorite(school.programId).then(() => {
+    ElMessage.success('已加入收藏')
+  })
 }
 
 onMounted(() => {
@@ -363,6 +414,13 @@ onBeforeUnmount(() => {
 
 .source-link { display: block; margin-top: 8px; font-size: 11px; color: #409eff; text-decoration: none; }
 .source-link:hover { text-decoration: underline; }
+
+.school-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
 
 @media (max-width: 768px) {
   .loading-layout { grid-template-columns: 1fr; }
