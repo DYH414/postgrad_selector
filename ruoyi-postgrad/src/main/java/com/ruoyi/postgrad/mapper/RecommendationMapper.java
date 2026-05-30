@@ -13,6 +13,11 @@ public interface RecommendationMapper
         @Param("scoreRange") Integer scoreRange,
         @Param("studyMode") String studyMode);
 
+    List<RowMap> selectForAnalysis(@Param("estimatedScore") int estimatedScore,
+                                   @Param("regions") List<String> regions,
+                                   @Param("minScore") int minScore,
+                                   @Param("maxScore") int maxScore);
+
     RowMap selectProgramForRecommendation(@Param("programId") Long programId);
 
     List<RowMap> selectTrends(@Param("programId") Long programId);
