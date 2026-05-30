@@ -12,12 +12,19 @@
           </p>
         </div>
         <div class="intro-actions">
-          <el-button type="primary" size="large" :disabled="!canStart || panelOpen" :loading="starting" @click="startAi">
-            开始 AI 推荐
+          <el-button type="primary" size="large" :disabled="!canStart || analyzing" :loading="analyzing" @click="startAnalyze">
+            快速推荐
+          </el-button>
+          <el-button size="large" :disabled="!canStart || panelOpen" :loading="starting" @click="startAi">
+            AI 对话推荐
           </el-button>
           <el-button size="large" @click="router.push('/profile')">
             编辑画像
           </el-button>
+        </div>
+        <div class="intro-modes">
+          <span class="mode-hint fast">快速推荐：基于画像+录取数据，一键生成完整报告（约10-30秒）</span>
+          <span class="mode-hint chat">AI 对话推荐：与AI多轮交流，逐步细化需求和偏好</span>
         </div>
       </section>
 
@@ -89,12 +96,14 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { postAiAnalyze } from '@/api/ai'
 import AppHeader from '@/components/AppHeader.vue'
 import AiChatPanel from '@/components/AiChatPanel.vue'
 import { getProfile } from '@/api/profile'
 
 const router = useRouter()
 const loadingProfile = ref(false)
+const analyzing = ref(false)
 const starting = ref(false)
 const panelOpen = ref(false)
 const profile = reactive({
@@ -163,6 +172,26 @@ function startAi() {
   }, 300)
 }
 
+function startAnalyze() {
+  if (!canStart.value) {
+    ElMessage.warning('请先填写预计初试总分，AI 才能判断分数区间')
+    return
+  }
+  analyzing.value = true
+  postAiAnalyze().then(res => {
+    const data = res.data || {}
+    if (data.reportId) {
+      router.push('/ai-report/' + data.reportId)
+    } else {
+      ElMessage.error('启动推荐失败')
+    }
+  }).catch(() => {
+    ElMessage.error('快速推荐启动失败，请稍后重试')
+  }).finally(() => {
+    analyzing.value = false
+  })
+}
+
 function handleFallback() {
   panelOpen.value = false
   ElMessage.warning('AI 对话暂不可用，请稍后再试')
@@ -228,4 +257,20 @@ onMounted(loadProfile)
   .basis-grid,
   .explain-grid { grid-template-columns: 1fr; }
 }
+
+.intro-modes {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.mode-hint {
+  font-size: 13px;
+  color: #7a8aa4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mode-hint.fast::before { content: "⚡"; }
+.mode-hint.chat::before { content: "💬"; }
 </style>
