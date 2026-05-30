@@ -23,6 +23,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class AiCandidatePoolServiceImplTest
 {
+    // Matches the full subject-code strings the service now uses
+    private static final String SUBJ_22408 = "101,204,302,408";
+    private static final String SUBJ_11408 = "101,201,301,408";
+
     private AiCandidatePoolServiceImpl service;
 
     @Mock
@@ -50,33 +54,39 @@ class AiCandidatePoolServiceImplTest
 
         assertEquals(expected, pool);
         verify(recommendationMapper).selectProgramsByIds(Arrays.asList(12L, 34L), 315);
-        verify(recommendationMapper, never()).selectCandidates(eq("408"), eq(Arrays.asList("福建")), eq(null), eq(315), eq(30), eq("full_time"));
+        verify(recommendationMapper, never()).selectCandidates(eq(SUBJ_22408), eq(Arrays.asList("福建")), eq(null), eq(315), eq(30), eq("full_time"));
+        verify(recommendationMapper, never()).selectCandidates(eq(SUBJ_11408), eq(Arrays.asList("福建")), eq(null), eq(315), eq(30), eq("full_time"));
     }
 
     @Test
     void buildPoolUsesProfileRegionsWhenCandidateIdsAreMissing()
     {
-        List<RowMap> expected = rows(2);
-        when(recommendationMapper.selectCandidates("408", Arrays.asList("福建", "广东"), null, 330, 30, "full_time"))
-            .thenReturn(expected);
+        List<RowMap> expected22408 = rows(2);
+        when(recommendationMapper.selectCandidates(SUBJ_22408, Arrays.asList("福建", "广东"), null, 330, 30, "full_time"))
+            .thenReturn(expected22408);
+        when(recommendationMapper.selectCandidates(SUBJ_11408, Arrays.asList("福建", "广东"), null, 330, 30, "full_time"))
+            .thenReturn(Collections.emptyList());
 
         List<RowMap> pool = service.buildPool(
             Collections.emptyMap(),
             Map.of("targetRegions", "[\"福建\",\"广东\"]"),
             330);
 
-        assertEquals(expected, pool);
-        verify(recommendationMapper).selectCandidates("408", Arrays.asList("福建", "广东"), null, 330, 30, "full_time");
-        verify(recommendationMapper, never()).selectProgramsByIds(eq(Arrays.asList(1L, 2L)), eq(330));
+        assertEquals(expected22408, pool);
+        verify(recommendationMapper).selectCandidates(SUBJ_22408, Arrays.asList("福建", "广东"), null, 330, 30, "full_time");
+        verify(recommendationMapper).selectCandidates(SUBJ_11408, Arrays.asList("福建", "广东"), null, 330, 30, "full_time");
+        verify(recommendationMapper, never()).selectProgramsByIds(eq(List.of()), eq(330));
     }
 
     @Test
     void buildPoolUsesProfileRegionsWhenTargetRegionsAreJavaList()
     {
-        List<RowMap> expected = rows(2);
         List<String> regions = Arrays.asList("福建", "广东");
-        when(recommendationMapper.selectCandidates("408", regions, null, 330, 30, "full_time"))
+        List<RowMap> expected = rows(2);
+        when(recommendationMapper.selectCandidates(SUBJ_22408, regions, null, 330, 30, "full_time"))
             .thenReturn(expected);
+        when(recommendationMapper.selectCandidates(SUBJ_11408, regions, null, 330, 30, "full_time"))
+            .thenReturn(Collections.emptyList());
 
         List<RowMap> pool = service.buildPool(
             Collections.emptyMap(),
@@ -84,34 +94,42 @@ class AiCandidatePoolServiceImplTest
             330);
 
         assertEquals(expected, pool);
-        verify(recommendationMapper).selectCandidates("408", regions, null, 330, 30, "full_time");
+        verify(recommendationMapper).selectCandidates(SUBJ_22408, regions, null, 330, 30, "full_time");
+        verify(recommendationMapper).selectCandidates(SUBJ_11408, regions, null, 330, 30, "full_time");
     }
 
     @Test
     void buildPoolRejectsFractionalCandidateIdsAndFallsBackToProfile()
     {
-        List<RowMap> expected = rows(1);
-        when(recommendationMapper.selectCandidates("408", Collections.emptyList(), null, 330, 30, "full_time"))
-            .thenReturn(expected);
+        // Both exam combos return empty for regions → falls back to all-regions
+        when(recommendationMapper.selectCandidates(SUBJ_22408, Collections.emptyList(), null, 330, 30, "full_time"))
+            .thenReturn(Collections.emptyList());
+        when(recommendationMapper.selectCandidates(SUBJ_11408, Collections.emptyList(), null, 330, 30, "full_time"))
+            .thenReturn(rows(1));
 
         List<RowMap> pool = service.buildPool(
             Map.of("candidateIds", List.of(1.9D)),
             Map.of("targetRegions", "不限"),
             330);
 
-        assertEquals(expected, pool);
+        assertEquals(1, pool.size());
         verify(recommendationMapper, never()).selectProgramsByIds(eq(List.of(1L)), eq(330));
-        verify(recommendationMapper).selectCandidates("408", Collections.emptyList(), null, 330, 30, "full_time");
     }
 
     @Test
     void buildPoolFallsBackToAllRegionsWhenProfileRegionsReturnNoRows()
     {
-        List<RowMap> expected = rows(1);
-        when(recommendationMapper.selectCandidates("408", Arrays.asList("福建", "广东"), null, 300, 30, "full_time"))
+        // Regional queries return empty for both combos
+        when(recommendationMapper.selectCandidates(SUBJ_22408, Arrays.asList("福建", "广东"), null, 300, 30, "full_time"))
             .thenReturn(Collections.emptyList());
-        when(recommendationMapper.selectCandidates("408", Collections.emptyList(), null, 300, 30, "full_time"))
+        when(recommendationMapper.selectCandidates(SUBJ_11408, Arrays.asList("福建", "广东"), null, 300, 30, "full_time"))
+            .thenReturn(Collections.emptyList());
+        // Fallback to all regions
+        List<RowMap> expected = rows(1);
+        when(recommendationMapper.selectCandidates(SUBJ_22408, Collections.emptyList(), null, 300, 30, "full_time"))
             .thenReturn(expected);
+        when(recommendationMapper.selectCandidates(SUBJ_11408, Collections.emptyList(), null, 300, 30, "full_time"))
+            .thenReturn(Collections.emptyList());
 
         List<RowMap> pool = service.buildPool(
             Collections.emptyMap(),
@@ -119,15 +137,20 @@ class AiCandidatePoolServiceImplTest
             300);
 
         assertEquals(expected, pool);
-        verify(recommendationMapper).selectCandidates("408", Arrays.asList("福建", "广东"), null, 300, 30, "full_time");
-        verify(recommendationMapper).selectCandidates("408", Collections.emptyList(), null, 300, 30, "full_time");
+        verify(recommendationMapper).selectCandidates(SUBJ_22408, Arrays.asList("福建", "广东"), null, 300, 30, "full_time");
+        verify(recommendationMapper).selectCandidates(SUBJ_11408, Arrays.asList("福建", "广东"), null, 300, 30, "full_time");
+        verify(recommendationMapper).selectCandidates(SUBJ_22408, Collections.emptyList(), null, 300, 30, "full_time");
+        verify(recommendationMapper).selectCandidates(SUBJ_11408, Collections.emptyList(), null, 300, 30, "full_time");
     }
 
     @Test
     void buildPoolCapsDefaultPoolAtFiftyRows()
     {
-        when(recommendationMapper.selectCandidates("408", Collections.emptyList(), null, 350, 30, "full_time"))
-            .thenReturn(rows(55));
+        // 22408 returns IDs 1..30, 11408 returns IDs 31..60 → merged=60, capped at 50
+        when(recommendationMapper.selectCandidates(SUBJ_22408, Collections.emptyList(), null, 350, 30, "full_time"))
+            .thenReturn(rows(1, 30));
+        when(recommendationMapper.selectCandidates(SUBJ_11408, Collections.emptyList(), null, 350, 30, "full_time"))
+            .thenReturn(rows(31, 60));
 
         List<RowMap> pool = service.buildPool(
             Collections.emptyMap(),
@@ -137,13 +160,48 @@ class AiCandidatePoolServiceImplTest
         assertEquals(50, pool.size());
     }
 
-    private List<RowMap> rows(int count)
+    @Test
+    void buildPoolDeduplicatesAcrossExamCombos()
+    {
+        // Same programId appears in both combos → dedup keeps first
+        List<RowMap> first = rows(1);
+        when(recommendationMapper.selectCandidates(SUBJ_22408, Collections.emptyList(), null, 350, 30, "full_time"))
+            .thenReturn(first);
+        when(recommendationMapper.selectCandidates(SUBJ_11408, Collections.emptyList(), null, 350, 30, "full_time"))
+            .thenReturn(rows(1)); // same id
+
+        List<RowMap> pool = service.buildPool(
+            Collections.emptyMap(),
+            Map.of("targetRegions", "不限"),
+            350);
+
+        assertEquals(1, pool.size());
+    }
+
+    private List<RowMap> rows(long... ids)
     {
         List<RowMap> rows = new ArrayList<>();
-        for (int i = 1; i <= count; i++)
+        for (long id : ids)
         {
             RowMap row = new RowMap();
-            row.put("programId", (long) i);
+            row.put("programId", id);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private List<RowMap> rows(int count)
+    {
+        return rows(1, count);
+    }
+
+    private List<RowMap> rows(int from, int to)
+    {
+        List<RowMap> rows = new ArrayList<>();
+        for (long i = from; i <= to; i++)
+        {
+            RowMap row = new RowMap();
+            row.put("programId", i);
             rows.add(row);
         }
         return rows;

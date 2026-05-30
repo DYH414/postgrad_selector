@@ -21,6 +21,16 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
     private static final int DEFAULT_SCORE_RANGE = 30;
     private static final int DEFAULT_POOL_LIMIT = 50;
 
+    /**
+     * Full subject-code strings for the two 408 exam combos, matching what
+     * {@code ProgramRecommendationServiceImpl#subjectCodes} produces and how
+     * the database stores {@code program_subject.group_concat} results.
+     */
+    private static final List<String> EXAM_408_SUBJECT_CODES = List.of(
+        "101,204,302,408", // 22408: 政治 + 英语二 + 数学二 + 408
+        "101,201,301,408"  // 11408: 政治 + 英语一 + 数学一 + 408
+    );
+
     @Autowired
     private RecommendationMapper recommendationMapper;
 
@@ -34,14 +44,36 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
         }
 
         List<String> regions = parseTargetRegions(profile == null ? null : profile.get("targetRegions"));
-        List<RowMap> pool = recommendationMapper.selectCandidates("408", regions, null, estimatedScore,
-            DEFAULT_SCORE_RANGE, "full_time");
-        if ((pool == null || pool.isEmpty()) && !regions.isEmpty())
+        List<RowMap> pool = queryAllExamCombos(regions, estimatedScore);
+        if (pool.isEmpty() && !regions.isEmpty())
         {
-            pool = recommendationMapper.selectCandidates("408", Collections.emptyList(), null, estimatedScore,
-                DEFAULT_SCORE_RANGE, "full_time");
+            pool = queryAllExamCombos(Collections.emptyList(), estimatedScore);
         }
         return limit(pool);
+    }
+
+    /** Query both 408 exam combos and merge, keeping the first occurrence of each program. */
+    private List<RowMap> queryAllExamCombos(List<String> regions, int estimatedScore)
+    {
+        List<RowMap> merged = new ArrayList<>();
+        java.util.Set<Long> seen = new java.util.HashSet<>();
+        for (String subjectCodes : EXAM_408_SUBJECT_CODES)
+        {
+            List<RowMap> rows = recommendationMapper.selectCandidates(
+                subjectCodes, regions, null, estimatedScore, DEFAULT_SCORE_RANGE, "full_time");
+            if (rows != null)
+            {
+                for (RowMap row : rows)
+                {
+                    Object pid = row.get("programId");
+                    if (pid instanceof Number id && seen.add(id.longValue()))
+                    {
+                        merged.add(row);
+                    }
+                }
+            }
+        }
+        return merged;
     }
 
     private List<Long> parseCandidateIds(Object value)
