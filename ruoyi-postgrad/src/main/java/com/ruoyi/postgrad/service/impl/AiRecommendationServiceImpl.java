@@ -860,13 +860,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
                 Object gapObj = p.get("gap");
                 int gap = gapObj instanceof Number ? ((Number) gapObj).intValue() : 0;
-                if (gap <= -10) {
-                    reachList.add(school);
-                } else if (gap <= 5) {
-                    steadyList.add(school);
-                } else {
+                if (gap >= 15) {
                     safeList.add(school);
+                } else if (gap >= 5) {
+                    steadyList.add(school);
+                } else if (gap >= -10) {
+                    reachList.add(school);
                 }
+                // gap < -10: skip, difficulty too high
             }
         }
 

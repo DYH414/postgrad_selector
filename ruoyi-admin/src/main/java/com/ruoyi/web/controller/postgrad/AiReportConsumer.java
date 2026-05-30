@@ -246,13 +246,14 @@ public class AiReportConsumer {
 
                 Object gapObj = p.get("gap");
                 int gap = gapObj instanceof Number ? ((Number) gapObj).intValue() : 0;
-                if (gap <= -10) {
-                    reachSchools.add(school);
-                } else if (gap <= 5) {
-                    steadySchools.add(school);
-                } else {
+                if (gap >= 15) {
                     safeSchools.add(school);
+                } else if (gap >= 5) {
+                    steadySchools.add(school);
+                } else if (gap >= -10) {
+                    reachSchools.add(school);
                 }
+                // gap < -10: skip, difficulty too high
             }
         }
 
