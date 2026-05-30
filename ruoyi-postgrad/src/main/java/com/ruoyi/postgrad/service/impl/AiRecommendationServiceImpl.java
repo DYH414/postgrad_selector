@@ -110,9 +110,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     @Autowired
     private AiRecommendationTools aiRecommendationTools;
 
-    @Autowired
-    private IAiCandidatePoolService aiCandidatePoolService;
-
     @Override
     public Map<String, Object> startConversation(Long userId, Map<String, Object> request) {
         Map<String, Object> profile = loadUserProfile(userId);
