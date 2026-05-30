@@ -40,7 +40,7 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
         List<Long> candidateIds = parseCandidateIds(request == null ? null : request.get("candidateIds"));
         if (!candidateIds.isEmpty())
         {
-            return limit(recommendationMapper.selectProgramsByIds(candidateIds, estimatedScore));
+            return sortAndLimit(recommendationMapper.selectProgramsByIds(candidateIds, estimatedScore), estimatedScore);
         }
 
         List<String> regions = parseTargetRegions(profile == null ? null : profile.get("targetRegions"));
@@ -49,7 +49,37 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
         {
             pool = queryAllExamCombos(Collections.emptyList(), estimatedScore);
         }
-        return limit(pool);
+        return sortAndLimit(pool, estimatedScore);
+    }
+
+    /** Sort by proximity to estimatedScore (not to estimatedScore+scoreRange like the SQL does),
+     *  so the pool contains a balanced mix of reach/steady/safe schools. */
+    private List<RowMap> sortAndLimit(List<RowMap> rows, int estimatedScore)
+    {
+        if (rows == null || rows.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        rows.sort((a, b) -> {
+            int gapA = scoreDistance(a, estimatedScore);
+            int gapB = scoreDistance(b, estimatedScore);
+            return Integer.compare(gapA, gapB);
+        });
+        if (rows.size() <= DEFAULT_POOL_LIMIT)
+        {
+            return rows;
+        }
+        return new ArrayList<>(rows.subList(0, DEFAULT_POOL_LIMIT));
+    }
+
+    private static int scoreDistance(RowMap row, int estimatedScore)
+    {
+        Object avgObj = row.get("avgAdmittedScore");
+        if (avgObj instanceof Number n)
+        {
+            return Math.abs(n.intValue() - estimatedScore);
+        }
+        return 999;
     }
 
     /** Query both 408 exam combos and merge, keeping the first occurrence of each program. */
@@ -229,16 +259,4 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
         }
     }
 
-    private List<RowMap> limit(List<RowMap> rows)
-    {
-        if (rows == null || rows.isEmpty())
-        {
-            return Collections.emptyList();
-        }
-        if (rows.size() <= DEFAULT_POOL_LIMIT)
-        {
-            return rows;
-        }
-        return new ArrayList<>(rows.subList(0, DEFAULT_POOL_LIMIT));
-    }
 }
