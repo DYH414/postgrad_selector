@@ -23,3 +23,7 @@ export function getAiReports() {
 export function postAiResume(data) {
   return request({ url: '/app/ai-recommend/resume', method: 'post', data })
 }
+
+export function postAiAnalyze() {
+  return request({ url: '/app/ai-recommend/analyze', method: 'post' })
+}

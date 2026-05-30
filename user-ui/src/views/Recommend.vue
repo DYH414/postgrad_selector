@@ -10,6 +10,24 @@
         </div>
       </section>
 
+      <section class="intro-actions-section">
+        <div class="intro-actions">
+          <el-button type="primary" size="large" :disabled="!canStart || analyzing" :loading="analyzing" @click="startAnalyze">
+            快速推荐
+          </el-button>
+          <el-button size="large" :disabled="!canStart || aiChatVisible" :loading="starting" @click="startAi">
+            AI 对话推荐
+          </el-button>
+          <el-button size="large" @click="router.push('/profile')">
+            编辑画像
+          </el-button>
+        </div>
+        <div class="intro-modes">
+          <span class="mode-hint fast">快速推荐：基于画像+录取数据，一键生成完整报告（约10-30秒）</span>
+          <span class="mode-hint chat">AI 对话推荐：与AI多轮交流，逐步细化需求和偏好</span>
+        </div>
+      </section>
+
       <section class="main-grid">
         <div class="recommend-panel">
           <div class="panel-title">
@@ -164,18 +182,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import AppHeader from '@/components/AppHeader.vue'
 import AiChatPanel from '@/components/AiChatPanel.vue'
 import { generateRecommendation, getRecommendationOptions } from '@/api/recommendation'
+import { postAiAnalyze } from '@/api/ai'
 
 const router = useRouter()
 const userStore = useUserStore()
 
 const generating = ref(false)
+const analyzing = ref(false)
+const starting = ref(false)
 const loadingOptions = ref(false)
 const regions = ref(['福建', '广东', '浙江', '上海'])
 const form = reactive({
@@ -188,6 +209,8 @@ const form = reactive({
 })
 const aiChatVisible = ref(false)
 const candidateResultIds = ref([])
+
+const canStart = computed(() => form.score > 0)
 
 function loadOptions() {
   loadingOptions.value = true
@@ -237,6 +260,34 @@ function startRecommend() {
 
 function handleAiFallback() {
   // Fallback to rule-based recommendation
+}
+
+function startAi() {
+  if (!canStart.value) {
+    ElMessage.warning('请先填写预计初试总分，AI 才能判断分数区间')
+    return
+  }
+  aiChatVisible.value = true
+}
+
+function startAnalyze() {
+  if (!canStart.value) {
+    ElMessage.warning('请先填写预计初试总分，AI 才能判断分数区间')
+    return
+  }
+  analyzing.value = true
+  postAiAnalyze().then(res => {
+    const data = res.data || {}
+    if (data.reportId) {
+      router.push('/ai-report/' + data.reportId)
+    } else {
+      ElMessage.error('启动推荐失败')
+    }
+  }).catch(() => {
+    ElMessage.error('快速推荐启动失败，请稍后重试')
+  }).finally(() => {
+    analyzing.value = false
+  })
 }
 
 onMounted(() => {
@@ -610,6 +661,30 @@ onMounted(() => {
   gap: 10px;
   color: #6b778a;
 }
+
+.intro-actions-section {
+  margin-bottom: 16px;
+}
+.intro-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.intro-modes {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.mode-hint {
+  font-size: 13px;
+  color: #7a8aa4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mode-hint.fast::before { content: "\26A1"; }
+.mode-hint.chat::before { content: "\1F4AC"; }
 
 @media (max-width: 1100px) {
   .main-grid,
