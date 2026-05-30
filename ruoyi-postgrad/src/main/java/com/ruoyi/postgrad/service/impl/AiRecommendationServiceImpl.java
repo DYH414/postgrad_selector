@@ -24,6 +24,7 @@ import com.ruoyi.postgrad.domain.UserProfile;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.mapper.UserProfileMapper;
+import com.ruoyi.postgrad.service.IAiCandidatePoolService;
 import com.ruoyi.postgrad.service.IAiRecommendationService;
 import com.ruoyi.postgrad.tool.AiRecommendationTools;
 
@@ -99,6 +100,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Autowired
     private AiRecommendationTools aiRecommendationTools;
+
+    @Autowired
+    private IAiCandidatePoolService aiCandidatePoolService;
 
     @Override
     public Map<String, Object> startConversation(Long userId, Map<String, Object> request) {
@@ -385,6 +389,93 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             result.put("status", "ERROR");
             result.put("error", e.getMessage());
             return result;
+        }
+    }
+
+    @Override
+    public Map<String, Object> analyze(Long userId)
+    {
+        // 1. Load user profile
+        Map<String, Object> profile = loadUserProfile(userId);
+        int estimatedScore = getEstimatedScore(Collections.emptyMap(), profile);
+        String targetRegionsStr = formatProfileField(profile, "targetRegions", "不限");
+
+        // 2. Parse regions from profile
+        List<String> regions = parseRegionsForAnalysis(targetRegionsStr);
+
+        // 3. Query and stratify schools
+        List<RowMap> pool = aiCandidatePoolService.buildAnalysisPool(estimatedScore, regions);
+
+        // 4. Serialize pool data for Redis (full fields needed for injectFullData)
+        List<Map<String, Object>> poolList = new ArrayList<>();
+        for (RowMap row : pool)
+        {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("programId", row.get("programId"));
+            item.put("schoolName", row.get("schoolName"));
+            item.put("schoolTier", row.get("schoolTier"));
+            item.put("city", row.get("city"));
+            item.put("province", row.get("province"));
+            item.put("collegeName", row.get("collegeName"));
+            item.put("programName", row.get("programName"));
+            item.put("degreeType", row.get("degreeType"));
+            item.put("scoreLine", row.get("scoreLine"));
+            item.put("avgAdmittedScore", row.get("avgAdmittedScore"));
+            item.put("admissionLow", row.get("admissionLow"));
+            item.put("admissionHigh", row.get("admissionHigh"));
+            item.put("planCount", row.get("planCount"));
+            item.put("admittedCount", row.get("admittedCount"));
+            item.put("retestCount", row.get("retestCount"));
+            item.put("dataYear", row.get("dataYear"));
+            item.put("dataCompleteness", row.get("dataCompleteness"));
+            item.put("sourceUrl", row.get("sourceUrl"));
+            item.put("sourceOwner", row.get("sourceOwner"));
+            Object avgObj = row.get("avgAdmittedScore");
+            item.put("gap", avgObj instanceof Number n ? estimatedScore - n.intValue() : 0);
+            poolList.add(item);
+        }
+        String poolJson = JSON.toJSONString(poolList);
+
+        // 5. Insert PENDING recommendation_log
+        RecommendationLog log = new RecommendationLog();
+        log.setUserId(userId);
+        log.setResultJson("{\"status\":\"PENDING\"}");
+        logMapper.insertRecommendationLog(log);
+        long reportId = log.getId();
+
+        // 6. Store pool in Redis (TTL 1 hour)
+        redisTemplate.opsForValue().set(
+            "ai:analyze:pool:" + reportId, poolJson, 1, TimeUnit.HOURS);
+
+        // 7. Send MQ message (lightweight: no prompt in message)
+        if (rabbitTemplate != null)
+        {
+            Map<String, Object> mqMsg = new LinkedHashMap<>();
+            mqMsg.put("reportId", reportId);
+            mqMsg.put("estimatedScore", estimatedScore);
+            mqMsg.put("userId", userId);
+            mqMsg.put("mode", "analyze");
+            rabbitTemplate.convertAndSend("ai.report.queue", mqMsg);
+        }
+
+        // 8. Return reportId
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("reportId", reportId);
+        result.put("msg", "报告生成中，请稍候");
+        return result;
+    }
+
+    private List<String> parseRegionsForAnalysis(String targetRegions)
+    {
+        if (targetRegions == null || targetRegions.isEmpty() || "不限".equals(targetRegions))
+            return Collections.emptyList();
+        try
+        {
+            return JSON.parseArray(targetRegions, String.class);
+        }
+        catch (Exception e)
+        {
+            return Collections.emptyList();
         }
     }
 

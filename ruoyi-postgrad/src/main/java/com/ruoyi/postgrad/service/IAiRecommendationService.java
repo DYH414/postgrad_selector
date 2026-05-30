@@ -61,4 +61,13 @@ public interface IAiRecommendationService
      * @return map with conversationId, message, options, source
      */
     Map<String, Object> resumeConversation(Long userId, String conversationId);
+
+    /**
+     * One-shot recommendation: analyze schools directly from user profile
+     * without requiring a conversation. Generates report via MQ.
+     *
+     * @param userId the current user ID
+     * @return map with reportId, msg
+     */
+    Map<String, Object> analyze(Long userId);
 }
