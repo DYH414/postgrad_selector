@@ -52,24 +52,85 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
         return sortAndLimit(pool, estimatedScore);
     }
 
-    /** Sort by proximity to estimatedScore (not to estimatedScore+scoreRange like the SQL does),
-     *  so the pool contains a balanced mix of reach/steady/safe schools. */
+    /** Build a diverse pool: sort by proximity to estimatedScore, then sample evenly
+     *  from three strata (保底/稳妥/冲刺) so every admission-difficulty tier is represented. */
     private List<RowMap> sortAndLimit(List<RowMap> rows, int estimatedScore)
     {
         if (rows == null || rows.isEmpty())
         {
             return Collections.emptyList();
         }
-        rows.sort((a, b) -> {
-            int gapA = scoreDistance(a, estimatedScore);
-            int gapB = scoreDistance(b, estimatedScore);
-            return Integer.compare(gapA, gapB);
-        });
         if (rows.size() <= DEFAULT_POOL_LIMIT)
         {
+            rows.sort((a, b) -> Integer.compare(scoreDistance(a, estimatedScore), scoreDistance(b, estimatedScore)));
             return rows;
         }
-        return new ArrayList<>(rows.subList(0, DEFAULT_POOL_LIMIT));
+
+        // Sort by distance to estimated score
+        rows.sort((a, b) -> Integer.compare(scoreDistance(a, estimatedScore), scoreDistance(b, estimatedScore)));
+
+        // Stratify: safe (gap >= 5), steady (gap -5..4), reach (gap <= -6)
+        List<RowMap> safe = new ArrayList<>();    // avg < estimatedScore by 5+
+        List<RowMap> steady = new ArrayList<>();  // avg within ±5 of estimatedScore
+        List<RowMap> reach = new ArrayList<>();   // avg > estimatedScore by 5+
+        for (RowMap row : rows)
+        {
+            int gap = estimatedScore - scoreAvg(row);
+            if (gap >= 5) safe.add(row);
+            else if (gap <= -6) reach.add(row);
+            else steady.add(row);
+        }
+
+        // Evenly distribute slots, filling unused quota from other strata
+        int perStrata = DEFAULT_POOL_LIMIT / 3; // 16 each
+        List<RowMap> result = new ArrayList<>(DEFAULT_POOL_LIMIT);
+        result.addAll(takeUpTo(safe, perStrata));
+        result.addAll(takeUpTo(steady, perStrata));
+        result.addAll(takeUpTo(reach, perStrata));
+
+        // Fill remaining quota from whichever strata have more, sorted by proximity
+        int remaining = DEFAULT_POOL_LIMIT - result.size();
+        if (remaining > 0)
+        {
+            for (RowMap row : rows)
+            {
+                if (remaining <= 0) break;
+                // Check if not already included
+                if (containsById(result, row))
+                {
+                    continue;
+                }
+                result.add(row);
+                remaining--;
+            }
+        }
+
+        // Final sort by proximity so the summary has a natural order
+        result.sort((a, b) -> Integer.compare(scoreDistance(a, estimatedScore), scoreDistance(b, estimatedScore)));
+        return result;
+    }
+
+    private static List<RowMap> takeUpTo(List<RowMap> source, int max)
+    {
+        return new ArrayList<>(source.subList(0, Math.min(source.size(), max)));
+    }
+
+    private static boolean containsById(List<RowMap> rows, RowMap target)
+    {
+        Object targetId = target.get("programId");
+        for (RowMap row : rows)
+        {
+            Object id = row.get("programId");
+            if (id != null && id.equals(targetId)) return true;
+        }
+        return false;
+    }
+
+    private static int scoreAvg(RowMap row)
+    {
+        Object avgObj = row.get("avgAdmittedScore");
+        if (avgObj instanceof Number n) return n.intValue();
+        return 0;
     }
 
     private static int scoreDistance(RowMap row, int estimatedScore)
