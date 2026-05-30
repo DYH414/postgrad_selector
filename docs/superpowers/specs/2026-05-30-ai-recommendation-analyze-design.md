@@ -1,6 +1,6 @@
 # AI 择校「快速推荐」模式 — 设计规格
 
-2026-05-30 | status: draft
+2026-05-30 | status: reviewed
 
 ---
 
@@ -49,13 +49,23 @@ Response:
 2. 调 `userProfileMapper.selectUserProfileByUserId(userId)` 查画像
 3. 提取 `estimatedScore`、`targetRegions`
 4. 调 `recommendationMapper.selectForAnalysis(estimatedScore, regions, estimatedScore-20, estimatedScore+20)` 查学校
-5. 对结果分层抽样：保底/稳妥/冲刺各约 17 所，上限 50 所
-6. 构造 Prompt（画像 + 学校数据表格 + 输出 JSON 格式）
+5. 对结果分层抽样（见下方分层规则），上限 50 所
+6. 构造 Prompt（画像 + 学校数据表格 + 输出 JSON 格式），序列化学校数据为 poolJson
 7. 插 `recommendation_log`（status=PENDING, user_id=userId）
-8. 发 MQ 消息：`{ reportId, estimatedScore, prompt, poolJson }`
-9. 返回 `{ reportId }`
+8. 将 poolJson 存 Redis：`ai:analyze:pool:{reportId}`（TTL 1 小时）
+9. 发 MQ 消息：`{ reportId, estimatedScore, userId, mode: "analyze" }`
+10. 返回 `{ reportId }`
 
-**待确认**：分层抽样逻辑与候选人池服务（`AiCandidatePoolServiceImpl`）的结构相似。可以复用一个方法，也可以内联到 `buildAnalysisPool`。建议在 `IAiCandidatePoolService` 新增 `buildAnalysisPool(profile, estimatedScore)` 方法，避免重复代码。
+**分层规则**（Java 层执行）：
+
+| gap 范围 | 层级 | 取样上限 |
+|----------|------|----------|
+| `gap >= 15` | 保底 | 15 所 |
+| `gap >= 5 AND gap <= 14` | 稳妥 | 20 所 |
+| `gap >= -10 AND gap <= 4` | 冲刺 | 15 所 |
+| `gap < -10` | 跳过 | — |
+
+`gap = estimatedScore - avgAdmittedScore`，取每层中离预估分最近的学校。总上限 50 所。
 
 ### Mapper: RecommendationMapper
 
@@ -67,7 +77,6 @@ SELECT
     s.province AS province, s.city AS city,
     c.name AS collegeName, p.program_name AS programName,
     p.degree_type AS degreeType,
-    subj.subject_codes AS subjectCodes,
     sc.year AS dataYear, sc.score_line AS scoreLine,
     ar.admitted_count AS admittedCount,
     ar.min_admitted_score AS admissionLow,
@@ -81,7 +90,6 @@ SELECT
 FROM program p
 JOIN college c ON p.college_id = c.id
 JOIN school s ON c.school_id = s.id
-LEFT JOIN (subquery: subject_codes) subj ON subj.program_id = p.id
 LEFT JOIN admission_score sc ON sc.program_id = p.id
   AND sc.year = (SELECT MAX(year) FROM admission_score sc2
     WHERE sc2.program_id = p.id AND sc2.score_line IS NOT NULL)
@@ -93,7 +101,6 @@ LEFT JOIN data_source ap_ds ON ap_ds.id = ap.source_id
 LEFT JOIN data_source ar_ds ON ar_ds.id = ar.source_id
 WHERE p.status = 'active' AND s.status = 'active' AND p.is_408 = 1
   AND p.study_mode = 'full_time'
-  AND subj.subject_codes IN ('101,204,302,408', '101,201,301,408')
   AND (sc.score_line IS NOT NULL OR ar.avg_admitted_score IS NOT NULL)
   AND ar.avg_admitted_score >= #{minScore}
   AND ar.avg_admitted_score <= #{maxScore}
@@ -169,22 +176,26 @@ LIMIT 300
 
 当前 consumer 监听 `ai.report.queue`，接收 `{ reportId, conversationId, estimatedScore }`。
 
-**改造方案**：conversation 模式不变，analyze 模式新增可选字段 `prompt`。若消息含 `prompt`，跳过对话读取/裁剪，直接用传入的 prompt。
+**改造方案**：conversation 模式不变，analyze 模式新增字段 `mode`。
 
 ```
 消息格式:
 {
   "reportId": 42,
   "estimatedScore": 300,
-  "prompt": "你是考研择校顾问...",    // analyze 模式: 预构建的完整 prompt
-  "poolJson": "[{...}]"              // 学校数据, 用于 injectFullData
+  "userId": 1,
+  "mode": "analyze"          // analyze 模式: 从 Redis 读 poolJson 构建 prompt
 }
 ```
 
 Consumer 处理逻辑：
-1. 若 `msg.prompt` 存在 → 走 analyze 路径，跳过 Redis 对话读取
-2. 调 `chatModel.chat(prompt)` → `parseReportJson()` → `injectFullData()`
-3. 存 Redis（`ai:report:{id}`, 7 天）+ DB UPDATE
+1. 若 `msg.mode == "analyze"` → 从 Redis 读 `ai:analyze:pool:{reportId}` 获取 poolJson
+2. 调 `buildAnalysisPrompt(poolJson, estimatedScore)` 构造 Prompt
+3. 调 `chatModel.chat(prompt)` → `parseReportJson()` → `injectFullData()`
+4. 存 Redis（`ai:report:{id}`, 7 天）+ DB UPDATE
+5. 清理 `ai:analyze:pool:{reportId}`
+
+**优势**：MQ 消息体保持轻量（<200 字节），大数据（poolJson + prompt）在服务端构建。
 
 ### injectFullData（替换现有 injectMatchScores）
 
