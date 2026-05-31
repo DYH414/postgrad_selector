@@ -436,7 +436,13 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         // 5. Insert PENDING recommendation_log
         RecommendationLog log = new RecommendationLog();
         log.setUserId(userId);
+        log.setProfileSnapshot(JSON.toJSONString(Map.of(
+            "userId", userId,
+            "estimatedScore", estimatedScore,
+            "targetRegions", targetRegionsStr
+        )));
         log.setResultJson("{\"status\":\"PENDING\"}");
+        log.setIsPaid(0);
         logMapper.insertRecommendationLog(log);
         long reportId = log.getId();
 
@@ -865,9 +871,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 }
 
                 if (avg != null && estimatedScore > 0) {
-                    double gap = Math.abs(estimatedScore - avg);
-                    double weight = "reach".equals(level) ? 0.5 : 0.3;
-                    school.put("matchScore", (int) Math.max(0, 100 - gap * weight));
+                    int g = estimatedScore - (int) Math.round(avg);
+                    int score;
+                    if (g >= 0) {
+                        score = (int) Math.min(98, 75 + g * 1.5);
+                    } else {
+                        score = (int) Math.max(15, 75 + g * 4);
+                    }
+                    school.put("matchScore", score);
                 } else {
                     school.put("matchScore", 50);
                 }
@@ -891,7 +902,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Map<String, Object> parseReportJson(ChatModel chatModel, String reportPrompt, String poolJson) {
-        String aiResponse = chatModel.chat(reportPrompt);
+        String aiResponse = stripMarkdown(chatModel.chat(reportPrompt));
         log.info("[Report] AI raw response (first 500 chars): {}",
             aiResponse != null ? aiResponse.substring(0, Math.min(500, aiResponse.length())) : "null");
         try {
@@ -907,7 +918,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             log.warn("[Report] Parse/validation failed: {} — retrying with fix prompt", e.getMessage());
             try {
                 String fixPrompt = "你的上一次回复不是合法JSON。请只返回合法JSON，不要任何额外文字。严格按照以下格式：\n{\"summary\":\"...\",\"tiers\":[{\"level\":\"reach\",\"label\":\"冲刺档\",\"schools\":[...]},...]}。\n\n上一次回复：\n" + aiResponse;
-                String fixed = chatModel.chat(fixPrompt);
+                String fixed = stripMarkdown(chatModel.chat(fixPrompt));
                 log.info("[Report] Fix response (first 300 chars): {}",
                     fixed != null ? fixed.substring(0, Math.min(300, fixed.length())) : "null");
                 Map<String, Object> result = JSON.parseObject(fixed);
@@ -922,6 +933,22 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 return ruleBasedFallback(poolJson);
             }
         }
+    }
+
+    /** Strip markdown code block markers (```json ... ```) from AI response. */
+    private static String stripMarkdown(String text) {
+        if (text == null) return null;
+        String trimmed = text.trim();
+        if (trimmed.startsWith("```")) {
+            int firstNewline = trimmed.indexOf('\n');
+            if (firstNewline > 0) {
+                trimmed = trimmed.substring(firstNewline + 1);
+            }
+        }
+        if (trimmed.endsWith("```")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 3).trim();
+        }
+        return trimmed;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

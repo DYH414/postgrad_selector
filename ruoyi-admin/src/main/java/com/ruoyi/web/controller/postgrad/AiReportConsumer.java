@@ -152,13 +152,14 @@ public class AiReportConsumer {
         sb.append("- 本科层次: ").append(profile.getOrDefault("undergradTier", "双非")).append("\n");
         sb.append("- 跨考: ").append(profile.getOrDefault("isCrossMajor", "否")).append("\n");
         sb.append("- 目标地区: ").append(profile.getOrDefault("targetRegions", "不限")).append("\n\n");
-        sb.append("## 推荐要求\n");
+        sb.append("## 推荐要求（重要）\n");
         sb.append("1. 按冲刺/稳妥/保底三档推荐，每档 1-3 所学校\n");
         sb.append("2. 学校选择需综合考虑：录取均分、差距、招生人数、报录比、复试线\n");
         sb.append("3. 差距 ≥ 5 分优先稳妥/保底档，差距 ≤ -6 分优先冲刺档\n");
         sb.append("4. 差距 > -5 且 < 5 时可归入稳妥档\n");
         sb.append("5. 不要推荐差距 < -10 分的学校（难度过高）\n");
-        sb.append("6. 推荐理由必须引用具体数据（均分、招生人数等），不要只说\"分数合适\"\n\n");
+        sb.append("6. 推荐理由必须引用具体数据（均分、招生人数等），不要只说\"分数合适\"\n");
+        sb.append("7. ★ programId 必须从上面候选列表中的 \"ID:\" 值精确复制，绝对不要用序号或编造ID ★\n\n");
         sb.append("## 候选学校数据\n");
         sb.append("格式: ID | 学校 | 专业 | 层次 | 城市 | 均分 | 差距 | 复试线 | 招生 | 录取 | 报录比 | 数据年份\n\n");
 
@@ -179,11 +180,30 @@ public class AiReportConsumer {
             sb.append(" | ").append(p.getOrDefault("dataYear", "-")).append("年\n");
         }
 
-        sb.append("\n## 输出格式（严格 JSON）\n");
-        sb.append("{\n  \"summary\": \"一句话总结\",\n  \"tiers\": [\n");
-        sb.append("    {\"level\": \"reach\", \"label\": \"冲刺档\", \"schools\": [{...}]},\n");
-        sb.append("    {\"level\": \"steady\", \"label\": \"稳妥档\", \"schools\": [{...}]},\n");
-        sb.append("    {\"level\": \"safe\", \"label\": \"保底档\", \"schools\": [{...}]}\n  ]\n}");
+        sb.append("\n## 输出格式（严格 JSON，字段名必须完全一致）\n");
+        sb.append("{\n");
+        sb.append("  \"summary\": \"一句话总结\",\n");
+        sb.append("  \"tiers\": [\n");
+        sb.append("    {\n");
+        sb.append("      \"level\": \"reach\",\n");
+        sb.append("      \"label\": \"冲刺档\",\n");
+        sb.append("      \"schools\": [\n");
+        sb.append("        {\n");
+        sb.append("          \"programId\": 1,\n");
+        sb.append("          \"schoolName\": \"学校名\",\n");
+        sb.append("          \"programName\": \"专业名\",\n");
+        sb.append("          \"reason\": \"推荐理由（须引用均分、招生人数等数据）\",\n");
+        sb.append("          \"risk\": \"high\",\n");
+        sb.append("          \"pros\": [\"优势1\",\"优势2\"],\n");
+        sb.append("          \"cons\": [\"劣势1\"]\n");
+        sb.append("        }\n");
+        sb.append("      ]\n");
+        sb.append("    },\n");
+        sb.append("    { \"level\": \"steady\", \"label\": \"稳妥档\", \"schools\": [...] },\n");
+        sb.append("    { \"level\": \"safe\", \"label\": \"保底档\", \"schools\": [...] }\n");
+        sb.append("  ]\n");
+        sb.append("}\n");
+        sb.append("注意：programId/schoolName/programName/risk/pros/cons 字段名必须用英文，schoolName 直接填学校名不要额外说明。");
         return sb.toString();
     }
 
@@ -306,8 +326,22 @@ public class AiReportConsumer {
         }
     }
 
+    /** Strip markdown code block markers (```json ... ```) from AI response. */
+    private static String stripMarkdown(String text) {
+        if (text == null) return null;
+        String trimmed = text.trim();
+        if (trimmed.startsWith("```")) {
+            int firstNewline = trimmed.indexOf('\n');
+            if (firstNewline > 0) trimmed = trimmed.substring(firstNewline + 1);
+        }
+        if (trimmed.endsWith("```")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 3).trim();
+        }
+        return trimmed;
+    }
+
     private JSONObject parseReportJson(ChatModel chatModel, String reportPrompt, String poolJson) {
-        String aiResponse = chatModel.chat(reportPrompt);
+        String aiResponse = stripMarkdown(chatModel.chat(reportPrompt));
         log.info("[Report-Consumer] AI raw response (first 500 chars): {}",
             aiResponse != null ? aiResponse.substring(0, Math.min(500, aiResponse.length())) : "null");
         try {
@@ -322,7 +356,7 @@ public class AiReportConsumer {
             log.warn("[Report-Consumer] Parse/validation failed: {} — retrying with fix prompt", e.getMessage());
             try {
                 String fixPrompt = "你的上一次回复不是合法JSON。请只返回合法JSON，不要任何额外文字。严格按照之前要求的格式：\n\n上一次回复：\n" + aiResponse;
-                String fixed = chatModel.chat(fixPrompt);
+                String fixed = stripMarkdown(chatModel.chat(fixPrompt));
                 log.info("[Report-Consumer] Fix response (first 300 chars): {}",
                     fixed != null ? fixed.substring(0, Math.min(300, fixed.length())) : "null");
                 JSONObject result = JSON.parseObject(fixed);
@@ -414,6 +448,7 @@ public class AiReportConsumer {
 
         JSONArray tiers = report.getJSONArray("tiers");
         if (tiers == null) return;
+        log.info("[Report-Consumer] injectFullData: pool has {} entries", poolMap.size());
         for (int i = 0; i < tiers.size(); i++) {
             JSONObject tier = tiers.getJSONObject(i);
             JSONArray schools = tier.getJSONArray("schools");
@@ -423,7 +458,10 @@ public class AiReportConsumer {
                 JSONObject school = schools.getJSONObject(j);
                 long pid = school.getLongValue("programId");
                 Map<String, Object> stats = poolMap.get(pid);
-                if (stats == null) continue;
+                if (stats == null) {
+                    log.warn("[Report-Consumer] injectFullData: programId {} not found in pool", pid);
+                    continue;
+                }
 
                 injectStat(school, stats, "scoreLine");
                 injectStat(school, stats, "avgAdmittedScore");
@@ -450,11 +488,16 @@ public class AiReportConsumer {
                     school.put("retestRatio", String.format("%.1f:1", p.doubleValue() / a.doubleValue()));
                 }
 
-                // matchScore
+                // matchScore: positive gap = user above avg (safer), negative = user below (riskier)
                 if (avgObj instanceof Number n) {
-                    double g = Math.abs(estimatedScore - n.doubleValue());
-                    double w = "reach".equals(level) ? 0.5 : 0.3;
-                    school.put("matchScore", (int) Math.max(0, 100 - g * w));
+                    int g = estimatedScore - n.intValue();
+                    int score;
+                    if (g >= 0) {
+                        score = (int) Math.min(98, 75 + g * 1.5);  // gap +5 → 83%, +15 → 98%
+                    } else {
+                        score = (int) Math.max(15, 75 + g * 4);     // gap -5 → 55%, -10 → 35%
+                    }
+                    school.put("matchScore", score);
                 } else {
                     school.put("matchScore", 50);
                 }
