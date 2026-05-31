@@ -17,7 +17,7 @@ const routes = [
   {
     path: '/',
     name: 'Home',
-    component: () => import('@/views/Home.vue'),
+    component: () => import('@/views/Recommend.vue'),
     meta: { title: '首页' }
   },
   {
@@ -30,7 +30,7 @@ const routes = [
     path: '/recommend',
     name: 'Recommend',
     component: () => import('@/views/Recommend.vue'),
-    meta: { title: '智能推荐' }
+    meta: { title: '规则筛选' }
   },
   {
     path: '/ai-recommend',

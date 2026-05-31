@@ -2,7 +2,7 @@
   <header class="app-header">
     <div class="brand" @click="router.push('/')">
       <span class="brand-mark">
-        <i class="el-icon-s-platform"></i>
+        <strong>408</strong>
       </span>
       <span>
         <strong>408 考研筛选平台</strong>
@@ -12,7 +12,6 @@
 
     <nav class="nav">
       <router-link to="/" class="nav-link" :class="{ active: currentPage === 'home' }">首页</router-link>
-      <router-link to="/recommend" class="nav-link" :class="{ active: currentPage === 'recommend' }">规则筛选</router-link>
       <router-link to="/results" class="nav-link" :class="{ active: currentPage === 'results' }">筛选结果</router-link>
       <router-link to="/results?tab=compare" class="nav-link" :class="{ active: currentPage === 'compare' }">对比与备选</router-link>
       <router-link to="/ai-recommend" class="nav-link" :class="{ active: currentPage === 'ai' }">AI 推荐</router-link>
@@ -84,11 +83,12 @@ function logout() {
 
 <style scoped>
 .app-header {
-  height: 58px;
-  padding: 0 24px;
-  background: rgba(255, 255, 255, 0.96);
+  height: 62px;
+  padding: 0 28px;
+  background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid #e7edf8;
-  box-shadow: 0 8px 24px rgba(36, 78, 156, 0.08);
+  box-shadow: 0 12px 32px rgba(36, 78, 156, 0.08);
+  backdrop-filter: blur(14px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -108,16 +108,23 @@ function logout() {
 }
 
 .brand-mark {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #2f7bff, #1554e8);
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #155eef, #1d9bf0);
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 20px;
   box-shadow: 0 10px 20px rgba(37, 99, 235, 0.24);
+}
+
+.brand-mark strong {
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .brand strong {
@@ -138,7 +145,7 @@ function logout() {
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 34px;
+  gap: 24px;
   flex: 1;
 }
 
@@ -151,12 +158,17 @@ function logout() {
   font-size: 15px;
   text-decoration: none;
   border-bottom: 3px solid transparent;
+  transition: color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
 }
 
 .nav-link:hover,
 .nav-link.active {
   color: #1769f6;
   border-bottom-color: #1769f6;
+}
+
+.nav-link:hover {
+  transform: translateY(-1px);
 }
 
 .header-actions {
@@ -167,10 +179,10 @@ function logout() {
 
 .search-box {
   width: 280px;
-  height: 34px;
+  height: 36px;
   border: 1px solid #dce4f2;
-  border-radius: 8px;
-  background: #fbfcff;
+  border-radius: 999px;
+  background: #f8fbff;
   color: #9aa7bc;
   display: flex;
   align-items: center;
@@ -192,13 +204,18 @@ function logout() {
   color: #1f2937;
   white-space: nowrap;
   cursor: pointer;
+  transition: transform 0.18s ease;
+}
+
+.user-chip:hover {
+  transform: translateY(-1px);
 }
 
 .avatar {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #eef2f7, #d6dbe4);
+  background: linear-gradient(135deg, #e8f1ff, #d7e4f8);
   color: #fff;
   display: inline-flex;
   align-items: center;
@@ -207,22 +224,28 @@ function logout() {
 }
 
 .login-entry {
-  height: 34px;
+  height: 36px;
   padding: 0 16px;
   border: 0;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #2f7bff, #1554e8);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1769f6, #1d8cff);
   color: #fff;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.login-entry:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.28);
 }
 
 .logout-entry {
   height: 32px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 1px solid #dce4f2;
-  border-radius: 8px;
+  border-radius: 999px;
   background: #fff;
   color: #64748b;
   cursor: pointer;
@@ -233,7 +256,13 @@ function logout() {
   border-color: #bfd3ff;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1320px) {
+  .search-box {
+    display: none;
+  }
+}
+
+@media (max-width: 1160px) {
   .app-header {
     height: auto;
     min-height: 68px;
@@ -255,10 +284,6 @@ function logout() {
   .nav-link {
     height: 42px;
     white-space: nowrap;
-  }
-
-  .search-box {
-    display: none;
   }
 }
 </style>

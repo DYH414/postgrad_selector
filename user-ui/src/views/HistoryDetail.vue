@@ -97,7 +97,7 @@ function groupItems(groups, key) {
     scoreGap: item.admissionLowGap,
     minAdmittedScore: item.admissionLow,
     avgAdmittedScore: item.avgAdmittedScore,
-    scoreBasis: (item.examCombo || '') + ' ' + (item.examSubjectsLabel || '')
+    scoreBasis: item.examCombo || '-'
   })) : []
 }
 

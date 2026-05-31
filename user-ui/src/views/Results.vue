@@ -191,7 +191,11 @@
                       <span :class="{ 'pending-field': isPendingCollege(school.collegeName) }">{{ displayCollegeName(school.collegeName) }}</span>
                       / {{ school.programName }}
                     </p>
-                    <span>{{ school.exam }} | {{ school.province }}</span>
+                    <div class="school-meta-line">
+                      <span>{{ school.exam }} | {{ school.province || '-' }}</span>
+                      <em v-if="school.dataYear" class="data-year-badge">{{ school.dataYear }}年数据</em>
+                      <em v-else class="data-year-badge muted">年份待补</em>
+                    </div>
                   </div>
                   <button
                     class="star-btn"
@@ -252,7 +256,7 @@
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span>{{ detail.basic.examCombo }}：{{ detail.basic.examSubjectsLabel }}</span>
+            <span>{{ detail.basic.examCombo || '-' }}</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
@@ -500,7 +504,8 @@ function normalizeSchool(item) {
     collegeName: item.collegeName,
     programName: item.programName,
     examCombo: item.examCombo,
-    exam: item.examCombo + '：' + item.examSubjectsLabel,
+    exam: item.examCombo || '-',
+    dataYear: item.dataYear || item.year || null,
     province: item.province,
     scoreLine: item.scoreLine,
     scoreLineGap: item.scoreLineGap,
@@ -1182,6 +1187,35 @@ loadFavoriteIds()
   margin: 0;
   color: #6b778a;
   line-height: 1.6;
+}
+
+.school-meta-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: #607089;
+  font-size: 14px;
+}
+
+.data-year-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #1769f6;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.data-year-badge.muted {
+  background: #f3f6fa;
+  color: #8a97aa;
 }
 
 .school-card .pending-field {

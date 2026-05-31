@@ -50,6 +50,7 @@ nbdist/
 # Local crawler/runtime artifacts
 
 /.worktrees/
+/.superpowers/
 /.venv/
 /data/
 /scripts/

@@ -1,12 +1,30 @@
 <template>
   <div class="prototype-page">
-    <AppHeader current-page="recommend" />
+    <AppHeader :current-page="headerPage" />
 
     <main class="home-wrap">
       <section class="hero">
         <div class="hero-copy">
-          <h1>用 <span>408</span> 数据，科学选择你的研究生院校</h1>
-          <p>基于历年复试数据与录取情况，智能推荐更适合你的目标院校</p>
+          <span class="hero-kicker">408 统考择校工作台</span>
+          <h1>用 <span>408</span> 数据，快速圈定目标院校</h1>
+          <p>先用规则筛出候选范围，再结合数据完整度和个人目标继续对比。</p>
+        </div>
+        <div class="hero-metrics">
+          <div class="metric-card">
+            <span>当前目标分</span>
+            <strong>{{ form.score || '-' }}</strong>
+            <em>满分 500</em>
+          </div>
+          <div class="metric-card">
+            <span>冲刺范围</span>
+            <strong>{{ form.scoreRange === null ? '不限' : `+${form.scoreRange}` }}</strong>
+            <em>按拟录取均分</em>
+          </div>
+          <div class="metric-card">
+            <span>考试组合</span>
+            <strong>{{ form.exam }}</strong>
+            <em>计算机 408</em>
+          </div>
         </div>
       </section>
 
@@ -96,9 +114,15 @@
         </div>
 
         <aside class="notice-panel">
-          <h3><i class="el-icon-message-solid"></i>使用须知</h3>
+          <h3><i class="el-icon-message-solid"></i>数据可信提示</h3>
           <div class="notice-card blue">
-            <div class="notice-icon"><i class="el-icon-coin"></i></div>
+            <div class="notice-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <ellipse cx="12" cy="6" rx="7" ry="3" />
+                <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
+                <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+              </svg>
+            </div>
             <div>
               <h4>当前数据来源：N诺（第三方整理）</h4>
               <p>数据可能遗漏或错误，最终请以院校官网和招生公告为准。</p>
@@ -106,7 +130,13 @@
             </div>
           </div>
           <div class="notice-card orange">
-            <div class="notice-icon"><i class="el-icon-warning-outline"></i></div>
+            <div class="notice-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M12 3 22 20H2L12 3Z" />
+                <path d="M12 9v5" />
+                <path d="M12 17h.01" />
+              </svg>
+            </div>
             <div>
               <h4>复试线不等于最低录取分</h4>
               <p>复试线只是进入复试的最低要求，实际录取最低分通常更高。</p>
@@ -114,7 +144,14 @@
             </div>
           </div>
           <div class="notice-card green">
-            <div class="notice-icon"><i class="el-icon-data-analysis"></i></div>
+            <div class="notice-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M4 19V5" />
+                <path d="M4 19h16" />
+                <path d="m7 15 4-4 3 3 5-7" />
+                <path d="M16 7h3v3" />
+              </svg>
+            </div>
             <div>
               <h4>推荐结果仅供参考</h4>
               <p>推荐学校不代表只有这些学校可以报，需结合个人目标继续扩展筛选。</p>
@@ -127,7 +164,16 @@
 
       <section class="feature-band">
         <div class="feature-item">
-          <span class="feature-icon target"><i class="el-icon-aim"></i></span>
+          <span class="feature-icon target" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <circle cx="12" cy="12" r="8" />
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v4" />
+              <path d="M12 18v4" />
+              <path d="M2 12h4" />
+              <path d="M18 12h4" />
+            </svg>
+          </span>
           <div>
             <h3>冲稳保推荐</h3>
             <p>基于目标分数，智能生成"冲、稳、保"三档院校推荐。</p>
@@ -135,7 +181,12 @@
           </div>
         </div>
         <div class="feature-item">
-          <span class="feature-icon shield"><i class="el-icon-success"></i></span>
+          <span class="feature-icon shield" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 3 19 6v5c0 5-3.2 8.2-7 10-3.8-1.8-7-5-7-10V6l7-3Z" />
+              <path d="m8.5 12 2.3 2.3 4.9-5" />
+            </svg>
+          </span>
           <div>
             <h3>N诺数据完整度标签</h3>
             <p>按复试线、拟录取区间、人数等字段完整程度标注 A/B/C。</p>
@@ -143,7 +194,17 @@
           </div>
         </div>
         <div class="feature-item">
-          <span class="feature-icon bot"><i class="el-icon-cpu"></i></span>
+          <span class="feature-icon bot" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <rect x="5" y="7" width="14" height="11" rx="3" />
+              <path d="M12 7V4" />
+              <path d="M8.5 12h.01" />
+              <path d="M15.5 12h.01" />
+              <path d="M9 16h6" />
+              <path d="M3 11v3" />
+              <path d="M21 11v3" />
+            </svg>
+          </span>
           <div>
             <h3>AI 推荐独立使用</h3>
             <p>需要 AI 顾问时请进入顶部「AI 推荐」，系统会按你的画像说明推荐依据。</p>
@@ -162,18 +223,20 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import AppHeader from '@/components/AppHeader.vue'
 import { generateRecommendation, getRecommendationOptions } from '@/api/recommendation'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 const generating = ref(false)
 const loadingOptions = ref(false)
+const headerPage = computed(() => route.path === '/' ? 'home' : 'recommend')
 const regions = ref(['福建', '广东', '浙江', '上海'])
 const form = reactive({
   score: 300,
@@ -238,47 +301,127 @@ onMounted(() => {
 .prototype-page {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 80% 2%, rgba(55, 133, 255, 0.16), transparent 34%),
-    linear-gradient(180deg, #eff6ff 0, #f7fbff 280px, #f8fbff 100%);
+    radial-gradient(circle at 12% 8%, rgba(37, 99, 235, 0.18), transparent 30%),
+    radial-gradient(circle at 86% 0%, rgba(14, 165, 233, 0.18), transparent 32%),
+    linear-gradient(180deg, #f7fbff 0, #eef6ff 360px, #f8fbff 100%);
   color: #111827;
 }
 
 .home-wrap {
-  max-width: 1380px;
+  max-width: 1420px;
   margin: 0 auto;
-  padding: 14px 32px 12px;
+  padding: 18px 32px 16px;
 }
 
 .hero {
-  min-height: 58px;
+  min-height: 132px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  gap: 26px;
+  margin-bottom: 16px;
+  padding: 22px 26px;
+  border-radius: 18px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 82% 28%, rgba(255, 255, 255, 0.3), transparent 24%),
+    linear-gradient(135deg, #155eef 0%, #1570ef 48%, #0ea5e9 100%);
+  box-shadow: 0 26px 58px rgba(37, 99, 235, 0.24);
+  overflow: hidden;
+  position: relative;
+  animation: page-rise 0.48s ease both;
+}
+
+.hero::after {
+  content: "";
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  border: 36px solid rgba(255, 255, 255, 0.08);
+  position: absolute;
+  right: -96px;
+  top: -74px;
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
 }
 
 .hero h1 {
-  margin: 0 0 4px;
-  font-size: 30px;
-  line-height: 1.25;
+  margin: 10px 0 6px;
+  font-size: 34px;
+  line-height: 1.18;
   font-weight: 800;
   letter-spacing: 0;
 }
 
 .hero h1 span {
-  color: #1769f6;
-  font-size: 40px;
+  color: #fff;
+  font-size: 46px;
+  text-shadow: 0 10px 26px rgba(15, 23, 42, 0.18);
 }
 
 .hero p {
   margin: 0;
-  color: #637083;
+  color: rgba(255, 255, 255, 0.78);
   font-size: 14px;
+}
+
+.hero-metrics {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(96px, 1fr));
+  gap: 10px;
+  min-width: 360px;
+}
+
+.metric-card {
+  min-height: 86px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(12px);
+}
+
+.metric-card span,
+.metric-card em {
+  display: block;
+  color: rgba(255, 255, 255, 0.72);
+  font-style: normal;
+  font-size: 12px;
+}
+
+.metric-card strong {
+  display: block;
+  margin: 5px 0 2px;
+  color: #fff;
+  font-size: 26px;
+  line-height: 1.1;
 }
 
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(360px, 1fr);
-  gap: 22px;
+  grid-template-columns: minmax(0, 1.62fr) minmax(340px, 0.88fr);
+  gap: 18px;
   align-items: stretch;
+  animation: page-rise 0.54s ease 0.06s both;
 }
 
 .recommend-panel,
@@ -286,25 +429,26 @@ onMounted(() => {
 .feature-band,
 .data-footer {
   border: 1px solid rgba(199, 213, 235, 0.78);
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 18px 42px rgba(34, 73, 135, 0.08);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 20px 50px rgba(29, 78, 150, 0.1);
+  backdrop-filter: blur(12px);
 }
 
 .recommend-panel {
-  border-radius: 12px;
-  padding: 14px 20px 12px;
+  border-radius: 18px;
+  padding: 18px 22px 16px;
 }
 
 .panel-title {
   display: flex;
   align-items: center;
-  gap: 24px;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
 }
 
 .panel-title strong {
-  font-size: 20px;
+  font-size: 21px;
 }
 
 .panel-title span {
@@ -313,25 +457,32 @@ onMounted(() => {
 }
 
 .form-row {
-  min-height: 44px;
-  border: 1px solid #e7edf5;
-  border-radius: 9px;
+  min-height: 50px;
+  border: 1px solid #e3ebf7;
+  border-radius: 13px;
   display: grid;
-  grid-template-columns: 164px 1fr;
+  grid-template-columns: 150px 1fr;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 9px;
   background: #fff;
   overflow: hidden;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.form-row:hover {
+  transform: translateY(-1px);
+  border-color: #c9d9f2;
+  box-shadow: 0 10px 24px rgba(29, 78, 150, 0.08);
 }
 
 .score-row {
-  grid-template-columns: 164px 1fr 190px;
+  grid-template-columns: 150px 1fr 180px;
 }
 
 .row-label {
   height: 100%;
-  padding: 0 14px;
-  background: linear-gradient(90deg, #fbfdff, #fff);
+  padding: 0 16px;
+  background: linear-gradient(90deg, #f8fbff, #fff);
   border-right: 1px solid #eef2f7;
   display: flex;
   align-items: center;
@@ -346,7 +497,7 @@ onMounted(() => {
 }
 
 .row-control {
-  height: 34px;
+  height: 36px;
   margin: 0 14px;
   display: flex;
   align-items: center;
@@ -355,8 +506,17 @@ onMounted(() => {
 .input-shell :deep(.el-input__inner),
 .input-shell :deep(.el-input-group__append) {
   border-color: #d9e2f2;
-  height: 34px;
+  height: 36px;
   background: #fff;
+}
+
+.input-shell :deep(.el-select),
+.input-shell :deep(.el-input) {
+  width: 100%;
+}
+
+.input-shell :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px #d9e2f2 inset;
 }
 
 .select-shell {
@@ -374,6 +534,12 @@ onMounted(() => {
   font-weight: 600;
   cursor: pointer;
   text-align: left;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+
+.plain-help:hover {
+  color: #0f55d9;
+  transform: translateX(2px);
 }
 
 .segmented {
@@ -402,20 +568,27 @@ onMounted(() => {
 }
 
 .segmented button {
-  height: 34px;
-  border: 1px solid #dfe7f3;
-  border-radius: 7px;
-  background: #fff;
+  height: 36px;
+  border: 1px solid #d7e3f4;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fff, #fbfdff);
   color: #38445a;
   font-weight: 600;
   cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.segmented button:hover {
+  transform: translateY(-1px);
+  border-color: #9dbdff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.1);
 }
 
 .segmented button.active {
   border-color: #6098ff;
   color: #1769f6;
-  background: #f3f7ff;
-  box-shadow: 0 0 0 2px rgba(23, 105, 246, 0.08);
+  background: #f1f6ff;
+  box-shadow: 0 0 0 3px rgba(23, 105, 246, 0.09);
 }
 
 .segmented small {
@@ -427,44 +600,58 @@ onMounted(() => {
 
 .primary-cta {
   width: 100%;
-  height: 38px;
-  margin-top: 4px;
+  height: 46px;
+  margin-top: 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 14px;
   font-size: 18px;
   font-weight: 800;
-  background: linear-gradient(90deg, #1769f6, #2f7bff);
-  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.24);
+  background: linear-gradient(135deg, #1769f6, #1d8cff);
+  box-shadow: 0 18px 34px rgba(37, 99, 235, 0.26);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.primary-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 42px rgba(37, 99, 235, 0.32);
+  filter: saturate(1.05);
 }
 
 .privacy-note {
-  margin-top: 8px;
+  margin-top: 10px;
   text-align: center;
   color: #98a4b5;
   font-size: 13px;
 }
 
 .notice-panel {
-  border-radius: 14px;
-  padding: 14px 16px 12px;
+  border-radius: 18px;
+  padding: 18px 18px 14px;
 }
 
 .notice-panel h3 {
-  margin: 0 0 10px;
+  margin: 0 0 14px;
   color: #1769f6;
-  font-size: 19px;
+  font-size: 20px;
 }
 
 .notice-card {
-  min-height: 68px;
-  border-radius: 10px;
-  padding: 8px 12px;
-  margin-bottom: 6px;
+  min-height: 82px;
+  border: 1px solid #edf2fa;
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 10px;
   display: grid;
-  grid-template-columns: 52px 1fr;
-  gap: 10px;
+  grid-template-columns: 48px 1fr;
+  gap: 12px;
   align-items: center;
   background: #fff;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.notice-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(29, 78, 150, 0.08);
 }
 
 .notice-icon {
@@ -474,7 +661,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
+}
+
+.notice-icon svg,
+.feature-icon svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .notice-card h4 {
@@ -524,24 +721,37 @@ onMounted(() => {
   color: #1769f6;
   font-weight: 700;
   cursor: pointer;
-  padding-top: 4px;
+  padding-top: 6px;
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.link-more:hover {
+  color: #0f55d9;
+  transform: translateX(2px);
 }
 
 .feature-band {
-  margin-top: 10px;
-  border-radius: 12px;
+  margin-top: 14px;
+  border-radius: 18px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  animation: page-rise 0.58s ease 0.12s both;
 }
 
 .feature-item {
-  min-height: 88px;
+  min-height: 94px;
   display: grid;
-  grid-template-columns: 82px 1fr;
-  gap: 22px;
+  grid-template-columns: 70px 1fr;
+  gap: 18px;
   align-items: center;
-  padding: 10px 24px;
+  padding: 14px 24px;
   border-right: 1px solid #dbe5f4;
+  transition: background 0.18s ease;
+}
+
+.feature-item:hover {
+  background: rgba(239, 246, 255, 0.62);
 }
 
 .feature-item:last-child {
@@ -555,7 +765,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 36px;
+}
+
+.feature-icon svg {
+  width: 30px;
+  height: 30px;
 }
 
 .feature-icon.target {
@@ -591,9 +805,9 @@ onMounted(() => {
 }
 
 .data-footer {
-  margin-top: 8px;
-  border-radius: 12px;
-  min-height: 30px;
+  margin-top: 10px;
+  border-radius: 14px;
+  min-height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -601,7 +815,27 @@ onMounted(() => {
   color: #6b778a;
 }
 
+@keyframes page-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 1100px) {
+  .hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hero-metrics {
+    min-width: 0;
+  }
+
   .main-grid,
   .feature-band {
     grid-template-columns: 1fr;
@@ -619,15 +853,41 @@ onMounted(() => {
 
 @media (max-width: 760px) {
   .home-wrap {
-    padding: 28px 14px;
+    padding: 14px 14px 20px;
+  }
+
+  .hero {
+    padding: 20px 18px;
+    border-radius: 16px;
+    gap: 16px;
   }
 
   .hero h1 {
-    font-size: 27px;
+    font-size: 26px;
   }
 
   .hero h1 span {
-    font-size: 35px;
+    font-size: 34px;
+  }
+
+  .hero-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .metric-card {
+    min-height: 70px;
+    padding: 10px;
+    border-radius: 13px;
+  }
+
+  .metric-card span,
+  .metric-card em {
+    font-size: 11px;
+  }
+
+  .metric-card strong {
+    font-size: 22px;
   }
 
   .recommend-panel,
@@ -662,6 +922,11 @@ onMounted(() => {
   .segmented.five {
     grid-template-columns: 1fr;
     padding-top: 12px;
+  }
+
+  .feature-item {
+    grid-template-columns: 58px 1fr;
+    padding: 14px 16px;
   }
 }
 </style>

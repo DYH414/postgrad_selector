@@ -40,7 +40,7 @@
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span>{{ detail.basic.examCombo }}：{{ detail.basic.examSubjectsLabel }}</span>
+            <span>{{ detail.basic.examCombo || '-' }}</span>
             <span>{{ detail.basic.studyModeLabel }}</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
