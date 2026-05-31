@@ -146,6 +146,39 @@
           <el-button type="primary" @click="router.back()">返回</el-button>
           <el-button @click="restartRecommend">重新推荐</el-button>
         </div>
+
+        <el-drawer title="学校详情" v-model="detailVisible" size="480px" append-to-body>
+          <div v-if="detailSchool" class="detail-drawer">
+            <h2>{{ detailSchool.schoolName }}</h2>
+            <p class="detail-subtitle">{{ detailSchool.collegeName || '' }} / {{ detailSchool.programName }}</p>
+            <div class="detail-stats">
+              <div class="d-stat"><small>录取均分</small><strong>{{ detailSchool.avgAdmittedScore || '-' }}</strong></div>
+              <div class="d-stat"><small>分数差距</small><strong :class="detailSchool.gap > 0 ? 'positive' : 'negative'">{{ detailSchool.gap > 0 ? '+' + detailSchool.gap : detailSchool.gap }}</strong></div>
+              <div class="d-stat"><small>复试线</small><strong>{{ detailSchool.scoreLine || '-' }}</strong></div>
+              <div class="d-stat"><small>最低录取</small><strong>{{ detailSchool.admissionLow || '-' }}</strong></div>
+              <div class="d-stat"><small>最高录取</small><strong>{{ detailSchool.admissionHigh || '-' }}</strong></div>
+              <div class="d-stat"><small>招生计划</small><strong>{{ detailSchool.planCount || '-' }}</strong></div>
+              <div class="d-stat"><small>录取人数</small><strong>{{ detailSchool.admittedCount || '-' }}</strong></div>
+              <div class="d-stat"><small>复试人数</small><strong>{{ detailSchool.retestCount || '-' }}</strong></div>
+              <div class="d-stat"><small>报录比</small><strong>{{ detailSchool.retestRatio || '-' }}</strong></div>
+              <div class="d-stat"><small>匹配度</small><strong>{{ detailSchool.matchScore || '-' }}%</strong></div>
+              <div class="d-stat"><small>数据年份</small><strong>{{ detailSchool.dataYear || '-' }}</strong></div>
+              <div class="d-stat"><small>完整度</small><strong>{{ detailSchool.dataCompleteness || '-' }}</strong></div>
+            </div>
+            <div v-if="detailSchool.pros && detailSchool.pros.length" class="detail-pros">
+              <strong>优势：</strong>
+              <span v-for="p in detailSchool.pros" :key="p" class="tag green">{{ p }}</span>
+            </div>
+            <div v-if="detailSchool.cons && detailSchool.cons.length" class="detail-cons">
+              <strong>注意：</strong>
+              <span v-for="c in detailSchool.cons" :key="c" class="tag orange">{{ c }}</span>
+            </div>
+            <p v-if="detailSchool.reason" class="detail-reason"><strong>推荐理由：</strong>{{ detailSchool.reason }}</p>
+            <a v-if="detailSchool.sourceUrl" class="detail-source" :href="detailSchool.sourceUrl" target="_blank">
+              查看 N诺数据来源 →
+            </a>
+          </div>
+        </el-drawer>
       </template>
     </div>
   </div>
@@ -181,6 +214,8 @@ const logIdx = ref(0)
 const charIdx = ref(0)
 const typingLine = ref('')
 const allDone = ref(false)
+const detailVisible = ref(false)
+const detailSchool = ref(null)
 
 const result = computed(() => {
   if (!report.value) return { summary: '', tiers: [] }
@@ -263,18 +298,9 @@ function restartRecommend() {
 }
 
 function goDetail(school) {
-  if (!school || !school.programId) {
-    ElMessage.warning('该推荐缺少专业 ID，暂时无法查看详情')
-    return
-  }
-  router.push({
-    path: '/results',
-    query: {
-      tab: 'compare',
-      programIds: String(school.programId),
-      score: result.value.score || ''
-    }
-  })
+  if (!school) return
+  detailSchool.value = school
+  detailVisible.value = true
 }
 
 function addCompare(school) {
@@ -284,16 +310,13 @@ function addCompare(school) {
   }
   const key = 'app-compare-program-ids'
   const current = JSON.parse(localStorage.getItem(key) || '[]')
-  const next = Array.from(new Set([...current, school.programId])).slice(0, 8)
+  if (current.includes(school.programId)) {
+    ElMessage.info('该学校已在对比列表中')
+    return
+  }
+  const next = [...current, school.programId].slice(0, 8)
   localStorage.setItem(key, JSON.stringify(next))
-  router.push({
-    path: '/results',
-    query: {
-      tab: 'compare',
-      programIds: next.join(','),
-      score: result.value.score || ''
-    }
-  })
+  ElMessage.success(`已加入对比 (${next.length}/8)`)
 }
 
 function favoriteSchool(school) {
@@ -303,6 +326,8 @@ function favoriteSchool(school) {
   }
   addFavorite(school.programId).then(() => {
     ElMessage.success('已加入收藏')
+  }).catch(() => {
+    ElMessage.error('收藏失败')
   })
 }
 
@@ -421,6 +446,22 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   margin-top: 14px;
 }
+
+.detail-drawer h2 { margin: 0 0 4px; font-size: 22px; color: #303133; }
+.detail-subtitle { color: #909399; margin: 0 0 20px; font-size: 14px; }
+.detail-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+.d-stat { background: #f5f7fa; border-radius: 8px; padding: 12px; }
+.d-stat small { display: block; color: #909399; font-size: 12px; margin-bottom: 4px; }
+.d-stat strong { font-size: 18px; color: #303133; }
+.d-stat strong.positive { color: #67c23a; }
+.d-stat strong.negative { color: #f56c6c; }
+.detail-pros, .detail-cons { margin-bottom: 12px; }
+.detail-pros strong, .detail-cons strong { color: #606266; }
+.detail-reason { color: #303133; line-height: 1.7; margin-bottom: 16px; }
+.detail-source { display: block; color: #409eff; text-decoration: none; font-weight: 600; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px; }
+.tag.green { background: #f0f9eb; color: #67c23a; }
+.tag.orange { background: #fdf6ec; color: #e6a23c; }
 
 @media (max-width: 768px) {
   .loading-layout { grid-template-columns: 1fr; }
