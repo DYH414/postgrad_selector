@@ -191,6 +191,7 @@ import { ElMessage } from 'element-plus'
 import { addFavorite } from '@/api/favorites'
 import AppHeader from '@/components/AppHeader.vue'
 import { getAiReport } from '@/api/ai'
+import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 
 const router = useRouter()
 const route = useRoute()
@@ -308,15 +309,25 @@ function addCompare(school) {
     ElMessage.warning('该推荐缺少专业 ID，暂时无法加入对比')
     return
   }
-  const key = 'app-compare-program-ids'
-  const current = JSON.parse(localStorage.getItem(key) || '[]')
+  const current = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]')
   if (current.includes(school.programId)) {
     ElMessage.info('该学校已在对比列表中')
     return
   }
-  const next = [...current, school.programId].slice(0, 8)
-  localStorage.setItem(key, JSON.stringify(next))
-  ElMessage.success(`已加入对比 (${next.length}/8)`)
+  const next = [...current, school.programId].slice(0, COMPARE_MAX_ITEMS)
+  localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(next))
+
+  // Derive estimatedScore from school data and persist for compare page
+  if (school.avgAdmittedScore != null && school.gap != null) {
+    const score = school.avgAdmittedScore + school.gap
+    localStorage.setItem(COMPARE_SCORE_KEY, String(score))
+  }
+
+  if (next.length > current.length) {
+    ElMessage.success(`已加入对比 (${next.length}/${COMPARE_MAX_ITEMS})`)
+  } else {
+    ElMessage.warning(`对比列表已满 (${COMPARE_MAX_ITEMS}所)`)
+  }
 }
 
 function favoriteSchool(school) {

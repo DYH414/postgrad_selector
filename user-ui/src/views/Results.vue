@@ -84,11 +84,12 @@
               <button>我的备选</button>
             </div>
             <div class="compare-actions">
-              <span>已选择 4 个项目</span>
+              <span>已选择 {{ compareSchools.length }} 个项目</span>
               <div>
                 <el-button icon="el-icon-download" size="small">导出清单</el-button>
                 <el-button type="primary" icon="el-icon-data-line" size="small">一键对比</el-button>
                 <el-button icon="el-icon-setting" size="small">调整列</el-button>
+                <el-button v-if="compareSchools.length" size="small" @click="clearCompare">清空对比</el-button>
               </div>
             </div>
             <table class="compare-table">
@@ -300,6 +301,7 @@ import AppHeader from '@/components/AppHeader.vue'
 import { generateRecommendation, getRecommendationOptions, getRecommendationResult } from '@/api/recommendation'
 import { comparePrograms, getProgramDetail } from '@/api/programs'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
+import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getToken } from '@/api/request'
 
 const router = useRouter()
@@ -704,12 +706,12 @@ function matchSchoolFilters(school, filters) {
 function loadCompare() {
   let ids = []
   if (route.query.programIds) {
-    ids = String(route.query.programIds).split(',').filter(Boolean).map(Number).slice(0, 8)
+    ids = String(route.query.programIds).split(',').filter(Boolean).map(Number).slice(0, COMPARE_MAX_ITEMS)
   } else {
     // Fallback: check localStorage from report page "加入对比"
     try {
-      const stored = JSON.parse(localStorage.getItem('app-compare-program-ids') || '[]')
-      ids = stored.filter(Boolean).slice(0, 8)
+      const stored = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]')
+      ids = stored.filter(Boolean).slice(0, COMPARE_MAX_ITEMS)
     } catch (e) {
       ids = []
     }
@@ -719,7 +721,9 @@ function loadCompare() {
     }
   }
   if (!ids.length) return
-  const estimatedScore = route.query.score || result.value.score
+  const estimatedScore = route.query.score
+    || localStorage.getItem(COMPARE_SCORE_KEY)
+    || result.value.score
   comparePrograms({ programIds: ids.join(','), estimatedScore }).then(res => {
     const items = (res.data && res.data.items) || []
     compareSchools.value = items.map(item => {
@@ -748,6 +752,13 @@ function loadCompare() {
       }
     })
   })
+}
+
+function clearCompare() {
+  localStorage.removeItem(COMPARE_STORAGE_KEY)
+  localStorage.removeItem(COMPARE_SCORE_KEY)
+  compareSchools.value = []
+  ElMessage.success('已清空对比列表')
 }
 
 function loadBackupGroups() {
