@@ -702,9 +702,22 @@ function matchSchoolFilters(school, filters) {
 }
 
 function loadCompare() {
-  const ids = route.query.programIds
-    ? String(route.query.programIds).split(',').filter(Boolean).slice(0, 8)
-    : result.value.groups.flatMap(group => group.schools).map(item => item.programId).filter(Boolean).slice(0, 4)
+  let ids = []
+  if (route.query.programIds) {
+    ids = String(route.query.programIds).split(',').filter(Boolean).map(Number).slice(0, 8)
+  } else {
+    // Fallback: check localStorage from report page "加入对比"
+    try {
+      const stored = JSON.parse(localStorage.getItem('app-compare-program-ids') || '[]')
+      ids = stored.filter(Boolean).slice(0, 8)
+    } catch (e) {
+      ids = []
+    }
+    // If still empty, try rule-based result groups
+    if (!ids.length) {
+      ids = result.value.groups.flatMap(group => group.schools).map(item => item.programId).filter(Boolean).slice(0, 4)
+    }
+  }
   if (!ids.length) return
   const estimatedScore = route.query.score || result.value.score
   comparePrograms({ programIds: ids.join(','), estimatedScore }).then(res => {
