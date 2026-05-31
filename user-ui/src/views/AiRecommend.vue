@@ -130,7 +130,15 @@ const missingFields = computed(() => {
 const canStart = computed(() => !!profile.estimatedScore)
 
 function tierLabel(tier) {
-  const map = { '985': '985', '211': '211', double_first: '双一流', ordinary: '双非' }
+  const map = {
+    '985': '985', '211': '211',
+    'DOUBLE_FIRST': '双一流',
+    'PUBLIC_REGULAR': '普通公办',
+    'PRIVATE': '民办',
+    'INDEPENDENT': '独立学院',
+    'RESEARCH_INSTITUTE': '科研院所',
+    'OTHER': '其他'
+  }
   return map[tier] || tier || '-'
 }
 
