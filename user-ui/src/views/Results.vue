@@ -227,6 +227,13 @@
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
                     <span>拟录取区间</span><strong>{{ school.range }}</strong>
                   </div>
+                  <div class="score-metric" tabindex="0" data-tip="优先展示该专业统考名额；缺少统考名额时展示计划人数，计划人数可能包含推免。">
+                    <span>{{ school.quotaDisplay.label }}</span>
+                    <strong>
+                      {{ school.quotaDisplay.value }}
+                      <small>{{ school.quotaDisplay.hint }}</small>
+                    </strong>
+                  </div>
                 </div>
 
                 <div class="tags">
@@ -259,6 +266,7 @@
                       <span>均分 {{ direction.avgScore || '-' }}</span>
                       <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
                       <span>区间 {{ direction.range }}</span>
+                      <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}（{{ direction.quotaDisplay.hint }}）</span>
                     </div>
                     <div class="direction-actions">
                       <button
@@ -339,6 +347,7 @@ import { comparePrograms, getProgramDetail } from '@/api/programs'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getToken } from '@/api/request'
+import { formatAdmissionQuota } from '@/utils/admissionDisplay.mjs'
 
 const router = useRouter()
 const route = useRoute()
@@ -547,6 +556,9 @@ function normalizeSchool(item) {
     province: item.province,
     scoreLine: item.scoreLine,
     scoreLineGap: item.scoreLineGap,
+    unifiedExamQuota: item.unifiedExamQuota,
+    planCount: item.planCount,
+    quotaDisplay: formatAdmissionQuota(item),
     admissionLow: item.admissionLow,
     admissionLowGap: item.admissionLowGap,
     range: item.admissionRangeLabel || '-',
@@ -1469,6 +1481,15 @@ loadFavoriteIds()
 
 .score-line strong {
   font-size: 17px;
+}
+
+.score-line strong small {
+  display: block;
+  margin-top: 2px;
+  color: #7a879a;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
 }
 
 .tags {
