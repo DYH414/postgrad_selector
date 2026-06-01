@@ -129,24 +129,67 @@ class ProgramRecommendationServiceImplTest
             assertEquals(Arrays.asList("刚好冲刺大学", "稳一点大学", "更稳大学"),
                 items.stream().map(item -> String.valueOf(item.get("schoolName"))).toList());
         }
+
+        @Test
+        void shouldKeepUnlimitedScoreRangeInFlatMatchingMode()
+        {
+            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(null), eq("full_time")))
+                .thenReturn(rows(
+                    row(1L, "高均分大学", "电子信息", 362),
+                    row(2L, "低均分大学", "电子信息", 309)
+                ));
+
+            Map<String, Object> result = service.generateRecommendation(1L, request(300, null));
+
+            List<Map<String, Object>> groups = groups(result);
+            assertEquals(1, groups.size());
+            assertEquals("matches", groups.get(0).get("groupKey"));
+            assertEquals("匹配院校", groups.get(0).get("groupName"));
+            assertEquals(Arrays.asList("高均分大学", "低均分大学"),
+                firstGroupItems(result).stream().map(item -> String.valueOf(item.get("schoolName"))).toList());
+        }
+
+        @Test
+        void shouldClassifyFitLevelByAverageScoreGap()
+        {
+            when(recommendationMapper.selectCandidates(eq("101,201,301,408"), any(), any(), eq(300), eq(null), eq("full_time")))
+                .thenReturn(rows(
+                    row(1L, "东北大学", "计算机科学与技术", 362),
+                    row(2L, "辽宁大学", "计算机应用技术", 303)
+                ));
+
+            Map<String, Object> result = service.generateRecommendation(1L, request(300, null));
+
+            List<Map<String, Object>> items = firstGroupItems(result);
+            assertEquals("sprint", items.get(0).get("fitLevel"));
+            assertEquals("冲刺", items.get(0).get("fitLevelLabel"));
+            assertEquals("steady", items.get(1).get("fitLevel"));
+            assertEquals("稳妥候选", items.get(1).get("fitLevelLabel"));
+        }
     }
 
     private Map<String, Object> request(int estimatedScore, Integer scoreRange)
     {
-        return Map.of(
-            "estimatedScore", estimatedScore,
-            "examCombo", "11408",
-            "scoreRange", scoreRange,
-            "pageSizePerGroup", 12
-        );
+        Map<String, Object> request = new java.util.LinkedHashMap<>();
+        request.put("estimatedScore", estimatedScore);
+        request.put("examCombo", "11408");
+        request.put("scoreRange", scoreRange);
+        request.put("pageSizePerGroup", 12);
+        return request;
     }
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> firstGroupItems(Map<String, Object> result)
     {
-        List<Map<String, Object>> groups = (List<Map<String, Object>>) result.get("groups");
+        List<Map<String, Object>> groups = groups(result);
         assertEquals("matches", groups.get(0).get("groupKey"));
         return (List<Map<String, Object>>) groups.get(0).get("items");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> groups(Map<String, Object> result)
+    {
+        return (List<Map<String, Object>>) result.get("groups");
     }
 
     private List<RowMap> rows(RowMap... rows)

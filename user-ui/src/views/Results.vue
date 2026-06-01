@@ -191,6 +191,13 @@
                       <span :class="{ 'pending-field': isPendingCollege(school.collegeName) }">{{ displayCollegeName(school.collegeName) }}</span>
                       / {{ school.programName }}
                     </p>
+                    <button
+                      v-if="school.directionCount > 1"
+                      class="direction-count"
+                      type="button"
+                      @click="toggleSchoolDirections(school.cardKey)">
+                      共 {{ school.directionCount }} 个符合方向
+                    </button>
                     <div class="school-meta-line">
                       <span>{{ school.exam }} | {{ school.province || '-' }}</span>
                       <em v-if="school.dataYear" class="data-year-badge">{{ school.dataYear }}年数据</em>
@@ -239,6 +246,31 @@
                   <i class="el-icon-link"></i> N诺数据（来源待补）
                 </span>
                 <button class="detail-link card-detail" type="button" @click="openDetail(school.programId)">查看详情</button>
+                <div v-if="school.directionCount > 1 && isSchoolExpanded(school.cardKey)" class="direction-list">
+                  <div v-for="direction in school.directions" :key="direction.cardKey" class="direction-row">
+                    <div class="direction-main">
+                      <strong>
+                        <span :class="{ 'pending-field': isPendingCollege(direction.collegeName) }">{{ displayCollegeName(direction.collegeName) }}</span>
+                        / {{ direction.programName }}
+                      </strong>
+                      <small>{{ direction.exam }} | {{ direction.dataYear ? `${direction.dataYear}年数据` : '年份待补' }}</small>
+                    </div>
+                    <div class="direction-stats">
+                      <span>均分 {{ direction.avgScore || '-' }}</span>
+                      <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
+                      <span>区间 {{ direction.range }}</span>
+                    </div>
+                    <div class="direction-actions">
+                      <button
+                        type="button"
+                        :disabled="favoriteLoadingIds.includes(favoriteKey(direction))"
+                        @click="handleFavorite(direction)">
+                        {{ isFavorited(direction) ? '取消收藏' : '收藏' }}
+                      </button>
+                      <button type="button" @click="openDetail(direction.programId)">详情</button>
+                    </div>
+                  </div>
+                </div>
               </article>
             </div>
           </section>
@@ -353,7 +385,8 @@ const compareRows = [
   { label: '学校', type: 'name' },
   { label: '专业', key: 'program' },
   { label: '考试组合', key: 'exam' },
-  { label: '复试线（2025）', key: 'score' },
+  { label: '数据年份', key: 'dataYearLabel' },
+  { label: '复试线', key: 'score' },
   { label: '最低录取分', key: 'admissionLow' },
   { label: '与最低录取分差距', type: 'diff', key: 'admissionLowGap' },
   { label: '拟录取区间（总分）', key: 'range' },
@@ -367,6 +400,7 @@ const compareRows = [
 ]
 const compareSchools = ref([])
 const backupGroups = ref([])
+const expandedSchoolKeys = ref([])
 
 // --- computed properties ---
 const currentHeader = computed(() => {
@@ -386,9 +420,10 @@ const headerChips = computed(() => {
   if (result.value.majorDirections && result.value.majorDirections.length) {
     chips.push({ key: 'majorDirections', label: `专业方向 ${result.value.majorDirections.join('、')}` })
   }
-  if (result.value.scoreRange != null) {
-    chips.push({ key: 'scoreRange', label: `筛选范围 均分+${result.value.scoreRange}` })
-  }
+  chips.push({
+    key: 'scoreRange',
+    label: result.value.scoreRange == null ? '筛选范围 不限' : `筛选范围 均分+${result.value.scoreRange}`
+  })
   return chips
 })
 
@@ -467,11 +502,14 @@ function loadResult() {
 function normalizeResult(data) {
   if (!data || !data.groups) return emptyResult()
   const request = data.request || {}
-  const groups = (data.groups || []).map(group => ({
-    name: group.groupName || group.name,
-    desc: group.description || group.desc,
-    schools: (group.items || group.schools || []).map(normalizeSchool)
-  }))
+  const groups = (data.groups || []).map(group => {
+    const items = (group.items || group.schools || []).map(normalizeSchool)
+    return {
+      name: group.groupName || group.name,
+      desc: group.description || group.desc,
+      schools: groupSchools(items)
+    }
+  })
   return {
     recommendationId: data.recommendationId,
     totalCandidates: data.summary ? data.summary.totalCandidates : groups.reduce((sum, group) => sum + group.schools.length, 0),
@@ -524,6 +562,34 @@ function normalizeSchool(item) {
     note: cardNote(item),
     star: item.fitLevel === 'safe' ? 3 : item.fitLevel === 'steady' ? 4 : 5
   }
+}
+
+function groupSchools(items) {
+  const grouped = new Map()
+  items.forEach(item => {
+    const key = item.schoolName || item.cardKey
+    if (!grouped.has(key)) {
+      grouped.set(key, [])
+    }
+    grouped.get(key).push(item)
+  })
+  return Array.from(grouped.values()).map(directions => {
+    const sorted = [...directions].sort(directionComparator)
+    const primary = sorted[0]
+    return {
+      ...primary,
+      cardKey: `school:${primary.schoolName}:${primary.examCombo}:${primary.province || ''}`,
+      directionCount: sorted.length,
+      directions: sorted
+    }
+  })
+}
+
+function directionComparator(a, b) {
+  const gapA = Number.isFinite(Number(a.avgScoreGap)) ? Number(a.avgScoreGap) : 999
+  const gapB = Number.isFinite(Number(b.avgScoreGap)) ? Number(b.avgScoreGap) : 999
+  if (gapA !== gapB) return gapA - gapB
+  return `${a.collegeName || ''}${a.programName || ''}`.localeCompare(`${b.collegeName || ''}${b.programName || ''}`, 'zh-CN')
 }
 
 function schoolBadge(item) {
@@ -630,6 +696,9 @@ function restoreFilters(data = {}) {
           ...defaults,
           ...sanitizeFilters(savedFilters)
         }
+        if (Object.prototype.hasOwnProperty.call(data.request || {}, 'scoreRange')) {
+          filters.scoreRange = defaults.scoreRange
+        }
       }
     }
   } catch (e) {}
@@ -695,6 +764,16 @@ function resetFilters() {
   applyFilters()
 }
 
+function isSchoolExpanded(cardKey) {
+  return expandedSchoolKeys.value.includes(cardKey)
+}
+
+function toggleSchoolDirections(cardKey) {
+  expandedSchoolKeys.value = isSchoolExpanded(cardKey)
+    ? expandedSchoolKeys.value.filter(key => key !== cardKey)
+    : [...expandedSchoolKeys.value, cardKey]
+}
+
 function matchSchoolFilters(school, filters) {
   if (filters.regions.length && !filters.regions.includes(school.province)) return false
   if (filters.exam && school.examCombo !== filters.exam) return false
@@ -741,6 +820,8 @@ function loadCompare() {
         name: school.schoolName,
         program: school.programName,
         exam: school.exam,
+        dataYear: school.dataYear,
+        dataYearLabel: school.dataYear ? `${school.dataYear}年` : '年份待补',
         score: school.scoreLine,
         scoreLineGap: school.scoreLineGap,
         admissionLow: school.admissionLow,
@@ -1211,6 +1292,81 @@ loadFavoriteIds()
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.direction-count {
+  border: 0;
+  background: #eef4ff;
+  color: #1769f6;
+  border-radius: 999px;
+  padding: 3px 9px;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.direction-list {
+  margin-top: 14px;
+  border-top: 1px solid #eef2f7;
+  padding-top: 10px;
+}
+
+.direction-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid #f1f5fb;
+}
+
+.direction-row:last-child {
+  border-bottom: 0;
+}
+
+.direction-main strong,
+.direction-main small,
+.direction-stats span {
+  display: block;
+}
+
+.direction-main strong {
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.direction-main small {
+  color: #7a879a;
+  margin-top: 2px;
+}
+
+.direction-stats {
+  color: #5f6f85;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.direction-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.direction-actions button {
+  border: 1px solid #d7e4f5;
+  border-radius: 5px;
+  background: #fff;
+  color: #1769f6;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 4px 7px;
+  white-space: nowrap;
+}
+
+.direction-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .data-year-badge.muted {

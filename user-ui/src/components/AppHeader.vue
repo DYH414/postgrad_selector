@@ -15,8 +15,7 @@
       <router-link to="/results" class="nav-link" :class="{ active: currentPage === 'results' }">筛选结果</router-link>
       <router-link to="/results?tab=compare" class="nav-link" :class="{ active: currentPage === 'compare' }">对比与备选</router-link>
       <router-link to="/ai-recommend" class="nav-link" :class="{ active: currentPage === 'ai' }">AI 推荐</router-link>
-      <router-link to="/ai-history" class="nav-link" :class="{ active: currentPage === 'ai-history' }">AI 记录</router-link>
-      <router-link to="/favorites" class="nav-link" :class="{ active: currentPage === 'favorites' }">我的</router-link>
+      <router-link to="/profile" class="nav-link" :class="{ active: currentPage === 'profile' }">我的</router-link>
     </nav>
 
     <div class="header-actions">
@@ -25,7 +24,7 @@
         <span>搜索院校 / 专业 / 关键词</span>
       </div>
       <el-badge :value="12" class="notice-badge">
-        <el-button icon="el-icon-bell" circle size="mini"></el-button>
+        <el-button icon="el-icon-bell" circle size="small"></el-button>
       </el-badge>
       <button v-if="!hasToken" class="login-entry" type="button" @click="goLogin">登录/注册</button>
       <div v-else class="user-chip" @click="router.push('/profile')">

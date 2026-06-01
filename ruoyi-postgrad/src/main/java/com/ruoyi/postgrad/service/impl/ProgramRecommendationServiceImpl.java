@@ -76,26 +76,25 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             .collect(Collectors.toList());
 
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+        List<Map<String, Object>> matchedItems = new ArrayList<>(normalized);
         if (scoreRange != null)
         {
-            normalized = normalized.stream()
+            matchedItems = matchedItems.stream()
                 .filter(item -> matchesAverageDive(item, scoreRange))
                 .collect(Collectors.toList());
-            grouped.put("matches", new ArrayList<>(normalized));
-            grouped.values().forEach(list -> list.sort(averageDiveRiskComparator(scoreRange)));
+            matchedItems.sort(averageDiveRiskComparator(scoreRange));
         }
         else
         {
-            for (String key : Arrays.asList("sprint", "balanced_sprint", "steady", "safe", "insufficient_data"))
-                grouped.put(key, new ArrayList<>());
-            for (Map<String, Object> item : normalized)
+            if (!includeIncompleteData)
             {
-                String groupKey = stringVal(item.get("fitLevel"), "insufficient_data");
-                if ("insufficient_data".equals(groupKey) && !includeIncompleteData) continue;
-                grouped.get(groupKey).add(item);
+                matchedItems = matchedItems.stream()
+                    .filter(item -> !"insufficient_data".equals(stringVal(item.get("fitLevel"), "insufficient_data")))
+                    .collect(Collectors.toList());
             }
-            grouped.values().forEach(list -> list.sort(recommendationComparator(riskPreference)));
+            matchedItems.sort(averageGapComparator());
         }
+        grouped.put("matches", matchedItems);
 
         List<Map<String, Object>> groups = new ArrayList<>();
         for (String groupKey : grouped.keySet())
@@ -287,7 +286,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         Integer admissionLowGap = low == null || estimatedScore <= 0 ? null : estimatedScore - low;
         Integer admissionHighGap = high == null || estimatedScore <= 0 ? null : estimatedScore - high;
         Integer avgScoreGap = avgScore == null || estimatedScore <= 0 ? null : estimatedScore - avgScore.intValue();
-        String fitLevel = fitLevel(admissionLowGap, admissionHighGap, completeness);
+        String fitLevel = fitLevel(avgScoreGap, completeness);
 
         item.put("examCombo", examCombo);
         item.put("examSubjectsLabel", subjectsLabel(examCombo));
@@ -372,6 +371,16 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         };
     }
 
+    private Comparator<Map<String, Object>> averageGapComparator()
+    {
+        return (a, b) -> {
+            int gapA = intVal(a.get("avgScoreGap"), 999);
+            int gapB = intVal(b.get("avgScoreGap"), 999);
+            if (gapA != gapB) return Integer.compare(gapA, gapB);
+            return stringVal(a.get("schoolName"), "").compareTo(stringVal(b.get("schoolName"), ""));
+        };
+    }
+
     private Map<String, Object> summary(Map<String, List<Map<String, Object>>> grouped, int totalCandidates)
     {
         Map<String, Object> summary = new LinkedHashMap<>();
@@ -399,13 +408,13 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         return warnings;
     }
 
-    private String fitLevel(Integer admissionLowGap, Integer admissionHighGap, String completeness)
+    private String fitLevel(Integer avgScoreGap, String completeness)
     {
         if (!"A".equals(completeness) && !"B".equals(completeness)) return "insufficient_data";
-        if (admissionLowGap == null) return "insufficient_data";
-        if (admissionLowGap < -20) return "sprint";
-        if (admissionLowGap < 5) return "balanced_sprint";
-        if (admissionHighGap != null && admissionHighGap > 0) return "safe";
+        if (avgScoreGap == null) return "insufficient_data";
+        if (avgScoreGap < -20) return "sprint";
+        if (avgScoreGap < -5) return "balanced_sprint";
+        if (avgScoreGap >= 15) return "safe";
         return "steady";
     }
 
