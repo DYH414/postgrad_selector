@@ -1,6 +1,9 @@
 package com.ruoyi.web.controller.postgrad;
 
+import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import com.alibaba.fastjson2.JSON;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -8,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
@@ -48,6 +52,50 @@ public class AppAiRecommendationController {
         } catch (IllegalArgumentException e) {
             return AjaxResult.error(e.getMessage());
         }
+    }
+
+    @PostMapping(value = "/chat/stream", produces = "text/event-stream")
+    public SseEmitter chatStream(@RequestBody Map<String, Object> body) {
+        SseEmitter emitter = new SseEmitter(120_000L);
+        AppLoginUser user = getCurrentAppUser();
+        if (user == null) {
+            sendEvent(emitter, "error", Map.of("message", "未登录"));
+            return emitter;
+        }
+        try {
+            String conversationId = (String) body.get("conversationId");
+            String message = (String) body.get("message");
+            aiService.chatStream(user.getUserId(), conversationId, message, new IAiRecommendationService.StreamCallback() {
+                @Override
+                public void onToken(String token) {
+                    sendEvent(emitter, "token", Map.of("text", token));
+                }
+
+                @Override
+                public void onComplete(Map<String, Object> result) {
+                    if (sendEvent(emitter, "done", result)) {
+                        emitter.complete();
+                    }
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    String message = error.getMessage() != null ? error.getMessage() : "AI 对话暂不可用，请稍后重试";
+                    if (sendEvent(emitter, "error", Map.of("message", message))) {
+                        emitter.complete();
+                    }
+                }
+            });
+        } catch (SecurityException e) {
+            if (sendEvent(emitter, "error", Map.of("message", "无权访问此对话"))) {
+                emitter.complete();
+            }
+        } catch (Exception e) {
+            if (sendEvent(emitter, "error", Map.of("message", e.getMessage() != null ? e.getMessage() : "对话请求失败"))) {
+                emitter.complete();
+            }
+        }
+        return emitter;
     }
 
     @PostMapping("/generate-report")
@@ -114,6 +162,16 @@ public class AppAiRecommendationController {
             return null;
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private boolean sendEvent(SseEmitter emitter, String eventName, Map<String, Object> payload) {
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(new LinkedHashMap<>(payload))));
+            return true;
+        } catch (IOException e) {
+            // Client disconnected or emitter already completed — caller should NOT call complete() again
+            return false;
         }
     }
 }

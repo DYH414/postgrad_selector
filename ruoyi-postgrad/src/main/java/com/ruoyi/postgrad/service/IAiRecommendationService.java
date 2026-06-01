@@ -28,6 +28,16 @@ public interface IAiRecommendationService
     Map<String, Object> chat(Long userId, String conversationId, String message);
 
     /**
+     * Send a message and stream the AI response token by token.
+     *
+     * @param userId         the current user ID (for ownership verification)
+     * @param conversationId the conversation session ID
+     * @param message        user message text
+     * @param callback       streaming callbacks for token/done/error events
+     */
+    void chatStream(Long userId, String conversationId, String message, StreamCallback callback);
+
+    /**
      * Trigger AI report generation for a completed conversation.
      *
      * @param userId         the current user ID
@@ -70,4 +80,12 @@ public interface IAiRecommendationService
      * @return map with reportId, msg
      */
     Map<String, Object> analyze(Long userId);
+
+    interface StreamCallback {
+        void onToken(String token);
+
+        void onComplete(Map<String, Object> result);
+
+        void onError(Throwable error);
+    }
 }

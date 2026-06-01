@@ -52,7 +52,7 @@
 import { ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { postAiStart, postAiChat, postAiGenerateReport } from '@/api/ai'
+import { postAiStart, postAiChat, postAiChatStream, postAiGenerateReport } from '@/api/ai'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -109,19 +109,63 @@ function sendOption(opt) {
 }
 
 async function callChat(text) {
+  let assistantIndex = -1
+  let rawAssistantContent = ''
+  const ensureAssistantMsg = () => {
+    if (assistantIndex < 0) {
+      messages.value.push({ role: 'assistant', content: '' })
+      assistantIndex = messages.value.length - 1
+    }
+    return assistantIndex
+  }
+  try {
+    await postAiChatStream(
+      { conversationId: conversationId.value, message: text },
+      {
+        onToken(token) {
+          rawAssistantContent += token
+          const idx = ensureAssistantMsg()
+          messages.value[idx].content = visibleStreamContent(rawAssistantContent)
+          loading.value = false
+          scrollToBottom()
+        },
+        onDone(data) {
+          const idx = ensureAssistantMsg()
+          messages.value[idx].content = data.message || messages.value[idx].content
+          currentOptions.value = data.options || []
+          saveToLocal()
+        },
+        onError(error) {
+          throw error
+        }
+      }
+    )
+  } catch (e) {
+    await callChatFallback(text, ensureAssistantMsg())
+  } finally {
+    loading.value = false
+  }
+}
+
+function visibleStreamContent(content) {
+  const optionsMarker = content.indexOf('---OPTIONS---')
+  return (optionsMarker >= 0 ? content.slice(0, optionsMarker) : content).trimStart()
+}
+
+async function callChatFallback(text, assistantIndex) {
   try {
     const res = await postAiChat({ conversationId: conversationId.value, message: text })
     if (res.data.fallback) {
+      messages.value.splice(assistantIndex, 1)
       emit('fallback', res.data)
       return
     }
-    messages.value.push({ role: 'assistant', content: res.data.message })
+    messages.value[assistantIndex].content = res.data.message
     currentOptions.value = res.data.options || []
     saveToLocal()
   } catch (e) {
+    messages.value[assistantIndex].content = 'AI 对话暂不可用，请稍后重试。'
     ElMessage.error('对话请求失败')
-  } finally {
-    loading.value = false
   }
 }
 

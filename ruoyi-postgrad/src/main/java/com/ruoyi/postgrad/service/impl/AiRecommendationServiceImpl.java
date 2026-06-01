@@ -29,12 +29,14 @@ import com.ruoyi.postgrad.tool.AiRecommendationTools;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.TokenStream;
 
 @Service
 public class AiRecommendationServiceImpl implements IAiRecommendationService {
@@ -80,7 +82,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "每轮回复含简短文字(2-4句)。\n"
         + "回复末尾附 2-3 个快捷选项，用 \"---OPTIONS---\" 分隔，每行一个选项。\n"
         + "## 快捷选项规则（重要）\n"
-        + "快捷选项必须是用户偏好/决策类，如\"看重上岸率\"\"愿意冲刺\"\"稳妥为主\"\"优先211\"\"限定上海\"。\n"
+        + "快捷选项必须是用户偏好/决策类，如\"看重上岸率\"\"愿意冲刺\"\"稳妥为主\"\"优先211\"\"城市/地区优先\"。\n"
+        + "不要在用户明确选择城市维度前，生成\"限定某城市\"这类具体城市选项。\n"
         + "选项应顺着你的分析结论往前推进，不要重复已讨论过的内容或给出与分析矛盾的选择。\n"
         + "好的选项示例: \"确认XX为稳妥目标\" \"再看看保底选择\" \"换一个城市看看\"\n"
         + "禁止将工具调用作为快捷选项。以下选项禁止出现：\n"
@@ -166,7 +169,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         redisTemplate.opsForValue().set("ai:owner:" + conversationId, userId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
 
         String messageText = parseMessageText(aiResponse);
-        List<String> options = parseOptionsList(aiResponse);
+        List<String> options = initialPreferenceOptions();
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conversationId", conversationId);
@@ -287,6 +290,84 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         result.put("message", messageText);
         result.put("options", options);
         return result;
+    }
+
+    @Override
+    public void chatStream(Long userId, String conversationId, String message, StreamCallback callback) {
+        String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+        if (owner == null) {
+            callback.onError(new IllegalArgumentException("对话已过期，请开始新对话"));
+            return;
+        }
+        if (!owner.equals(userId.toString())) {
+            throw new SecurityException("Conversation ownership mismatch");
+        }
+
+        String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+        if (convJson == null) {
+            callback.onError(new IllegalArgumentException("对话已过期，请开始新对话"));
+            return;
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> messages = JSON.parseObject(convJson, List.class);
+
+        String systemPrompt = "";
+        for (Map<String, Object> m : messages) {
+            if ("system".equals(m.get("role"))) {
+                systemPrompt = (String) m.get("content");
+                break;
+            }
+        }
+        final String finalSystemPrompt = systemPrompt;
+
+        ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(20);
+        for (Map<String, Object> m : messages) {
+            String role = (String) m.get("role");
+            String content = (String) m.get("content");
+            if ("assistant".equals(role)) {
+                chatMemory.add(AiMessage.from(content));
+            } else if ("user".equals(role)) {
+                chatMemory.add(UserMessage.from(content));
+            }
+        }
+
+        StreamRecommendationAssistant assistant = AiServices.builder(StreamRecommendationAssistant.class)
+            .streamingChatModel(buildStreamingChatModel())
+            .tools(aiRecommendationTools)
+            .chatMemory(chatMemory)
+            .systemMessageProvider(ignored -> finalSystemPrompt)
+            .build();
+
+        StringBuilder fullResponse = new StringBuilder();
+        try {
+            AiRecommendationTools.setConversationId(conversationId);
+            TokenStream stream = assistant.chat("<user_input>" + message + "</user_input>");
+            stream.beforeToolExecution(ignored -> AiRecommendationTools.setConversationId(conversationId))
+                .onPartialResponse(token -> {
+                    fullResponse.append(token);
+                    callback.onToken(token);
+                })
+                .onCompleteResponse(response -> {
+                    AiRecommendationTools.clear();
+                    persistStreamConversation(userId, conversationId, finalSystemPrompt, chatMemory);
+                    String rawText = response != null && response.aiMessage() != null && response.aiMessage().text() != null
+                        ? response.aiMessage().text()
+                        : fullResponse.toString();
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    result.put("message", parseMessageText(rawText));
+                    result.put("options", parseOptionsList(rawText));
+                    callback.onComplete(result);
+                })
+                .onError(error -> {
+                    AiRecommendationTools.clear();
+                    callback.onError(error);
+                })
+                .start();
+        } catch (Exception e) {
+            AiRecommendationTools.clear();
+            callback.onError(e);
+        }
     }
 
     @Override
@@ -778,6 +859,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return options;
     }
 
+    private static List<String> initialPreferenceOptions() {
+        return List.of("看重上岸率", "学校层次优先", "专业实力最重要", "城市/地区优先");
+    }
+
     private String buildReportPrompt(String convJson, String poolJson) {
         String poolSummary = buildPoolSummary(poolJson);
         return """
@@ -1037,6 +1122,42 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             .build();
     }
 
+    private OpenAiStreamingChatModel buildStreamingChatModel() {
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        return OpenAiStreamingChatModel.builder()
+            .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
+            .apiKey(apiKey)
+            .modelName("qwen-max")
+            .build();
+    }
+
+    private void persistStreamConversation(Long userId, String conversationId, String systemPrompt, ChatMemory chatMemory) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+        Map<String, Object> sysMsg = new LinkedHashMap<>();
+        sysMsg.put("role", "system");
+        sysMsg.put("content", systemPrompt);
+        messages.add(sysMsg);
+        for (ChatMessage cm : chatMemory.messages()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            if (cm instanceof AiMessage) {
+                m.put("role", "assistant");
+                m.put("content", ((AiMessage) cm).text());
+            } else if (cm instanceof UserMessage) {
+                m.put("role", "user");
+                m.put("content", ((UserMessage) cm).singleText());
+            }
+            if (!m.isEmpty()) messages.add(m);
+        }
+
+        redisTemplate.opsForValue().set("ai:conv:" + conversationId, JSON.toJSONString(messages), TTL_SECONDS, TimeUnit.SECONDS);
+        redisTemplate.expire("ai:pool:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+        redisTemplate.expire("ai:owner:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+
+        if (messages.size() % 6 == 0) {
+            saveConversationState(userId, conversationId, messages);
+        }
+    }
+
     private void saveConversationState(Long userId, String conversationId, List<Map<String, Object>> messages) {
         try {
             RecommendationLog log = new RecommendationLog();
@@ -1058,5 +1179,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     /** langchain4j AiServices interface — enables real Tool invocation */
     private interface RecommendationAssistant {
         String chat(String message);
+    }
+
+    /** Streaming variant of the AI service; keeps the same prompt and tools. */
+    private interface StreamRecommendationAssistant {
+        TokenStream chat(String message);
     }
 }
