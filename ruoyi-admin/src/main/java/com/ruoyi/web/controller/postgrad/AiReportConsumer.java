@@ -68,9 +68,9 @@ public class AiReportConsumer {
         String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
 
         ChatModel chatModel = OpenAiChatModel.builder()
-            .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
-            .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-            .modelName("qwen-max")
+            .baseUrl("https://api.deepseek.com/v1")
+            .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+            .modelName("deepseek-v4-pro")
             .build();
 
         String cleanedConvJson = stripTailExchange(convJson);
@@ -110,9 +110,9 @@ public class AiReportConsumer {
 
         // 4. Call AI
         ChatModel chatModel = OpenAiChatModel.builder()
-            .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
-            .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-            .modelName("qwen-max")
+            .baseUrl("https://api.deepseek.com/v1")
+            .apiKey(System.getenv("DEEPSEEK_API_KEY"))
+            .modelName("deepseek-v4-pro")
             .build();
 
         JSONObject reportJson = parseReportJson(chatModel, prompt, poolJson);
