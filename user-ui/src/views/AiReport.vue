@@ -57,9 +57,24 @@
 
       <!-- COMPLETED: Full report -->
       <template v-else>
-        <div class="report-header">
-          <h2>你的 AI 择校推荐报告</h2>
-          <p class="summary">{{ result.summary }}</p>
+        <div class="report-hero">
+          <div>
+            <p class="eyebrow">AI SCHOOL SELECTION REPORT</p>
+            <h2>你的 AI 择校推荐报告</h2>
+            <p class="summary">{{ result.summary }}</p>
+          </div>
+          <div class="hero-meta">
+            <span>{{ candidatePoolLabel }}</span>
+            <span>{{ verificationProviderLabel(result.metadata?.verificationProvider) }}</span>
+          </div>
+        </div>
+
+        <div class="report-overview">
+          <div v-for="item in overviewCards" :key="item.key" class="overview-card" :class="item.key">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.count }}</strong>
+            <small>{{ item.hint }}</small>
+          </div>
         </div>
 
         <el-alert
@@ -88,21 +103,40 @@
         />
 
         <div v-for="tier in result.tiers" :key="tier.level" class="tier-section">
-          <h3 class="tier-label" :class="tier.level">
-            {{ tier.label }} ({{ tier.schools.length }}所)
-          </h3>
+          <div class="tier-heading" :class="tier.level">
+            <div>
+              <h3>{{ tier.label }} <span>{{ tier.schools.length }} 所</span></h3>
+              <p>{{ tierHint(tier.level) }}</p>
+            </div>
+          </div>
           <el-row :gutter="16">
-            <el-col :span="8" v-for="school in tier.schools" :key="school.programId">
-              <el-card class="school-card" shadow="hover">
+            <el-col :xs="24" :sm="12" :lg="8" v-for="school in tier.schools" :key="school.programId">
+              <el-card class="school-card" :class="'card-' + tier.level" shadow="hover">
                 <div class="card-header">
-                  <strong>{{ school.schoolName }}</strong>
-                  <el-tag type="info" size="mini">{{ school.judgementLabel }}</el-tag>
+                  <div>
+                    <strong>{{ school.schoolName }}</strong>
+                    <p class="program-name">{{ school.programName }}</p>
+                  </div>
+                  <span class="judgement-pill" :class="'judgement-' + school.judgement">
+                    {{ displayJudgement(school, tier.level) }}
+                  </span>
                 </div>
-                <p class="program-name">{{ school.programName }}</p>
-                <el-divider />
-                <div class="judgement-box" :class="'judgement-' + school.judgement">
-                  <span>AI 判断</span>
-                  <strong>{{ school.judgementLabel }}</strong>
+
+                <div class="quick-stats">
+                  <div>
+                    <span>录取均分</span>
+                    <strong>{{ valueOrDash(school.avgAdmittedScore) }}</strong>
+                  </div>
+                  <div>
+                    <span>分数差</span>
+                    <strong :class="gapClass(school.avgScoreGap ?? school.gap)">
+                      {{ formatGap(school.avgScoreGap ?? school.gap) }}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>复试线</span>
+                    <strong>{{ valueOrDash(school.scoreLine) }}</strong>
+                  </div>
                 </div>
 
                 <div v-if="school.evidence && school.evidence.length" class="evidence-list">
@@ -117,35 +151,9 @@
                   {{ school.recommendedAction }}
                 </p>
 
-                <div v-if="school.scoreLine || school.avgAdmittedScore" class="stats-grid">
-                  <div class="stat-item" v-if="school.scoreLine">
-                    <span class="stat-label">复试线</span>
-                    <span class="stat-val">{{ school.scoreLine }}</span>
-                  </div>
-                  <div class="stat-item" v-if="school.avgAdmittedScore">
-                    <span class="stat-label">录取均分</span>
-                    <span class="stat-val">{{ school.avgAdmittedScore }}</span>
-                  </div>
-                  <div class="stat-item" v-if="school.admissionLow">
-                    <span class="stat-label">最低分</span>
-                    <span class="stat-val">{{ school.admissionLow }}</span>
-                  </div>
-                  <div class="stat-item" v-if="school.admissionHigh">
-                    <span class="stat-label">最高分</span>
-                    <span class="stat-val">{{ school.admissionHigh }}</span>
-                  </div>
-                  <div class="stat-item" v-if="school.planCount">
-                    <span class="stat-label">招生计划</span>
-                    <span class="stat-val">{{ school.planCount }}</span>
-                  </div>
-                  <div class="stat-item" v-if="school.admittedCount">
-                    <span class="stat-label">录取人数</span>
-                    <span class="stat-val">{{ school.admittedCount }}</span>
-                  </div>
-                </div>
-
-                <div v-if="school.dataYear || school.dataCompleteness" class="data-meta">
-                  <span v-if="school.dataYear">{{ school.dataYear }}年数据</span>
+                <div class="data-meta">
+                  <span>{{ school.dataYear || '-' }} 年数据</span>
+                  <span>{{ school.verificationStatusLabel || '待核验' }}</span>
                   <span v-if="school.dataCompleteness" class="completeness-tag"
                     :class="'completeness-' + school.dataCompleteness">
                     完整度 {{ school.dataCompleteness }}
@@ -172,38 +180,62 @@
           <el-button @click="restartRecommend">重新推荐</el-button>
         </div>
 
-        <el-drawer title="学校详情" v-model="detailVisible" size="480px" append-to-body>
-          <div v-if="detailSchool" class="detail-drawer">
-            <h2>{{ detailSchool.schoolName }}</h2>
-            <p class="detail-subtitle">{{ detailSchool.collegeName || '' }} / {{ detailSchool.programName }}</p>
-            <div class="detail-stats">
-              <div class="d-stat"><small>录取均分</small><strong>{{ detailSchool.avgAdmittedScore || '-' }}</strong></div>
-              <div class="d-stat"><small>分数差距</small><strong :class="detailSchool.gap > 0 ? 'positive' : 'negative'">{{ detailSchool.gap > 0 ? '+' + detailSchool.gap : detailSchool.gap }}</strong></div>
-              <div class="d-stat"><small>复试线</small><strong>{{ detailSchool.scoreLine || '-' }}</strong></div>
-              <div class="d-stat"><small>最低录取</small><strong>{{ detailSchool.admissionLow || '-' }}</strong></div>
-              <div class="d-stat"><small>最高录取</small><strong>{{ detailSchool.admissionHigh || '-' }}</strong></div>
-              <div class="d-stat"><small>招生计划</small><strong>{{ detailSchool.planCount || '-' }}</strong></div>
-              <div class="d-stat"><small>录取人数</small><strong>{{ detailSchool.admittedCount || '-' }}</strong></div>
-              <div class="d-stat"><small>复试人数</small><strong>{{ detailSchool.retestCount || '-' }}</strong></div>
-              <div class="d-stat"><small>报录比</small><strong>{{ detailSchool.retestRatio || '-' }}</strong></div>
-              <div class="d-stat"><small>AI 判断</small><strong>{{ detailSchool.judgementLabel || '-' }}</strong></div>
-              <div class="d-stat"><small>核验状态</small><strong>{{ detailSchool.verificationStatusLabel || '-' }}</strong></div>
-              <div class="d-stat" v-if="detailSchool.matchScore"><small>旧版匹配度</small><strong>{{ detailSchool.matchScore }}%</strong></div>
-              <div class="d-stat"><small>数据年份</small><strong>{{ detailSchool.dataYear || '-' }}</strong></div>
-              <div class="d-stat"><small>完整度</small><strong>{{ detailSchool.dataCompleteness || '-' }}</strong></div>
+        <el-drawer title="学校详情" v-model="detailVisible" size="560px" append-to-body>
+          <div class="detail-drawer" v-loading="detailLoading">
+            <el-alert
+              v-if="detailError"
+              class="detail-alert"
+              type="warning"
+              :title="detailError"
+              show-icon
+              :closable="false"
+            />
+            <template v-if="detailSchool">
+              <h2>{{ detailTitle.schoolName }}</h2>
+              <p class="detail-subtitle">{{ detailTitle.collegeName }} / {{ detailTitle.programName }}</p>
+              <div class="detail-tags">
+                <span v-if="detailTitle.examCombo">{{ detailTitle.examCombo }}</span>
+                <span v-if="detailTitle.studyModeLabel">{{ detailTitle.studyModeLabel }}</span>
+                <span>{{ detailSchool.judgementLabel || '-' }}</span>
+                <span>{{ detailSchool.verificationStatusLabel || '待核验' }}</span>
+              </div>
+
+              <div class="detail-stats">
+                <div class="d-stat"><small>复试线</small><strong>{{ valueOrDash(detailOverview.scoreLine) }}</strong></div>
+                <div class="d-stat"><small>最低录取</small><strong>{{ valueOrDash(detailOverview.admissionLow) }}</strong></div>
+                <div class="d-stat"><small>拟录取区间</small><strong>{{ detailOverview.admissionRangeLabel || '-' }}</strong></div>
+                <div class="d-stat"><small>均分差距</small><strong :class="gapClass(detailOverview.avgScoreGap)">{{ formatGap(detailOverview.avgScoreGap) }}</strong></div>
+                <div class="d-stat"><small>招生计划</small><strong>{{ valueOrDash(detailSnapshot.planCount) }}</strong></div>
+                <div class="d-stat"><small>录取人数</small><strong>{{ valueOrDash(detailSnapshot.admittedCount) }}</strong></div>
+                <div class="d-stat"><small>复试人数</small><strong>{{ valueOrDash(detailSnapshot.retestCount) }}</strong></div>
+                <div class="d-stat"><small>数据完整度</small><strong>{{ detailCompleteness.label || valueOrDash(detailSnapshot.dataCompleteness) }}</strong></div>
+              </div>
+
+              <section v-if="detailSchool.evidence && detailSchool.evidence.length" class="detail-section">
+                <h4>AI 推荐依据</h4>
+                <p v-for="item in detailSchool.evidence" :key="item">{{ item }}</p>
+              </section>
+              <section v-if="detailSchool.risks && detailSchool.risks.length" class="detail-section warning">
+                <h4>需要注意</h4>
+                <p v-for="item in detailSchool.risks" :key="item">{{ item }}</p>
+              </section>
+              <section v-if="detailData && detailData.trends && detailData.trends.length" class="detail-section">
+                <h4>近年趋势</h4>
+                <div class="trend-list">
+                  <div v-for="item in detailData.trends.slice(0, 3)" :key="item.year">
+                    <span>{{ item.year }}</span>
+                    <strong>均分 {{ valueOrDash(item.avgAdmittedScore) }}</strong>
+                    <small>复试线 {{ valueOrDash(item.scoreLine) }}</small>
+                  </div>
+                </div>
+              </section>
+              <a v-if="detailSource.sourceUrl" class="detail-source" :href="detailSource.sourceUrl" target="_blank">
+                查看数据来源 →
+              </a>
+            </template>
+            <div v-else-if="!detailLoading" class="detail-empty">
+              暂无详情数据
             </div>
-            <div v-if="detailSchool.pros && detailSchool.pros.length" class="detail-pros">
-              <strong>优势：</strong>
-              <span v-for="p in detailSchool.pros" :key="p" class="tag green">{{ p }}</span>
-            </div>
-            <div v-if="detailSchool.cons && detailSchool.cons.length" class="detail-cons">
-              <strong>注意：</strong>
-              <span v-for="c in detailSchool.cons" :key="c" class="tag orange">{{ c }}</span>
-            </div>
-            <p v-if="detailSchool.reason" class="detail-reason"><strong>推荐理由：</strong>{{ detailSchool.reason }}</p>
-            <a v-if="detailSchool.sourceUrl" class="detail-source" :href="detailSchool.sourceUrl" target="_blank">
-              查看 N诺数据来源 →
-            </a>
           </div>
         </el-drawer>
       </template>
@@ -218,6 +250,7 @@ import { ElMessage } from 'element-plus'
 import { addFavorite } from '@/api/favorites'
 import AppHeader from '@/components/AppHeader.vue'
 import { getAiReport } from '@/api/ai'
+import { getProgramDetail } from '@/api/programs'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { normalizeAiReport } from '@/utils/aiReport'
 
@@ -245,9 +278,62 @@ const typingLine = ref('')
 const allDone = ref(false)
 const detailVisible = ref(false)
 const detailSchool = ref(null)
+const detailData = ref(null)
+const detailLoading = ref(false)
+const detailError = ref('')
 
 const result = computed(() => {
   return normalizeAiReport(report.value)
+})
+
+const overviewCards = computed(() => {
+  const byLevel = Object.fromEntries((result.value.tiers || []).map(tier => [tier.level, tier.schools.length]))
+  return [
+    { key: 'reach', label: '冲刺目标', count: byLevel.reach || 0, hint: '只建议作为上限尝试' },
+    { key: 'steady', label: '稳妥候选', count: byLevel.steady || 0, hint: '优先核验招生计划' },
+    { key: 'safe', label: '保底备选', count: byLevel.safe || 0, hint: '用于降低整体风险' }
+  ]
+})
+
+const candidatePoolLabel = computed(() => {
+  const count = result.value.metadata?.candidateCount || result.value.metadata?.poolSize
+  return count ? `候选池 ${count}` : '本地候选池'
+})
+
+const detailTitle = computed(() => {
+  const basic = detailData.value?.basic || {}
+  return {
+    schoolName: basic.schoolName || detailSchool.value?.schoolName || '-',
+    collegeName: basic.collegeName || detailSchool.value?.collegeName || '',
+    programName: basic.programName || detailSchool.value?.programName || '-',
+    examCombo: basic.examCombo || '',
+    studyModeLabel: basic.studyModeLabel || ''
+  }
+})
+
+const detailOverview = computed(() => detailData.value?.recommendationOverview || {
+  scoreLine: detailSchool.value?.scoreLine,
+  admissionLow: detailSchool.value?.admissionLow,
+  admissionRangeLabel: detailSchool.value?.admissionLow && detailSchool.value?.admissionHigh
+    ? `${detailSchool.value.admissionLow}-${detailSchool.value.admissionHigh}`
+    : '',
+  avgScoreGap: detailSchool.value?.avgScoreGap ?? detailSchool.value?.gap
+})
+
+const detailSnapshot = computed(() => ({
+  planCount: detailData.value?.recommendationOverview?.planCount ?? detailSchool.value?.planCount,
+  admittedCount: detailData.value?.recommendationOverview?.admittedCount ?? detailSchool.value?.admittedCount,
+  retestCount: detailData.value?.recommendationOverview?.retestCount ?? detailSchool.value?.retestCount,
+  dataCompleteness: detailSchool.value?.dataCompleteness
+}))
+
+const detailSource = computed(() => detailData.value?.source || {
+  sourceUrl: detailSchool.value?.sourceUrl,
+  sourceOwner: detailSchool.value?.sourceOwner
+})
+
+const detailCompleteness = computed(() => detailData.value?.dataCompleteness || {
+  label: detailSchool.value?.dataCompleteness ? `完整度 ${detailSchool.value.dataCompleteness}` : '-'
 })
 
 async function fetchReport() {
@@ -309,10 +395,26 @@ function restartRecommend() {
   router.push({ name: 'Recommend' })
 }
 
-function goDetail(school) {
+async function goDetail(school) {
   if (!school) return
   detailSchool.value = school
+  detailData.value = null
+  detailError.value = ''
   detailVisible.value = true
+  if (!school.programId) {
+    detailError.value = '该推荐缺少专业 ID，暂时无法加载数据库详情'
+    return
+  }
+  detailLoading.value = true
+  try {
+    const estimatedScore = estimateScoreFromSchool(school)
+    const res = await getProgramDetail(school.programId, estimatedScore ? { estimatedScore } : undefined)
+    detailData.value = res.data
+  } catch (e) {
+    detailError.value = '详情数据加载失败，当前展示报告快照'
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 function addCompare(school) {
@@ -351,6 +453,51 @@ function favoriteSchool(school) {
   }).catch(() => {
     ElMessage.error('收藏失败')
   })
+}
+
+function estimateScoreFromSchool(school) {
+  if (school.avgAdmittedScore != null && (school.avgScoreGap != null || school.gap != null)) {
+    return Number(school.avgAdmittedScore) + Number(school.avgScoreGap ?? school.gap)
+  }
+  return null
+}
+
+function valueOrDash(value) {
+  return value === null || value === undefined || value === '' ? '-' : value
+}
+
+function formatGap(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  if (Number.isNaN(number)) return value
+  return number > 0 ? `+${number}` : String(number)
+}
+
+function gapClass(value) {
+  const number = Number(value)
+  if (Number.isNaN(number)) return ''
+  return number >= 0 ? 'positive' : 'negative'
+}
+
+function tierHint(level) {
+  if (level === 'reach') return '适合作为上限尝试，不建议单独押注。'
+  if (level === 'steady') return '适合作为主力候选，建议优先核验官网计划。'
+  if (level === 'safe') return '用于降低整体择校风险，仍需复查当年变化。'
+  return '以下结果由 AI 综合候选池和本地数据生成。'
+}
+
+function displayJudgement(school, tierLevel) {
+  if (tierLevel === 'reach' && ['safe', 'steady'].includes(school.judgement)) {
+    return school.judgement === 'safe' ? '冲刺档待复核' : '稳妥偏冲'
+  }
+  return school.judgementLabel || '待核验'
+}
+
+function verificationProviderLabel(provider) {
+  if (provider === 'local_noop') return '仅本地数据'
+  if (provider === 'official') return '官网核验'
+  if (provider === 'third_party') return '第三方核验'
+  return '本地数据优先'
 }
 
 onMounted(() => {
@@ -427,38 +574,128 @@ onBeforeUnmount(() => {
   100% { background: #f0f2f5; }
 }
 
-/* ===== Report (unchanged) ===== */
-.report-header { margin-bottom: 32px; }
-.report-header h2 { margin-bottom: 8px; }
-.summary { color: #606266; font-size: 15px; }
-.report-notice { margin: -16px 0 20px; }
-.tier-section { margin-bottom: 32px; }
-.tier-label { padding: 6px 0; border-bottom: 2px solid #ebeef5; margin-bottom: 16px; }
-.tier-label.reach { color: #f56c6c; }
-.tier-label.steady { color: #e6a23c; }
-.tier-label.safe { color: #67c23a; }
-.school-card { margin-bottom: 12px; }
-.card-header { display: flex; justify-content: space-between; align-items: center; }
-.program-name { color: #909399; font-size: 13px; margin: 4px 0; }
-.reason { color: #303133; font-size: 13px; line-height: 1.6; }
-.judgement-box {
+/* ===== Report ===== */
+.report-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+  padding: 28px 30px;
+  border: 1px solid #dfe8f6;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(31, 45, 61, .06);
+}
+.eyebrow {
+  margin: 0 0 8px;
+  color: #1769f6;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+.report-hero h2 { margin: 0 0 10px; font-size: 28px; color: #172033; }
+.summary { max-width: 760px; margin: 0; color: #56657a; font-size: 15px; line-height: 1.8; }
+.hero-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.hero-meta span {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #eef4ff;
+  color: #1769f6;
+  font-size: 12px;
+  font-weight: 700;
+}
+.report-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.overview-card {
+  padding: 18px 20px;
+  border: 1px solid #e3ebf6;
+  border-radius: 8px;
+  background: #fff;
+}
+.overview-card span { display: block; color: #66758a; font-size: 13px; }
+.overview-card strong { display: block; margin: 6px 0 2px; font-size: 30px; color: #172033; }
+.overview-card small { color: #7b8798; }
+.overview-card.reach { border-top: 3px solid #ef4444; }
+.overview-card.steady { border-top: 3px solid #2563eb; }
+.overview-card.safe { border-top: 3px solid #16a34a; }
+.report-notice { margin: 0 0 16px; }
+.tier-section { margin-bottom: 34px; }
+.tier-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: #f8fafc;
-  border-left: 3px solid #909399;
-  font-size: 13px;
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #fff;
+  border-left: 4px solid #94a3b8;
 }
-.judgement-box span { color: #909399; }
-.judgement-box strong { color: #303133; }
-.judgement-safe { border-left-color: #67c23a; background: #f0f9eb; }
-.judgement-steady { border-left-color: #409eff; background: #ecf5ff; }
+.tier-heading h3 { margin: 0; color: #172033; font-size: 20px; }
+.tier-heading h3 span { color: #7b8798; font-size: 14px; font-weight: 500; }
+.tier-heading p { margin: 4px 0 0; color: #66758a; font-size: 13px; }
+.tier-heading.reach { border-left-color: #ef4444; }
+.tier-heading.steady { border-left-color: #2563eb; }
+.tier-heading.safe { border-left-color: #16a34a; }
+.school-card {
+  min-height: 360px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  border: 1px solid #e3ebf6;
+}
+.school-card :deep(.el-card__body) { padding: 20px; }
+.card-reach { border-top: 3px solid #ef4444; }
+.card-steady { border-top: 3px solid #2563eb; }
+.card-safe { border-top: 3px solid #16a34a; }
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.card-header strong { display: block; color: #172033; font-size: 18px; }
+.program-name { color: #7b8798; font-size: 13px; margin: 6px 0 0; }
+.judgement-pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 74px;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.judgement-safe { color: #15803d; background: #dcfce7; }
+.judgement-steady { color: #1d4ed8; background: #dbeafe; }
 .judgement-steady_reach,
-.judgement-small_reach { border-left-color: #e6a23c; background: #fdf6ec; }
-.judgement-high_risk_reach { border-left-color: #f56c6c; background: #fef0f0; }
-.judgement-data_insufficient_pending { border-left-color: #909399; background: #f4f4f5; }
+.judgement-small_reach { color: #b45309; background: #fef3c7; }
+.judgement-high_risk_reach { color: #b91c1c; background: #fee2e2; }
+.judgement-data_insufficient_pending { color: #475569; background: #e2e8f0; }
+.quick-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+.quick-stats div {
+  padding: 10px;
+  border-radius: 6px;
+  background: #f7faff;
+}
+.quick-stats span { display: block; margin-bottom: 3px; color: #7b8798; font-size: 11px; }
+.quick-stats strong { color: #172033; font-size: 16px; }
+.positive { color: #16a34a !important; }
+.negative { color: #ef4444 !important; }
 .evidence-list,
 .risk-list {
   margin-top: 12px;
@@ -468,31 +705,21 @@ onBeforeUnmount(() => {
 .evidence-list strong,
 .risk-list strong { display: block; margin-bottom: 4px; color: #303133; }
 .evidence-list p,
-.risk-list p { margin: 0 0 4px; color: #606266; }
+.risk-list p { margin: 0 0 5px; color: #56657a; }
+.risk-list p { color: #9f3412; }
 .recommended-action {
   margin: 12px 0 0;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 6px;
   background: #f8fafc;
-  color: #303133;
+  color: #334155;
   font-size: 13px;
   line-height: 1.5;
 }
-.tag { display: inline-block; padding: 1px 6px; border-radius: 4px;
-  font-size: 12px; margin-right: 4px; }
-.tag.green { background: #f0f9eb; color: #67c23a; }
-.tag.orange { background: #fdf6ec; color: #e6a23c; }
-.match-bar { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
-.match-bar span { font-size: 12px; color: #909399; white-space: nowrap; }
 .report-actions { text-align: center; padding: 24px 0 48px; }
-
-.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
-.stat-item { text-align: center; padding: 4px 2px; background: #f8fafc; border-radius: 4px; }
-.stat-label { display: block; font-size: 11px; color: #909399; }
-.stat-val { font-size: 15px; font-weight: 700; color: #303133; }
-
-.data-meta { margin-top: 8px; font-size: 12px; color: #909399; display: flex; gap: 8px; align-items: center; }
-.completeness-tag { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: 11px; }
+.data-meta { margin-top: 12px; font-size: 12px; color: #7b8798; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.data-meta span { padding: 2px 6px; border-radius: 4px; background: #f1f5f9; }
+.completeness-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
 .completeness-A { background: #f0f9eb; color: #67c23a; }
 .completeness-B { background: #fdf6ec; color: #e6a23c; }
 .completeness-C { background: #fef0f0; color: #f56c6c; }
@@ -509,21 +736,54 @@ onBeforeUnmount(() => {
 
 .detail-drawer h2 { margin: 0 0 4px; font-size: 22px; color: #303133; }
 .detail-subtitle { color: #909399; margin: 0 0 20px; font-size: 14px; }
+.detail-alert { margin-bottom: 14px; }
+.detail-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.detail-tags span {
+  padding: 5px 9px;
+  border-radius: 5px;
+  color: #1769f6;
+  background: #eef4ff;
+  font-weight: 700;
+  font-size: 12px;
+}
 .detail-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-.d-stat { background: #f5f7fa; border-radius: 8px; padding: 12px; }
+.d-stat { background: #f7faff; border-radius: 8px; padding: 12px; border: 1px solid #edf2f8; }
 .d-stat small { display: block; color: #909399; font-size: 12px; margin-bottom: 4px; }
 .d-stat strong { font-size: 18px; color: #303133; }
 .d-stat strong.positive { color: #67c23a; }
 .d-stat strong.negative { color: #f56c6c; }
-.detail-pros, .detail-cons { margin-bottom: 12px; }
-.detail-pros strong, .detail-cons strong { color: #606266; }
-.detail-reason { color: #303133; line-height: 1.7; margin-bottom: 16px; }
+.detail-section {
+  margin: 14px 0;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.detail-section.warning { background: #fff7ed; }
+.detail-section h4 { margin: 0 0 8px; color: #172033; }
+.detail-section p { margin: 0 0 6px; color: #56657a; line-height: 1.7; }
+.trend-list { display: grid; gap: 8px; }
+.trend-list div {
+  display: grid;
+  grid-template-columns: 52px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 6px;
+  background: #fff;
+}
+.trend-list span { color: #66758a; }
+.trend-list strong { color: #172033; }
+.trend-list small { color: #7b8798; }
 .detail-source { display: block; color: #409eff; text-decoration: none; font-weight: 600; }
-.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px; }
-.tag.green { background: #f0f9eb; color: #67c23a; }
-.tag.orange { background: #fdf6ec; color: #e6a23c; }
+.detail-empty { padding: 32px 0; color: #7b8798; text-align: center; }
 
 @media (max-width: 768px) {
   .loading-layout { grid-template-columns: 1fr; }
+  .report-container { padding: 14px; }
+  .report-hero { flex-direction: column; padding: 20px; }
+  .hero-meta { align-items: flex-start; }
+  .report-overview { grid-template-columns: 1fr; }
+  .quick-stats { grid-template-columns: 1fr; }
+  .detail-stats { grid-template-columns: 1fr; }
 }
 </style>
