@@ -3,6 +3,7 @@ package com.ruoyi.postgrad.tool;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.domain.AiToolBudget;
 import com.ruoyi.postgrad.domain.AiToolTrace;
+import com.ruoyi.postgrad.domain.RowMap;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import org.slf4j.Logger;
@@ -29,6 +30,9 @@ public class AiRecommendationTools {
 
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    private com.ruoyi.postgrad.mapper.AiDatabaseToolMapper aiDatabaseToolMapper;
 
     public static void setConversationId(String id) {
         CURRENT_CONVERSATION.set(id);
@@ -132,6 +136,35 @@ public class AiRecommendationTools {
         return true;
     }
 
+    @Tool("直接查询 MySQL 数据库中的院校数据，不受候选池限制。可按关键词、学校层次、省份、分数范围筛选")
+    public String queryDatabase(@P("查询条件，JSON 格式，如 {\"keyword\":\"计算机\",\"tier\":\"985\",\"province\":\"北京\",\"minScore\":300,\"maxScore\":400,\"limit\":20}") String filters) {
+        log.info("[Tool] queryDatabase called — filters={}", filters);
+        if (!CURRENT_BUDGET.get().tryUse("queryDatabase", 500)) {
+            CURRENT_TRACE.get().setExplorationLimited(true);
+            return "{\"error\":\"tool_budget_exceeded\",\"explorationLimited\":true}";
+        }
+
+        Map<String, Object> filterMap = filters == null || filters.isEmpty()
+            ? new LinkedHashMap<>()
+            : JSON.parseObject(filters);
+        String keyword = stringVal(filterMap, "keyword", null);
+        String tier = stringVal(filterMap, "tier", null);
+        String province = stringVal(filterMap, "province", null);
+        Integer minScore = nullableInt(filterMap, "minScore");
+        Integer maxScore = nullableInt(filterMap, "maxScore");
+        int limit = Math.min(intVal(filterMap, "limit", 20), 30);
+
+        List<RowMap> rows = aiDatabaseToolMapper.querySchools(keyword, tier, province, minScore, maxScore, limit);
+
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("filters", filters);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("count", rows.size());
+        summary.put("limit", limit);
+        CURRENT_TRACE.get().record("queryDatabase", args, summary);
+        return JSON.toJSONString(rows);
+    }
+
     @Tool("横向对比多所学校的录取数据，返回详细对比")
     public String comparePrograms(@P("学校 programId 列表") List<Long> ids) {
         String conversationId = CURRENT_CONVERSATION.get();
@@ -208,5 +241,28 @@ public class AiRecommendationTools {
             poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
         }
         return poolJson;
+    }
+
+    private static String stringVal(Map<String, Object> map, String key, String fallback) {
+        Object v = map.get(key);
+        return v == null ? fallback : v.toString();
+    }
+
+    private static int intVal(Map<String, Object> map, String key, int fallback) {
+        Object v = map.get(key);
+        if (v instanceof Number n) return n.intValue();
+        if (v != null) {
+            try { return Integer.parseInt(v.toString()); } catch (NumberFormatException ignored) {}
+        }
+        return fallback;
+    }
+
+    private static Integer nullableInt(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        if (v instanceof Number n) return n.intValue();
+        if (v != null) {
+            try { return Integer.parseInt(v.toString()); } catch (NumberFormatException ignored) {}
+        }
+        return null;
     }
 }

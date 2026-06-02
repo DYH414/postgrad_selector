@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.AiDatabaseToolMapper">
+
+    <!-- AI 工具专用：灵活查询学校数据 -->
+    <select id="querySchools" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            p.id as programId, s.name as schoolName,
+            s.province as province, s.city as city, s.tier as schoolTier,
+            s.is_985 as is985, s.is_211 as is211, s.is_double_first as isDoubleFirst,
+            c.name as collegeName,
+            p.program_code as programCode, p.program_name as programName,
+            p.degree_type as degreeType,
+            subj.subject_codes as subjectCodes,
+            subj.subject_names as subjectNames,
+            sc.year as dataYear, sc.score_line as scoreLine,
+            ap.total_plan as planCount, ap.unified_exam_quota as unifiedExamQuota,
+            ap.retest_count as retestCount,
+            ar.admitted_count as admittedCount,
+            ar.min_admitted_score as admissionLow,
+            ar.avg_admitted_score as avgAdmittedScore,
+            ar.max_admitted_score as admissionHigh,
+            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
+            coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
+        from program p
+        join college c on p.college_id = c.id
+        join school s on c.school_id = s.id
+        left join (
+            select ps.program_id,
+                   group_concat(sub.code order by ps.subject_order separator ',') as subject_codes,
+                   group_concat(sub.name order by ps.subject_order separator ' + ') as subject_names
+            from program_subject ps
+            join subject sub on ps.subject_id = sub.id
+            group by ps.program_id
+        ) subj on subj.program_id = p.id
+        left join admission_score sc on sc.program_id = p.id
+          and sc.year = (
+            select max(sc2.year) from admission_score sc2
+            where sc2.program_id = p.id and sc2.score_line is not null
+          )
+        left join admission_plan ap on ap.program_id = p.id and ap.year = sc.year
+        left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
+        left join program_year_data_quality q on q.program_id = p.id and q.year = sc.year
+        left join data_source sc_ds on sc_ds.id = sc.source_id
+        left join data_source ap_ds on ap_ds.id = ap.source_id
+        left join data_source ar_ds on ar_ds.id = ar.source_id
+        where p.status = 'active' and s.status = 'active'
+        <if test="keyword != null and keyword != ''">
+            and (s.name like concat('%', #{keyword}, '%')
+                 or c.name like concat('%', #{keyword}, '%')
+                 or p.program_name like concat('%', #{keyword}, '%')
+                 or p.program_code like concat('%', #{keyword}, '%'))
+        </if>
+        <if test="tier != null and tier != ''">
+            and s.tier = #{tier}
+        </if>
+        <if test="province != null and province != ''">
+            and s.province = #{province}
+        </if>
+        <if test="minScore != null">
+            and ar.avg_admitted_score is not null
+            and ar.avg_admitted_score &gt;= #{minScore}
+        </if>
+        <if test="maxScore != null">
+            and ar.avg_admitted_score is not null
+            and ar.avg_admitted_score &lt;= #{maxScore}
+        </if>
+        order by
+            case when sc.score_line is null then 1 else 0 end,
+            s.tier asc
+        limit #{limit}
+    </select>
+
+</mapper>
