@@ -75,7 +75,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             .map(row -> normalizeProgram(row, estimatedScore))
             .collect(Collectors.toList());
 
-        Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         List<Map<String, Object>> matchedItems = new ArrayList<>(normalized);
         if (scoreRange != null)
         {
@@ -94,17 +93,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             }
             matchedItems.sort(averageGapComparator());
         }
-        grouped.put("matches", matchedItems);
-
-        List<Map<String, Object>> groups = new ArrayList<>();
-        for (String groupKey : grouped.keySet())
-        {
-            List<Map<String, Object>> items = grouped.get(groupKey);
-            List<Map<String, Object>> visibleItems = scoreRange == null
-                ? items.stream().limit(pageSizePerGroup).collect(Collectors.toList())
-                : items;
-            groups.add(group(groupKey, visibleItems));
-        }
 
         Map<String, Object> requestSnapshot = new LinkedHashMap<>();
         requestSnapshot.put("estimatedScore", estimatedScore);
@@ -119,9 +107,9 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         result.put("ruleVersion", RULE_VERSION);
         result.put("dataVersion", DATA_VERSION);
         result.put("request", requestSnapshot);
-        result.put("summary", summary(grouped, normalized.size()));
+        result.put("totalCandidates", matchedItems.size());
         result.put("globalWarnings", globalWarnings());
-        result.put("groups", groups);
+        result.put("items", matchedItems);
 
         Long recommendationId = saveRecommendationLog(userId, requestSnapshot, result);
         result.put("recommendationId", recommendationId);

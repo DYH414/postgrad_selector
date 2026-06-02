@@ -177,16 +177,9 @@
         </div>
 
         <template v-if="activeTab !== 'compare' && hasResult && !result.aiAnalysis">
-          <section v-for="group in filteredGroups" :key="group.name" class="school-section">
-            <div class="section-title">
-              <strong>{{ group.name }}</strong>
-              <span>（{{ group.schools.length }} 所） {{ group.desc }}</span>
-              <button type="button">展开全部 <i class="el-icon-right"></i></button>
-            </div>
-
-            <div v-if="group.schools.length === 0" class="empty-group">暂无该分组结果</div>
-            <div v-else class="school-grid">
-              <article v-for="school in group.schools" :key="school.cardKey" class="school-card">
+          <div v-if="filteredItems.length === 0" class="empty-group">暂无匹配结果</div>
+          <div v-else class="school-grid">
+            <article v-for="school in filteredItems" :key="school.cardKey" class="school-card">
                 <div class="card-top">
                   <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
                   <div>
@@ -285,7 +278,7 @@
                 </div>
               </article>
             </div>
-          </section>
+          </div>
         </template>
       </section>
     </main>
@@ -379,7 +372,7 @@ const emptyResult = () => ({
   summary: null,
   globalWarnings: [],
   requestFilters: emptyFilters(),
-  groups: []
+  items: []
 })
 
 // --- data properties ---
@@ -422,7 +415,7 @@ const currentHeader = computed(() => {
 })
 
 const hasResult = computed(() => {
-  return (result.value.groups || []).some(group => (group.schools || []).length > 0)
+  return (result.value.items || []).length > 0
 })
 
 const headerChips = computed(() => {
@@ -466,26 +459,19 @@ const regionOptions = computed(() => {
 
 const keywordFilter = computed(() => (filterForm.value.keyword || '').trim().toLowerCase())
 
-const filteredGroups = computed(() => {
+const filteredItems = computed(() => {
   const kw = keywordFilter.value
-  return (result.value.groups || []).map(group => {
-    if (!group.schools) return { ...group, schools: [] }
-    if (!kw) return group
-    return {
-      ...group,
-      schools: group.schools.filter(school =>
-        (school.schoolName || '').toLowerCase().includes(kw) ||
-        (school.collegeName || '').toLowerCase().includes(kw) ||
-        (school.programName || '').toLowerCase().includes(kw) ||
-        (school.programCode || '').toLowerCase().includes(kw)
-      )
-    }
-  }).filter(group => (group.schools || []).length)
+  const items = result.value.items || []
+  if (!kw) return items
+  return items.filter(school =>
+    (school.schoolName || '').toLowerCase().includes(kw) ||
+    (school.collegeName || '').toLowerCase().includes(kw) ||
+    (school.programName || '').toLowerCase().includes(kw) ||
+    (school.programCode || '').toLowerCase().includes(kw)
+  )
 })
 
-const filteredTotal = computed(() => {
-  return filteredGroups.value.reduce((sum, group) => sum + group.schools.length, 0)
-})
+const filteredTotal = computed(() => filteredItems.value.length)
 
 const aiParagraphs = computed(() => {
   const text = result.value.aiAnalysis
@@ -532,19 +518,18 @@ function loadResult() {
 }
 
 function normalizeResult(data) {
-  if (!data || !data.groups) return emptyResult()
+  if (!data) return emptyResult()
   const request = data.request || {}
-  const groups = (data.groups || []).map(group => {
-    const items = (group.items || group.schools || []).map(normalizeSchool)
-    return {
-      name: group.groupName || group.name,
-      desc: group.description || group.desc,
-      schools: groupSchools(items)
-    }
-  })
+  // 兼容旧 groups 格式和新 items 扁平格式
+  let items = []
+  if (data.items && data.items.length) {
+    items = data.items.map(normalizeSchool)
+  } else if (data.groups) {
+    items = (data.groups || []).flatMap(group => (group.items || group.schools || []).map(normalizeSchool))
+  }
   return {
     recommendationId: data.recommendationId,
-    totalCandidates: data.summary ? data.summary.totalCandidates : groups.reduce((sum, group) => sum + group.schools.length, 0),
+    totalCandidates: data.totalCandidates || items.length,
     score: request.estimatedScore || data.score || 300,
     exam: request.examCombo || data.exam || '22408',
     region: request.targetRegions && request.targetRegions.length ? request.targetRegions.join('、') : '不限',
@@ -555,7 +540,7 @@ function normalizeResult(data) {
     summary: data.summary || null,
     globalWarnings: data.globalWarnings || [],
     requestFilters: defaultFiltersFromRequest(request),
-    groups
+    items
   }
 }
 
@@ -1015,7 +1000,8 @@ watch(() => route.query.keyword, (newKw) => {
           exam: '-',
           region: '不限',
           scoreRange: null,
-          groups: [{ name: `结果`, desc: `${schools.length} 个匹配`, schools }]
+          totalCandidates: schools.length,
+          items: schools
         }
       }
     }).catch(() => {})
