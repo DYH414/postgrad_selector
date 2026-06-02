@@ -19,19 +19,28 @@ public class ProgramSearchServiceImpl implements IProgramSearchService
     private ProgramSearchMapper programSearchMapper;
 
     @Override
-    public List<Map<String, Object>> searchPrograms(String keyword, int pageSize)
+    public Map<String, Object> searchPrograms(String keyword, int limit)
     {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("keyword", keyword);
+
         if (keyword == null || keyword.trim().isEmpty())
-            return new ArrayList<>();
+        {
+            result.put("total", 0);
+            result.put("items", new ArrayList<>());
+            return result;
+        }
 
-        int limit = Math.max(1, Math.min(pageSize > 0 ? pageSize : 20, MAX_RESULTS));
-        List<RowMap> rows = programSearchMapper.searchByKeyword(keyword.trim(), limit);
+        int clampedLimit = Math.max(1, Math.min(limit > 0 ? limit : 20, MAX_RESULTS));
+        List<RowMap> rows = programSearchMapper.searchByKeyword(keyword.trim(), clampedLimit);
 
-        List<Map<String, Object>> result = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         for (RowMap row : rows)
         {
-            result.add(normalizeSearchResult(row));
+            items.add(normalizeSearchResult(row));
         }
+        result.put("total", items.size());
+        result.put("items", items);
         return result;
     }
 
