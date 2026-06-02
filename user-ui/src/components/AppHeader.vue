@@ -20,7 +20,7 @@
 
     <div class="header-actions">
       <div class="search-box" :class="{ 'search-box--focused': searchFocused }">
-        <i class="el-icon-search"></i>
+        <i class="el-icon-search" @click="doSearch"></i>
         <el-input
           ref="searchInputRef"
           v-model="searchKeyword"
@@ -79,6 +79,14 @@ watch(
   () => {
     hasToken.value = !!getToken()
   }
+)
+
+watch(
+  () => route.query.keyword,
+  (kw) => {
+    searchKeyword.value = kw || ''
+  },
+  { immediate: true }
 )
 
 function goLogin() {
@@ -308,7 +316,7 @@ function logout() {
   border-color: #bfd3ff;
 }
 
-@media (max-width: 1320px) {
+@media (max-width: 960px) {
   .search-box {
     display: none;
   }

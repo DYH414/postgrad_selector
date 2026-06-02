@@ -69,7 +69,16 @@
           <div v-if="!searchLoading && searchResults.length === 0" class="empty-result">
             <i class="el-icon-search"></i>
             <strong>未找到匹配的院校或专业</strong>
-            <p>尝试更换关键词，或使用筛选功能浏览全部院校</p>
+            <p>尝试更换关键词重新搜索</p>
+            <div class="empty-search-box">
+              <el-input
+                v-model="searchKeyword"
+                placeholder="搜索院校 / 专业 / 关键词"
+                @keyup.enter="loadSearchResults"
+                clearable
+              />
+              <el-button type="primary" @click="loadSearchResults">搜索</el-button>
+            </div>
           </div>
           <section v-else-if="searchResults.length > 0" class="school-section">
             <div class="section-title">
@@ -504,10 +513,11 @@ const searchTotal = ref(0)
 const isSearchMode = computed(() => !!route.query.keyword)
 
 function loadSearchResults() {
-  const kw = route.query.keyword
+  const kw = searchKeyword.value.trim()
   if (!kw) return
-  searchKeyword.value = kw
+  if (kw === route.query.keyword && searchResults.value.length > 0) return
   searchLoading.value = true
+  router.replace({ path: '/results', query: { keyword: kw } }).catch(() => {})
   searchPrograms(kw, 50).then(res => {
     const data = res.data || {}
     const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : [])
@@ -1096,6 +1106,7 @@ watch(() => route.query.id, () => {
 
 watch(() => route.query.keyword, (newKw) => {
   if (newKw) {
+    searchKeyword.value = newKw
     activeTab.value = 'result'
     loadSearchResults()
   } else {
@@ -1973,6 +1984,18 @@ loadFavoriteIds()
 .empty-result strong {
   color: #1e293b;
   font-size: 18px;
+}
+
+.empty-search-box {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.empty-search-box .el-input {
+  flex: 1;
 }
 
 .card-detail {
