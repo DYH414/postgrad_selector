@@ -1,9 +1,9 @@
 const JUDGEMENT_LABELS = {
   safe: '保底',
   steady: '稳妥',
-  balanced_sprint: '小冲',
-  sprint: '高风险冲刺',
-  avoid: '不建议',
+  steady_reach: '稳妥偏冲',
+  small_reach: '小冲',
+  high_risk_reach: '高风险冲刺',
   data_insufficient_pending: '数据不足待核验'
 }
 
@@ -17,11 +17,11 @@ const VERIFICATION_STATUS_LABELS = {
 
 const JUDGEMENT_ORDER = [
   'steady',
-  'balanced_sprint',
+  'steady_reach',
   'safe',
-  'sprint',
-  'data_insufficient_pending',
-  'avoid'
+  'small_reach',
+  'high_risk_reach',
+  'data_insufficient_pending'
 ]
 
 function parseReport(data) {

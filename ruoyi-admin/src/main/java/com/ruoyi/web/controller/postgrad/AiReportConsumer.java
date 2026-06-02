@@ -7,6 +7,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.ruoyi.framework.config.RabbitMQConfig;
+import com.ruoyi.postgrad.domain.AiReportSupport;
 import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import dev.langchain4j.model.chat.ChatModel;
@@ -19,6 +20,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 public class AiReportConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(AiReportConsumer.class);
+    private static final int PROMPT_POOL_ROW_LIMIT = 120;
 
     @Autowired private StringRedisTemplate redisTemplate;
     @Autowired private RecommendationLogMapper logMapper;
@@ -46,8 +49,11 @@ public class AiReportConsumer {
                 handleConversationMessage(reportId, estimatedScore, msg);
             }
         } catch (Exception e) {
-            redisTemplate.opsForValue().set("ai:report:" + reportId,
-                "{\"error\": \"" + e.getMessage() + "\"}", 7, TimeUnit.DAYS);
+            String errorJson = "{\"status\":\"FAILED\",\"error\":\"" + safeJsonMessage(e.getMessage()) + "\"}";
+            redisTemplate.opsForValue().set("ai:report:" + reportId, errorJson, 7, TimeUnit.DAYS);
+            try {
+                logMapper.updateReportResult(reportId, errorJson);
+            } catch (Exception dbEx) { /* best-effort */ }
         }
     }
 
@@ -72,6 +78,7 @@ public class AiReportConsumer {
         JSONObject reportJson = parseReportJson(chatModel, reportPrompt, poolJson);
 
         injectFullData(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
+        normalizeReport(reportJson);
 
         String resultJsonStr = reportJson.toJSONString();
         redisTemplate.opsForValue().set("ai:report:" + reportId, resultJsonStr, 7, TimeUnit.DAYS);
@@ -112,6 +119,7 @@ public class AiReportConsumer {
 
         // 5. Inject full data from DB pool
         injectFullData(reportJson, estimatedScore, poolJson);
+        normalizeReport(reportJson);
 
         // 6. Save to Redis + DB
         String resultJsonStr = reportJson.toJSONString();
@@ -168,11 +176,17 @@ public class AiReportConsumer {
         sb.append("9. verificationStatus 必须是: official, third_party, local_data_only, verification_failed, pending。\n");
         sb.append("10. 不要输出 matchScore。推荐理由写入 evidence 和 risks。\n\n");
         sb.append("## 候选学校数据\n");
+        sb.append("候选池共 ").append(JSON.parseArray(poolJson).size())
+            .append(" 条，以下为按数据完整度和分数接近度排序后的前 ")
+            .append(PROMPT_POOL_ROW_LIMIT).append(" 条代表行；只能从这些 ID 中选择。\n");
         sb.append("格式: ID | 学校 | 专业 | 层次 | 城市 | 均分 | 差距 | 复试线 | 招生 | 录取 | 报录比 | 数据年份\n\n");
 
         List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
         int idx = 1;
         for (Map<String, Object> p : pool) {
+            if (idx > PROMPT_POOL_ROW_LIMIT) {
+                break;
+            }
             sb.append(idx++).append(". ID:").append(p.get("programId"));
             sb.append(" | ").append(p.getOrDefault("schoolName", "?"));
             sb.append(" | ").append(p.getOrDefault("programName", ""));
@@ -199,10 +213,10 @@ public class AiReportConsumer {
         sb.append("          \"programId\": 1,\n");
         sb.append("          \"schoolName\": \"学校名\",\n");
         sb.append("          \"programName\": \"专业名\",\n");
-        sb.append("          \"reason\": \"推荐理由（须引用均分、招生人数等数据）\",\n");
-        sb.append("          \"risk\": \"high\",\n");
-        sb.append("          \"pros\": [\"优势1\",\"优势2\"],\n");
-        sb.append("          \"cons\": [\"劣势1\"]\n");
+        sb.append("          \"judgement\": \"steady\",\n");
+        sb.append("          \"verificationStatus\": \"local_data_only\",\n");
+        sb.append("          \"evidence\": [\"推荐依据，须引用均分、招生人数等数据\"],\n");
+        sb.append("          \"risks\": [\"需要核验的风险点\"]\n");
         sb.append("        }\n");
         sb.append("      ]\n");
         sb.append("    },\n");
@@ -257,10 +271,10 @@ public class AiReportConsumer {
                       "programId": 1,
                       "schoolName": "学校名",
                       "programName": "专业名",
-                      "reason": "推荐理由",
-                      "risk": "high",
-                      "pros": ["优势1"],
-                      "cons": ["劣势1"]
+                      "judgement": "steady",
+                      "verificationStatus": "local_data_only",
+                      "evidence": ["推荐依据"],
+                      "risks": ["风险点"]
                     }
                   ]
                 },
@@ -306,6 +320,10 @@ public class AiReportConsumer {
             StringBuilder sb = new StringBuilder();
             int i = 1;
             for (Map<String, Object> p : pool) {
+                if (i > PROMPT_POOL_ROW_LIMIT) {
+                    sb.append("... 已截断，仅发送前 ").append(PROMPT_POOL_ROW_LIMIT).append(" 条代表行给模型\n");
+                    break;
+                }
                 Object pid = p.get("programId");
                 sb.append(i).append(". ID:").append(pid);
                 sb.append(" | ").append(p.getOrDefault("schoolName", "?"));
@@ -348,7 +366,13 @@ public class AiReportConsumer {
     }
 
     private JSONObject parseReportJson(ChatModel chatModel, String reportPrompt, String poolJson) {
-        String aiResponse = stripMarkdown(chatModel.chat(reportPrompt));
+        String aiResponse;
+        try {
+            aiResponse = stripMarkdown(chatModel.chat(reportPrompt));
+        } catch (Exception e) {
+            log.error("[Report-Consumer] AI call failed before response, using rule-based fallback: {}", e.getMessage());
+            return ruleBasedFallback(poolJson);
+        }
         log.info("[Report-Consumer] AI raw response (first 500 chars): {}",
             aiResponse != null ? aiResponse.substring(0, Math.min(500, aiResponse.length())) : "null");
         try {
@@ -496,20 +520,95 @@ public class AiReportConsumer {
                 }
 
                 // matchScore: positive gap = user above avg (safer), negative = user below (riskier)
-                if (avgObj instanceof Number n) {
-                    int g = estimatedScore - n.intValue();
-                    int score;
-                    if (g >= 0) {
-                        score = (int) Math.min(98, 75 + g * 1.5);  // gap +5 → 83%, +15 → 98%
-                    } else {
-                        score = (int) Math.max(15, 75 + g * 4);     // gap -5 → 55%, -10 → 35%
-                    }
-                    school.put("matchScore", score);
-                } else {
-                    school.put("matchScore", 50);
-                }
+                school.remove("matchScore");
             }
         }
+    }
+
+    private void normalizeReport(JSONObject report) {
+        JSONArray tiers = report.getJSONArray("tiers");
+        if (tiers == null) return;
+
+        JSONObject metadata = report.getJSONObject("metadata");
+        if (metadata == null) {
+            metadata = new JSONObject();
+        }
+        metadata.putIfAbsent("verificationProvider", "local_noop");
+        metadata.putIfAbsent("toolTraceIncompleteCount", 0);
+        report.put("metadata", metadata);
+
+        for (int i = 0; i < tiers.size(); i++) {
+            JSONObject tier = tiers.getJSONObject(i);
+            JSONArray schools = tier.getJSONArray("schools");
+            if (schools == null) continue;
+
+            List<JSONObject> normalized = new ArrayList<>();
+            for (int j = 0; j < schools.size(); j++) {
+                JSONObject school = schools.getJSONObject(j);
+                normalizeReportSchool(school, tier.getString("level"));
+                normalized.add(school);
+            }
+            normalized.sort((left, right) -> AiReportSupport.directionComparator().compare(left, right));
+
+            JSONArray sorted = new JSONArray();
+            sorted.addAll(normalized);
+            tier.put("schools", sorted);
+        }
+    }
+
+    private void normalizeReportSchool(JSONObject school, String tierLevel) {
+        String judgement = AiReportSupport.normalizeJudgement(
+            school.getOrDefault("judgement", inferJudgement(school, tierLevel)));
+        String status = AiReportSupport.normalizeVerificationStatus(
+            school.getOrDefault("verificationStatus", defaultVerificationStatus(school)));
+
+        school.put("judgement", judgement);
+        school.put("judgementLabel", AiReportSupport.judgementLabel(judgement));
+        school.put("verificationStatus", status);
+        school.put("recommendedAction", AiReportSupport.recommendedAction(judgement, status));
+        school.put("avgScoreGap", school.getOrDefault("avgScoreGap", school.get("gap")));
+        school.remove("matchScore");
+
+        if (!school.containsKey("evidence") || school.getJSONArray("evidence") == null || school.getJSONArray("evidence").isEmpty()) {
+            JSONArray evidence = new JSONArray();
+            Object reason = school.get("reason");
+            if (reason != null && !String.valueOf(reason).isBlank()) {
+                evidence.add(reason);
+            }
+            JSONArray pros = school.getJSONArray("pros");
+            if (pros != null) {
+                evidence.addAll(pros);
+            }
+            school.put("evidence", evidence);
+        }
+
+        if (!school.containsKey("risks") || school.getJSONArray("risks") == null) {
+            JSONArray risks = new JSONArray();
+            JSONArray cons = school.getJSONArray("cons");
+            if (cons != null) {
+                risks.addAll(cons);
+            }
+            school.put("risks", risks);
+        }
+    }
+
+    private String inferJudgement(JSONObject school, String tierLevel) {
+        Object raw = school.getOrDefault("risk", school.get("judgement"));
+        String normalized = AiReportSupport.normalizeJudgement(raw);
+        if (!AiReportSupport.JUDGEMENT_DATA_INSUFFICIENT_PENDING.equals(normalized)) {
+            return normalized;
+        }
+        if ("safe".equals(tierLevel)) return AiReportSupport.JUDGEMENT_SAFE;
+        if ("steady".equals(tierLevel)) return AiReportSupport.JUDGEMENT_STEADY;
+        if ("reach".equals(tierLevel)) return AiReportSupport.JUDGEMENT_HIGH_RISK_REACH;
+        return AiReportSupport.JUDGEMENT_DATA_INSUFFICIENT_PENDING;
+    }
+
+    private String defaultVerificationStatus(JSONObject school) {
+        if (school.get("avgAdmittedScore") != null || school.get("scoreLine") != null) {
+            return AiReportSupport.STATUS_LOCAL_DATA_ONLY;
+        }
+        return AiReportSupport.STATUS_PENDING;
     }
 
     private void injectStat(JSONObject school, Map<String, Object> stats, String key) {
@@ -517,5 +616,10 @@ public class AiReportConsumer {
         if (val != null) {
             school.put(key, val);
         }
+    }
+
+    private String safeJsonMessage(String message) {
+        if (message == null || message.isBlank()) return "报告生成失败";
+        return message.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

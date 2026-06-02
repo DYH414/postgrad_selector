@@ -455,9 +455,9 @@ onBeforeUnmount(() => {
 .judgement-box strong { color: #303133; }
 .judgement-safe { border-left-color: #67c23a; background: #f0f9eb; }
 .judgement-steady { border-left-color: #409eff; background: #ecf5ff; }
-.judgement-balanced_sprint { border-left-color: #e6a23c; background: #fdf6ec; }
-.judgement-sprint { border-left-color: #f56c6c; background: #fef0f0; }
-.judgement-avoid,
+.judgement-steady_reach,
+.judgement-small_reach { border-left-color: #e6a23c; background: #fdf6ec; }
+.judgement-high_risk_reach { border-left-color: #f56c6c; background: #fef0f0; }
 .judgement-data_insufficient_pending { border-left-color: #909399; background: #f4f4f5; }
 .evidence-list,
 .risk-list {
