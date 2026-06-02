@@ -484,8 +484,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         // 2. Parse regions from profile
         List<String> regions = parseRegionsForAnalysis(targetRegionsStr);
 
-        // 3. Query and stratify schools
-        List<RowMap> pool = aiCandidatePoolService.buildAnalysisPool(estimatedScore, regions);
+        // 3. Query broad local working pool for AI agent exploration
+        List<RowMap> pool = aiCandidatePoolService.buildAgentPool(estimatedScore, regions);
 
         // 4. Serialize pool data for Redis (full fields needed for injectFullData)
         List<Map<String, Object>> poolList = new ArrayList<>();
@@ -530,7 +530,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         logMapper.insertRecommendationLog(log);
         long reportId = log.getId();
 
-        // 6. Store pool in Redis (TTL 1 hour)
+        // 6. Store pool in Redis (TTL 1 hour). Keep old key during rollout.
+        redisTemplate.opsForValue().set(
+            "ai:agent:pool:" + reportId, poolJson, 1, TimeUnit.HOURS);
         redisTemplate.opsForValue().set(
             "ai:analyze:pool:" + reportId, poolJson, 1, TimeUnit.HOURS);
 

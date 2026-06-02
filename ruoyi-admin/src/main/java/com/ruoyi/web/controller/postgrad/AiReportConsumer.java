@@ -85,7 +85,10 @@ public class AiReportConsumer {
         Long userId = ((Number) msg.get("userId")).longValue();
 
         // 1. Read pool from Redis
-        String poolJson = redisTemplate.opsForValue().get("ai:analyze:pool:" + reportId);
+        String poolJson = redisTemplate.opsForValue().get("ai:agent:pool:" + reportId);
+        if (poolJson == null) {
+            poolJson = redisTemplate.opsForValue().get("ai:analyze:pool:" + reportId);
+        }
         if (poolJson == null || poolJson.isEmpty()) {
             redisTemplate.opsForValue().set("ai:report:" + reportId,
                 "{\"error\": \"候选学校数据已过期，请重新发起快速推荐\"}", 7, TimeUnit.DAYS);
@@ -118,6 +121,7 @@ public class AiReportConsumer {
         } catch (Exception dbEx) { /* best-effort */ }
 
         // 7. Clean up analysis pool key
+        redisTemplate.delete("ai:agent:pool:" + reportId);
         redisTemplate.delete("ai:analyze:pool:" + reportId);
     }
 
@@ -159,7 +163,10 @@ public class AiReportConsumer {
         sb.append("4. 差距 > -5 且 < 5 时可归入稳妥档\n");
         sb.append("5. 不要推荐差距 < -10 分的学校（难度过高）\n");
         sb.append("6. 推荐理由必须引用具体数据（均分、招生人数等），不要只说\"分数合适\"\n");
-        sb.append("7. ★ programId 必须从上面候选列表中的 \"ID:\" 值精确复制，绝对不要用序号或编造ID ★\n\n");
+        sb.append("7. ★ programId 必须从上面候选列表中的 \"ID:\" 值精确复制，绝对不要用序号或编造ID ★\n");
+        sb.append("8. 输出学校时必须使用 judgement 枚举: safe, steady, steady_reach, small_reach, high_risk_reach, data_insufficient_pending。\n");
+        sb.append("9. verificationStatus 必须是: official, third_party, local_data_only, verification_failed, pending。\n");
+        sb.append("10. 不要输出 matchScore。推荐理由写入 evidence 和 risks。\n\n");
         sb.append("## 候选学校数据\n");
         sb.append("格式: ID | 学校 | 专业 | 层次 | 城市 | 均分 | 差距 | 复试线 | 招生 | 录取 | 报录比 | 数据年份\n\n");
 
