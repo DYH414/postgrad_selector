@@ -20,6 +20,8 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
 {
     private static final int DEFAULT_SCORE_RANGE = 30;
     private static final int DEFAULT_POOL_LIMIT = 50;
+    private static final int AGENT_INITIAL_LIMIT = 300;
+    private static final int AGENT_MAX_LIMIT = 500;
 
     /**
      * Full subject-code strings for the two 408 exam combos, matching what
@@ -165,6 +167,91 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
             Math.abs(scoreAvg(a) - estimatedScore),
             Math.abs(scoreAvg(b) - estimatedScore)));
         return result;
+    }
+
+    @Override
+    public List<RowMap> buildAgentPool(int estimatedScore, List<String> regions)
+    {
+        List<String> safeRegions = regions == null ? Collections.emptyList() : regions;
+        int minScore = Math.max(0, estimatedScore - 80);
+        int maxScore = estimatedScore + 40;
+        List<RowMap> rows = recommendationMapper.selectForAgentPool(
+            estimatedScore, safeRegions, minScore, maxScore, AGENT_MAX_LIMIT);
+        return normalizeAgentPool(rows, estimatedScore, AGENT_INITIAL_LIMIT);
+    }
+
+    @Override
+    public List<RowMap> expandAgentPool(int estimatedScore, List<String> regions,
+        Map<String, Object> filters, List<RowMap> existing)
+    {
+        List<RowMap> expanded = buildAgentPool(estimatedScore, regions);
+        List<RowMap> merged = new ArrayList<>();
+        if (existing != null)
+        {
+            merged.addAll(existing);
+        }
+        merged.addAll(expanded);
+        List<RowMap> deduped = dedupeAgentPool(merged);
+        return new ArrayList<>(deduped.subList(0, Math.min(deduped.size(), AGENT_MAX_LIMIT)));
+    }
+
+    private List<RowMap> normalizeAgentPool(List<RowMap> rows, int estimatedScore, int limit)
+    {
+        if (rows == null || rows.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        List<RowMap> normalized = dedupeAgentPool(rows);
+        for (RowMap row : normalized)
+        {
+            Object avg = row.get("avgAdmittedScore");
+            if (avg instanceof Number n)
+            {
+                row.put("gap", estimatedScore - n.intValue());
+                row.put("verificationStatus", "local_data_only");
+            }
+            else
+            {
+                row.put("gap", null);
+                row.put("verificationStatus", "pending");
+            }
+        }
+        normalized.sort((a, b) -> Integer.compare(agentRank(a, estimatedScore), agentRank(b, estimatedScore)));
+        return new ArrayList<>(normalized.subList(0, Math.min(normalized.size(), limit)));
+    }
+
+    private List<RowMap> dedupeAgentPool(List<RowMap> rows)
+    {
+        List<RowMap> result = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (RowMap row : rows)
+        {
+            String key = dedupeKey(row);
+            if (seen.add(key))
+            {
+                result.add(row);
+            }
+        }
+        return result;
+    }
+
+    private String dedupeKey(RowMap row)
+    {
+        Object id = row.get("programId");
+        if (id != null)
+        {
+            return "program:" + id;
+        }
+        return "fallback:" + row.get("schoolName") + ":" + row.get("collegeName") + ":"
+            + row.get("programCode") + ":" + row.get("programName") + ":" + row.get("dataYear");
+    }
+
+    private int agentRank(RowMap row, int estimatedScore)
+    {
+        Object avg = row.get("avgAdmittedScore");
+        int distance = avg instanceof Number n ? Math.abs(n.intValue() - estimatedScore) : 999;
+        int completeness = "A".equals(row.get("dataCompleteness")) ? 0 : "B".equals(row.get("dataCompleteness")) ? 1 : 2;
+        return completeness * 1000 + distance;
     }
 
     private List<RowMap> limitByProximity(List<RowMap> rows, int estimatedScore, int limit)

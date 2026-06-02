@@ -9,4 +9,8 @@ public interface IAiCandidatePoolService
     List<RowMap> buildPool(Map<String, Object> request, Map<String, Object> profile, int estimatedScore);
 
     List<RowMap> buildAnalysisPool(int estimatedScore, List<String> regions);
+
+    List<RowMap> buildAgentPool(int estimatedScore, List<String> regions);
+
+    List<RowMap> expandAgentPool(int estimatedScore, List<String> regions, Map<String, Object> filters, List<RowMap> existing);
 }
