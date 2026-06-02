@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.Anonymous;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.postgrad.service.IProgramRecommendationService;
+import com.ruoyi.postgrad.service.IProgramSearchService;
 
 @Anonymous
 @RestController
@@ -20,6 +21,9 @@ public class AppProgramController
 {
     @Autowired
     private IProgramRecommendationService recommendationService;
+
+    @Autowired
+    private IProgramSearchService programSearchService;
 
     @GetMapping("/{programId}/detail")
     public AjaxResult detail(@PathVariable Long programId, @RequestParam(required = false) Integer estimatedScore)
@@ -53,5 +57,22 @@ public class AppProgramController
         if (ids.isEmpty()) return AjaxResult.error("请选择要对比的院校专业");
         if (ids.size() > 8) return AjaxResult.error("一次最多对比 8 个项目");
         return AjaxResult.success(recommendationService.comparePrograms(ids, estimatedScore));
+    }
+
+    @GetMapping("/search")
+    public AjaxResult search(@RequestParam String keyword,
+                             @RequestParam(defaultValue = "20") int limit)
+    {
+        if (keyword == null || keyword.trim().isEmpty())
+            return AjaxResult.error("请输入搜索关键词");
+
+        try
+        {
+            return AjaxResult.success(programSearchService.searchPrograms(keyword.trim(), limit));
+        }
+        catch (Exception e)
+        {
+            return AjaxResult.error("搜索失败，请稍后重试");
+        }
     }
 }
