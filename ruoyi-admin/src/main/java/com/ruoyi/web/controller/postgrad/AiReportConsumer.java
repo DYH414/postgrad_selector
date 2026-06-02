@@ -605,7 +605,12 @@ public class AiReportConsumer {
     }
 
     private String defaultVerificationStatus(JSONObject school) {
-        if (school.get("avgAdmittedScore") != null || school.get("scoreLine") != null) {
+        boolean hasScore = school.get("avgAdmittedScore") != null || school.get("scoreLine") != null;
+        boolean hasSource = school.get("sourceUrl") != null || school.get("sourceOwner") != null;
+        if (hasScore && hasSource) {
+            return AiReportSupport.STATUS_THIRD_PARTY;
+        }
+        if (hasScore) {
             return AiReportSupport.STATUS_LOCAL_DATA_ONLY;
         }
         return AiReportSupport.STATUS_PENDING;
