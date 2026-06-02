@@ -9,6 +9,10 @@
           <button type="button" @click="resetFilters">清空</button>
         </div>
         <div class="filter-group">
+          <label>搜索关键词</label>
+          <el-input v-model="filterForm.keyword" placeholder="学校/专业/学院名称" clearable @clear="applyFilters" @keyup.enter="applyFilters"/>
+        </div>
+        <div class="filter-group">
           <label>预计初试总分</label>
           <el-input v-model.number="filterForm.score" placeholder="请输入分数">
             <template #append>分</template>
@@ -447,6 +451,7 @@ const route = useRoute()
 
 const FILTER_STORAGE_PREFIX = 'app-results-filters'
 const emptyFilters = () => ({
+  keyword: '',
   score: 300,
   regions: [],
   exam: '11408',
@@ -583,8 +588,23 @@ const regionOptions = computed(() => {
   return Array.from(regions).sort()
 })
 
+const keywordFilter = computed(() => (filterForm.value.keyword || '').trim().toLowerCase())
+
 const filteredGroups = computed(() => {
-  return (result.value.groups || []).filter(group => (group.schools || []).length)
+  const kw = keywordFilter.value
+  return (result.value.groups || []).map(group => {
+    if (!group.schools) return { ...group, schools: [] }
+    if (!kw) return group
+    return {
+      ...group,
+      schools: group.schools.filter(school =>
+        (school.schoolName || '').toLowerCase().includes(kw) ||
+        (school.collegeName || '').toLowerCase().includes(kw) ||
+        (school.programName || '').toLowerCase().includes(kw) ||
+        (school.programCode || '').toLowerCase().includes(kw)
+      )
+    }
+  }).filter(group => (group.schools || []).length)
 })
 
 const filteredTotal = computed(() => {
