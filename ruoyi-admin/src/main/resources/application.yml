@@ -20,6 +20,10 @@ server:
   servlet:
     # 应用的访问路径
     context-path: /
+  # AI 调用响应较慢，异步超时设为 120 秒
+  mvc:
+    async:
+      request-timeout: 120000
   tomcat:
     # tomcat的URI编码
     uri-encoding: UTF-8
