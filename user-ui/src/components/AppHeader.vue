@@ -19,9 +19,18 @@
     </nav>
 
     <div class="header-actions">
-      <div class="search-box">
+      <div class="search-box" :class="{ 'search-box--focused': searchFocused }">
         <i class="el-icon-search"></i>
-        <span>搜索院校 / 专业 / 关键词</span>
+        <el-input
+          ref="searchInputRef"
+          v-model="searchKeyword"
+          placeholder="搜索院校 / 专业 / 关键词"
+          clearable
+          @focus="searchFocused = true"
+          @blur="searchFocused = false"
+          @keyup.enter="doSearch"
+          @clear="searchKeyword = ''"
+        />
       </div>
       <el-badge :value="12" class="notice-badge">
         <el-button icon="el-icon-bell" circle size="small"></el-button>
@@ -54,6 +63,16 @@ const props = defineProps({
 })
 
 const hasToken = ref(!!getToken())
+
+const searchKeyword = ref('')
+const searchFocused = ref(false)
+const searchInputRef = ref(null)
+
+function doSearch() {
+  const keyword = searchKeyword.value.trim()
+  if (!keyword) return
+  router.push({ path: '/results', query: { keyword } })
+}
 
 watch(
   () => route.fullPath,
@@ -182,12 +201,46 @@ function logout() {
   border: 1px solid #dce4f2;
   border-radius: 999px;
   background: #f8fbff;
-  color: #9aa7bc;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 14px;
   font-size: 13px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-box--focused {
+  border-color: #1769f6;
+  box-shadow: 0 0 0 2px rgba(23, 105, 246, 0.1);
+}
+
+.search-box i {
+  color: #9aa7bc;
+  flex-shrink: 0;
+}
+
+.search-box :deep(.el-input) {
+  flex: 1;
+}
+
+.search-box :deep(.el-input__wrapper) {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+}
+
+.search-box :deep(.el-input__inner) {
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.search-box :deep(.el-input__inner::placeholder) {
+  color: #9aa7bc;
+}
+
+.search-box :deep(.el-input__clear) {
+  color: #9aa7bc;
 }
 
 .notice-badge :deep(.el-badge__content) {
