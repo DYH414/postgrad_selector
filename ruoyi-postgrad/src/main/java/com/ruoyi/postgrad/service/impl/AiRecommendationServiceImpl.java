@@ -18,6 +18,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.AiReportSupport;
+import com.ruoyi.postgrad.domain.AiToolTrace;
 import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.domain.UserProfile;
@@ -449,7 +451,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             Map<String, Object> reportJson = parseReportJson(chatModel, reportPrompt,
                 poolJson != null ? poolJson : "[]");
             injectMatchScores(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
-            String resultJson = JSON.toJSONString(reportJson);
+            Map<String, Object> validated = validateAndNormalizeReport(reportJson, AiRecommendationTools.currentTrace());
+            String resultJson = JSON.toJSONString(validated);
 
             redisTemplate.opsForValue().set("ai:report:" + reportId, resultJson, REPORT_TTL_DAYS, TimeUnit.DAYS);
             log.setResultJson(resultJson);
@@ -458,7 +461,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("reportId", reportId);
             result.put("status", "DONE");
-            result.put("result", reportJson);
+            result.put("result", validated);
             return result;
         } catch (Exception e) {
             redisTemplate.opsForValue().set("ai:report:" + reportId, "{\"error\":\"" + e.getMessage() + "\"}", REPORT_TTL_DAYS, TimeUnit.DAYS);
@@ -983,6 +986,53 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 }
             }
         }
+    }
+
+    private Map<String, Object> normalizeReportItem(Map<String, Object> item) {
+        Map<String, Object> normalized = new LinkedHashMap<>(item);
+        String judgement = AiReportSupport.normalizeJudgement(
+            normalized.getOrDefault("judgement", normalized.get("aiJudgement")));
+        String status = AiReportSupport.normalizeVerificationStatus(normalized.get("verificationStatus"));
+        normalized.put("judgement", judgement);
+        normalized.put("judgementLabel", AiReportSupport.judgementLabel(judgement));
+        normalized.put("verificationStatus", status);
+        normalized.putIfAbsent("verificationProvider", null);
+        normalized.put("recommendedAction", AiReportSupport.recommendedAction(judgement, status));
+        return normalized;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Map<String, Object> validateAndNormalizeReport(Map<String, Object> report, AiToolTrace trace) {
+        Map<String, Object> result = new LinkedHashMap<>(report);
+        List<Map<String, Object>> tiers = (List<Map<String, Object>>) result.get("tiers");
+        int removed = 0;
+        boolean enforceTrace = trace != null && !trace.getCalls().isEmpty();
+        if (tiers != null) {
+            for (Map<String, Object> tier : tiers) {
+                List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
+                if (schools == null) continue;
+                List<Map<String, Object>> kept = new ArrayList<>();
+                for (Map<String, Object> school : schools) {
+                    Object pidObj = school.get("programId");
+                    long pid = pidObj instanceof Number n ? n.longValue() : -1L;
+                    if (enforceTrace && pid > 0 && !trace.hasDetail(pid)) {
+                        removed++;
+                        continue;
+                    }
+                    kept.add(normalizeReportItem(school));
+                }
+                kept.sort(AiReportSupport.directionComparator());
+                tier.put("schools", kept);
+            }
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("toolTraceIncompleteCount", removed);
+        meta.put("explorationLimited", trace != null && trace.isExplorationLimited());
+        if (trace != null) {
+            trace.setRemovedIncompleteCount(removed);
+        }
+        result.put("metadata", meta);
+        return result;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
