@@ -18,6 +18,12 @@ public interface RecommendationMapper
                                    @Param("minScore") int minScore,
                                    @Param("maxScore") int maxScore);
 
+    List<RowMap> selectForAgentPool(@Param("estimatedScore") int estimatedScore,
+                                    @Param("regions") List<String> regions,
+                                    @Param("minScore") int minScore,
+                                    @Param("maxScore") int maxScore,
+                                    @Param("limit") int limit);
+
     RowMap selectProgramForRecommendation(@Param("programId") Long programId);
 
     List<RowMap> selectTrends(@Param("programId") Long programId);

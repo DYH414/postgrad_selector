@@ -180,6 +180,24 @@ class AiCandidatePoolServiceImplTest
         assertEquals(1, pool.size());
     }
 
+    @Test
+    void buildAgentPoolKeepsBroadPoolAndMarksScoreLineOnlyAsPending()
+    {
+        List<RowMap> rows = rows(1, 320);
+        for (int i = 0; i < rows.size(); i++)
+        {
+            rows.get(i).put("avgAdmittedScore", i < 280 ? 300 : null);
+            rows.get(i).put("scoreLine", 270);
+        }
+        when(recommendationMapper.selectForAgentPool(330, Collections.emptyList(), 250, 370, 500))
+            .thenReturn(rows);
+
+        List<RowMap> pool = service.buildAgentPool(330, Collections.emptyList());
+
+        assertEquals(300, pool.size());
+        assertTrue(pool.stream().anyMatch(row -> "pending".equals(row.get("verificationStatus"))));
+    }
+
     private List<RowMap> rows(long... ids)
     {
         List<RowMap> rows = new ArrayList<>();
