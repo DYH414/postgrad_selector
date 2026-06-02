@@ -1180,18 +1180,18 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     private ChatModel buildChatModel() {
         String apiKey = System.getenv("DEEPSEEK_API_KEY");
         return OpenAiChatModel.builder()
-            .baseUrl("https://api.deepseek.com")
+            .baseUrl("https://api.deepseek.com/v1")
             .apiKey(apiKey)
-            .modelName("deepseek-chat")
+            .modelName("deepseek-v4-pro")
             .build();
     }
 
     private OpenAiStreamingChatModel buildStreamingChatModel() {
         String apiKey = System.getenv("DEEPSEEK_API_KEY");
         return OpenAiStreamingChatModel.builder()
-            .baseUrl("https://api.deepseek.com")
+            .baseUrl("https://api.deepseek.com/v1")
             .apiKey(apiKey)
-            .modelName("deepseek-chat")
+            .modelName("deepseek-v4-pro")
             .build();
     }
 
