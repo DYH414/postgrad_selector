@@ -59,98 +59,6 @@
       </aside>
 
       <section class="result-main" v-loading="loading">
-        <!-- 搜索模式头部 -->
-        <div v-if="isSearchMode" class="result-head">
-          <div>
-            <h1>搜索: {{ searchKeyword }}</h1>
-            <span>共 {{ searchTotal }} 个匹配结果</span>
-          </div>
-          <el-button plain type="info" size="small" @click="clearSearch">返回筛选</el-button>
-        </div>
-
-        <!-- 搜索模式结果列表 -->
-        <template v-if="isSearchMode">
-          <div v-if="!searchLoading && searchResults.length === 0" class="empty-result">
-            <i class="el-icon-search"></i>
-            <strong>未找到匹配的院校或专业</strong>
-            <p>尝试更换关键词重新搜索</p>
-            <div class="empty-search-box">
-              <el-input
-                v-model="searchKeyword"
-                placeholder="搜索院校 / 专业 / 关键词"
-                @keyup.enter="loadSearchResults"
-                clearable
-              />
-              <el-button type="primary" @click="loadSearchResults">搜索</el-button>
-            </div>
-          </div>
-          <section v-else-if="searchResults.length > 0" class="school-section">
-            <div class="section-title">
-              <strong>匹配结果</strong>
-              <span>（{{ searchTotal }} 所）</span>
-            </div>
-            <div class="school-grid">
-              <article v-for="school in searchResults" :key="school.cardKey" class="school-card">
-                <div class="card-top">
-                  <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
-                  <div>
-                    <h3>{{ school.schoolName }} <small>{{ school.badge }}</small></h3>
-                    <p>
-                      <span :class="{ 'pending-field': isPendingCollege(school.collegeName) }">{{ displayCollegeName(school.collegeName) }}</span>
-                      / {{ school.programName }}
-                    </p>
-                    <div class="school-meta-line">
-                      <span>{{ school.exam }} | {{ school.province || '-' }}</span>
-                      <em v-if="school.dataYear" class="data-year-badge">{{ school.dataYear }}年数据</em>
-                      <em v-else class="data-year-badge muted">年份待补</em>
-                    </div>
-                  </div>
-                  <button
-                    class="star-btn"
-                    :class="{ favorited: isFavorited(school), loading: favoriteLoadingIds.includes(favoriteKey(school)) }"
-                    type="button"
-                    @click="handleFavorite(school)">
-                    <i :class="isFavorited(school) ? 'el-icon-star-on' : 'el-icon-star-off'"></i>
-                  </button>
-                </div>
-
-                <div class="score-line">
-                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的平均总分。">
-                    <span>拟录取均分</span><strong>{{ school.avgScore || '-' }}</strong>
-                  </div>
-                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，仅作风险边界参考。">
-                    <span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong>
-                  </div>
-                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
-                    <span>拟录取区间</span><strong>{{ school.range }}</strong>
-                  </div>
-                  <div class="score-metric">
-                    <span>{{ school.quotaDisplay.label }}</span>
-                    <strong>{{ school.quotaDisplay.value }}<small>{{ school.quotaDisplay.hint }}</small></strong>
-                  </div>
-                </div>
-
-                <div class="tags">
-                  <em :class="'grade-' + school.confidence.toLowerCase()">完整度{{ school.confidence }}</em>
-                </div>
-
-                <p v-if="school.note" class="card-note">{{ school.note }}</p>
-                <a
-                  v-if="school.sourceUrl"
-                  class="source-link"
-                  :href="school.sourceUrl"
-                  target="_blank"
-                  rel="noopener noreferrer">
-                  <i class="el-icon-link"></i> N诺来源
-                </a>
-                <button class="detail-link card-detail" type="button" @click="openDetail(school.programId)">查看详情</button>
-              </article>
-            </div>
-          </section>
-          <div v-else-if="searchLoading" style="min-height: 200px;"></div>
-        </template>
-
-        <template v-else>
         <div class="result-head">
           <div>
             <h1>{{ activeTab === 'compare' ? '对比与备选' : '筛选结果' }}</h1>
@@ -379,7 +287,6 @@
             </div>
           </section>
         </template>
-        </template>
       </section>
     </main>
 
@@ -509,40 +416,6 @@ const compareSchools = ref([])
 const backupGroups = ref([])
 const expandedSchoolKeys = ref([])
 
-// --- search mode ---
-const searchKeyword = ref('')
-const searchLoading = ref(false)
-const searchResults = ref([])
-const searchTotal = ref(0)
-
-const isSearchMode = computed(() => !!route.query.keyword)
-
-function loadSearchResults() {
-  const kw = searchKeyword.value.trim()
-  if (!kw) return
-  if (kw === route.query.keyword && searchResults.value.length > 0) return
-  searchLoading.value = true
-  router.replace({ path: '/results', query: { keyword: kw } }).catch(() => {})
-  searchPrograms(kw, 50).then(res => {
-    const data = res.data || {}
-    const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : [])
-    searchResults.value = items.map(normalizeSchool)
-    searchTotal.value = searchResults.value.length
-  }).catch(() => {
-    searchResults.value = []
-    searchTotal.value = 0
-  }).finally(() => {
-    searchLoading.value = false
-  })
-}
-
-function clearSearch() {
-  searchKeyword.value = ''
-  searchResults.value = []
-  searchTotal.value = 0
-  router.replace({ path: '/results', query: {} }).catch(() => {})
-}
-
 // --- computed properties ---
 const currentHeader = computed(() => {
   return activeTab.value === 'compare' ? 'compare' : 'results'
@@ -560,6 +433,9 @@ const headerChips = computed(() => {
   ]
   if (result.value.majorDirections && result.value.majorDirections.length) {
     chips.push({ key: 'majorDirections', label: `专业方向 ${result.value.majorDirections.join('、')}` })
+  }
+  if (filterForm.value.keyword) {
+    chips.push({ key: 'keyword', label: `搜索 "${filterForm.value.keyword}"` })
   }
   chips.push({
     key: 'scoreRange',
@@ -1125,12 +1001,24 @@ watch(() => route.query.id, () => {
 })
 
 watch(() => route.query.keyword, (newKw) => {
-  if (newKw) {
-    searchKeyword.value = newKw
-    activeTab.value = 'result'
-    loadSearchResults()
-  } else {
-    clearSearch()
+  filterForm.value.keyword = newKw || ''
+  // Header 搜索跳转：无筛选结果时自动调搜索 API
+  if (newKw && !hasResult.value) {
+    searchPrograms(newKw, 50).then(res => {
+      const data = res.data || {}
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : [])
+      const schools = items.map(normalizeSchool)
+      if (schools.length > 0) {
+        result.value = {
+          ...emptyResult(),
+          score: '-',
+          exam: '-',
+          region: '不限',
+          scoreRange: null,
+          groups: [{ name: `结果`, desc: `${schools.length} 个匹配`, schools }]
+        }
+      }
+    }).catch(() => {})
   }
 }, { immediate: true })
 
