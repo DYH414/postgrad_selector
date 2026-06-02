@@ -62,6 +62,31 @@
           <p class="summary">{{ result.summary }}</p>
         </div>
 
+        <el-alert
+          v-if="result.legacy"
+          class="report-notice"
+          title="这是一份旧版匹配度报告，系统已按新报告格式做兼容展示。"
+          type="info"
+          show-icon
+          :closable="false"
+        />
+        <el-alert
+          v-if="result.metadata && result.metadata.toolTraceIncompleteCount"
+          class="report-notice"
+          :title="`有 ${result.metadata.toolTraceIncompleteCount} 所学校因数据核验不完整被移出推荐。`"
+          type="warning"
+          show-icon
+          :closable="false"
+        />
+        <el-alert
+          v-if="result.metadata && result.metadata.explorationLimited"
+          class="report-notice"
+          title="本次报告已达到工具调用预算，后续建议优先核验已展示学校。"
+          type="warning"
+          show-icon
+          :closable="false"
+        />
+
         <div v-for="tier in result.tiers" :key="tier.level" class="tier-section">
           <h3 class="tier-label" :class="tier.level">
             {{ tier.label }} ({{ tier.schools.length }}所)
@@ -71,26 +96,26 @@
               <el-card class="school-card" shadow="hover">
                 <div class="card-header">
                   <strong>{{ school.schoolName }}</strong>
-                  <el-tag :type="riskType(school.risk)" size="mini">{{ riskLabel(school.risk) }}</el-tag>
+                  <el-tag type="info" size="mini">{{ school.judgementLabel }}</el-tag>
                 </div>
                 <p class="program-name">{{ school.programName }}</p>
                 <el-divider />
-                <p class="reason">{{ school.reason }}</p>
-                <div class="pros-cons">
-                  <div v-if="school.pros && school.pros.length">
-                    <strong>优势：</strong>
-                    <span v-for="p in school.pros" :key="p" class="tag green">{{ p }}</span>
-                  </div>
-                  <div v-if="school.cons && school.cons.length" style="margin-top:4px">
-                    <strong>注意：</strong>
-                    <span v-for="c in school.cons" :key="c" class="tag orange">{{ c }}</span>
-                  </div>
+                <div class="judgement-box" :class="'judgement-' + school.judgement">
+                  <span>AI 判断</span>
+                  <strong>{{ school.judgementLabel }}</strong>
                 </div>
-                <div class="match-bar">
-                  <span>匹配度</span>
-                  <el-progress :percentage="school.matchScore || 0"
-                    :color="matchColor(school.matchScore)" />
+
+                <div v-if="school.evidence && school.evidence.length" class="evidence-list">
+                  <strong>推荐依据</strong>
+                  <p v-for="item in school.evidence" :key="item">{{ item }}</p>
                 </div>
+                <div v-if="school.risks && school.risks.length" class="risk-list">
+                  <strong>需要注意</strong>
+                  <p v-for="item in school.risks" :key="item">{{ item }}</p>
+                </div>
+                <p v-if="school.recommendedAction" class="recommended-action">
+                  {{ school.recommendedAction }}
+                </p>
 
                 <div v-if="school.scoreLine || school.avgAdmittedScore" class="stats-grid">
                   <div class="stat-item" v-if="school.scoreLine">
@@ -161,7 +186,9 @@
               <div class="d-stat"><small>录取人数</small><strong>{{ detailSchool.admittedCount || '-' }}</strong></div>
               <div class="d-stat"><small>复试人数</small><strong>{{ detailSchool.retestCount || '-' }}</strong></div>
               <div class="d-stat"><small>报录比</small><strong>{{ detailSchool.retestRatio || '-' }}</strong></div>
-              <div class="d-stat"><small>匹配度</small><strong>{{ detailSchool.matchScore || '-' }}%</strong></div>
+              <div class="d-stat"><small>AI 判断</small><strong>{{ detailSchool.judgementLabel || '-' }}</strong></div>
+              <div class="d-stat"><small>核验状态</small><strong>{{ detailSchool.verificationStatusLabel || '-' }}</strong></div>
+              <div class="d-stat" v-if="detailSchool.matchScore"><small>旧版匹配度</small><strong>{{ detailSchool.matchScore }}%</strong></div>
               <div class="d-stat"><small>数据年份</small><strong>{{ detailSchool.dataYear || '-' }}</strong></div>
               <div class="d-stat"><small>完整度</small><strong>{{ detailSchool.dataCompleteness || '-' }}</strong></div>
             </div>
@@ -192,6 +219,7 @@ import { addFavorite } from '@/api/favorites'
 import AppHeader from '@/components/AppHeader.vue'
 import { getAiReport } from '@/api/ai'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
+import { normalizeAiReport } from '@/utils/aiReport'
 
 const router = useRouter()
 const route = useRoute()
@@ -219,12 +247,7 @@ const detailVisible = ref(false)
 const detailSchool = ref(null)
 
 const result = computed(() => {
-  if (!report.value) return { summary: '', tiers: [] }
-  const data = report.value.result || report.value
-  if (typeof data === 'string') {
-    try { return JSON.parse(data) } catch (e) { return { summary: '', tiers: [] } }
-  }
-  return data
+  return normalizeAiReport(report.value)
 })
 
 async function fetchReport() {
@@ -280,18 +303,6 @@ function finishTypewriter() {
   displayLogs.value = [...LOGS]
   typingLine.value = ''
   allDone.value = true
-}
-
-function riskType(risk) {
-  return risk === 'high' ? 'danger' : risk === 'medium' ? 'warning' : 'success'
-}
-
-function riskLabel(risk) {
-  return risk === 'high' ? '高风险' : risk === 'medium' ? '中等风险' : '低风险'
-}
-
-function matchColor(score) {
-  return score >= 70 ? '#67c23a' : score >= 50 ? '#e6a23c' : '#f56c6c'
 }
 
 function restartRecommend() {
@@ -420,6 +431,7 @@ onBeforeUnmount(() => {
 .report-header { margin-bottom: 32px; }
 .report-header h2 { margin-bottom: 8px; }
 .summary { color: #606266; font-size: 15px; }
+.report-notice { margin: -16px 0 20px; }
 .tier-section { margin-bottom: 32px; }
 .tier-label { padding: 6px 0; border-bottom: 2px solid #ebeef5; margin-bottom: 16px; }
 .tier-label.reach { color: #f56c6c; }
@@ -429,6 +441,43 @@ onBeforeUnmount(() => {
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .program-name { color: #909399; font-size: 13px; margin: 4px 0; }
 .reason { color: #303133; font-size: 13px; line-height: 1.6; }
+.judgement-box {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f8fafc;
+  border-left: 3px solid #909399;
+  font-size: 13px;
+}
+.judgement-box span { color: #909399; }
+.judgement-box strong { color: #303133; }
+.judgement-safe { border-left-color: #67c23a; background: #f0f9eb; }
+.judgement-steady { border-left-color: #409eff; background: #ecf5ff; }
+.judgement-balanced_sprint { border-left-color: #e6a23c; background: #fdf6ec; }
+.judgement-sprint { border-left-color: #f56c6c; background: #fef0f0; }
+.judgement-avoid,
+.judgement-data_insufficient_pending { border-left-color: #909399; background: #f4f4f5; }
+.evidence-list,
+.risk-list {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.evidence-list strong,
+.risk-list strong { display: block; margin-bottom: 4px; color: #303133; }
+.evidence-list p,
+.risk-list p { margin: 0 0 4px; color: #606266; }
+.recommended-action {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #303133;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .tag { display: inline-block; padding: 1px 6px; border-radius: 4px;
   font-size: 12px; margin-right: 4px; }
 .tag.green { background: #f0f9eb; color: #67c23a; }
