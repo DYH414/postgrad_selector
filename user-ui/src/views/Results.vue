@@ -278,7 +278,6 @@
                 </div>
               </article>
             </div>
-          </div>
         </template>
       </section>
     </main>
