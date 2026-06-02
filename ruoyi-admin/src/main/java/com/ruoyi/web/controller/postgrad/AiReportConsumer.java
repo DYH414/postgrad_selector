@@ -557,8 +557,10 @@ public class AiReportConsumer {
     }
 
     private void normalizeReportSchool(JSONObject school, String tierLevel) {
-        String judgement = AiReportSupport.normalizeJudgement(
-            school.getOrDefault("judgement", inferJudgement(school, tierLevel)));
+        String judgement = AiReportSupport.normalizeJudgement(school.get("judgement"));
+        if (AiReportSupport.JUDGEMENT_DATA_INSUFFICIENT_PENDING.equals(judgement)) {
+            judgement = inferJudgement(school, tierLevel);
+        }
         String status = AiReportSupport.normalizeVerificationStatus(
             school.getOrDefault("verificationStatus", defaultVerificationStatus(school)));
 
