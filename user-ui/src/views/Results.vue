@@ -55,6 +55,89 @@
       </aside>
 
       <section class="result-main" v-loading="loading">
+        <!-- 搜索模式头部 -->
+        <div v-if="isSearchMode" class="result-head">
+          <div>
+            <h1>搜索: {{ searchKeyword }}</h1>
+            <span>共 {{ searchTotal }} 个匹配结果</span>
+          </div>
+          <el-button plain type="info" size="small" @click="clearSearch">返回筛选</el-button>
+        </div>
+
+        <!-- 搜索模式结果列表 -->
+        <template v-if="isSearchMode">
+          <div v-if="!searchLoading && searchResults.length === 0" class="empty-result">
+            <i class="el-icon-search"></i>
+            <strong>未找到匹配的院校或专业</strong>
+            <p>尝试更换关键词，或使用筛选功能浏览全部院校</p>
+          </div>
+          <section v-else-if="searchResults.length > 0" class="school-section">
+            <div class="section-title">
+              <strong>匹配结果</strong>
+              <span>（{{ searchTotal }} 所）</span>
+            </div>
+            <div class="school-grid">
+              <article v-for="school in searchResults" :key="school.cardKey" class="school-card">
+                <div class="card-top">
+                  <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
+                  <div>
+                    <h3>{{ school.schoolName }} <small>{{ school.badge }}</small></h3>
+                    <p>
+                      <span :class="{ 'pending-field': isPendingCollege(school.collegeName) }">{{ displayCollegeName(school.collegeName) }}</span>
+                      / {{ school.programName }}
+                    </p>
+                    <div class="school-meta-line">
+                      <span>{{ school.exam }} | {{ school.province || '-' }}</span>
+                      <em v-if="school.dataYear" class="data-year-badge">{{ school.dataYear }}年数据</em>
+                      <em v-else class="data-year-badge muted">年份待补</em>
+                    </div>
+                  </div>
+                  <button
+                    class="star-btn"
+                    :class="{ favorited: isFavorited(school), loading: favoriteLoadingIds.includes(favoriteKey(school)) }"
+                    type="button"
+                    @click="handleFavorite(school)">
+                    <i :class="isFavorited(school) ? 'el-icon-star-on' : 'el-icon-star-off'"></i>
+                  </button>
+                </div>
+
+                <div class="score-line">
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的平均总分。">
+                    <span>拟录取均分</span><strong>{{ school.avgScore || '-' }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，仅作风险边界参考。">
+                    <span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
+                    <span>拟录取区间</span><strong>{{ school.range }}</strong>
+                  </div>
+                  <div class="score-metric">
+                    <span>{{ school.quotaDisplay.label }}</span>
+                    <strong>{{ school.quotaDisplay.value }}<small>{{ school.quotaDisplay.hint }}</small></strong>
+                  </div>
+                </div>
+
+                <div class="tags">
+                  <em :class="'grade-' + school.confidence.toLowerCase()">完整度{{ school.confidence }}</em>
+                </div>
+
+                <p v-if="school.note" class="card-note">{{ school.note }}</p>
+                <a
+                  v-if="school.sourceUrl"
+                  class="source-link"
+                  :href="school.sourceUrl"
+                  target="_blank"
+                  rel="noopener noreferrer">
+                  <i class="el-icon-link"></i> N诺来源
+                </a>
+                <button class="detail-link card-detail" type="button" @click="openDetail(school.programId)">查看详情</button>
+              </article>
+            </div>
+          </section>
+          <div v-else-if="searchLoading" style="min-height: 200px;"></div>
+        </template>
+
+        <template v-else>
         <div class="result-head">
           <div>
             <h1>{{ activeTab === 'compare' ? '对比与备选' : '筛选结果' }}</h1>
@@ -283,6 +366,7 @@
             </div>
           </section>
         </template>
+        </template>
       </section>
     </main>
 
@@ -343,7 +427,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
 import { generateRecommendation, getRecommendationOptions, getRecommendationResult } from '@/api/recommendation'
-import { comparePrograms, getProgramDetail } from '@/api/programs'
+import { comparePrograms, getProgramDetail, searchPrograms } from '@/api/programs'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getToken } from '@/api/request'
@@ -410,6 +494,39 @@ const compareRows = [
 const compareSchools = ref([])
 const backupGroups = ref([])
 const expandedSchoolKeys = ref([])
+
+// --- search mode ---
+const searchKeyword = ref('')
+const searchLoading = ref(false)
+const searchResults = ref([])
+const searchTotal = ref(0)
+
+const isSearchMode = computed(() => !!route.query.keyword)
+
+function loadSearchResults() {
+  const kw = route.query.keyword
+  if (!kw) return
+  searchKeyword.value = kw
+  searchLoading.value = true
+  searchPrograms(kw, 50).then(res => {
+    const data = res.data || {}
+    const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : [])
+    searchResults.value = items.map(normalizeSchool)
+    searchTotal.value = searchResults.value.length
+  }).catch(() => {
+    searchResults.value = []
+    searchTotal.value = 0
+  }).finally(() => {
+    searchLoading.value = false
+  })
+}
+
+function clearSearch() {
+  searchKeyword.value = ''
+  searchResults.value = []
+  searchTotal.value = 0
+  router.replace({ path: '/results', query: {} }).catch(() => {})
+}
 
 // --- computed properties ---
 const currentHeader = computed(() => {
@@ -710,6 +827,9 @@ function restoreFilters(data = {}) {
         }
         if (Object.prototype.hasOwnProperty.call(data.request || {}, 'scoreRange')) {
           filters.scoreRange = defaults.scoreRange
+        } else {
+          // 服务器省略了 scoreRange（原值为 null），保留用户当前选择
+          filters.scoreRange = filterForm.value.scoreRange
         }
       }
     }
@@ -973,6 +1093,15 @@ watch(() => route.query.programIds, () => {
 watch(() => route.query.id, () => {
   loadResult()
 })
+
+watch(() => route.query.keyword, (newKw) => {
+  if (newKw) {
+    activeTab.value = 'result'
+    loadSearchResults()
+  } else {
+    clearSearch()
+  }
+}, { immediate: true })
 
 // --- created (top-level execution) ---
 loadOptions()
