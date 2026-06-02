@@ -63,6 +63,15 @@ The current "up to 50 candidates" approach should be replaced by a two-level poo
 
 The working pool should contain about 300 to 500 programs. It is not the final recommendation list. It is the AI's search space for initial report generation and follow-up chat.
 
+The 300-500 range is an initial engineering constraint, not a fixed product truth. It balances:
+
+- AI context-window pressure: the model should receive pool summaries and representative rows, not hundreds of full records.
+- Response latency: the initial report should remain usable in an interactive page.
+- Recommendation breadth: the pool must be much wider than the current 50-row summary so AI can explore safer, steadier, and stretch choices.
+- Redis/report storage size: the pool and tool traces should remain cheap enough to cache per conversation/report.
+
+The exact limit should be configurable and tuned with measured prompt size, report latency, and recommendation quality. A reasonable first implementation is `initialPoolLimit = 300` and `maxExpandedPoolLimit = 500`.
+
 Hard filters:
 
 - school and program are active
@@ -161,7 +170,8 @@ Inputs:
 
 Outputs:
 
-- verification status: official_verified, near_official, third_party_only, not_found
+- verification status: official, third_party, local_data_only, verification_failed, or pending
+- verification provider, if internet verification was attempted
 - source title
 - source URL
 - short evidence summary
@@ -174,9 +184,39 @@ Rules:
 - Third-party sources can be shown as clues but not as confirmed evidence.
 - A school found online but missing from local data must be labeled pending verification.
 
+Provider decision:
+
+- Phase 1 should reserve `verificationProvider` in the report schema even if no internet provider is enabled.
+- Phase 1 must choose the provider interface shape before implementation finishes.
+- Phase 2 can then plug in a built-in search API, custom crawler, or manually configured provider without changing the report schema.
+
 ## Report Output
 
 The report should avoid a single "matchScore" percentage. Use a judgement label plus evidence.
+
+`judgement` and `verificationStatus` are separate fields:
+
+- `judgement` describes AI's admission-risk judgement.
+- `verificationStatus` describes evidence/source verification.
+
+Judgement is a backend-controlled enum. AI output must be parsed and mapped to one legal value. If mapping fails, default to `data_insufficient_pending`.
+
+Allowed judgement values:
+
+- `safe`: 保底
+- `steady`: 稳妥
+- `steady_reach`: 稳妥偏冲
+- `small_reach`: 小冲
+- `high_risk_reach`: 高风险冲刺
+- `data_insufficient_pending`: 数据不足待核验
+
+Allowed verification statuses:
+
+- `official`: verified against an official school, graduate-school, or equivalent authority source
+- `third_party`: only third-party evidence is available
+- `local_data_only`: local database data is available but no internet verification was attempted
+- `verification_failed`: verification was attempted but failed
+- `pending`: data or source is not sufficient for a confirmed main recommendation
 
 Example school item:
 
@@ -184,7 +224,8 @@ Example school item:
 {
   "level": "steady",
   "label": "稳妥档",
-  "aiJudgement": "稳妥偏冲",
+  "judgement": "steady_reach",
+  "judgementLabel": "稳妥偏冲",
   "schoolName": "Example University",
   "programName": "Computer Technology",
   "evidence": [
@@ -198,20 +239,25 @@ Example school item:
     "复试比例未确认"
   ],
   "verificationStatus": "local_data_only",
+  "verificationProvider": null,
   "recommendedAction": "作为稳妥备选继续核验官网招生计划"
 }
 ```
 
-Suggested judgement labels:
-
-- 保底
-- 稳妥
-- 稳妥偏冲
-- 小冲
-- 高风险冲刺
-- 数据不足待核验
-
 The frontend can still show a visual indicator, but it should be based on judgement and evidence rather than a fake precision percentage.
+
+### Tool-Call Guardrails
+
+The prompt should tell AI to call tools before making concrete claims, but the runtime should also validate the report.
+
+Required guardrails:
+
+- If a final school item includes specific statistics, the tool trace must contain `getProgramDetail(programId)` or an equivalent detail lookup for that program.
+- If a final school item is outside the initial working pool, the trace must contain `expandCandidatePool` or `searchPrograms` evidence.
+- If AI references official verification, the trace must contain `verifyOfficialInfo`.
+- If required traces are missing, mark the affected item as `tool_trace_incomplete` and either retry generation or move the item to pending verification.
+
+This prevents prompt-only compliance from becoming the only safety mechanism.
 
 ## Data Traceability
 
@@ -222,9 +268,43 @@ Every final recommended school should be traceable to:
 - tool calls used by AI
 - source URL, if available
 - verification status
+- verification provider, if any
 - missing fields
+- tool trace completeness status
 
 This trace can be stored in the report JSON for later review and debugging.
+
+## Cache And Invalidation
+
+The working candidate pool and tool traces should be cached, but stale recommendations must be visible and controlled.
+
+Redis keys:
+
+- `ai:agent:pool:{conversationId}` or `ai:agent:pool:{reportId}` for the working pool
+- `ai:agent:trace:{conversationId}` or `ai:agent:trace:{reportId}` for tool-call traces
+- `ai:agent:profile:{conversationId}` or report snapshot for profile fields used to build the pool
+
+TTL:
+
+- conversation working pools: 30 minutes sliding TTL, matching the current chat-session style
+- report-generation pools: 1 hour fixed TTL while the report is pending
+- completed report JSON: 7 days or the existing report retention policy
+
+Invalidation triggers:
+
+- user estimated score changes
+- target regions change
+- exam/professional scope changes
+- degree type or study-mode preference changes
+- user explicitly clicks "重新推荐"
+
+When profile fields change, the frontend should start a new recommendation instead of silently reusing the old pool. Historical reports can still be opened, but they should show the profile snapshot used at generation time.
+
+Redis fallback:
+
+- If Redis is unavailable before report generation, build the working pool synchronously and store the compact report snapshot in the database.
+- If Redis expires during pending generation, return an explicit `pool_expired` error and ask the user to regenerate.
+- If Redis expires after report completion, use stored report JSON and do not regenerate silently.
 
 ## Error Handling
 
@@ -237,7 +317,8 @@ If AI service is unavailable:
 If internet verification fails:
 
 - keep the recommendation if local data is sufficient
-- mark verificationStatus as local_data_only or verification_failed
+- mark verificationStatus as verification_failed if verification was attempted
+- keep verificationStatus as local_data_only if no internet verification was attempted
 - do not block the whole report
 
 If the candidate pool is too small:
@@ -252,6 +333,12 @@ If the user asks for schools outside the local pool:
 - then use verification search if enabled
 - mark externally discovered schools as pending verification until local data is added or confirmed
 
+If a generated report fails tool-trace validation:
+
+- retry once with a stricter prompt that names the missing tool calls
+- if retry still fails, keep only validated items
+- mark removed or incomplete items as `tool_trace_incomplete` in debug metadata, not as confirmed recommendations
+
 ## Frontend Changes
 
 The standalone AI page should keep the current quick recommendation and AI chat entry points, but update the explanation:
@@ -262,12 +349,19 @@ The standalone AI page should keep the current quick recommendation and AI chat 
 
 The report page should replace match percentage with:
 
-- AI judgement label
+- judgement label
 - evidence list
 - risk list
 - data completeness
 - verification status
 - source links
+
+Historical report compatibility:
+
+- If a report has the new `judgement` field, render the new evidence/risk layout.
+- If a report only has old `matchScore` data, keep a compact legacy card that shows the old match percentage and a banner: "这是旧版 AI 报告，推荐依据字段不完整。"
+- Do not automatically regenerate old reports when the user opens history.
+- Provide a "重新生成新版报告" action when the current profile is available.
 
 ## Backend Changes
 
@@ -278,6 +372,7 @@ Required backend changes:
 - Store working candidate pools and tool traces in Redis/report JSON.
 - Update AI prompts so the model calls tools before making concrete recommendations.
 - Change report schema from matchScore-centered output to judgement/evidence/risk-centered output.
+- Add report validation that checks judgement enum mapping, verification status mapping, and required tool traces.
 - Keep local database as the source of truth for main recommendations.
 
 ## Testing
@@ -296,13 +391,16 @@ Prompt/tool tests:
 - AI calls getProgramDetail before discussing specific school statistics
 - AI uses expandCandidatePool when user asks for a new region or school tier
 - AI does not expose internal program IDs in user-facing text
+- report validation rejects or marks items with missing required tool traces
+- AI judgement strings map to one of the legal backend enum values
 
 Frontend tests:
 
 - report renders judgement/evidence/risk fields
 - missing verification status is visible
 - source link is shown when available
-- old matchScore-only report data has a graceful fallback if historical reports are opened
+- old matchScore-only report data renders the legacy card and old-report banner
+- "重新生成新版报告" is available for legacy reports when profile data exists
 
 ## Rollout Plan
 
@@ -311,13 +409,17 @@ Phase 1: Local-database agent
 - Build broad candidate pool.
 - Add database tools.
 - Update AI prompt and report schema.
+- Add `judgement`, `verificationStatus`, and `verificationProvider` fields.
+- Add enum mapping and tool-trace validation.
 - Replace matchScore UI with judgement/evidence/risk display.
+- Lock the verification provider interface before Phase 1 finishes.
 
 Phase 2: Verification tool
 
 - Add internet verification tool behind a feature flag.
 - Store verification status and source evidence.
 - Display verification status in reports.
+- Plug a concrete provider into the Phase 1 `verificationProvider` interface without changing report schema.
 
 Phase 3: Product refinement
 
@@ -335,4 +437,10 @@ The main product direction is fixed:
 - 300-500 broad working candidate pool
 - AI judgement with evidence instead of pseudo-precise match percentage
 
-Implementation still needs to choose exact field names for the new report JSON and whether internet verification is initially implemented with a built-in search API, a custom crawler, or a manually configured provider.
+Open implementation choices:
+
+- exact configurable default for `initialPoolLimit` and `maxExpandedPoolLimit`
+- concrete internet verification provider for Phase 2
+- whether report validation retries are synchronous or queued
+
+These choices must not change the report schema fields defined above.
