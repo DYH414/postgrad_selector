@@ -780,7 +780,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             item.put("schoolName", p.get("schoolName"));
             item.put("schoolTier", p.get("schoolTier"));
             item.put("city", p.get("city"));
+            item.put("province", p.get("province"));
             item.put("programName", p.get("programName"));
+            item.put("collegeName", p.get("collegeName"));
+            item.put("degreeType", p.get("degreeType"));
             Object avgObj = p.get("avgAdmittedScore");
             int avg = 0;
             if (avgObj instanceof Number) {
@@ -788,8 +791,17 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
             item.put("avgAdmittedScore", avg);
             item.put("gap", avg > 0 ? (estimatedScore - avg) : null);
-            item.put("collegeName", p.get("collegeName"));
-            item.put("degreeType", p.get("degreeType"));
+            // 以下字段供报告生成时 injectFullData 使用
+            item.put("scoreLine", p.get("scoreLine"));
+            item.put("admissionLow", p.get("admissionLow"));
+            item.put("admissionHigh", p.get("admissionHigh"));
+            item.put("planCount", p.get("planCount"));
+            item.put("admittedCount", p.get("admittedCount"));
+            item.put("retestCount", p.get("retestCount"));
+            item.put("dataYear", p.get("dataYear"));
+            item.put("dataCompleteness", p.get("dataCompleteness"));
+            item.put("sourceUrl", p.get("sourceUrl"));
+            item.put("sourceOwner", p.get("sourceOwner"));
             summary.add(item);
         }
         return summary;
@@ -1114,20 +1126,20 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     }
 
     private ChatModel buildChatModel() {
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        String apiKey = System.getenv("DEEPSEEK_API_KEY");
         return OpenAiChatModel.builder()
-            .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
+            .baseUrl("https://api.deepseek.com")
             .apiKey(apiKey)
-            .modelName("qwen-max")
+            .modelName("deepseek-chat")
             .build();
     }
 
     private OpenAiStreamingChatModel buildStreamingChatModel() {
-        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        String apiKey = System.getenv("DEEPSEEK_API_KEY");
         return OpenAiStreamingChatModel.builder()
-            .baseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1")
+            .baseUrl("https://api.deepseek.com")
             .apiKey(apiKey)
-            .modelName("qwen-max")
+            .modelName("deepseek-chat")
             .build();
     }
 
