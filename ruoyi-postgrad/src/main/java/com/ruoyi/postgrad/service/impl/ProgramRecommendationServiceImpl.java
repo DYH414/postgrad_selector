@@ -158,7 +158,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             try
             {
                 Map<String, Object> row = recommendationMapper.selectProgramForRecommendation(programId);
-                if (row != null) items.add(normalizeProgram(row, score));
+                if (row != null) items.add(compareProgramItem(normalizeProgram(row, score)));
             }
             catch (Exception ignored) {}
         }
@@ -169,6 +169,14 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         data.put("items", items);
         data.put("rows", compareRows());
         return data;
+    }
+
+    private Map<String, Object> compareProgramItem(Map<String, Object> item)
+    {
+        Map<String, Object> compareItem = new LinkedHashMap<>(item);
+        compareItem.remove("fitLevel");
+        compareItem.remove("fitLevelLabel");
+        return compareItem;
     }
 
     // ---- fetch helpers ----
@@ -528,7 +536,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             row("admissionHigh", "最高录取分"), row("admissionHighGap", "与最高录取分差距"),
             row("avgScoreGap", "与拟录取均分差距"), row("admissionRangeLabel", "拟录取区间（总分）"),
             row("planCount", "招生人数（含推免）"), row("dataCompleteness", "N诺数据完整度"),
-            row("sourceUrl", "N诺来源"), row("fitLevelLabel", "适配等级"));
+            row("sourceUrl", "N诺来源"));
     }
 
     private Map<String, Object> option(String value, String label)

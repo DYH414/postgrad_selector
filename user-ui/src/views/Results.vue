@@ -72,39 +72,43 @@
               </button>
             </span>
           </div>
-          <el-button plain type="primary" icon="el-icon-download">导出结果</el-button>
+          <el-button v-if="activeTab !== 'compare'" plain type="primary" icon="el-icon-download">导出结果</el-button>
         </div>
 
         <div class="data-alert">
           <i class="el-icon-warning"></i>
           复试线不是最低录取分；筛选学校不代表只有这些学校可以报。当前数据主要来源于 N诺（第三方整理），可能存在遗漏或错误，请以院校官网为准。
-          <button type="button" @click="activeTab = 'compare'">查看说明 <i class="el-icon-info"></i></button>
+          <button type="button" @click="showCompareTab">查看说明 <i class="el-icon-info"></i></button>
         </div>
 
         <template v-if="activeTab === 'compare'">
           <section class="compare-panel">
             <div class="tabs">
-              <button class="active">院校对比</button>
-              <button>我的备选</button>
+              <button
+                type="button"
+                :class="{ active: activeCompareTab === 'compare' }"
+                @click="activeCompareTab = 'compare'">
+                院校对比
+              </button>
+              <button
+                type="button"
+                :class="{ active: activeCompareTab === 'backup' }"
+                @click="activeCompareTab = 'backup'">
+                我的备选
+              </button>
             </div>
-            <div class="compare-actions">
+            <div v-if="activeCompareTab === 'compare'" class="compare-actions">
               <span>已选择 {{ compareSchools.length }} 个项目</span>
               <div>
-                <el-button icon="el-icon-download" size="small">导出清单</el-button>
-                <el-button type="primary" icon="el-icon-data-line" size="small">一键对比</el-button>
-                <el-button icon="el-icon-setting" size="small">调整列</el-button>
                 <el-button v-if="compareSchools.length" size="small" @click="clearCompare">清空对比</el-button>
               </div>
             </div>
-            <table class="compare-table">
+            <table v-if="activeCompareTab === 'compare' && compareSchools.length" class="compare-table">
               <tbody>
                 <tr v-for="row in compareRows" :key="row.label">
                   <th>{{ row.label }}</th>
                   <td v-for="school in compareSchools" :key="school.compareKey + row.label">
                     <template v-if="row.type === 'name'"><strong>{{ school.name }}</strong></template>
-                    <template v-else-if="row.type === 'fit'">
-                      <span class="fit-tag" :class="'fit-' + school.fitLevelClass">{{ school.fitLevel }}</span>
-                    </template>
                     <template v-else-if="row.type === 'diff'">
                       <span class="score-diff" :class="{ positive: school[row.key] >= 0, negative: school[row.key] < 0 }">
                         {{ school[row.key] > 0 ? '+' : '' }}{{ school[row.key] }}
@@ -129,15 +133,41 @@
                 </tr>
               </tbody>
             </table>
-            <p class="table-note">注：拟录取区间为近三年拟录取总分范围，仅供参考；招生人数含推免，具体以院校当年公告为准。</p>
-          </section>
-
-          <section class="backup-panel">
-            <div class="section-title">
-              <strong>我的备选</strong>
-              <span>共 11 个项目</span>
+            <div v-else-if="activeCompareTab === 'compare'" class="empty-group compare-empty">
+              <template v-if="backupPreviewItems.length">
+                <strong>从我的备选加入对比</strong>
+                <p>多选刚刚加入备选的学校，再一起加入对比列表。</p>
+                <div class="backup-quick-list">
+                  <button
+                    v-for="item in backupPreviewItems"
+                    :key="item.programId"
+                    type="button"
+                    :class="{ selected: isBackupSelectedForCompare(item.programId) }"
+                    @click="toggleBackupCompareSelection(item.programId)">
+                    <i :class="isBackupSelectedForCompare(item.programId) ? 'el-icon-check' : 'el-icon-plus'"></i>
+                    <span>{{ item.name }}</span>
+                  </button>
+                </div>
+                <el-button
+                  class="backup-batch-button"
+                  type="primary"
+                  size="small"
+                  :disabled="selectedBackupCompareIds.length === 0"
+                  @click="addSelectedBackupsToCompare">
+                  加入对比（{{ selectedBackupCompareIds.length }}）
+                </el-button>
+              </template>
+              <template v-else>
+                暂无对比项目，请先在“我的备选”中加入对比。
+              </template>
             </div>
-            <div class="backup-grid">
+            <p v-if="activeCompareTab === 'compare' && compareSchools.length" class="table-note">注：拟录取区间为近三年拟录取总分范围，仅供参考；招生人数含推免，具体以院校当年公告为准。</p>
+
+            <div v-if="activeCompareTab === 'backup'" class="section-title compare-section-title">
+              <strong>我的备选</strong>
+              <span>共 {{ backupTotal }} 个项目</span>
+            </div>
+            <div v-if="activeCompareTab === 'backup' && backupGroups.length" class="backup-grid">
               <div v-for="group in backupGroups" :key="group.name" class="backup-card" :class="group.theme">
                 <div class="backup-title">
                   <div>
@@ -149,11 +179,19 @@
                 <ul>
                   <li v-for="item in group.items" :key="item.name">
                     <span>{{ item.name }}</span>
-                    <em>{{ item.grade }}</em>
+                    <div class="backup-actions">
+                      <em>{{ item.grade }}</em>
+                      <button type="button" @click="addBackupToCompare(item)">
+                        {{ isInCompare(item.programId) ? '已加入' : '加入对比' }}
+                      </button>
+                    </div>
                   </li>
                 </ul>
-                <button type="button">查看全部 {{ group.items.length }} 个项目 <i class="el-icon-right"></i></button>
+                <button type="button" @click="router.push('/favorites')">管理备选 <i class="el-icon-right"></i></button>
               </div>
+            </div>
+            <div v-else-if="activeCompareTab === 'backup'" class="empty-group">
+              暂无备选项目，请先在推荐结果页收藏意向专业。
             </div>
           </section>
         </template>
@@ -249,7 +287,16 @@
                 <span v-else class="source-link source-missing">
                   <i class="el-icon-link"></i> N诺数据（来源待补）
                 </span>
-                <button class="detail-link card-detail" type="button" @click="openDetail(school.programId)">查看详情</button>
+                <div class="card-actions">
+                  <button class="detail-link" type="button" @click="openDetail(school.programId)">查看详情</button>
+                  <button
+                    class="backup-card-btn"
+                    type="button"
+                    :disabled="favoriteLoadingIds.includes(favoriteKey(school))"
+                    @click="handleFavorite(school)">
+                    {{ isFavorited(school) ? '已加入备选' : '加入备选' }}
+                  </button>
+                </div>
                 <div v-if="school.directionCount > 1 && isSchoolExpanded(school.cardKey)" class="direction-list">
                   <div v-for="direction in school.directions" :key="direction.cardKey" class="direction-row">
                     <div class="direction-main">
@@ -381,6 +428,7 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref(null)
 const activeTab = ref(route.query.tab === 'compare' ? 'compare' : 'result')
+const activeCompareTab = ref('compare')
 const result = ref(emptyResult())
 const favoriteProgramIds = ref([])
 const favoriteLoadingIds = ref([])
@@ -401,11 +449,12 @@ const compareRows = [
   { label: '招生人数（含推免）', key: 'quota' },
   { label: 'N诺数据完整度', type: 'confidence' },
   { label: 'N诺来源', type: 'source' },
-  { label: '筛选标签', type: 'fit' },
   { label: '操作', type: 'action' }
 ]
 const compareSchools = ref([])
 const backupGroups = ref([])
+const backupLoaded = ref(false)
+const selectedBackupCompareIds = ref([])
 const expandedSchoolKeys = ref([])
 
 // --- computed properties ---
@@ -468,6 +517,24 @@ const filteredItems = computed(() => {
     (school.programName || '').toLowerCase().includes(kw) ||
     (school.programCode || '').toLowerCase().includes(kw)
   )
+})
+
+const backupTotal = computed(() => {
+  return backupGroups.value.reduce((total, group) => total + group.items.length, 0)
+})
+
+const backupProgramIds = computed(() => {
+  return new Set(backupGroups.value
+    .flatMap(group => group.items)
+    .map(item => Number(item.programId))
+    .filter(Boolean))
+})
+
+const backupPreviewItems = computed(() => {
+  return backupGroups.value
+    .flatMap(group => group.items)
+    .filter(item => item.programId && !isInCompare(item.programId))
+    .slice(0, 6)
 })
 
 const filteredTotal = computed(() => filteredItems.value.length)
@@ -810,23 +877,27 @@ function matchSchoolFilters(school, filters) {
 }
 
 function loadCompare() {
+  if (!backupLoaded.value) {
+    compareSchools.value = []
+    return
+  }
   let ids = []
   if (route.query.programIds) {
     ids = String(route.query.programIds).split(',').filter(Boolean).map(Number).slice(0, COMPARE_MAX_ITEMS)
   } else {
-    // Fallback: check localStorage from report page "加入对比"
     try {
       const stored = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]')
       ids = stored.filter(Boolean).slice(0, COMPARE_MAX_ITEMS)
     } catch (e) {
       ids = []
     }
-    // If still empty, try rule-based result groups
-    if (!ids.length) {
-      ids = result.value.groups.flatMap(group => group.schools).map(item => item.programId).filter(Boolean).slice(0, 4)
-    }
   }
-  if (!ids.length) return
+  ids = ids.filter(id => backupProgramIds.value.has(Number(id)))
+  localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(ids))
+  if (!ids.length) {
+    compareSchools.value = []
+    return
+  }
   const estimatedScore = route.query.score
     || localStorage.getItem(COMPARE_SCORE_KEY)
     || result.value.score
@@ -854,8 +925,6 @@ function loadCompare() {
         quota: item.planCount || '-',
         sourceUrl: item.sourceUrl,
         confidence: school.confidence,
-        fitLevel: school.tag,
-        fitLevelClass: school.fitLevelClass,
         star: school.star
       }
     })
@@ -866,22 +935,102 @@ function clearCompare() {
   localStorage.removeItem(COMPARE_STORAGE_KEY)
   localStorage.removeItem(COMPARE_SCORE_KEY)
   compareSchools.value = []
+  selectedBackupCompareIds.value = []
+  if (route.query.programIds) {
+    const nextQuery = { ...route.query }
+    delete nextQuery.programIds
+    router.replace({ path: route.path, query: nextQuery })
+  }
   ElMessage.success('已清空对比列表')
 }
 
+function isInCompare(programId) {
+  const id = Number(programId)
+  return !!id && compareSchools.value.some(school => Number(school.programId) === id)
+}
+
+function isBackupSelectedForCompare(programId) {
+  const id = Number(programId)
+  return !!id && selectedBackupCompareIds.value.includes(id)
+}
+
+function toggleBackupCompareSelection(programId) {
+  const id = Number(programId)
+  if (!id || isInCompare(id)) return
+  selectedBackupCompareIds.value = isBackupSelectedForCompare(id)
+    ? selectedBackupCompareIds.value.filter(item => item !== id)
+    : [...selectedBackupCompareIds.value, id]
+}
+
+function addSelectedBackupsToCompare() {
+  const selected = selectedBackupCompareIds.value.filter(id => backupProgramIds.value.has(Number(id)) && !isInCompare(id))
+  if (!selected.length) return
+  const current = compareSchools.value.map(school => Number(school.programId)).filter(Boolean)
+  const available = Math.max(0, COMPARE_MAX_ITEMS - current.length)
+  if (available === 0) {
+    ElMessage.warning(`最多选择 ${COMPARE_MAX_ITEMS} 个备选项目对比`)
+    return
+  }
+  const adding = selected.slice(0, available)
+  if (selected.length > available) {
+    ElMessage.warning(`最多选择 ${COMPARE_MAX_ITEMS} 个备选项目对比，已加入前 ${available} 个`)
+  }
+  const next = Array.from(new Set([...current, ...adding]))
+  localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(next))
+  selectedBackupCompareIds.value = []
+  const nextQuery = { ...route.query }
+  delete nextQuery.programIds
+  router.replace({ path: route.path, query: nextQuery })
+  loadCompare()
+  activeCompareTab.value = 'compare'
+}
+
+function addBackupToCompare(item) {
+  const programId = Number(item && item.programId)
+  if (!programId) return
+  if (isInCompare(programId)) {
+    activeCompareTab.value = 'compare'
+    return
+  }
+  const current = compareSchools.value.map(school => Number(school.programId)).filter(Boolean)
+  if (current.length >= COMPARE_MAX_ITEMS) {
+    ElMessage.warning(`最多选择 ${COMPARE_MAX_ITEMS} 个备选项目对比`)
+    return
+  }
+  const next = [...current, programId]
+  localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(next))
+  const nextQuery = { ...route.query }
+  delete nextQuery.programIds
+  router.replace({ path: route.path, query: nextQuery })
+  loadCompare()
+  activeCompareTab.value = 'compare'
+}
+
+function showCompareTab() {
+  activeTab.value = 'compare'
+  loadCompare()
+  loadBackupGroups()
+}
+
 function loadBackupGroups() {
+  backupLoaded.value = false
   listFavorites().then(res => {
     syncFavoriteIds(res.data || [])
     const items = (res.data || []).map(item => ({
-      name: item.school_name + ' · ' + item.program_name,
-      grade: item.program_code || '已收藏',
-      programId: item.program_id
+      name: `${item.schoolName || item.school_name || '-'} · ${item.programName || item.program_name || '-'}`,
+      grade: item.programCode || item.program_code || '已收藏',
+      programId: item.programId || item.program_id
     }))
     backupGroups.value = items.length
       ? [{ name: '我的收藏', desc: '从筛选结果中收藏的院校专业', theme: 'blue', items }]
       : []
+    selectedBackupCompareIds.value = selectedBackupCompareIds.value
+      .filter(id => backupProgramIds.value.has(Number(id)) && !isInCompare(id))
+    backupLoaded.value = true
+    loadCompare()
   }).catch(() => {
     backupGroups.value = []
+    backupLoaded.value = true
   })
 }
 
@@ -973,7 +1122,10 @@ function dataCompletenessText(level) {
 // --- watchers ---
 watch(() => route.query.tab, (tab) => {
   activeTab.value = tab === 'compare' ? 'compare' : 'result'
-  if (activeTab.value === 'compare') loadCompare()
+  if (activeTab.value === 'compare') {
+    loadCompare()
+    loadBackupGroups()
+  }
 })
 
 watch(() => route.query.programIds, () => {
@@ -1011,6 +1163,10 @@ watch(() => route.query.keyword, (newKw) => {
 loadOptions()
 loadResult()
 loadFavoriteIds()
+if (activeTab.value === 'compare') {
+  loadCompare()
+  loadBackupGroups()
+}
 </script>
 
 <style scoped>
@@ -1825,8 +1981,14 @@ loadFavoriteIds()
 .backup-card li {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   min-height: 36px;
   align-items: center;
+}
+
+.backup-card li span {
+  min-width: 0;
+  line-height: 1.45;
 }
 
 .backup-card li em {
@@ -1837,7 +1999,26 @@ loadFavoriteIds()
   padding: 2px 8px;
 }
 
-.backup-card button {
+.backup-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.backup-actions button {
+  width: auto;
+  height: 28px;
+  border: 1px solid #bfd3ff;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.backup-card > button {
   width: 100%;
   height: 42px;
   border: 0;
@@ -1854,6 +2035,74 @@ loadFavoriteIds()
   text-align: center;
   color: #8a96a8;
   background: #fbfdff;
+}
+
+.compare-empty strong {
+  display: block;
+  color: #1f2937;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.compare-empty p {
+  margin: 0 0 14px;
+  color: #6b778a;
+}
+
+.backup-quick-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.backup-quick-list button {
+  min-height: 42px;
+  border: 1px solid #d7e5fb;
+  border-radius: 6px;
+  background: #fff;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.backup-quick-list button.selected {
+  border-color: #1769f6;
+  background: #eef5ff;
+}
+
+.backup-quick-list i {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #bfd3ff;
+  border-radius: 50%;
+  color: #1769f6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.backup-quick-list button.selected i {
+  border-color: #1769f6;
+  background: #1769f6;
+  color: #fff;
+}
+
+.backup-quick-list span {
+  min-width: 0;
+  color: #263955;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.backup-batch-button {
+  margin-top: 14px;
 }
 
 .empty-result {
@@ -1891,8 +2140,27 @@ loadFavoriteIds()
   flex: 1;
 }
 
-.card-detail {
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-top: 10px;
+}
+
+.backup-card-btn {
+  height: 30px;
+  border: 1px solid #bfd3ff;
+  border-radius: 5px;
+  background: #eef5ff;
+  color: #1769f6;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+.backup-card-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .positive {

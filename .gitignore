@@ -51,6 +51,8 @@ nbdist/
 
 /.worktrees/
 /.superpowers/
+/.codex/
+/.codex-api-test/
 /.venv/
 /data/
 /scripts/
