@@ -16,7 +16,7 @@
           <i v-if="msg.role === 'assistant'" class="el-icon-cpu" />
           <i v-else class="el-icon-user" />
         </div>
-        <div class="msg-bubble">{{ msg.content }}</div>
+        <div class="msg-bubble">{{ stripMarkdown(msg.content) }}</div>
       </div>
 
       <div v-if="loading" class="msg assistant">
@@ -100,11 +100,11 @@ async function sendMessage() {
   scrollToBottom()
 }
 
-function sendOption(opt) {
+async function sendOption(opt) {
   messages.value.push({ role: 'user', content: opt })
   currentOptions.value = []
   loading.value = true
-  callChat(opt)
+  await callChat(opt)
   scrollToBottom()
 }
 
@@ -125,13 +125,13 @@ async function callChat(text) {
         onToken(token) {
           rawAssistantContent += token
           const idx = ensureAssistantMsg()
-          messages.value[idx].content = visibleStreamContent(rawAssistantContent)
+          messages.value[idx].content = stripMarkdown(visibleStreamContent(rawAssistantContent))
           loading.value = false
           scrollToBottom()
         },
         onDone(data) {
           const idx = ensureAssistantMsg()
-          messages.value[idx].content = data.message || messages.value[idx].content
+          messages.value[idx].content = visibleStreamContent(data.message || messages.value[idx].content)
           currentOptions.value = data.options || []
           saveToLocal()
         },
@@ -152,7 +152,24 @@ function visibleStreamContent(content) {
   return (optionsMarker >= 0 ? content.slice(0, optionsMarker) : content).trimStart()
 }
 
+function stripMarkdown(text) {
+  if (!text) return text
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^###\s+/gm, '')
+    .replace(/^##\s+/gm, '')
+    .replace(/^#\s+/gm, '')
+    .replace(/^>\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '· ')
+    .replace(/\|/g, ' ')
+}
+
 async function callChatFallback(text, assistantIndex) {
+  messages.value[assistantIndex].content = '正在处理...'
+  // 等一下让 AI 完成工具调用
+  await new Promise(r => setTimeout(r, 2000))
   try {
     const res = await postAiChat({ conversationId: conversationId.value, message: text })
     if (res.data.fallback) {
@@ -160,20 +177,37 @@ async function callChatFallback(text, assistantIndex) {
       emit('fallback', res.data)
       return
     }
-    messages.value[assistantIndex].content = res.data.message
+    messages.value[assistantIndex].content = visibleStreamContent(res.data.message)
     currentOptions.value = res.data.options || []
     saveToLocal()
   } catch (e) {
-    messages.value[assistantIndex].content = 'AI 对话暂不可用，请稍后重试。'
-    ElMessage.error('对话请求失败')
+    // 再试一次
+    await new Promise(r => setTimeout(r, 3000))
+    try {
+      const res = await postAiChat({ conversationId: conversationId.value, message: text })
+      messages.value[assistantIndex].content = visibleStreamContent(res.data.message || 'AI 对话暂不可用，请稍后重试。')
+      currentOptions.value = res.data.options || []
+    } catch (_) {
+      messages.value[assistantIndex].content = 'AI 对话暂不可用，请稍后重试。'
+    }
   }
+}
+
+function trackPendingReport(reportId) {
+  try {
+    const pending = JSON.parse(sessionStorage.getItem('pending_reports') || '[]')
+    pending.push({ id: reportId, ts: Date.now() })
+    sessionStorage.setItem('pending_reports', JSON.stringify(pending.slice(-5)))
+  } catch (_) {}
 }
 
 async function generateReport() {
   loading.value = true
   try {
     const res = await postAiGenerateReport({ conversationId: conversationId.value })
-    router.push({ name: 'AiReport', params: { id: res.data.reportId } })
+    const reportId = res.data.reportId
+    trackPendingReport(reportId)
+    router.push({ name: 'AiReport', params: { id: reportId } })
   } catch (e) {
     ElMessage.error('生成报告失败')
   } finally {
@@ -183,8 +217,13 @@ async function generateReport() {
 
 function saveToLocal() {
   try {
-    localStorage.setItem('ai_conv_' + conversationId.value,
-      JSON.stringify({ messages: messages.value, options: currentOptions.value }))
+    const data = JSON.stringify({ messages: messages.value, options: currentOptions.value })
+    if (data.length > 500_000) {
+      const trimmed = { messages: messages.value.slice(-10), options: currentOptions.value }
+      localStorage.setItem('ai_conv_' + conversationId.value, JSON.stringify(trimmed))
+      return
+    }
+    localStorage.setItem('ai_conv_' + conversationId.value, data)
   } catch (e) { /* quota exceeded, ignore */ }
 }
 

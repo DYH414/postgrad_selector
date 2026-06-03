@@ -99,41 +99,83 @@
         </el-tab-pane>
 
         <el-tab-pane label="我的备选" name="favorites">
-          <section class="tab-panel">
-            <div class="panel-head">
+          <section class="tab-panel shortlist-panel">
+            <div class="panel-head shortlist-head">
               <div>
-                <h2>我的备选</h2>
-                <p>集中管理收藏的学校和专业，勾选 2 个以上可以直接进入对比。</p>
+                <span class="section-kicker">备选池</span>
+                <h2>我的备选方案</h2>
+                <p>把感兴趣的学校和专业放进备选池，勾选 2 个以上即可进入对比，后续再按风险和匹配度筛掉。</p>
               </div>
               <div class="panel-actions">
-                <span>已选择 {{ selectedRows.length }} 项</span>
+                <span>已选择 {{ shortlistSelectedIds.length }} 项</span>
                 <el-button type="primary" :disabled="selectedRows.length < 2" @click="compareSelected">对比所选</el-button>
+                <el-button v-if="compareIds.length > 0" type="success" size="small" plain @click="goToCompare">
+                  查看对比 ({{ compareIds.length }})
+                </el-button>
               </div>
             </div>
 
-            <el-table :data="favorites" v-loading="favoritesLoading" class="mine-table" @selection-change="selectedRows = $event">
-              <el-table-column type="selection" width="48" />
-              <el-table-column prop="schoolName" label="学校" min-width="150" />
-              <el-table-column prop="tier" label="层次" width="90" />
-              <el-table-column prop="collegeName" label="学院" min-width="150" />
-              <el-table-column prop="programName" label="专业" min-width="150" />
-              <el-table-column prop="programCode" label="专业代码" width="110" />
-              <el-table-column prop="degreeType" label="学位" width="80">
-                <template #default="{ row }">
-                  {{ row.degreeType === 'professional' ? '专硕' : '学硕' }}
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="150">
-                <template #default="{ row }">
-                  <el-button type="text" size="small" @click="openDetail(row)">详情</el-button>
-                  <el-button type="text" size="small" @click="handleRemove(row)">取消收藏</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <div class="shortlist-overview">
+              <div>
+                <span>备选总数</span>
+                <strong>{{ shortlistOverview.total }}</strong>
+                <small>候选学校 / 专业</small>
+              </div>
+              <div>
+                <span>已选对比</span>
+                <strong>{{ shortlistSelectedIds.length }}</strong>
+                <small>至少选择 2 项</small>
+              </div>
+              <div>
+                <span>专硕</span>
+                <strong>{{ shortlistOverview.professional }}</strong>
+                <small>应用型方向</small>
+              </div>
+              <div>
+                <span>学硕</span>
+                <strong>{{ shortlistOverview.academic }}</strong>
+                <small>科研型方向</small>
+              </div>
+            </div>
+
+            <div v-loading="favoritesLoading" class="shortlist-grid">
+              <article
+                v-for="item in favorites"
+                :key="item.programId"
+                class="shortlist-card"
+                :class="{ selected: shortlistSelectedIds.includes(item.programId), comparing: compareIds.includes(item.programId) }"
+              >
+                <div class="shortlist-card-main">
+                  <el-checkbox
+                    :model-value="shortlistSelectedIds.includes(item.programId)"
+                    @change="toggleShortlistSelection(item)"
+                  />
+                  <div class="shortlist-card-copy">
+                    <div class="shortlist-title-row">
+                      <h3>{{ item.schoolName }}</h3>
+                      <span class="tier-pill">{{ item.tier || '未标注' }}</span>
+                    </div>
+                    <p>{{ item.collegeName || '学院待补充' }} / {{ item.programName || '专业待补充' }}</p>
+                    <div class="shortlist-meta">
+                      <span>{{ item.programCode || '暂无代码' }}</span>
+                      <span>{{ degreeTypeLabel(item.degreeType) }}</span>
+                      <span v-if="compareIds.includes(item.programId)">已在对比</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="shortlist-actions">
+                  <el-button size="small" @click="openDetail(item)">查看详情</el-button>
+                  <el-button size="small" type="primary" plain @click="addToCompare(item)">
+                    {{ compareIds.includes(item.programId) ? '移出对比' : '加入对比' }}
+                  </el-button>
+                  <el-button size="small" type="danger" plain @click="handleRemove(item)">移出备选</el-button>
+                </div>
+              </article>
+            </div>
 
             <div v-if="!favoritesLoading && favorites.length === 0" class="empty-state">
-              <h3>暂无备选学校</h3>
-              <p>在筛选结果里收藏学校后，会集中出现在这里。</p>
+              <h3>暂无备选方案</h3>
+              <p>加入备选后，学校和专业会集中出现在这里，方便你做最终对比。</p>
               <el-button type="primary" @click="router.push('/')">去筛选学校</el-button>
             </div>
           </section>
@@ -203,6 +245,7 @@ import { getProfile, saveProfile } from '@/api/profile'
 import { listFavorites, removeFavorite } from '@/api/favorites'
 import { getProgramDetail } from '@/api/programs'
 import { getAiReports } from '@/api/ai'
+import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 
 const router = useRouter()
 const route = useRoute()
@@ -236,6 +279,7 @@ const form = reactive({
 
 const favorites = ref([])
 const selectedRows = ref([])
+const compareIds = ref([])
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref(null)
@@ -253,8 +297,8 @@ const regionCountText = computed(() => {
 const completionPercent = computed(() => {
   const fields = [
     !!profile.estimatedScore,
-    !!(profile.targetRegions && profile.targetRegions.length),
-    !!(profile.undergradTier || profile.undergraduateMajor)
+    !!profile.undergradTier,
+    !!profile.undergraduateMajor
   ]
   return Math.round((fields.filter(Boolean).length / fields.length) * 100)
 })
@@ -267,7 +311,22 @@ const profileRows = computed(() => [
   { label: '学位类型', value: profile.acceptAcademic ? '接受学硕' : '仅专硕' }
 ])
 
+const shortlistSelectedIds = computed(() => selectedRows.value.map(row => row.programId).filter(Boolean))
+
+const shortlistOverview = computed(() => {
+  const professional = favorites.value.filter(item => item.degreeType === 'professional').length
+  return {
+    total: favorites.value.length,
+    professional,
+    academic: Math.max(0, favorites.value.length - professional)
+  }
+})
+
 function tierLabel(v) { return Tiers[v] || v || '-' }
+
+function degreeTypeLabel(value) {
+  return value === 'professional' ? '专硕' : '学硕'
+}
 
 function normalizeRegions(regions) {
   if (typeof regions === 'string') {
@@ -334,9 +393,51 @@ function fetchFavorites() {
 
 function handleRemove(row) {
   removeFavorite(row.programId).then(() => {
-    ElMessage.success('已取消收藏')
+    ElMessage.success('已移出备选')
     favorites.value = favorites.value.filter(f => f.programId !== row.programId)
+    selectedRows.value = selectedRows.value.filter(f => f.programId !== row.programId)
   })
+}
+
+function toggleShortlistSelection(row) {
+  const exists = selectedRows.value.some(item => item.programId === row.programId)
+  selectedRows.value = exists
+    ? selectedRows.value.filter(item => item.programId !== row.programId)
+    : [...selectedRows.value, row]
+}
+
+function loadCompareState() {
+  try {
+    compareIds.value = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]')
+  } catch (_) { compareIds.value = [] }
+}
+
+function addToCompare(row) {
+  const id = row.programId
+  if (!id) return
+  loadCompareState()
+  const idx = compareIds.value.indexOf(id)
+  if (idx >= 0) {
+    // 已加入，移除
+    compareIds.value.splice(idx, 1)
+    localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(compareIds.value))
+    ElMessage.success('已从对比列表移除')
+    return
+  }
+  if (compareIds.value.length >= COMPARE_MAX_ITEMS) {
+    ElMessage.warning(`最多对比 ${COMPARE_MAX_ITEMS} 所学校`)
+    return
+  }
+  compareIds.value.push(id)
+  localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(compareIds.value))
+  if (profile.estimatedScore) {
+    localStorage.setItem(COMPARE_SCORE_KEY, String(profile.estimatedScore))
+  }
+  ElMessage.success(`已加入对比 (${compareIds.value.length}/${COMPARE_MAX_ITEMS})`)
+}
+
+function goToCompare() {
+  router.push({ path: '/results', query: { tab: 'compare' } })
 }
 
 function compareSelected() {
@@ -389,6 +490,7 @@ async function fetchReports() {
 function handleTabChange(name) {
   router.replace({ path: '/profile', query: name === 'profile' ? {} : { tab: name } }).catch(() => {})
   if (name === 'favorites' && !favoritesLoaded.value) fetchFavorites()
+  if (name === 'favorites') loadCompareState()
   if (name === 'ai' && !reportsLoaded.value) fetchReports()
 }
 
@@ -594,10 +696,159 @@ onMounted(() => {
   grid-column: 1 / -1;
 }
 
-.mine-table {
-  border: 1px solid #e5edf8;
+.section-kicker {
+  display: inline-flex;
+  margin-bottom: 7px;
+  color: #1769f6;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.shortlist-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.shortlist-head {
+  margin-bottom: 0;
+}
+
+.shortlist-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.shortlist-overview div {
+  min-height: 92px;
+  padding: 16px;
+  border: 1px solid #e2ecfb;
   border-radius: 12px;
+  background: #f8fbff;
+}
+
+.shortlist-overview span {
+  color: #73829a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.shortlist-overview strong {
+  display: block;
+  margin: 7px 0 3px;
+  color: #10203f;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.shortlist-overview small {
+  color: #8793a7;
+}
+
+.shortlist-grid {
+  display: grid;
+  gap: 12px;
+  min-height: 120px;
+}
+
+.shortlist-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid #e2ecfb;
+  border-radius: 12px;
+  background: #fff;
+  transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.shortlist-card:hover {
+  transform: translateY(-1px);
+  border-color: #9ec7ff;
+  box-shadow: 0 12px 28px rgba(48, 111, 209, 0.09);
+}
+
+.shortlist-card.selected {
+  border-color: #1769f6;
+  background: #f4f8ff;
+}
+
+.shortlist-card.comparing {
+  box-shadow: inset 3px 0 0 #10b981;
+}
+
+.shortlist-card-main {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.shortlist-card-copy {
+  min-width: 0;
+}
+
+.shortlist-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.shortlist-title-row h3 {
   overflow: hidden;
+  margin: 0;
+  color: #10203f;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tier-pill {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1769f6;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shortlist-card-copy p {
+  margin: 8px 0 0;
+  color: #56657a;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.shortlist-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.shortlist-meta span {
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shortlist-card.comparing .shortlist-meta span:last-child {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.shortlist-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .empty-state {
@@ -754,11 +1005,37 @@ onMounted(() => {
     align-items: flex-start;
     flex-direction: column;
   }
+  .shortlist-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .shortlist-card {
+    grid-template-columns: 1fr;
+  }
+  .shortlist-actions {
+    justify-content: flex-start;
+    padding-left: 40px;
+  }
   .report-card {
     grid-template-columns: 1fr 20px;
   }
   .report-card small {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .shortlist-overview {
+    grid-template-columns: 1fr;
+  }
+  .shortlist-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .shortlist-title-row h3 {
+    white-space: normal;
+  }
+  .shortlist-actions {
+    padding-left: 0;
   }
 }
 </style>

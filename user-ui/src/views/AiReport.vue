@@ -3,56 +3,101 @@
     <AppHeader current-page="ai" />
 
     <div class="report-container" v-if="report">
-      <!-- PENDING: Terminal loading + tier card skeleton -->
+      <!-- PENDING: AI recommendation loading -->
       <div v-if="report.status === 'PENDING'" class="loading-layout">
-        <!-- LEFT: Terminal window -->
-        <div class="terminal-panel">
-          <div class="terminal-chrome">
-            <span class="chrome-dot red" />
-            <span class="chrome-dot yellow" />
-            <span class="chrome-dot green" />
-            <span class="chrome-title">408-RECRUIT-ENGINE</span>
-            <span class="chrome-pulse" />
+        <section class="analysis-panel">
+          <div class="analysis-heading">
+            <span class="analysis-badge">AI 择校研判台</span>
+            <h2>正在校准你的考研择校坐标</h2>
+            <p>系统正在结合预估分、院校画像、历年复试线和录取趋势，生成更稳妥的冲稳保组合。</p>
           </div>
-          <div class="terminal-body">
-            <div v-for="(line, idx) in displayLogs" :key="idx" class="terminal-line"
-              :class="{ latest: idx === displayLogs.length - 1 && !allDone }">
-              <span class="terminal-prompt">❯</span>
+
+          <div class="progress-card">
+            <div class="progress-meta">
+              <span>推荐报告生成中</span>
+              <strong>{{ loadingProgress }}%</strong>
+            </div>
+            <div class="progress-track">
+              <span :style="{ width: loadingProgress + '%' }" />
+            </div>
+          </div>
+
+          <div class="analysis-steps">
+            <div v-for="(line, idx) in displayLogs" :key="idx" class="analysis-step done">
+              <span class="step-mark" />
               <span>{{ line }}</span>
             </div>
-            <div v-if="!allDone" class="terminal-line active">
-              <span class="terminal-prompt">❯</span>
+            <div v-if="!allDone" class="analysis-step active">
+              <span class="step-mark" />
               <span>{{ typingLine }}</span>
-              <span class="cursor-blink" />
+              <i class="typing-caret" />
             </div>
           </div>
-          <div class="terminal-footer">
-            <span>MODEL: AI-RECOMMEND-V2</span>
-            <span>STATUS: {{ allDone ? 'COMPLETED' : 'PROCESSING...' }}</span>
-          </div>
-        </div>
 
-        <!-- RIGHT: Tier card skeletons -->
-        <div class="skeleton-cards">
-          <div class="skeleton-card reach">
-            <span class="sk-badge red">冲刺档</span>
-            <div class="sk-bar" />
-            <div class="sk-bar short" />
-            <div class="sk-bar short" />
+          <div class="data-pills">
+            <span>408 统考</span>
+            <span>历年复试线</span>
+            <span>拟录取均分</span>
+            <span>院校画像</span>
           </div>
-          <div class="skeleton-card steady">
-            <span class="sk-badge blue">稳妥档</span>
-            <div class="sk-bar" />
-            <div class="sk-bar short" />
-            <div class="sk-bar short" />
+        </section>
+
+        <section class="fit-preview">
+          <div class="fit-preview-heading">
+            <span>正在生成冲稳保择校方案</span>
+            <strong>报告预览</strong>
           </div>
-          <div class="skeleton-card safe">
-            <span class="sk-badge green">保底档</span>
-            <div class="sk-bar" />
-            <div class="sk-bar short" />
-            <div class="sk-bar short" />
+          <div class="fit-preview-stack">
+            <div class="fit-preview-card reach">
+              <div class="fit-card-title">
+                <span>冲刺档</span>
+                <small>上限目标</small>
+              </div>
+              <div class="preview-lines">
+                <span class="wide" />
+                <span />
+                <span />
+              </div>
+              <div class="preview-stats">
+                <i>复试线</i>
+                <i>录取均分</i>
+                <i>风险提示</i>
+              </div>
+            </div>
+            <div class="fit-preview-card steady">
+              <div class="fit-card-title">
+                <span>稳妥档</span>
+                <small>主力候选</small>
+              </div>
+              <div class="preview-lines">
+                <span class="wide" />
+                <span />
+                <span />
+              </div>
+              <div class="preview-stats">
+                <i>地区匹配</i>
+                <i>计划人数</i>
+                <i>趋势判断</i>
+              </div>
+            </div>
+            <div class="fit-preview-card safe">
+              <div class="fit-card-title">
+                <span>保底档</span>
+                <small>风险缓冲</small>
+              </div>
+              <div class="preview-lines">
+                <span class="wide" />
+                <span />
+                <span />
+              </div>
+              <div class="preview-stats">
+                <i>分差空间</i>
+                <i>数据完整度</i>
+                <i>备选建议</i>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
       </div>
 
       <!-- COMPLETED: Full report -->
@@ -251,19 +296,26 @@ const router = useRouter()
 const route = useRoute()
 
 const LOGS = [
-  '[SYS_INIT] 正在连接 408 统考主数据池...',
-  '[DATA_LOAD] 读取历年高校 408 复试线与录取数据...',
-  '[FILTERS] 自适应匹配省份与学位类型偏好...',
-  '[ALIGNMENT] 用户预估分与历史录取库对齐...',
-  '[WEIGHTS] 启动研招知识图谱加权决策引擎...',
-  '[AI_COGNITIVE] AI 综合研判冲/稳/保三档分类...',
-  '[SECURITY] 数据加密沙盒隔离，已阻断敏感泄露...',
-  '[COMPLETED] 冲顶/稳妥/保底三档推荐装载就绪！'
+  '读取你的预估分、目标地区与学位类型偏好...',
+  '汇总 408 院校画像与专业方向标签...',
+  '核验历年复试线、录取均分与最低录取记录...',
+  '计算分数差、招生计划和数据完整度...',
+  '识别冲刺风险、稳妥区间与保底缓冲空间...',
+  '按冲刺档、稳妥档、保底档重排候选学校...',
+  '生成推荐依据、风险提示和后续核验建议...',
+  'AI 择校报告即将就绪'
 ]
+
+const MIN_PENDING_LOADING_MS = 9000
+const TYPE_CHAR_DELAY_MS = 45
+const TYPE_LINE_DELAY_MS = 650
+const POLL_INTERVAL_MS = 3000
 
 const report = ref(null)
 const pollTimer = ref(null)
 const typeTimer = ref(null)
+const completionTimer = ref(null)
+const loadingStartedAt = ref(0)
 const displayLogs = ref([])
 const logIdx = ref(0)
 const charIdx = ref(0)
@@ -279,6 +331,13 @@ const addingBackupIds = ref([])
 
 const result = computed(() => {
   return normalizeAiReport(report.value)
+})
+
+const loadingProgress = computed(() => {
+  if (allDone.value) return 100
+  const base = displayLogs.value.length / LOGS.length
+  const typing = typingLine.value ? 0.08 : 0
+  return Math.min(96, Math.max(12, Math.round((base + typing) * 100)))
 })
 
 const overviewCards = computed(() => {
@@ -336,15 +395,17 @@ async function fetchReport() {
     const res = await getAiReport(route.params.id)
     report.value = res.data
     if (res.data.status === 'PENDING') {
+      loadingStartedAt.value = Date.now()
       startTypewriter()
       pollTimer.value = setInterval(async () => {
         const r = await getAiReport(route.params.id)
-        report.value = r.data
-        if (r.data.status !== 'PENDING') {
-          finishTypewriter()
+        if (r.data.status === 'PENDING') {
+          report.value = r.data
+        } else {
           clearInterval(pollTimer.value)
+          scheduleReportCompletion(r.data)
         }
-      }, 3000)
+      }, POLL_INTERVAL_MS)
     }
   } catch (e) {
     ElMessage.error('加载报告失败')
@@ -369,13 +430,13 @@ function tickType() {
   if (charIdx.value < target.length) {
     typingLine.value += target.charAt(charIdx.value)
     charIdx.value++
-    typeTimer.value = setTimeout(() => tickType(), 25)
+    typeTimer.value = setTimeout(() => tickType(), TYPE_CHAR_DELAY_MS)
   } else {
     displayLogs.value.push(target)
     logIdx.value++
     charIdx.value = 0
     typingLine.value = ''
-    typeTimer.value = setTimeout(() => tickType(), 400)
+    typeTimer.value = setTimeout(() => tickType(), TYPE_LINE_DELAY_MS)
   }
 }
 
@@ -384,6 +445,16 @@ function finishTypewriter() {
   displayLogs.value = [...LOGS]
   typingLine.value = ''
   allDone.value = true
+}
+
+function scheduleReportCompletion(completedReport) {
+  const elapsed = Date.now() - loadingStartedAt.value
+  const remaining = Math.max(0, MIN_PENDING_LOADING_MS - elapsed)
+  completionTimer.value = setTimeout(() => {
+    finishTypewriter()
+    report.value = completedReport
+    clearPendingReport(route.params.id)
+  }, remaining)
 }
 
 function restartRecommend() {
@@ -533,9 +604,18 @@ onMounted(() => {
   loadBackupProgramIds()
 })
 
+function clearPendingReport(reportId) {
+  try {
+    const pending = JSON.parse(sessionStorage.getItem('pending_reports') || '[]')
+    const filtered = pending.filter(p => String(p.id) !== String(reportId))
+    sessionStorage.setItem('pending_reports', JSON.stringify(filtered))
+  } catch (_) {}
+}
+
 onBeforeUnmount(() => {
   if (pollTimer.value) clearInterval(pollTimer.value)
   if (typeTimer.value) clearTimeout(typeTimer.value)
+  if (completionTimer.value) clearTimeout(completionTimer.value)
 })
 </script>
 
@@ -543,64 +623,239 @@ onBeforeUnmount(() => {
 .ai-report-page { min-height: 100vh; background: #f5f7fa; }
 .report-container { max-width: 1100px; margin: 0 auto; padding: 24px; }
 
-/* ===== PENDING: Terminal + Skeleton layout ===== */
-.loading-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+/* ===== PENDING: AI recommendation loading ===== */
+.loading-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(360px, .98fr);
+  gap: 24px;
+  align-items: start;
+}
+.analysis-panel,
+.fit-preview {
+  border: 1px solid #dbe7f6;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 34px rgba(23, 32, 51, .08);
+}
+.analysis-panel { padding: 26px; }
+.analysis-heading { margin-bottom: 18px; }
+.analysis-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: #eef4ff;
+  color: #1769f6;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.analysis-heading h2 {
+  margin: 14px 0 8px;
+  color: #172033;
+  font-size: 26px;
+  line-height: 1.25;
+}
+.analysis-heading p {
+  max-width: 560px;
+  margin: 0;
+  color: #66758a;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.progress-card {
+  margin-bottom: 20px;
+  padding: 14px;
+  border: 1px solid #e5edf8;
+  border-radius: 8px;
+  background: #f7faff;
+}
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: #56657a;
+  font-size: 13px;
+}
+.progress-meta strong { color: #1769f6; }
+.progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5edf8;
+}
+.progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1769f6 0%, #22c55e 100%);
+  transition: width .25s ease;
+}
+.analysis-steps {
+  display: grid;
+  gap: 11px;
+  min-height: 282px;
+  padding: 4px 0;
+}
+.analysis-step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 8px;
+  align-items: center;
+  gap: 10px;
+  min-height: 25px;
+  color: #66758a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.analysis-step.done { color: #334155; }
+.analysis-step.active {
+  color: #1769f6;
+  font-weight: 700;
+}
+.step-mark {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #c7d7ed;
+  border-radius: 50%;
+  background: #fff;
+}
+.analysis-step.done .step-mark {
+  border-color: #16a34a;
+  background: #16a34a;
+}
+.analysis-step.active .step-mark {
+  border-color: #1769f6;
+  box-shadow: 0 0 0 5px rgba(23, 105, 246, .12);
+}
+.typing-caret {
+  width: 6px;
+  height: 16px;
+  border-radius: 2px;
+  background: #1769f6;
+  animation: caretBlink 1s infinite;
+}
+@keyframes caretBlink { 0%,100%{opacity:1} 50%{opacity:.18} }
+.data-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid #edf2f8;
+}
+.data-pills span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+.fit-preview {
+  padding: 20px;
+}
+.fit-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.fit-preview-heading span {
+  color: #172033;
+  font-size: 16px;
+  font-weight: 800;
+}
+.fit-preview-heading strong {
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+}
+.fit-preview-stack {
+  display: grid;
+  gap: 16px;
+}
+.fit-preview-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 150px;
+  padding: 18px;
+  border: 1px solid #e5edf8;
+  border-radius: 8px;
+  background: #fff;
+}
+.fit-preview-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7), transparent);
+  animation: cardShimmer 1.8s infinite;
+}
+.fit-preview-card.reach { border-left: 4px solid #ef4444; }
+.fit-preview-card.steady { border-left: 4px solid #2563eb; }
+.fit-preview-card.safe { border-left: 4px solid #16a34a; }
+.fit-card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.fit-card-title span {
+  font-size: 15px;
+  font-weight: 800;
+  color: #172033;
+}
+.fit-card-title small {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #66758a;
+  font-weight: 700;
+}
+.preview-lines {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 14px;
+}
+.preview-lines span {
+  display: block;
+  width: 68%;
+  height: 11px;
+  border-radius: 999px;
+  background: #e8eef7;
+}
+.preview-lines .wide { width: 100%; }
+.preview-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.preview-stats i {
+  padding: 8px 6px;
+  border-radius: 6px;
+  background: #f7faff;
+  color: #66758a;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  text-align: center;
+}
+@keyframes cardShimmer {
+  100% { transform: translateX(100%); }
+}
 
-/* Terminal panel */
-.terminal-panel {
-  background: #1e293b; border-radius: 16px; overflow: hidden;
-  font-family: 'Courier New', Courier, monospace; box-shadow: 0 8px 32px rgba(0,0,0,.12);
-}
-.terminal-chrome {
-  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
-  background: #0f172a; border-bottom: 1px solid #334155;
-}
-.chrome-dot { width: 10px; height: 10px; border-radius: 50%; }
-.chrome-dot.red { background: #f87171; }
-.chrome-dot.yellow { background: #fbbf24; }
-.chrome-dot.green { background: #34d399; }
-.chrome-title { color: #94a3b8; font-size: 11px; letter-spacing: 2px; margin-left: 8px; flex: 1; }
-.chrome-pulse { width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; animation: pulse 1.5s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-
-.terminal-body { padding: 20px 16px; min-height: 280px; font-size: 12px; line-height: 2; }
-.terminal-line { color: #94a3b8; display: flex; gap: 8px; }
-.terminal-line.latest { color: #34d399; font-weight: 600; }
-.terminal-line.active { color: #38bdf8; display: flex; gap: 8px; }
-.terminal-prompt { color: #38bdf8; flex-shrink: 0; }
-.cursor-blink { display: inline-block; width: 8px; height: 15px; background: #38bdf8; animation: blink 1s infinite; }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-
-.terminal-footer {
-  display: flex; justify-content: space-between; padding: 10px 16px;
-  border-top: 1px solid #334155; color: #64748b; font-size: 10px;
-}
-
-/* Skeleton cards */
-.skeleton-cards { display: flex; flex-direction: column; gap: 16px; }
-.skeleton-card {
-  background: #fff; border-radius: 14px; padding: 24px; position: relative;
-  overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.06);
-}
-.skeleton-card.reach { border-left: 4px solid #f56c6c; }
-.skeleton-card.steady { border-left: 4px solid #409eff; }
-.skeleton-card.safe { border-left: 4px solid #67c23a; }
-.sk-badge {
-  font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 4px;
-  display: inline-block; margin-bottom: 16px; letter-spacing: 1px;
-}
-.sk-badge.red { background: #fef0f0; color: #f56c6c; }
-.sk-badge.blue { background: #ecf5ff; color: #409eff; }
-.sk-badge.green { background: #f0f9eb; color: #67c23a; }
-.sk-bar {
-  height: 14px; border-radius: 4px; background: #f0f2f5;
-  margin-bottom: 10px; animation: shimmer 1.8s infinite;
-}
-.sk-bar.short { width: 60%; }
-@keyframes shimmer {
-  0% { background: #f0f2f5; }
-  50% { background: #e4e7ed; }
-  100% { background: #f0f2f5; }
+@media (prefers-reduced-motion: reduce) {
+  .progress-track span,
+  .fit-preview-card::after,
+  .typing-caret {
+    animation: none;
+    transition: none;
+  }
 }
 
 /* ===== Report ===== */
@@ -794,8 +1049,11 @@ onBeforeUnmount(() => {
 .detail-source { display: block; color: #409eff; text-decoration: none; font-weight: 600; }
 .detail-empty { padding: 32px 0; color: #7b8798; text-align: center; }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .loading-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
   .report-container { padding: 14px; }
   .report-hero { flex-direction: column; padding: 20px; }
   .hero-meta { align-items: flex-start; }

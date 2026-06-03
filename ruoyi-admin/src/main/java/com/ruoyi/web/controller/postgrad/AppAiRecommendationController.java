@@ -169,8 +169,8 @@ public class AppAiRecommendationController {
         try {
             emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(new LinkedHashMap<>(payload))));
             return true;
-        } catch (IOException e) {
-            // Client disconnected or emitter already completed — caller should NOT call complete() again
+        } catch (Exception e) {
+            // IOException / IllegalStateException — emitter already closed or client disconnected
             return false;
         }
     }

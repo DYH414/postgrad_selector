@@ -68,27 +68,33 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
             return rows;
         }
 
-        // Sort by distance to estimated score
-        rows.sort((a, b) -> Integer.compare(scoreDistance(a, estimatedScore), scoreDistance(b, estimatedScore)));
-
-        // Stratify: safe (gap >= 5), steady (gap -5..4), reach (gap <= -6)
-        List<RowMap> safe = new ArrayList<>();    // avg < estimatedScore by 5+
-        List<RowMap> steady = new ArrayList<>();  // avg within ±5 of estimatedScore
-        List<RowMap> reach = new ArrayList<>();   // avg > estimatedScore by 5+
-        for (RowMap row : rows)
-        {
+        // Stratify into 4 tiers: 保底(gap>=15), 稳妥(gap 5-14), 可冲(gap -10..4), 高难(gap<-10)
+        List<RowMap> safe = new ArrayList<>();    // gap >= 15
+        List<RowMap> steady = new ArrayList<>();  // gap 5-14
+        List<RowMap> reach = new ArrayList<>();   // gap -10..4
+        List<RowMap> hard = new ArrayList<>();    // gap < -10
+        for (RowMap row : rows) {
             int gap = estimatedScore - scoreAvg(row);
-            if (gap >= 5) safe.add(row);
-            else if (gap <= -6) reach.add(row);
-            else steady.add(row);
+            if (gap >= 15) safe.add(row);
+            else if (gap >= 5) steady.add(row);
+            else if (gap >= -10) reach.add(row);
+            else hard.add(row);
         }
 
-        // Evenly distribute slots, filling unused quota from other strata
-        int perStrata = DEFAULT_POOL_LIMIT / 3; // 16 each
+        // 保底档取高 gap 优先；稳妥档取接近分数优先
+        safe.sort((a, b) -> Integer.compare(
+            scoreDistance(b, estimatedScore), scoreDistance(a, estimatedScore))); // gap 大的在前
+        steady.sort((a, b) -> Integer.compare(
+            scoreDistance(a, estimatedScore), scoreDistance(b, estimatedScore)));
+
+        int perStrata = DEFAULT_POOL_LIMIT / 4; // 12 each
         List<RowMap> result = new ArrayList<>(DEFAULT_POOL_LIMIT);
-        result.addAll(takeUpTo(safe, perStrata));
-        result.addAll(takeUpTo(steady, perStrata));
+        // 保底留足 8 个名额（不够从稳妥补）
+        int safeQuota = Math.max(8, Math.min(perStrata, safe.size()));
+        result.addAll(takeUpTo(safe, safeQuota));
+        result.addAll(takeUpTo(steady, perStrata + Math.max(0, perStrata - safe.size())));
         result.addAll(takeUpTo(reach, perStrata));
+        result.addAll(takeUpTo(hard, Math.min(perStrata, hard.size())));
 
         // Fill remaining quota from whichever strata have more, sorted by proximity
         int remaining = DEFAULT_POOL_LIMIT - result.size();
