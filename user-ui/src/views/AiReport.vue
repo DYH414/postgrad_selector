@@ -134,8 +134,8 @@
                     </strong>
                   </div>
                   <div>
-                    <span>复试线</span>
-                    <strong>{{ valueOrDash(school.scoreLine) }}</strong>
+                    <span>最低录取</span>
+                    <strong>{{ valueOrDash(school.admissionLow) }}</strong>
                   </div>
                 </div>
 
@@ -147,23 +147,16 @@
                   <strong>需要注意</strong>
                   <p v-for="item in school.risks" :key="item">{{ item }}</p>
                 </div>
-                <p v-if="school.recommendedAction" class="recommended-action">
-                  {{ school.recommendedAction }}
-                </p>
-
-                <div class="data-meta">
-                  <span>{{ school.dataYear || '-' }} 年数据</span>
-                  <span>{{ school.verificationStatusLabel || '待核验' }}</span>
-                  <span v-if="school.dataCompleteness" class="completeness-tag"
-                    :class="'completeness-' + school.dataCompleteness">
-                    完整度 {{ school.dataCompleteness }}
-                  </span>
-                </div>
-
                 <div class="school-actions">
                   <el-button size="small" @click.stop="goDetail(school)">查看详情</el-button>
                   <el-button size="small" @click.stop="addCompare(school)">加入对比</el-button>
-                  <el-button size="small" type="primary" @click.stop="favoriteSchool(school)">收藏</el-button>
+                  <el-button
+                    size="small"
+                    :type="isBackupSchool(school) ? 'success' : 'primary'"
+                    :loading="isAddingBackup(school)"
+                    @click.stop="favoriteSchool(school)">
+                    {{ isBackupSchool(school) ? '取消备选' : '加入备选' }}
+                  </el-button>
                 </div>
 
                 <a v-if="school.sourceUrl" class="source-link"
@@ -247,7 +240,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { addFavorite } from '@/api/favorites'
+import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import AppHeader from '@/components/AppHeader.vue'
 import { getAiReport } from '@/api/ai'
 import { getProgramDetail } from '@/api/programs'
@@ -281,6 +274,8 @@ const detailSchool = ref(null)
 const detailData = ref(null)
 const detailLoading = ref(false)
 const detailError = ref('')
+const backupProgramIds = ref([])
+const addingBackupIds = ref([])
 
 const result = computed(() => {
   return normalizeAiReport(report.value)
@@ -443,16 +438,49 @@ function addCompare(school) {
   }
 }
 
-function favoriteSchool(school) {
+function isBackupSchool(school) {
+  return backupProgramIds.value.includes(Number(school?.programId))
+}
+
+function isAddingBackup(school) {
+  return addingBackupIds.value.includes(Number(school?.programId))
+}
+
+async function loadBackupProgramIds() {
+  try {
+    const res = await listFavorites()
+    backupProgramIds.value = Array.from(new Set((res.data || [])
+      .map(item => Number(item.programId || item.program_id))
+      .filter(Boolean)))
+  } catch (e) {
+    backupProgramIds.value = []
+  }
+}
+
+async function favoriteSchool(school) {
   if (!school || !school.programId) {
-    ElMessage.warning('该推荐缺少专业 ID，暂时无法收藏')
+    ElMessage.warning('该推荐缺少专业 ID，暂时无法加入备选')
     return
   }
-  addFavorite(school.programId).then(() => {
-    ElMessage.success('已加入收藏')
-  }).catch(() => {
-    ElMessage.error('收藏失败')
-  })
+  const programId = Number(school.programId)
+  if (addingBackupIds.value.includes(programId)) return
+
+  addingBackupIds.value = [...addingBackupIds.value, programId]
+  try {
+    if (backupProgramIds.value.includes(programId)) {
+      await removeFavorite(programId)
+      backupProgramIds.value = backupProgramIds.value.filter(id => id !== programId)
+      ElMessage.success('已取消备选')
+    } else {
+      await addFavorite(programId)
+      backupProgramIds.value = Array.from(new Set([...backupProgramIds.value, programId]))
+      ElMessage.success('已加入备选')
+    }
+  } catch (e) {
+    ElMessage.error('备选状态更新失败')
+  } finally {
+    addingBackupIds.value = addingBackupIds.value.filter(id => id !== programId)
+  }
 }
 
 function estimateScoreFromSchool(school) {
@@ -502,6 +530,7 @@ function verificationProviderLabel(provider) {
 
 onMounted(() => {
   fetchReport()
+  loadBackupProgramIds()
 })
 
 onBeforeUnmount(() => {
@@ -707,19 +736,7 @@ onBeforeUnmount(() => {
 .evidence-list p,
 .risk-list p { margin: 0 0 5px; color: #56657a; }
 .risk-list p { color: #9f3412; }
-.recommended-action {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #334155;
-  font-size: 13px;
-  line-height: 1.5;
-}
 .report-actions { text-align: center; padding: 24px 0 48px; }
-.data-meta { margin-top: 12px; font-size: 12px; color: #7b8798; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.data-meta span { padding: 2px 6px; border-radius: 4px; background: #f1f5f9; }
-.completeness-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
 .completeness-A { background: #f0f9eb; color: #67c23a; }
 .completeness-B { background: #fdf6ec; color: #e6a23c; }
 .completeness-C { background: #fef0f0; color: #f56c6c; }
