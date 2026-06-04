@@ -386,6 +386,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 })
                 .onError(error -> {
                     AiRecommendationTools.clear();
+                    log.error("[AI-Chat-Stream] Stream failed. userId={}, conversationId={}, message={}",
+                        userId, conversationId, error.getMessage(), error);
                     callback.onError(error);
                 })
                 .start();

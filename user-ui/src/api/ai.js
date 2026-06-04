@@ -5,7 +5,7 @@ export function postAiStart(data) {
 }
 
 export function postAiChat(data) {
-  return request({ url: '/app/ai-recommend/chat', method: 'post', data })
+  return request({ url: '/app/ai-recommend/chat', method: 'post', data, timeout: 120000 })
 }
 
 export async function postAiChatStream(data, handlers = {}) {
