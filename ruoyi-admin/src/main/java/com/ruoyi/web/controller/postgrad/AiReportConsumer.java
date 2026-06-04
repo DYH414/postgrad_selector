@@ -133,14 +133,12 @@ public class AiReportConsumer {
         profile.put("isCrossMajor", "否");
         profile.put("targetRegions", "不限");
         profile.put("riskPreference", "balanced");
-        profile.put("priorityPreference", "success_rate");
         profile.put("schoolTierPreference", "no_strict_requirement");
-        profile.put("regionStrategy", "no_limit");
-        profile.put("dataReliabilityPreference", "medium");
+        profile.put("regionStrategy", "no_strict_requirement");
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT estimated_score, undergrad_tier, is_cross_major, target_regions, risk_preference, " +
-                "priority_preference, school_tier_preference, region_strategy, data_reliability_preference " +
+                "school_tier_preference, region_strategy " +
                 "FROM user_profile WHERE user_id = ?", userId);
             if (!rows.isEmpty()) {
                 Map<String, Object> row = rows.get(0);
@@ -149,10 +147,8 @@ public class AiReportConsumer {
                 Object regions = row.get("target_regions");
                 profile.put("targetRegions", regions != null ? String.valueOf(regions) : "不限");
                 profile.put("riskPreference", valueOrDefault(row.get("risk_preference"), "balanced"));
-                profile.put("priorityPreference", valueOrDefault(row.get("priority_preference"), "success_rate"));
                 profile.put("schoolTierPreference", valueOrDefault(row.get("school_tier_preference"), "no_strict_requirement"));
-                profile.put("regionStrategy", valueOrDefault(row.get("region_strategy"), "no_limit"));
-                profile.put("dataReliabilityPreference", valueOrDefault(row.get("data_reliability_preference"), "medium"));
+                profile.put("regionStrategy", valueOrDefault(row.get("region_strategy"), "no_strict_requirement"));
             }
         } catch (Exception e) {
             log.warn("[Report-Consumer] Failed to load profile for userId={}, using defaults", userId);
@@ -166,10 +162,8 @@ public class AiReportConsumer {
             : loadProfileForAnalysis(userIdValue.longValue());
         Map<String, Object> pref = new LinkedHashMap<>();
         pref.put("riskPreference", profile.getOrDefault("riskPreference", "balanced"));
-        pref.put("priorityPreference", profile.getOrDefault("priorityPreference", "success_rate"));
         pref.put("schoolTierPreference", profile.getOrDefault("schoolTierPreference", "no_strict_requirement"));
-        pref.put("regionStrategy", profile.getOrDefault("regionStrategy", "no_limit"));
-        pref.put("dataReliabilityPreference", profile.getOrDefault("dataReliabilityPreference", "medium"));
+        pref.put("regionStrategy", profile.getOrDefault("regionStrategy", "no_strict_requirement"));
         pref.put("targetRegions", profile.getOrDefault("targetRegions", "不限"));
         return pref;
     }

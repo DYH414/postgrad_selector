@@ -14,10 +14,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="acceptAcademic"     column="accept_academic"     />
         <result property="acceptJoint"        column="accept_joint"        />
         <result property="riskPreference"     column="risk_preference"     />
-        <result property="priorityPreference" column="priority_preference" />
         <result property="schoolTierPreference" column="school_tier_preference" />
         <result property="regionStrategy"     column="region_strategy"     />
-        <result property="dataReliabilityPreference" column="data_reliability_preference" />
         <result property="undergradTier"      column="undergrad_tier"      />
         <result property="undergraduateMajor" column="undergraduate_major" />
         <result property="isCrossMajor"       column="is_cross_major"      />
@@ -31,8 +29,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <sql id="selectUserProfileVo">
         select id, user_id, estimated_score, target_regions, accept_part_time,
                accept_transfer, accept_academic, accept_joint, risk_preference,
-               priority_preference, school_tier_preference, region_strategy,
-               data_reliability_preference,
+               school_tier_preference, region_strategy,
                undergrad_tier, undergraduate_major, is_cross_major, math_level,
                english_level, cs_level, daily_study_hours, review_progress
         from user_profile
@@ -53,10 +50,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="acceptAcademic != null">accept_academic,</if>
             <if test="acceptJoint != null">accept_joint,</if>
             <if test="riskPreference != null">risk_preference,</if>
-            <if test="priorityPreference != null">priority_preference,</if>
             <if test="schoolTierPreference != null">school_tier_preference,</if>
             <if test="regionStrategy != null">region_strategy,</if>
-            <if test="dataReliabilityPreference != null">data_reliability_preference,</if>
             <if test="undergradTier != null">undergrad_tier,</if>
             <if test="undergraduateMajor != null">undergraduate_major,</if>
             <if test="isCrossMajor != null">is_cross_major,</if>
@@ -75,10 +70,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="acceptAcademic != null">#{acceptAcademic},</if>
             <if test="acceptJoint != null">#{acceptJoint},</if>
             <if test="riskPreference != null">#{riskPreference},</if>
-            <if test="priorityPreference != null">#{priorityPreference},</if>
             <if test="schoolTierPreference != null">#{schoolTierPreference},</if>
             <if test="regionStrategy != null">#{regionStrategy},</if>
-            <if test="dataReliabilityPreference != null">#{dataReliabilityPreference},</if>
             <if test="undergradTier != null">#{undergradTier},</if>
             <if test="undergraduateMajor != null">#{undergraduateMajor},</if>
             <if test="isCrossMajor != null">#{isCrossMajor},</if>
@@ -101,10 +94,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="acceptAcademic != null">accept_academic = #{acceptAcademic},</if>
             <if test="acceptJoint != null">accept_joint = #{acceptJoint},</if>
             <if test="riskPreference != null">risk_preference = #{riskPreference},</if>
-            <if test="priorityPreference != null">priority_preference = #{priorityPreference},</if>
             <if test="schoolTierPreference != null">school_tier_preference = #{schoolTierPreference},</if>
             <if test="regionStrategy != null">region_strategy = #{regionStrategy},</if>
-            <if test="dataReliabilityPreference != null">data_reliability_preference = #{dataReliabilityPreference},</if>
             <if test="undergradTier != null">undergrad_tier = #{undergradTier},</if>
             <if test="undergraduateMajor != null">undergraduate_major = #{undergraduateMajor},</if>
             <if test="isCrossMajor != null">is_cross_major = #{isCrossMajor},</if>

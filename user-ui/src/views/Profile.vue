@@ -72,34 +72,26 @@
               </el-form-item>
               <section class="preference-form-band">
                 <h3>择校偏好</h3>
-                <el-form-item label="更看重">
-                  <el-radio-group v-model="form.priorityPreference">
-                    <el-radio-button label="success_rate">上岸概率</el-radio-button>
-                    <el-radio-button label="school_tier">学校层次</el-radio-button>
-                    <el-radio-button label="developed_region">发达地区</el-radio-button>
-                    <el-radio-button label="major_strength">专业实力</el-radio-button>
+                <el-form-item label="整体择校策略">
+                  <el-radio-group v-model="form.riskPreference">
+                    <el-radio-button label="conservative">稳妥优先</el-radio-button>
+                    <el-radio-button label="balanced">冲稳保均衡</el-radio-button>
+                    <el-radio-button label="aggressive">愿意冲刺</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item label="学校层次倾向">
+                <el-form-item label="院校层次取舍">
                   <el-radio-group v-model="form.schoolTierPreference">
-                    <el-radio-button label="must_211_or_better">强烈希望 211+</el-radio-button>
+                    <el-radio-button label="must_211_or_better">高层次优先</el-radio-button>
                     <el-radio-button label="prefer_211_or_better">优先 211+</el-radio-button>
-                    <el-radio-button label="no_strict_requirement">不强求</el-radio-button>
+                    <el-radio-button label="no_strict_requirement">层次不强求</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item label="地区策略">
+                <el-form-item label="地区取舍">
                   <el-radio-group v-model="form.regionStrategy">
-                    <el-radio-button label="no_limit">不限</el-radio-button>
-                    <el-radio-button label="developed_regions">发达地区</el-radio-button>
-                    <el-radio-button label="specific_regions">按目标省份</el-radio-button>
-                    <el-radio-button label="near_home">离家近</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-                <el-form-item label="数据可靠性">
-                  <el-radio-group v-model="form.dataReliabilityPreference">
-                    <el-radio-button label="strict">只看较完整</el-radio-button>
-                    <el-radio-button label="medium">缺失时提醒</el-radio-button>
-                    <el-radio-button label="loose">可接受缺失</el-radio-button>
+                    <el-radio-button label="developed_priority">发达地区优先</el-radio-button>
+                    <el-radio-button label="developed_balanced">发达地区稳妥</el-radio-button>
+                    <el-radio-button label="no_strict_requirement">地区不强求</el-radio-button>
+                    <el-radio-button label="target_regions_only">只看目标省份</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
               </section>
@@ -303,19 +295,17 @@ const reportsLoaded = ref(false)
 const profile = reactive({
   estimatedScore: null, targetRegions: [], undergradTier: null,
   undergraduateMajor: '', isCrossMajor: false, acceptAcademic: false,
-  priorityPreference: 'success_rate',
+  riskPreference: 'balanced',
   schoolTierPreference: 'no_strict_requirement',
-  regionStrategy: 'no_limit',
-  dataReliabilityPreference: 'medium'
+  regionStrategy: 'no_strict_requirement'
 })
 
 const form = reactive({
   estimatedScore: null, targetRegions: [], undergradTier: null,
   undergraduateMajor: '', isCrossMajor: false, acceptAcademic: false,
-  priorityPreference: 'success_rate',
+  riskPreference: 'balanced',
   schoolTierPreference: 'no_strict_requirement',
-  regionStrategy: 'no_limit',
-  dataReliabilityPreference: 'medium'
+  regionStrategy: 'no_strict_requirement'
 })
 
 const favorites = ref([])
@@ -346,10 +336,9 @@ const completionPercent = computed(() => {
 
 const profileRows = computed(() => [
   { label: '目标地区', value: regionText.value },
-  { label: '更看重', value: priorityLabels[profile.priorityPreference] || '上岸概率' },
-  { label: '学校层次倾向', value: schoolTierPreferenceLabels[profile.schoolTierPreference] || '不强求' },
-  { label: '地区策略', value: regionStrategyLabels[profile.regionStrategy] || '不限' },
-  { label: '数据可靠性', value: dataReliabilityLabels[profile.dataReliabilityPreference] || '缺失时提醒' },
+  { label: '整体策略', value: riskPreferenceLabels[profile.riskPreference] || '稳中求进，冲稳保均衡' },
+  { label: '院校层次取舍', value: schoolTierPreferenceLabels[profile.schoolTierPreference] || '不强求层次，有学上更重要' },
+  { label: '地区取舍', value: regionStrategyLabels[profile.regionStrategy] || '地区不强求，有学上更重要' },
   { label: '本科层次', value: tierLabel(profile.undergradTier), muted: !profile.undergradTier },
   { label: '本科专业', value: profile.undergraduateMajor || '暂未填写', muted: !profile.undergraduateMajor },
   { label: '跨考情况', value: profile.isCrossMajor ? '跨考' : '非跨考' },
@@ -358,27 +347,21 @@ const profileRows = computed(() => [
 
 const shortlistSelectedIds = computed(() => selectedRows.value.map(row => row.programId).filter(Boolean))
 
-const priorityLabels = {
-  success_rate: '上岸概率',
-  school_tier: '学校层次',
-  developed_region: '发达地区',
-  major_strength: '专业实力'
+const riskPreferenceLabels = {
+  conservative: '只要有学上，稳妥优先',
+  balanced: '稳中求进，冲稳保均衡',
+  aggressive: '愿意冲更好的学校'
 }
 const schoolTierPreferenceLabels = {
-  must_211_or_better: '强烈希望 211+',
-  prefer_211_or_better: '优先 211+',
-  no_strict_requirement: '不强求'
+  must_211_or_better: '高层次院校优先，愿意承担风险',
+  prefer_211_or_better: '优先 211/双一流，但不能太冒险',
+  no_strict_requirement: '不强求层次，有学上更重要'
 }
 const regionStrategyLabels = {
-  no_limit: '不限',
-  developed_regions: '发达地区',
-  specific_regions: '按目标省份',
-  near_home: '离家近'
-}
-const dataReliabilityLabels = {
-  strict: '只看较完整',
-  medium: '缺失时提醒',
-  loose: '可接受缺失'
+  developed_priority: '发达地区优先，愿意承担风险',
+  developed_balanced: '优先发达地区，但不能太冒险',
+  no_strict_requirement: '地区不强求，有学上更重要',
+  target_regions_only: '只看我填写的目标省份'
 }
 
 const shortlistOverview = computed(() => {
@@ -414,10 +397,9 @@ function fetchProfile() {
       profile.undergradTier = p.undergradTier
       profile.undergraduateMajor = p.undergraduateMajor || ''
       profile.isCrossMajor = p.isCrossMajor === 1 || p.isCrossMajor === true
-      profile.priorityPreference = p.priorityPreference || 'success_rate'
+      profile.riskPreference = p.riskPreference || 'balanced'
       profile.schoolTierPreference = p.schoolTierPreference || 'no_strict_requirement'
-      profile.regionStrategy = p.regionStrategy || 'no_limit'
-      profile.dataReliabilityPreference = p.dataReliabilityPreference || 'medium'
+      profile.regionStrategy = p.regionStrategy || 'no_strict_requirement'
     }
   }).finally(() => { profileLoading.value = false })
 }
@@ -429,10 +411,9 @@ function startEdit() {
   form.undergradTier = profile.undergradTier || null
   form.undergraduateMajor = profile.undergraduateMajor || ''
   form.isCrossMajor = profile.isCrossMajor || false
-  form.priorityPreference = profile.priorityPreference || 'success_rate'
+  form.riskPreference = profile.riskPreference || 'balanced'
   form.schoolTierPreference = profile.schoolTierPreference || 'no_strict_requirement'
-  form.regionStrategy = profile.regionStrategy || 'no_limit'
-  form.dataReliabilityPreference = profile.dataReliabilityPreference || 'medium'
+  form.regionStrategy = profile.regionStrategy || 'no_strict_requirement'
   editing.value = true
 }
 
@@ -450,10 +431,9 @@ function handleSave() {
     undergradTier: form.undergradTier,
     undergraduateMajor: form.undergraduateMajor,
     isCrossMajor: form.isCrossMajor,
-    priorityPreference: form.priorityPreference,
+    riskPreference: form.riskPreference,
     schoolTierPreference: form.schoolTierPreference,
-    regionStrategy: form.regionStrategy,
-    dataReliabilityPreference: form.dataReliabilityPreference
+    regionStrategy: form.regionStrategy
   }
   saveProfile(data).then(() => {
     ElMessage.success('保存成功')

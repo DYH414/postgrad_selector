@@ -743,20 +743,16 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             profile.put("isCrossMajor", (up.getIsCrossMajor() != null && up.getIsCrossMajor() == 1) ? "是" : "否");
             profile.put("targetRegions", up.getTargetRegions() != null ? up.getTargetRegions() : "不限");
             profile.put("riskPreference", up.getRiskPreference() != null ? up.getRiskPreference() : "balanced");
-            profile.put("priorityPreference", up.getPriorityPreference() != null ? up.getPriorityPreference() : "success_rate");
             profile.put("schoolTierPreference", up.getSchoolTierPreference() != null ? up.getSchoolTierPreference() : "no_strict_requirement");
-            profile.put("regionStrategy", up.getRegionStrategy() != null ? up.getRegionStrategy() : "no_limit");
-            profile.put("dataReliabilityPreference", up.getDataReliabilityPreference() != null ? up.getDataReliabilityPreference() : "medium");
+            profile.put("regionStrategy", up.getRegionStrategy() != null ? up.getRegionStrategy() : "no_strict_requirement");
         } else {
             profile.put("estimatedScore", 300);
             profile.put("undergradTier", "双非");
             profile.put("isCrossMajor", "否");
             profile.put("targetRegions", "不限");
             profile.put("riskPreference", "balanced");
-            profile.put("priorityPreference", "success_rate");
             profile.put("schoolTierPreference", "no_strict_requirement");
-            profile.put("regionStrategy", "no_limit");
-            profile.put("dataReliabilityPreference", "medium");
+            profile.put("regionStrategy", "no_strict_requirement");
         }
         return profile;
     }
@@ -764,10 +760,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     private Map<String, Object> buildPreferenceProfile(Map<String, Object> profile) {
         Map<String, Object> pref = new LinkedHashMap<>();
         pref.put("riskPreference", profile.getOrDefault("riskPreference", "balanced"));
-        pref.put("priorityPreference", profile.getOrDefault("priorityPreference", "success_rate"));
         pref.put("schoolTierPreference", profile.getOrDefault("schoolTierPreference", "no_strict_requirement"));
-        pref.put("regionStrategy", profile.getOrDefault("regionStrategy", "no_limit"));
-        pref.put("dataReliabilityPreference", profile.getOrDefault("dataReliabilityPreference", "medium"));
+        pref.put("regionStrategy", profile.getOrDefault("regionStrategy", "no_strict_requirement"));
         pref.put("targetRegions", profile.getOrDefault("targetRegions", "不限"));
         return pref;
     }

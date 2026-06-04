@@ -61,8 +61,16 @@
             <strong>{{ profile.acceptAcademic ? '接受学硕' : '偏专硕' }}</strong>
           </div>
           <div class="basis-item">
-            <small>择校偏好</small>
-            <strong>{{ priorityLabels[profile.priorityPreference] || '上岸概率' }}</strong>
+            <small>整体策略</small>
+            <strong>{{ riskPreferenceLabels[profile.riskPreference] || '稳中求进，冲稳保均衡' }}</strong>
+          </div>
+          <div class="basis-item">
+            <small>院校层次取舍</small>
+            <strong>{{ schoolTierPreferenceLabels[profile.schoolTierPreference] || '不强求层次，有学上更重要' }}</strong>
+          </div>
+          <div class="basis-item">
+            <small>地区取舍</small>
+            <strong>{{ regionStrategyLabels[profile.regionStrategy] || '地区不强求，有学上更重要' }}</strong>
           </div>
         </div>
 
@@ -117,17 +125,28 @@ const profile = reactive({
   undergradTier: '',
   undergraduateMajor: '',
   isCrossMajor: false,
-  priorityPreference: 'success_rate',
+  riskPreference: 'balanced',
   schoolTierPreference: 'no_strict_requirement',
-  regionStrategy: 'no_limit',
-  dataReliabilityPreference: 'medium'
+  regionStrategy: 'no_strict_requirement'
 })
 
-const priorityLabels = {
-  success_rate: '上岸概率',
-  school_tier: '学校层次',
-  developed_region: '发达地区',
-  major_strength: '专业实力'
+const riskPreferenceLabels = {
+  conservative: '只要有学上，稳妥优先',
+  balanced: '稳中求进，冲稳保均衡',
+  aggressive: '愿意冲更好的学校'
+}
+
+const schoolTierPreferenceLabels = {
+  must_211_or_better: '高层次院校优先，愿意承担风险',
+  prefer_211_or_better: '优先 211/双一流，但不能太冒险',
+  no_strict_requirement: '不强求层次，有学上更重要'
+}
+
+const regionStrategyLabels = {
+  developed_priority: '发达地区优先，愿意承担风险',
+  developed_balanced: '优先发达地区，但不能太冒险',
+  no_strict_requirement: '地区不强求，有学上更重要',
+  target_regions_only: '只看我填写的目标省份'
 }
 
 const targetRegionsLabel = computed(() => {
@@ -178,10 +197,9 @@ function loadProfile() {
     profile.undergradTier = data.undergradTier || ''
     profile.undergraduateMajor = data.undergraduateMajor || ''
     profile.isCrossMajor = data.isCrossMajor === 1 || data.isCrossMajor === true
-    profile.priorityPreference = data.priorityPreference || 'success_rate'
+    profile.riskPreference = data.riskPreference || 'balanced'
     profile.schoolTierPreference = data.schoolTierPreference || 'no_strict_requirement'
-    profile.regionStrategy = data.regionStrategy || 'no_limit'
-    profile.dataReliabilityPreference = data.dataReliabilityPreference || 'medium'
+    profile.regionStrategy = data.regionStrategy || 'no_strict_requirement'
   }).finally(() => {
     loadingProfile.value = false
   })

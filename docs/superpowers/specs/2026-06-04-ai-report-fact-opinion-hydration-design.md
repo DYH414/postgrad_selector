@@ -68,22 +68,20 @@ AI 根据 factSnapshot + preferenceProfile 输出 opinion
 ```json
 {
   "riskPreference": "balanced",
-  "priorityPreference": "success_rate",
   "schoolTierPreference": "no_strict_requirement",
-  "regionStrategy": "no_limit",
-  "dataReliabilityPreference": "medium"
+  "regionStrategy": "no_strict_requirement"
 }
 ```
 
 字段含义：
 
-- `riskPreference`：风险偏好，例如 `conservative`、`balanced`、`aggressive`。该字段已存在，继续保留。
-- `priorityPreference`：最看重什么，例如 `success_rate`、`school_tier`、`developed_region`、`major_strength`。
-- `schoolTierPreference`：学校层次倾向，例如 `must_211_or_better`、`prefer_211_or_better`、`no_strict_requirement`。
-- `regionStrategy`：地区策略，例如 `no_limit`、`developed_regions`、`specific_regions`、`near_home`。
-- `dataReliabilityPreference`：数据可靠性要求，例如 `strict`、`medium`、`loose`。
+- `riskPreference`：整体择校策略，例如 `conservative`、`balanced`、`aggressive`。该字段已存在，继续保留。
+- `schoolTierPreference`：院校层次取舍，例如 `must_211_or_better`、`prefer_211_or_better`、`no_strict_requirement`。
+- `regionStrategy`：地区取舍，例如 `developed_priority`、`developed_balanced`、`no_strict_requirement`、`target_regions_only`。
 
-本次改造需要在画像页提供轻量选择项，避免 AI 每次重新追问稳定偏好。对话仍然可以覆盖本次推荐里的临时取舍。新增字段为空时使用默认值：均衡风险、上岸概率优先、地区不限、学校层次不强求、数据可靠性中等。
+本次改造需要在画像页提供轻量选择项，避免 AI 每次重新追问稳定偏好。对话仍然可以覆盖本次推荐里的临时取舍。新增字段为空时使用默认值：稳中求进、学校层次不强求、地区不强求。
+
+数据完整度属于后端事实层和运营治理问题，不作为用户画像的填写项。AI 可以读取候选池里的完整度事实，并在观点里提示风险，但用户不需要填写“是否接受数据缺失”。
 
 画像页控件不使用复杂权重滑杆，而使用 3-4 个分段按钮或下拉选择，降低填写成本。
 

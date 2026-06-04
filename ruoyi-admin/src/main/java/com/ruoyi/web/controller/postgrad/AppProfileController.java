@@ -45,6 +45,8 @@ public class AppProfileController
         profile.setAcceptAcademic(intVal(body.get("acceptAcademic")));
         profile.setAcceptJoint(intVal(body.get("acceptJoint")));
         profile.setRiskPreference(stringVal(body.get("riskPreference")));
+        profile.setSchoolTierPreference(stringVal(body.get("schoolTierPreference")));
+        profile.setRegionStrategy(stringVal(body.get("regionStrategy")));
         profile.setUndergradTier(stringVal(body.get("undergradTier")));
         profile.setUndergraduateMajor(stringVal(body.get("undergraduateMajor")));
         profile.setIsCrossMajor(intVal(body.get("isCrossMajor")));

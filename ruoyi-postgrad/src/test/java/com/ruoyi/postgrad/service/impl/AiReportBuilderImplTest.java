@@ -36,7 +36,7 @@ class AiReportBuilderImplTest {
     @Test
     void shouldBuildOpinionOnlyPrompt() {
         String prompt = builder.buildConversationPrompt("[]", "[{\"programId\":123,\"avgAdmittedScore\":295}]",
-            Map.of("priorityPreference", "school_tier"));
+            Map.of("schoolTierPreference", "prefer_211_or_better"));
 
         assertTrue(prompt.contains("AI 只输出观点字段"));
         assertTrue(prompt.contains("preferenceProfile"));
@@ -55,7 +55,7 @@ class AiReportBuilderImplTest {
         when(recommendationMapper.selectProgramForRecommendation(123L)).thenReturn(detailRow(123L));
 
         Map<String, Object> report = builder.buildConversationReport(chatModel, "[]", "[{\"programId\":123}]", 300,
-            Map.of("priorityPreference", "success_rate"));
+            Map.of("riskPreference", "balanced"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> tiers = (List<Map<String, Object>>) report.get("tiers");
         @SuppressWarnings("unchecked")

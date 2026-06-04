@@ -71,10 +71,8 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         Map<String, Object> profile = new LinkedHashMap<>();
         Map<String, Object> source = preferenceProfile == null ? Collections.emptyMap() : preferenceProfile;
         profile.put("riskPreference", source.getOrDefault("riskPreference", "balanced"));
-        profile.put("priorityPreference", source.getOrDefault("priorityPreference", "success_rate"));
         profile.put("schoolTierPreference", source.getOrDefault("schoolTierPreference", "no_strict_requirement"));
-        profile.put("regionStrategy", source.getOrDefault("regionStrategy", "no_limit"));
-        profile.put("dataReliabilityPreference", source.getOrDefault("dataReliabilityPreference", "medium"));
+        profile.put("regionStrategy", source.getOrDefault("regionStrategy", "no_strict_requirement"));
         profile.put("targetRegions", source.getOrDefault("targetRegions", "不限"));
         return profile;
     }

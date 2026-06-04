@@ -151,6 +151,8 @@ public class AppAuthController
             profileMap.put("acceptAcademic", profile.getAcceptAcademic());
             profileMap.put("acceptJoint", profile.getAcceptJoint());
             profileMap.put("riskPreference", profile.getRiskPreference());
+            profileMap.put("schoolTierPreference", profile.getSchoolTierPreference());
+            profileMap.put("regionStrategy", profile.getRegionStrategy());
             profileMap.put("undergradTier", profile.getUndergradTier());
             profileMap.put("undergraduateMajor", profile.getUndergraduateMajor());
             profileMap.put("isCrossMajor", profile.getIsCrossMajor());
