@@ -16,6 +16,8 @@
 3. 后端校验 AI 输出的 `programId` 必须来自本次候选池。
 4. 后端根据 `programId` 回表补全页面所需详情，生成稳定的报告快照。
 5. 前端继续作为结构化报告渲染器，并在 UI 上区分事实数据和 AI 观点。
+6. 同步降级路径和 MQ 异步路径必须调用同一个报告构建/水合组件，避免 prompt 和 schema 分叉。
+7. 用户画像页需要先收集基础择校偏好，AI 对话只补充本次推荐里的临时取舍。
 
 ## 非目标
 
@@ -29,6 +31,8 @@
 **事实由后端负责，观点由 AI 负责。**
 
 后端可以计算均分差、最低分差、招生规模、地区匹配、专业匹配、数据完整度等事实和事实衍生指标，但不把这些指标强行压成一个唯一线性分数。它们作为证据材料交给 AI。AI 根据用户画像中的偏好观点进行综合取舍，输出人类顾问式的推荐判断。
+
+报告生成存在两条入口：`AiRecommendationServiceImpl` 的同步降级路径，以及 `AiReportConsumer` 的 MQ 异步路径。两条路径不得各自维护 prompt、fallback 和数据注入逻辑。新的共享组件放在 `ruoyi-postgrad` 模块，由 `ruoyi-admin` 依赖并调用。
 
 ## 数据流
 
@@ -63,25 +67,25 @@ AI 根据 factSnapshot + preferenceProfile 输出 opinion
 
 ```json
 {
-  "riskPreference": "steady_first",
-  "schoolTierPreference": "medium",
-  "regionPreference": "developed_regions",
-  "majorFitPreference": "high",
-  "dataReliabilityPreference": "medium",
-  "careerPreference": "industry_first"
+  "riskPreference": "balanced",
+  "priorityPreference": "success_rate",
+  "schoolTierPreference": "no_strict_requirement",
+  "regionStrategy": "no_limit",
+  "dataReliabilityPreference": "medium"
 }
 ```
 
 字段含义：
 
-- `riskPreference`：风险偏好，例如 `safe_first`、`steady_first`、`balanced`、`willing_to_reach`。
-- `schoolTierPreference`：学校层次重视程度，例如 `high`、`medium`、`low`。
-- `regionPreference`：地区取向，例如 `developed_regions`、`near_home`、`specific_regions`、`no_limit`。
-- `majorFitPreference`：专业匹配重视程度，例如 `high`、`medium`、`low`。
+- `riskPreference`：风险偏好，例如 `conservative`、`balanced`、`aggressive`。该字段已存在，继续保留。
+- `priorityPreference`：最看重什么，例如 `success_rate`、`school_tier`、`developed_region`、`major_strength`。
+- `schoolTierPreference`：学校层次倾向，例如 `must_211_or_better`、`prefer_211_or_better`、`no_strict_requirement`。
+- `regionStrategy`：地区策略，例如 `no_limit`、`developed_regions`、`specific_regions`、`near_home`。
 - `dataReliabilityPreference`：数据可靠性要求，例如 `strict`、`medium`、`loose`。
-- `careerPreference`：发展取向，例如 `industry_first`、`research_first`、`exam_success_first`。
 
-这些字段可以先由现有对话和画像信息推断默认值，后续再在画像页面提供可编辑控件。
+本次改造需要在画像页提供轻量选择项，避免 AI 每次重新追问稳定偏好。对话仍然可以覆盖本次推荐里的临时取舍。新增字段为空时使用默认值：均衡风险、上岸概率优先、地区不限、学校层次不强求、数据可靠性中等。
+
+画像页控件不使用复杂权重滑杆，而使用 3-4 个分段按钮或下拉选择，降低填写成本。
 
 ## 后端事实摘要
 

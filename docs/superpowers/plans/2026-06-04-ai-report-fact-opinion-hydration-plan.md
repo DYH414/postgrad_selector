@@ -2,51 +2,397 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make AI report generation store database-backed facts and AI-authored opinions separately, so report cards are complete and consistent with screening results.
+**Goal:** Rework AI reports so user profile preferences guide AI opinions, while all school/program facts are hydrated by backend data in both synchronous and MQ report paths.
 
-**Architecture:** The backend will treat AI output as opinion-only JSON keyed by `programId`, validate IDs against the candidate pool, hydrate each selected program from `RecommendationMapper.selectProgramForRecommendation`, and store a complete report snapshot. The frontend will normalize both old and new report shapes, rendering database facts as card data and AI opinion as recommendation copy.
+**Architecture:** Add a shared report builder in `ruoyi-postgrad` that owns prompt construction, AI response parsing/fallback, candidate ID validation, and fact hydration. `AiRecommendationServiceImpl` and `AiReportConsumer` both call this shared builder. Extend the profile model/UI with lightweight preference fields, then normalize the new `opinion` report shape in the frontend.
 
-**Tech Stack:** Java 17, Spring/RuoYi, FastJSON2, JUnit 5, Mockito, Vue 2/Element UI, Vite static checks via Node `.mjs` tests.
+**Tech Stack:** Java 17, Spring/RuoYi, MyBatis XML, FastJSON2, JUnit 5, Mockito, Vue 2/Element UI, Node `.mjs` static tests, Maven.
 
 ---
 
 ## File Structure
 
+- Create `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/AiReportBuilder.java`
+  - Public interface used by both report paths.
+- Create `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiReportBuilderImpl.java`
+  - Shared prompt, parse, fallback, validation, hydration, and normalization logic.
 - Modify `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java`
-  - Owns report prompt, parsing, validation, fallback, and the new hydration step.
-- Modify `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java`
-  - Adds focused reflection tests for prompt/schema, hydration, invalid ID filtering, duplicate handling, and fallback hydration.
+  - Delegates report JSON generation to `AiReportBuilder`.
+- Modify `ruoyi-admin/src/main/java/com/ruoyi/web/controller/postgrad/AiReportConsumer.java`
+  - Delegates conversation and analyze MQ report generation to `AiReportBuilder`.
+- Modify `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/domain/UserProfile.java`
+  - Adds profile preference fields.
+- Modify `ruoyi-postgrad/src/main/resources/mapper/postgrad/UserProfileMapper.xml`
+  - Reads and writes preference columns.
+- Modify `sql/408_school_selection_schema.sql`
+  - Adds preference columns to schema.
+- Create `sql/2026-06-04-user-profile-preferences.sql`
+  - Migration for existing databases.
+- Modify `user-ui/src/views/Profile.vue`
+  - Adds lightweight preference controls.
+- Modify `user-ui/src/views/AiRecommend.vue`
+  - Shows preference summary.
 - Modify `user-ui/src/utils/aiReport.js`
-  - Normalizes `school.opinion` into the fields used by existing `AiReport.vue`.
+  - Normalizes hydrated `opinion` reports.
 - Add `user-ui/src/utils/aiReport.opinion.test.mjs`
-  - Static frontend test for new report shape and legacy compatibility.
-- Optionally modify `user-ui/src/views/AiReport.vue`
-  - Only if the current template cannot clearly show `opinion.tradeoffs` or `opinion.decision` after normalization.
+  - Frontend normalization test.
+- Add/modify tests:
+  - `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiReportBuilderImplTest.java`
+  - `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java`
 
 ---
 
-### Task 1: Backend Test Harness For Report Hydration
+### Task 1: Add Profile Preference Fields
 
 **Files:**
-- Modify: `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java`
+- Modify: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/domain/UserProfile.java`
+- Modify: `ruoyi-postgrad/src/main/resources/mapper/postgrad/UserProfileMapper.xml`
+- Modify: `sql/408_school_selection_schema.sql`
+- Create: `sql/2026-06-04-user-profile-preferences.sql`
 
-- [ ] **Step 1: Add Mockito support and field injection helpers**
+- [ ] **Step 1: Add failing mapper/domain contract test by static scan**
 
-Replace the top of `AiRecommendationServiceImplTest.java` with this structure while keeping the existing `shouldNormalizeReportJudgementAndAction` test body:
+Create a temporary check command to prove the fields do not exist yet:
+
+```powershell
+rg -n "priorityPreference|schoolTierPreference|regionStrategy|dataReliabilityPreference|priority_preference|school_tier_preference|region_strategy|data_reliability_preference" ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/domain/UserProfile.java ruoyi-postgrad/src/main/resources/mapper/postgrad/UserProfileMapper.xml
+```
+
+Expected: no matches for the new fields.
+
+- [ ] **Step 2: Add fields to `UserProfile.java`**
+
+Add fields after `riskPreference`:
+
+```java
+private String priorityPreference;
+private String schoolTierPreference;
+private String regionStrategy;
+private String dataReliabilityPreference;
+```
+
+Add getters and setters:
+
+```java
+public String getPriorityPreference() { return priorityPreference; }
+public void setPriorityPreference(String priorityPreference) { this.priorityPreference = priorityPreference; }
+public String getSchoolTierPreference() { return schoolTierPreference; }
+public void setSchoolTierPreference(String schoolTierPreference) { this.schoolTierPreference = schoolTierPreference; }
+public String getRegionStrategy() { return regionStrategy; }
+public void setRegionStrategy(String regionStrategy) { this.regionStrategy = regionStrategy; }
+public String getDataReliabilityPreference() { return dataReliabilityPreference; }
+public void setDataReliabilityPreference(String dataReliabilityPreference) { this.dataReliabilityPreference = dataReliabilityPreference; }
+```
+
+Add to `toString()`:
+
+```java
+.append("priorityPreference", getPriorityPreference())
+.append("schoolTierPreference", getSchoolTierPreference())
+.append("regionStrategy", getRegionStrategy())
+.append("dataReliabilityPreference", getDataReliabilityPreference())
+```
+
+- [ ] **Step 3: Update `UserProfileMapper.xml`**
+
+Add result mappings after `riskPreference`:
+
+```xml
+<result property="priorityPreference"        column="priority_preference"         />
+<result property="schoolTierPreference"     column="school_tier_preference"      />
+<result property="regionStrategy"           column="region_strategy"             />
+<result property="dataReliabilityPreference" column="data_reliability_preference" />
+```
+
+Add columns to `selectUserProfileVo`:
+
+```xml
+priority_preference, school_tier_preference, region_strategy,
+data_reliability_preference,
+```
+
+Add insert column conditions:
+
+```xml
+<if test="priorityPreference != null">priority_preference,</if>
+<if test="schoolTierPreference != null">school_tier_preference,</if>
+<if test="regionStrategy != null">region_strategy,</if>
+<if test="dataReliabilityPreference != null">data_reliability_preference,</if>
+```
+
+Add insert value conditions:
+
+```xml
+<if test="priorityPreference != null">#{priorityPreference},</if>
+<if test="schoolTierPreference != null">#{schoolTierPreference},</if>
+<if test="regionStrategy != null">#{regionStrategy},</if>
+<if test="dataReliabilityPreference != null">#{dataReliabilityPreference},</if>
+```
+
+Add update assignments:
+
+```xml
+<if test="priorityPreference != null">priority_preference = #{priorityPreference},</if>
+<if test="schoolTierPreference != null">school_tier_preference = #{schoolTierPreference},</if>
+<if test="regionStrategy != null">region_strategy = #{regionStrategy},</if>
+<if test="dataReliabilityPreference != null">data_reliability_preference = #{dataReliabilityPreference},</if>
+```
+
+- [ ] **Step 4: Add SQL migration**
+
+Create `sql/2026-06-04-user-profile-preferences.sql`:
+
+```sql
+alter table user_profile
+    add column priority_preference varchar(32) null comment '择校最看重: success_rate/school_tier/developed_region/major_strength' after risk_preference,
+    add column school_tier_preference varchar(32) null comment '学校层次倾向: must_211_or_better/prefer_211_or_better/no_strict_requirement' after priority_preference,
+    add column region_strategy varchar(32) null comment '地区策略: no_limit/developed_regions/specific_regions/near_home' after school_tier_preference,
+    add column data_reliability_preference varchar(32) null comment '数据可靠性偏好: strict/medium/loose' after region_strategy;
+```
+
+Add the same columns to `sql/408_school_selection_schema.sql` in the `user_profile` table definition.
+
+- [ ] **Step 5: Verify backend compiles for postgrad module**
+
+Run:
+
+```powershell
+mvn -pl ruoyi-postgrad -DskipTests compile
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```powershell
+git add ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/domain/UserProfile.java ruoyi-postgrad/src/main/resources/mapper/postgrad/UserProfileMapper.xml sql/408_school_selection_schema.sql sql/2026-06-04-user-profile-preferences.sql
+git commit -m "feat(profile): add school selection preferences"
+```
+
+---
+
+### Task 2: Add Profile Preference UI
+
+**Files:**
+- Modify: `user-ui/src/views/Profile.vue`
+- Modify: `user-ui/src/views/AiRecommend.vue`
+- Add: `user-ui/src/views/Profile.preferences.test.mjs`
+
+- [ ] **Step 1: Write frontend static test**
+
+Create `user-ui/src/views/Profile.preferences.test.mjs`:
+
+```js
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+const profile = readFileSync(new URL('./Profile.vue', import.meta.url), 'utf8')
+const recommend = readFileSync(new URL('./AiRecommend.vue', import.meta.url), 'utf8')
+
+for (const field of [
+  'priorityPreference',
+  'schoolTierPreference',
+  'regionStrategy',
+  'dataReliabilityPreference'
+]) {
+  assert.match(profile, new RegExp(`form\\.${field}`), `${field} should be editable in profile form`)
+  assert.match(profile, new RegExp(`profile\\.${field}`), `${field} should be loaded into profile state`)
+}
+
+assert.match(profile, /择校偏好/)
+assert.match(profile, /更看重/)
+assert.match(profile, /学校层次倾向/)
+assert.match(profile, /地区策略/)
+assert.match(profile, /数据可靠性/)
+assert.match(recommend, /择校偏好/)
+```
+
+- [ ] **Step 2: Run and verify failure**
+
+Run:
+
+```powershell
+node user-ui\src\views\Profile.preferences.test.mjs
+```
+
+Expected: FAIL because the fields are not in the UI yet.
+
+- [ ] **Step 3: Add fields to Profile state and form**
+
+In `Profile.vue`, extend both `profile` and `form` reactive objects with:
+
+```js
+priorityPreference: 'success_rate',
+schoolTierPreference: 'no_strict_requirement',
+regionStrategy: 'no_limit',
+dataReliabilityPreference: 'medium'
+```
+
+When loading profile data, assign:
+
+```js
+profile.priorityPreference = p.priorityPreference || 'success_rate'
+profile.schoolTierPreference = p.schoolTierPreference || 'no_strict_requirement'
+profile.regionStrategy = p.regionStrategy || 'no_limit'
+profile.dataReliabilityPreference = p.dataReliabilityPreference || 'medium'
+```
+
+When entering edit mode, assign the same fields from `profile` to `form`.
+
+When saving, include these fields in the `payload`.
+
+- [ ] **Step 4: Add controls to Profile form**
+
+Add this section after target provinces:
+
+```vue
+<section class="preference-form-band">
+  <h3>择校偏好</h3>
+  <el-form-item label="更看重">
+    <el-radio-group v-model="form.priorityPreference">
+      <el-radio-button label="success_rate">上岸概率</el-radio-button>
+      <el-radio-button label="school_tier">学校层次</el-radio-button>
+      <el-radio-button label="developed_region">发达地区</el-radio-button>
+      <el-radio-button label="major_strength">专业实力</el-radio-button>
+    </el-radio-group>
+  </el-form-item>
+  <el-form-item label="学校层次倾向">
+    <el-radio-group v-model="form.schoolTierPreference">
+      <el-radio-button label="must_211_or_better">强烈希望 211+</el-radio-button>
+      <el-radio-button label="prefer_211_or_better">优先 211+</el-radio-button>
+      <el-radio-button label="no_strict_requirement">不强求</el-radio-button>
+    </el-radio-group>
+  </el-form-item>
+  <el-form-item label="地区策略">
+    <el-radio-group v-model="form.regionStrategy">
+      <el-radio-button label="no_limit">不限</el-radio-button>
+      <el-radio-button label="developed_regions">发达地区</el-radio-button>
+      <el-radio-button label="specific_regions">按目标省份</el-radio-button>
+      <el-radio-button label="near_home">离家近</el-radio-button>
+    </el-radio-group>
+  </el-form-item>
+  <el-form-item label="数据可靠性">
+    <el-radio-group v-model="form.dataReliabilityPreference">
+      <el-radio-button label="strict">只看较完整</el-radio-button>
+      <el-radio-button label="medium">缺失时提醒</el-radio-button>
+      <el-radio-button label="loose">可接受缺失</el-radio-button>
+    </el-radio-group>
+  </el-form-item>
+</section>
+```
+
+- [ ] **Step 5: Add preference summary rows**
+
+Add helper label maps:
+
+```js
+const priorityLabels = {
+  success_rate: '上岸概率',
+  school_tier: '学校层次',
+  developed_region: '发达地区',
+  major_strength: '专业实力'
+}
+const schoolTierPreferenceLabels = {
+  must_211_or_better: '强烈希望 211+',
+  prefer_211_or_better: '优先 211+',
+  no_strict_requirement: '不强求'
+}
+const regionStrategyLabels = {
+  no_limit: '不限',
+  developed_regions: '发达地区',
+  specific_regions: '按目标省份',
+  near_home: '离家近'
+}
+const dataReliabilityLabels = {
+  strict: '只看较完整',
+  medium: '缺失时提醒',
+  loose: '可接受缺失'
+}
+```
+
+Add rows to `profileRows`:
+
+```js
+{ label: '更看重', value: priorityLabels[profile.priorityPreference] || '上岸概率' },
+{ label: '学校层次倾向', value: schoolTierPreferenceLabels[profile.schoolTierPreference] || '不强求' },
+{ label: '地区策略', value: regionStrategyLabels[profile.regionStrategy] || '不限' },
+{ label: '数据可靠性', value: dataReliabilityLabels[profile.dataReliabilityPreference] || '缺失时提醒' }
+```
+
+- [ ] **Step 6: Add AiRecommend summary**
+
+In `AiRecommend.vue`, add the same four fields to the `profile` reactive object and load response assignment. Add one small stat or line that contains `择校偏好` and displays the main preference, for example:
+
+```vue
+<div class="profile-stat">
+  <span>择校偏好</span>
+  <strong>{{ priorityLabels[profile.priorityPreference] || '上岸概率' }}</strong>
+</div>
+```
+
+- [ ] **Step 7: Run frontend checks**
+
+Run:
+
+```powershell
+node user-ui\src\views\Profile.preferences.test.mjs
+cd user-ui
+npm run build
+```
+
+Expected: PASS. Build may show existing Vite warnings but no errors.
+
+- [ ] **Step 8: Commit**
+
+```powershell
+git add user-ui/src/views/Profile.vue user-ui/src/views/AiRecommend.vue user-ui/src/views/Profile.preferences.test.mjs
+git commit -m "feat(profile): capture AI recommendation preferences"
+```
+
+---
+
+### Task 3: Create Shared AI Report Builder
+
+**Files:**
+- Create: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/AiReportBuilder.java`
+- Create: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiReportBuilderImpl.java`
+- Create: `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiReportBuilderImplTest.java`
+
+- [ ] **Step 1: Add interface**
+
+Create `AiReportBuilder.java`:
+
+```java
+package com.ruoyi.postgrad.service;
+
+import dev.langchain4j.model.chat.ChatModel;
+import java.util.Map;
+
+public interface AiReportBuilder {
+    Map<String, Object> buildConversationReport(ChatModel chatModel, String conversationJson,
+        String poolJson, int estimatedScore, Map<String, Object> preferenceProfile);
+
+    Map<String, Object> buildAnalyzeReport(ChatModel chatModel, String poolJson,
+        int estimatedScore, Map<String, Object> preferenceProfile);
+}
+```
+
+- [ ] **Step 2: Add failing builder tests**
+
+Create `AiReportBuilderImplTest.java`:
 
 ```java
 package com.ruoyi.postgrad.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import dev.langchain4j.model.chat.ChatModel;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,543 +404,272 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class AiRecommendationServiceImplTest {
-    private AiRecommendationServiceImpl service;
+class AiReportBuilderImplTest {
+    private AiReportBuilderImpl builder;
 
-    @Mock
-    private RecommendationMapper recommendationMapper;
+    @Mock private RecommendationMapper recommendationMapper;
+    @Mock private ChatModel chatModel;
 
     @BeforeEach
     void setUp() throws Exception {
-        service = new AiRecommendationServiceImpl();
-        setField("recommendationMapper", recommendationMapper);
-    }
-
-    private void setField(String name, Object value) throws Exception {
-        Field field = AiRecommendationServiceImpl.class.getDeclaredField(name);
+        builder = new AiReportBuilderImpl();
+        Field field = AiReportBuilderImpl.class.getDeclaredField("recommendationMapper");
         field.setAccessible(true);
-        field.set(service, value);
+        field.set(builder, recommendationMapper);
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> invokeHydrate(Map<String, Object> report, int estimatedScore, String poolJson) throws Exception {
-        Method method = AiRecommendationServiceImpl.class.getDeclaredMethod("hydrateReportPrograms", Map.class, int.class, String.class);
-        method.setAccessible(true);
-        return (Map<String, Object>) method.invoke(service, report, estimatedScore, poolJson);
+    @Test
+    void shouldBuildOpinionOnlyPrompt() {
+        String prompt = builder.buildConversationPrompt("[]", "[{\"programId\":123,\"avgAdmittedScore\":295}]",
+            Map.of("priorityPreference", "school_tier"));
+
+        assertTrue(prompt.contains("AI 只输出观点字段"));
+        assertTrue(prompt.contains("preferenceProfile"));
+        assertTrue(prompt.contains("\"programId\""));
+        assertTrue(prompt.contains("\"decision\""));
+        assertTrue(prompt.contains("\"tradeoffs\""));
+        assertTrue(prompt.contains("不要输出 schoolName"));
+        assertFalse(prompt.contains("\"schoolName\":\"...\""));
+    }
+
+    @Test
+    void shouldHydrateAiOpinionWithDatabaseFacts() {
+        when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("""
+            {"summary":"稳妥优先","tiers":[{"level":"steady","label":"稳妥档","schools":[{"programId":123,"judgement":"steady","risk":"medium","decision":"主力稳妥","reason":"分数和地区匹配","pros":["地区符合"],"cons":["需核验"],"tradeoffs":["稳妥优先"],"recommendedAction":"加入备选"}]}]}
+            """);
+        when(recommendationMapper.selectProgramForRecommendation(123L)).thenReturn(detailRow(123L));
+
+        Map<String, Object> report = builder.buildConversationReport(chatModel, "[]", "[{\"programId\":123}]", 300,
+            Map.of("priorityPreference", "success_rate"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> tiers = (List<Map<String, Object>>) report.get("tiers");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> school = ((List<Map<String, Object>>) tiers.get(0).get("schools")).get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> opinion = (Map<String, Object>) school.get("opinion");
+
+        assertEquals("北京信息科技大学", school.get("schoolName"));
+        assertEquals("计算机学院", school.get("collegeName"));
+        assertEquals(295, school.get("avgAdmittedScore"));
+        assertEquals(5, school.get("avgScoreGap"));
+        assertEquals("270-331", school.get("admissionRange"));
+        assertEquals("主力稳妥", opinion.get("decision"));
     }
 
     private RowMap detailRow(long programId) {
         RowMap row = new RowMap();
         row.put("programId", programId);
-        row.put("schoolId", 20L + programId);
         row.put("schoolName", "北京信息科技大学");
-        row.put("province", "北京");
-        row.put("city", "北京");
         row.put("collegeName", "计算机学院");
         row.put("programName", "计算机科学与技术");
-        row.put("programCode", "081200");
-        row.put("degreeType", "学硕");
-        row.put("examCombo", "11408");
+        row.put("province", "北京");
+        row.put("city", "北京");
         row.put("schoolTier", "普通本科");
+        row.put("examCombo", "11408");
         row.put("scoreLine", 273);
         row.put("avgAdmittedScore", new BigDecimal("295"));
         row.put("admissionLow", 270);
         row.put("admissionHigh", 331);
-        row.put("planCount", 33);
         row.put("unifiedExamQuota", 28);
+        row.put("planCount", 33);
         row.put("dataYear", 2025);
         row.put("dataCompleteness", "C");
-        row.put("sourceUrl", "https://example.com/source");
         row.put("sourceOwner", "N诺");
         return row;
     }
 }
 ```
 
-- [ ] **Step 2: Restore the existing normalization test inside the new class**
-
-Paste this test inside the class:
-
-```java
-@Test
-void shouldNormalizeReportJudgementAndAction() throws Exception {
-    Method method = AiRecommendationServiceImpl.class.getDeclaredMethod("normalizeReportItem", Map.class);
-    method.setAccessible(true);
-
-    Map<String, Object> item = new LinkedHashMap<>();
-    item.put("aiJudgement", "稳妥偏冲刺");
-    item.put("verificationStatus", "unknown");
-
-    @SuppressWarnings("unchecked")
-    Map<String, Object> normalized = (Map<String, Object>) method.invoke(service, item);
-
-    assertEquals("steady_reach", normalized.get("judgement"));
-    assertEquals("稳妥偏冲", normalized.get("judgementLabel"));
-    assertEquals("pending", normalized.get("verificationStatus"));
-    assertEquals("可作为稳妥偏冲候选，建议核验近年复试与录取波动", normalized.get("recommendedAction"));
-}
-```
-
-- [ ] **Step 3: Add a failing hydration test**
-
-Paste this test inside the class:
-
-```java
-@Test
-void shouldHydrateOpinionOnlyReportWithDatabaseFacts() throws Exception {
-    when(recommendationMapper.selectProgramForRecommendation(123L)).thenReturn(detailRow(123L));
-
-    Map<String, Object> school = new LinkedHashMap<>();
-    school.put("programId", 123);
-    school.put("judgement", "steady");
-    school.put("risk", "medium");
-    school.put("decision", "适合作为主力稳妥候选");
-    school.put("reason", "分数匹配，地区符合偏好");
-    school.put("pros", List.of("分数匹配度较高"));
-    school.put("cons", List.of("数据完整度为 C，需要核验"));
-    school.put("tradeoffs", List.of("上岸稳定性优先于学校层次"));
-
-    Map<String, Object> tier = new LinkedHashMap<>();
-    tier.put("level", "steady");
-    tier.put("label", "稳妥档");
-    tier.put("schools", List.of(school));
-
-    Map<String, Object> report = new LinkedHashMap<>();
-    report.put("summary", "推荐以稳妥为主");
-    report.put("tiers", List.of(tier));
-
-    Map<String, Object> hydrated = invokeHydrate(report, 300, "[{\"programId\":123}]");
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> tiers = (List<Map<String, Object>>) hydrated.get("tiers");
-    @SuppressWarnings("unchecked")
-    Map<String, Object> hydratedSchool = ((List<Map<String, Object>>) tiers.get(0).get("schools")).get(0);
-    @SuppressWarnings("unchecked")
-    Map<String, Object> opinion = (Map<String, Object>) hydratedSchool.get("opinion");
-
-    assertEquals("北京信息科技大学", hydratedSchool.get("schoolName"));
-    assertEquals("计算机学院", hydratedSchool.get("collegeName"));
-    assertEquals("计算机科学与技术", hydratedSchool.get("programName"));
-    assertEquals(295, hydratedSchool.get("avgAdmittedScore"));
-    assertEquals(5, hydratedSchool.get("avgScoreGap"));
-    assertEquals("270-331", hydratedSchool.get("admissionRange"));
-    assertEquals(28, hydratedSchool.get("unifiedExamQuota"));
-    assertEquals("适合作为主力稳妥候选", opinion.get("decision"));
-    assertEquals("分数匹配，地区符合偏好", opinion.get("reason"));
-}
-```
-
-- [ ] **Step 4: Run the focused backend test and verify failure**
+- [ ] **Step 3: Run test and verify failure**
 
 Run:
 
 ```powershell
-mvn -pl ruoyi-postgrad -Dtest=AiRecommendationServiceImplTest#shouldHydrateOpinionOnlyReportWithDatabaseFacts test
+mvn -pl ruoyi-postgrad -Dtest=AiReportBuilderImplTest test
 ```
 
-Expected: FAIL with `NoSuchMethodException: hydrateReportPrograms`.
+Expected: FAIL because `AiReportBuilderImpl` does not exist.
 
----
+- [ ] **Step 4: Implement `AiReportBuilderImpl`**
 
-### Task 2: Implement Backend Hydration
-
-**Files:**
-- Modify: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java`
-- Test: `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java`
-
-- [ ] **Step 1: Add helper methods to `AiRecommendationServiceImpl`**
-
-Add these methods near `injectMatchScores`:
+Create `AiReportBuilderImpl.java` with these public methods and helper structure:
 
 ```java
-@SuppressWarnings({"unchecked", "rawtypes"})
-private Map<String, Object> hydrateReportPrograms(Map<String, Object> report, int estimatedScore, String poolJson) {
-    Map<String, Object> result = new LinkedHashMap<>(report);
-    Map<Long, Map<String, Object>> poolMap = parsePoolMap(poolJson);
-    List<Long> invalidIds = new ArrayList<>();
-    List<Long> duplicateIds = new ArrayList<>();
-    List<Long> missingDetailIds = new ArrayList<>();
-    Set<Long> seen = new LinkedHashSet<>();
+package com.ruoyi.postgrad.service.impl;
 
-    List<Map<String, Object>> tiers = (List<Map<String, Object>>) result.get("tiers");
-    if (tiers == null) {
-        result.put("tiers", Collections.emptyList());
-        return result;
-    }
-
-    for (Map<String, Object> tier : tiers) {
-        List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
-        if (schools == null) {
-            tier.put("schools", Collections.emptyList());
-            continue;
-        }
-        List<Map<String, Object>> hydratedSchools = new ArrayList<>();
-        for (Map<String, Object> school : schools) {
-            Long programId = longValue(school.get("programId"));
-            if (programId == null || !poolMap.containsKey(programId)) {
-                if (programId != null) invalidIds.add(programId);
-                continue;
-            }
-            if (!seen.add(programId)) {
-                duplicateIds.add(programId);
-                continue;
-            }
-            Map<String, Object> detail = recommendationMapper.selectProgramForRecommendation(programId);
-            if (detail == null) {
-                missingDetailIds.add(programId);
-                continue;
-            }
-            hydratedSchools.add(hydratedReportSchool(school, detail, estimatedScore));
-        }
-        tier.put("schools", hydratedSchools);
-    }
-
-    Map<String, Object> meta = new LinkedHashMap<>();
-    Object existingMeta = result.get("meta") != null ? result.get("meta") : result.get("metadata");
-    if (existingMeta instanceof Map) {
-        meta.putAll((Map) existingMeta);
-    }
-    meta.put("invalidProgramIds", invalidIds);
-    meta.put("duplicateProgramIds", duplicateIds);
-    meta.put("missingDetailProgramIds", missingDetailIds);
-    result.put("meta", meta);
-    result.put("metadata", meta);
-    return result;
-}
-
-@SuppressWarnings({"unchecked", "rawtypes"})
-private Map<Long, Map<String, Object>> parsePoolMap(String poolJson) {
-    Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
-    if (poolJson == null || poolJson.isBlank() || "[]".equals(poolJson.trim())) {
-        return poolMap;
-    }
-    for (Object item : JSON.parseArray(poolJson)) {
-        if (!(item instanceof Map)) continue;
-        Map<String, Object> row = (Map<String, Object>) item;
-        Long programId = longValue(row.get("programId"));
-        if (programId != null) poolMap.put(programId, row);
-    }
-    return poolMap;
-}
-
-private Map<String, Object> hydratedReportSchool(Map<String, Object> opinionSource, Map<String, Object> detail, int estimatedScore) {
-    Map<String, Object> item = new LinkedHashMap<>();
-    putFact(item, detail, "programId");
-    putFact(item, detail, "schoolId");
-    putFact(item, detail, "schoolName");
-    putFact(item, detail, "province");
-    putFact(item, detail, "city");
-    putFact(item, detail, "collegeName");
-    putFact(item, detail, "programName");
-    putFact(item, detail, "programCode");
-    putFact(item, detail, "degreeType");
-    putFact(item, detail, "examCombo");
-    putFact(item, detail, "schoolTier");
-    putFact(item, detail, "scoreLine");
-    putFact(item, detail, "admissionLow");
-    putFact(item, detail, "admissionHigh");
-    putFact(item, detail, "planCount");
-    putFact(item, detail, "unifiedExamQuota");
-    putFact(item, detail, "dataYear");
-    putFact(item, detail, "dataCompleteness");
-    putFact(item, detail, "sourceUrl");
-    putFact(item, detail, "sourceOwner");
-
-    Integer avg = integerValue(detail.get("avgAdmittedScore"));
-    item.put("avgAdmittedScore", avg);
-    item.put("avgScoreGap", avg == null || estimatedScore <= 0 ? null : estimatedScore - avg);
-    item.put("admissionRange", admissionRange(detail.get("admissionLow"), detail.get("admissionHigh")));
-    item.put("opinion", buildOpinion(opinionSource));
-    mirrorOpinionForLegacyFrontend(item);
-    return item;
-}
-
-private void putFact(Map<String, Object> target, Map<String, Object> source, String key) {
-    if (source.containsKey(key)) target.put(key, source.get(key));
-}
-
-private Map<String, Object> buildOpinion(Map<String, Object> source) {
-    Map<String, Object> opinion = new LinkedHashMap<>();
-    opinion.put("judgement", source.getOrDefault("judgement", source.getOrDefault("aiJudgement", "data_insufficient_pending")));
-    opinion.put("risk", source.getOrDefault("risk", "medium"));
-    opinion.put("decision", source.getOrDefault("decision", ""));
-    opinion.put("reason", source.getOrDefault("reason", ""));
-    opinion.put("pros", source.getOrDefault("pros", Collections.emptyList()));
-    opinion.put("cons", source.getOrDefault("cons", Collections.emptyList()));
-    opinion.put("tradeoffs", source.getOrDefault("tradeoffs", Collections.emptyList()));
-    opinion.put("recommendedAction", source.getOrDefault("recommendedAction", ""));
-    return opinion;
-}
-
-@SuppressWarnings("unchecked")
-private void mirrorOpinionForLegacyFrontend(Map<String, Object> item) {
-    Map<String, Object> opinion = (Map<String, Object>) item.get("opinion");
-    item.put("judgement", opinion.get("judgement"));
-    item.put("risk", opinion.get("risk"));
-    item.put("reason", opinion.get("reason"));
-    item.put("pros", opinion.get("pros"));
-    item.put("cons", opinion.get("cons"));
-    item.put("tradeoffs", opinion.get("tradeoffs"));
-    item.put("recommendedAction", opinion.get("recommendedAction"));
-}
-
-private Long longValue(Object value) {
-    if (value instanceof Number n) return n.longValue();
-    if (value == null) return null;
-    try {
-        return Long.parseLong(String.valueOf(value));
-    } catch (NumberFormatException e) {
-        return null;
-    }
-}
-
-private Integer integerValue(Object value) {
-    if (value instanceof Number n) return n.intValue();
-    if (value == null) return null;
-    try {
-        return new BigDecimal(String.valueOf(value)).intValue();
-    } catch (NumberFormatException e) {
-        return null;
-    }
-}
-
-private String admissionRange(Object low, Object high) {
-    Integer lowValue = integerValue(low);
-    Integer highValue = integerValue(high);
-    if (lowValue == null && highValue == null) return null;
-    if (lowValue == null) return String.valueOf(highValue);
-    if (highValue == null) return String.valueOf(lowValue);
-    return lowValue + "-" + highValue;
-}
-```
-
-- [ ] **Step 2: Import missing collection classes**
-
-Ensure `AiRecommendationServiceImpl.java` imports these classes if not already present:
-
-```java
+import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.service.AiReportBuilder;
+import dev.langchain4j.model.chat.ChatModel;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class AiReportBuilderImpl implements AiReportBuilder {
+    @Autowired private RecommendationMapper recommendationMapper;
+
+    @Override
+    public Map<String, Object> buildConversationReport(ChatModel chatModel, String conversationJson,
+        String poolJson, int estimatedScore, Map<String, Object> preferenceProfile) {
+        String prompt = buildConversationPrompt(conversationJson, poolJson, preferenceProfile);
+        return hydrateReportPrograms(parseReportJson(chatModel.chat(prompt), poolJson), estimatedScore, poolJson);
+    }
+
+    @Override
+    public Map<String, Object> buildAnalyzeReport(ChatModel chatModel, String poolJson,
+        int estimatedScore, Map<String, Object> preferenceProfile) {
+        String prompt = buildAnalyzePrompt(poolJson, estimatedScore, preferenceProfile);
+        return hydrateReportPrograms(parseReportJson(chatModel.chat(prompt), poolJson), estimatedScore, poolJson);
+    }
+
+    String buildConversationPrompt(String convJson, String poolJson, Map<String, Object> preferenceProfile) {
+        return basePrompt(poolJson, preferenceProfile) + "\n## 对话历史\n" + convJson;
+    }
+
+    String buildAnalyzePrompt(String poolJson, int estimatedScore, Map<String, Object> preferenceProfile) {
+        return basePrompt(poolJson, preferenceProfile) + "\n## 用户预估分\n" + estimatedScore;
+    }
+}
 ```
 
-- [ ] **Step 3: Replace the report generation enrichment call**
+Then add private helpers from the previous plan into this class:
 
-In `generateReport`, replace:
+- `basePrompt(String poolJson, Map<String, Object> preferenceProfile)`
+- `buildPoolSummary(String poolJson)`
+- `parseReportJson(String aiResponse, String poolJson)`
+- `ruleBasedFallback(String poolJson)`
+- `hydrateReportPrograms(Map<String,Object> report, int estimatedScore, String poolJson)`
+- `parsePoolMap(String poolJson)`
+- `hydratedReportSchool(Map<String,Object> opinionSource, Map<String,Object> detail, int estimatedScore)`
+- `buildOpinion(Map<String,Object> source)`
+- `longValue`, `integerValue`, `admissionRange`, `stripMarkdown`
+
+Use this exact `basePrompt` schema:
 
 ```java
-injectMatchScores(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
-Map<String, Object> validated = validateAndNormalizeReport(reportJson, AiRecommendationTools.currentTrace());
+private String basePrompt(String poolJson, Map<String, Object> preferenceProfile) {
+    return """
+        这不是对话。请直接输出推荐报告 JSON，不要回复确认语。
+
+        ## preferenceProfile
+        %s
+
+        ## 候选学校事实摘要
+        %s
+
+        ## 要求
+        1. 只能从候选列表中选学校，programId 必须与候选列表一致
+        2. 按冲刺/稳妥/保底三档推荐，每档 1-3 所
+        3. AI 只输出观点字段，事实字段由后端数据库补全
+        4. 不要输出 schoolName、collegeName、programName、分数、招生人数等事实字段
+        5. 推荐理由必须基于候选事实摘要和 preferenceProfile 的取舍
+
+        ## 输出格式（严格 JSON）
+        {"summary":"一句话总结","tiers":[{"level":"reach","label":"冲刺档","schools":[{"programId":1,"judgement":"small_reach","risk":"high","decision":"适合作为冲刺候选","reason":"推荐理由","pros":["优势"],"cons":["风险"],"tradeoffs":["取舍"],"recommendedAction":"行动建议"}]},{"level":"steady","label":"稳妥档","schools":[]},{"level":"safe","label":"保底档","schools":[]}]}
+        """.formatted(JSON.toJSONString(defaultedPreferenceProfile(preferenceProfile)), buildPoolSummary(poolJson));
+}
 ```
 
-with:
+Use a concise `buildPoolSummary`: include `programId`、学校名、专业名、学院名、地区、层次、均分、均分差、最低录取、招生规模、完整度. Do not include source URLs or long text.
 
-```java
-Map<String, Object> hydrated = hydrateReportPrograms(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
-Map<String, Object> validated = validateAndNormalizeReport(hydrated, AiRecommendationTools.currentTrace());
-```
-
-- [ ] **Step 4: Run the focused backend test**
+- [ ] **Step 5: Run builder tests**
 
 Run:
 
 ```powershell
-mvn -pl ruoyi-postgrad -Dtest=AiRecommendationServiceImplTest#shouldHydrateOpinionOnlyReportWithDatabaseFacts test
+mvn -pl ruoyi-postgrad -Dtest=AiReportBuilderImplTest test
 ```
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```powershell
-git add ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java
-git commit -m "feat(ai-report): hydrate report facts from program ids"
+git add ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/AiReportBuilder.java ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiReportBuilderImpl.java ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiReportBuilderImplTest.java
+git commit -m "feat(ai-report): add shared report builder"
 ```
 
 ---
 
-### Task 3: Backend Validation For Invalid And Duplicate Program IDs
-
-**Files:**
-- Modify: `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java`
-- Modify if needed: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java`
-
-- [ ] **Step 1: Add invalid ID and duplicate ID tests**
-
-Paste these tests into `AiRecommendationServiceImplTest.java`:
-
-```java
-@Test
-void shouldDropProgramIdsOutsideCandidatePool() throws Exception {
-    Map<String, Object> school = new LinkedHashMap<>();
-    school.put("programId", 999);
-    school.put("reason", "池外 ID 不应保留");
-
-    Map<String, Object> tier = new LinkedHashMap<>();
-    tier.put("level", "steady");
-    tier.put("schools", List.of(school));
-
-    Map<String, Object> report = new LinkedHashMap<>();
-    report.put("tiers", List.of(tier));
-
-    Map<String, Object> hydrated = invokeHydrate(report, 300, "[{\"programId\":123}]");
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> tiers = (List<Map<String, Object>>) hydrated.get("tiers");
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> schools = (List<Map<String, Object>>) tiers.get(0).get("schools");
-    @SuppressWarnings("unchecked")
-    Map<String, Object> meta = (Map<String, Object>) hydrated.get("meta");
-
-    assertTrue(schools.isEmpty());
-    assertEquals(List.of(999L), meta.get("invalidProgramIds"));
-}
-
-@Test
-void shouldKeepFirstDuplicateProgramIdOnly() throws Exception {
-    when(recommendationMapper.selectProgramForRecommendation(123L)).thenReturn(detailRow(123L));
-
-    Map<String, Object> first = new LinkedHashMap<>();
-    first.put("programId", 123);
-    first.put("reason", "第一次出现");
-
-    Map<String, Object> duplicate = new LinkedHashMap<>();
-    duplicate.put("programId", 123);
-    duplicate.put("reason", "重复出现");
-
-    Map<String, Object> tier = new LinkedHashMap<>();
-    tier.put("level", "steady");
-    tier.put("schools", List.of(first, duplicate));
-
-    Map<String, Object> report = new LinkedHashMap<>();
-    report.put("tiers", List.of(tier));
-
-    Map<String, Object> hydrated = invokeHydrate(report, 300, "[{\"programId\":123}]");
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> tiers = (List<Map<String, Object>>) hydrated.get("tiers");
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> schools = (List<Map<String, Object>>) tiers.get(0).get("schools");
-    @SuppressWarnings("unchecked")
-    Map<String, Object> meta = (Map<String, Object>) hydrated.get("meta");
-
-    assertEquals(1, schools.size());
-    assertEquals(List.of(123L), meta.get("duplicateProgramIds"));
-}
-```
-
-- [ ] **Step 2: Run the new tests**
-
-Run:
-
-```powershell
-mvn -pl ruoyi-postgrad -Dtest=AiRecommendationServiceImplTest#shouldDropProgramIdsOutsideCandidatePool,AiRecommendationServiceImplTest#shouldKeepFirstDuplicateProgramIdOnly test
-```
-
-Expected: PASS. If either test fails, adjust only `hydrateReportPrograms` filtering and `meta` recording until both pass.
-
-- [ ] **Step 3: Commit**
-
-```powershell
-git add ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java
-git commit -m "test(ai-report): validate hydrated report ids"
-```
-
----
-
-### Task 4: Make The AI Report Prompt Opinion-Only
+### Task 4: Delegate Synchronous Report Path To Shared Builder
 
 **Files:**
 - Modify: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java`
 - Modify: `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java`
 
-- [ ] **Step 1: Add a prompt contract test**
+- [ ] **Step 1: Inject shared builder**
 
-Paste this test into `AiRecommendationServiceImplTest.java`:
+Add field:
 
 ```java
-@Test
-void shouldAskAiForOpinionOnlyReportJson() throws Exception {
-    Method method = AiRecommendationServiceImpl.class.getDeclaredMethod("buildReportPrompt", String.class, String.class);
-    method.setAccessible(true);
+@Autowired
+private AiReportBuilder aiReportBuilder;
+```
 
-    String prompt = (String) method.invoke(service, "[]", "[{\"programId\":123,\"schoolName\":\"北京信息科技大学\"}]");
+Import:
 
-    assertTrue(prompt.contains("AI 只输出观点字段"));
-    assertTrue(prompt.contains("\"programId\""));
-    assertTrue(prompt.contains("\"decision\""));
-    assertTrue(prompt.contains("\"tradeoffs\""));
-    assertTrue(prompt.contains("不要输出 schoolName"));
-    assertFalse(prompt.contains("\"schoolName\":\"...\""));
+```java
+import com.ruoyi.postgrad.service.AiReportBuilder;
+```
+
+- [ ] **Step 2: Add preference profile helper**
+
+Add helper:
+
+```java
+private Map<String, Object> buildPreferenceProfile(Map<String, Object> profile) {
+    Map<String, Object> pref = new LinkedHashMap<>();
+    pref.put("riskPreference", profile.getOrDefault("riskPreference", "balanced"));
+    pref.put("priorityPreference", profile.getOrDefault("priorityPreference", "success_rate"));
+    pref.put("schoolTierPreference", profile.getOrDefault("schoolTierPreference", "no_strict_requirement"));
+    pref.put("regionStrategy", profile.getOrDefault("regionStrategy", "no_limit"));
+    pref.put("dataReliabilityPreference", profile.getOrDefault("dataReliabilityPreference", "medium"));
+    pref.put("targetRegions", profile.getOrDefault("targetRegions", "不限"));
+    return pref;
 }
 ```
 
-- [ ] **Step 2: Run the prompt contract test and verify failure**
+Update `loadUserProfile` to put the four new fields from `UserProfile`, with defaults.
+
+- [ ] **Step 3: Replace inline report construction**
+
+In `generateReport`, replace the block that calls `buildReportPrompt`, `parseReportJson`, `injectMatchScores`, and `validateAndNormalizeReport` with:
+
+```java
+Map<String, Object> reportJson = aiReportBuilder.buildConversationReport(
+    chatModel,
+    cleanedConvJson,
+    poolJson != null ? poolJson : "[]",
+    estimatedScore,
+    buildPreferenceProfile(profile)
+);
+Map<String, Object> validated = validateAndNormalizeReport(reportJson, AiRecommendationTools.currentTrace());
+```
+
+- [ ] **Step 4: Keep old private methods only if still used**
 
 Run:
 
 ```powershell
-mvn -pl ruoyi-postgrad -Dtest=AiRecommendationServiceImplTest#shouldAskAiForOpinionOnlyReportJson test
+rg -n "buildReportPrompt|buildPoolSummary|parseReportJson|injectMatchScores|ruleBasedFallback" ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java
 ```
 
-Expected: FAIL because the current prompt example still asks for `schoolName` and `programName`.
+If any method is now unused in `AiRecommendationServiceImpl`, remove it from this class. Do not remove `validateAndNormalizeReport` if it is still used.
 
-- [ ] **Step 3: Update `buildReportPrompt`**
-
-Replace the output-format section in `buildReportPrompt` with this wording:
-
-```java
-            ## 要求
-            1. 从上面的候选列表中选学校，不要推荐列表之外的学校
-            2. programId 必须与候选列表中的 ID 一致
-            3. 按冲刺/稳妥/保底三档推荐，每档 1-3 所学校
-            4. AI 只输出观点字段，事实字段由后端数据库补全
-            5. 不要输出 schoolName、collegeName、programName、分数、招生人数等事实字段
-
-            ## 输出格式（严格 JSON）
-            {
-              "summary": "一句话总结本次择校策略",
-              "tiers": [
-                {
-                  "level": "reach",
-                  "label": "冲刺档",
-                  "schools": [
-                    {
-                      "programId": 1,
-                      "judgement": "small_reach",
-                      "risk": "high",
-                      "decision": "适合作为冲刺候选",
-                      "reason": "结合用户画像和候选事实后的推荐理由",
-                      "pros": ["优势1", "优势2"],
-                      "cons": ["风险1"],
-                      "tradeoffs": ["取舍说明"],
-                      "recommendedAction": "下一步行动建议"
-                    }
-                  ]
-                },
-                {"level": "steady", "label": "稳妥档", "schools": []},
-                {"level": "safe", "label": "保底档", "schools": []}
-              ]
-            }
-```
-
-- [ ] **Step 4: Enrich `buildPoolSummary` with facts useful for judgement**
-
-In `buildPoolSummary`, after city and before average score, append the fields AI should use as evidence:
-
-```java
-                sb.append(" | 学院:").append(p.getOrDefault("collegeName", ""));
-                sb.append(" | 地区:").append(p.getOrDefault("province", p.getOrDefault("city", "")));
-                sb.append(" | 考试:").append(p.getOrDefault("examCombo", ""));
-                sb.append(" | 最低录取:").append(p.getOrDefault("admissionLow", ""));
-                sb.append(" | 录取区间:").append(p.getOrDefault("admissionLow", "")).append("-").append(p.getOrDefault("admissionHigh", ""));
-                sb.append(" | 招生:").append(p.getOrDefault("unifiedExamQuota", p.getOrDefault("planCount", "")));
-                sb.append(" | 完整度:").append(p.getOrDefault("dataCompleteness", ""));
-```
-
-- [ ] **Step 5: Run prompt and hydration tests**
+- [ ] **Step 5: Run tests**
 
 Run:
 
 ```powershell
-mvn -pl ruoyi-postgrad -Dtest=AiRecommendationServiceImplTest test
+mvn -pl ruoyi-postgrad -Dtest=AiRecommendationServiceImplTest,AiReportBuilderImplTest test
 ```
 
 Expected: PASS.
@@ -603,98 +678,180 @@ Expected: PASS.
 
 ```powershell
 git add ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java
-git commit -m "feat(ai-report): request opinion-only AI report output"
+git commit -m "feat(ai-report): delegate sync reports to shared builder"
 ```
 
 ---
 
-### Task 5: Hydrate Rule-Based Fallback Reports
+### Task 5: Delegate MQ Consumer Path To Shared Builder
 
 **Files:**
-- Modify: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java`
-- Modify: `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java`
+- Modify: `ruoyi-admin/src/main/java/com/ruoyi/web/controller/postgrad/AiReportConsumer.java`
+- Add: `ruoyi-admin/src/test/java/com/ruoyi/web/controller/postgrad/AiReportConsumerContractTest.java`
 
-- [ ] **Step 1: Add fallback hydration test**
+- [ ] **Step 1: Add static consumer contract test**
 
-Paste this test into `AiRecommendationServiceImplTest.java`:
+Create `AiReportConsumerContractTest.java`:
 
 ```java
-@Test
-void shouldHydrateRuleBasedFallbackItems() throws Exception {
-    when(recommendationMapper.selectProgramForRecommendation(123L)).thenReturn(detailRow(123L));
+package com.ruoyi.web.controller.postgrad;
 
-    Method fallbackMethod = AiRecommendationServiceImpl.class.getDeclaredMethod("ruleBasedFallback", String.class);
-    fallbackMethod.setAccessible(true);
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-    @SuppressWarnings("unchecked")
-    Map<String, Object> fallback = (Map<String, Object>) fallbackMethod.invoke(service,
-        "[{\"programId\":123,\"schoolName\":\"临时名称\",\"programName\":\"临时专业\",\"avgAdmittedScore\":295}]");
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
 
-    Map<String, Object> hydrated = invokeHydrate(fallback, 300, "[{\"programId\":123}]");
-    @SuppressWarnings("unchecked")
-    List<Map<String, Object>> tiers = (List<Map<String, Object>>) hydrated.get("tiers");
-    @SuppressWarnings("unchecked")
-    Map<String, Object> school = ((List<Map<String, Object>>) tiers.get(1).get("schools")).get(0);
+class AiReportConsumerContractTest {
+    @Test
+    void consumerShouldUseSharedReportBuilder() throws Exception {
+        String source = Files.readString(Path.of("src/main/java/com/ruoyi/web/controller/postgrad/AiReportConsumer.java"));
 
-    assertEquals("计算机学院", school.get("collegeName"));
-    assertNotNull(school.get("opinion"));
+        assertTrue(source.contains("AiReportBuilder"));
+        assertTrue(source.contains("buildConversationReport"));
+        assertTrue(source.contains("buildAnalyzeReport"));
+        assertFalse(source.contains("private String buildReportPrompt"));
+        assertFalse(source.contains("private void injectFullData"));
+    }
 }
 ```
 
-- [ ] **Step 2: Run the fallback test**
+- [ ] **Step 2: Run test and verify failure**
 
 Run:
 
 ```powershell
-mvn -pl ruoyi-postgrad -Dtest=AiRecommendationServiceImplTest#shouldHydrateRuleBasedFallbackItems test
+mvn -pl ruoyi-admin -Dtest=AiReportConsumerContractTest test
 ```
 
-Expected: PASS after Task 2. If it fails because the fallback puts the item in a different tier, inspect fallback tier construction and update the test index to the tier containing one school.
+Expected: FAIL because the consumer still has private prompt/injection methods.
 
-- [ ] **Step 3: Simplify fallback output to opinion-compatible fields**
+- [ ] **Step 3: Inject `AiReportBuilder`**
 
-In `ruleBasedFallback`, keep `programId`, `judgement`, `risk`, `reason`, `pros`, `cons`, and `recommendedAction`. Do not rely on fallback `schoolName` or `programName` for final display because hydration supplies them.
-
-Use this item shape inside fallback:
+Add import:
 
 ```java
-school.put("programId", p.get("programId"));
-school.put("judgement", level.equals("safe") ? "safe" : level.equals("reach") ? "small_reach" : "steady");
-school.put("risk", level.equals("reach") ? "high" : level.equals("safe") ? "low" : "medium");
-school.put("decision", level.equals("reach") ? "适合作为冲刺候选" : level.equals("safe") ? "适合作为保底候选" : "适合作为稳妥候选");
-school.put("reason", "基于候选池数据自动生成的兜底推荐");
-school.put("pros", Collections.emptyList());
-school.put("cons", Collections.emptyList());
-school.put("tradeoffs", Collections.emptyList());
-school.put("recommendedAction", "建议核验院校官网后再加入最终备选");
+import com.ruoyi.postgrad.service.AiReportBuilder;
 ```
 
-- [ ] **Step 4: Run all backend AI report tests**
+Add field:
+
+```java
+@Autowired private AiReportBuilder aiReportBuilder;
+```
+
+- [ ] **Step 4: Replace conversation report generation**
+
+Replace:
+
+```java
+String reportPrompt = buildReportPrompt(cleanedConvJson, poolJson != null ? poolJson : "[]");
+JSONObject reportJson = parseReportJson(chatModel, reportPrompt, poolJson);
+
+injectFullData(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
+normalizeReport(reportJson);
+
+String resultJsonStr = reportJson.toJSONString();
+```
+
+with:
+
+```java
+Map<String, Object> reportJson = aiReportBuilder.buildConversationReport(
+    chatModel,
+    cleanedConvJson,
+    poolJson != null ? poolJson : "[]",
+    estimatedScore,
+    loadPreferenceProfile((Number) msg.get("userId"))
+);
+
+String resultJsonStr = JSON.toJSONString(reportJson);
+```
+
+If `userId` is not present in conversation messages, pass `Collections.emptyMap()` and document that analyze mode uses profile-backed preferences. Use:
+
+```java
+Map<String, Object> preferences = msg.get("userId") instanceof Number userId
+    ? loadPreferenceProfile(userId)
+    : Collections.emptyMap();
+```
+
+- [ ] **Step 5: Replace analyze report generation**
+
+Replace prompt/parse/inject/normalize in `handleAnalyzeMessage` with:
+
+```java
+Map<String, Object> reportJson = aiReportBuilder.buildAnalyzeReport(
+    chatModel,
+    poolJson,
+    estimatedScore,
+    loadPreferenceProfile(userId)
+);
+
+String resultJsonStr = JSON.toJSONString(reportJson);
+```
+
+- [ ] **Step 6: Add preference loader in consumer**
+
+Either reuse existing `loadProfileForAnalysis` by returning preference keys too, or add:
+
+```java
+private Map<String, Object> loadPreferenceProfile(Number userIdValue) {
+    Map<String, Object> profile = userIdValue == null
+        ? new LinkedHashMap<>()
+        : loadProfileForAnalysis(userIdValue.longValue());
+    Map<String, Object> pref = new LinkedHashMap<>();
+    pref.put("riskPreference", profile.getOrDefault("riskPreference", "balanced"));
+    pref.put("priorityPreference", profile.getOrDefault("priorityPreference", "success_rate"));
+    pref.put("schoolTierPreference", profile.getOrDefault("schoolTierPreference", "no_strict_requirement"));
+    pref.put("regionStrategy", profile.getOrDefault("regionStrategy", "no_limit"));
+    pref.put("dataReliabilityPreference", profile.getOrDefault("dataReliabilityPreference", "medium"));
+    pref.put("targetRegions", profile.getOrDefault("targetRegions", "不限"));
+    return pref;
+}
+```
+
+- [ ] **Step 7: Remove duplicate private methods**
+
+Remove from `AiReportConsumer` after delegation:
+
+- `buildReportPrompt`
+- `buildPoolSummary`
+- `parseReportJson`
+- `ruleBasedFallback`
+- `injectFullData`
+- old `normalizeReport` and helpers only used by those removed methods
+
+Keep helpers still needed by `loadProfileForAnalysis`, Redis handling, or error handling.
+
+- [ ] **Step 8: Run admin contract test**
 
 Run:
 
 ```powershell
-mvn -pl ruoyi-postgrad -Dtest=AiRecommendationServiceImplTest test
+mvn -pl ruoyi-admin -Dtest=AiReportConsumerContractTest test
 ```
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```powershell
-git add ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImplTest.java
-git commit -m "feat(ai-report): align fallback with hydrated report schema"
+git add ruoyi-admin/src/main/java/com/ruoyi/web/controller/postgrad/AiReportConsumer.java ruoyi-admin/src/test/java/com/ruoyi/web/controller/postgrad/AiReportConsumerContractTest.java
+git commit -m "feat(ai-report): delegate MQ reports to shared builder"
 ```
 
 ---
 
-### Task 6: Frontend Normalization For Opinion Reports
+### Task 6: Frontend Normalize Hydrated Opinion Reports
 
 **Files:**
 - Modify: `user-ui/src/utils/aiReport.js`
 - Add: `user-ui/src/utils/aiReport.opinion.test.mjs`
+- Modify if needed: `user-ui/src/views/AiReport.vue`
 
-- [ ] **Step 1: Add frontend opinion normalization test**
+- [ ] **Step 1: Add opinion normalization test**
 
 Create `user-ui/src/utils/aiReport.opinion.test.mjs`:
 
@@ -719,7 +876,7 @@ const report = normalizeAiReport({
       opinion: {
         judgement: 'steady',
         risk: 'medium',
-        decision: '适合作为主力稳妥候选',
+        decision: '主力稳妥',
         reason: '分数匹配，地区符合偏好',
         pros: ['分数匹配度较高'],
         cons: ['数据完整度为 C，需要核验'],
@@ -731,36 +888,16 @@ const report = normalizeAiReport({
 })
 
 const school = report.tiers[0].schools[0]
-
 assert.equal(school.collegeName, '计算机学院')
 assert.equal(school.judgement, 'steady')
-assert.equal(school.risk, 'medium')
+assert.equal(school.decision, '主力稳妥')
 assert.deepEqual(school.evidence, ['分数匹配，地区符合偏好', '分数匹配度较高'])
 assert.deepEqual(school.risks, ['数据完整度为 C，需要核验'])
 assert.deepEqual(school.tradeoffs, ['上岸稳定性优先于学校层次'])
 assert.equal(school.recommendedAction, '加入备选并核验官网')
-
-const legacy = normalizeAiReport({
-  tiers: [{
-    level: 'safe',
-    schools: [{
-      programId: 456,
-      schoolName: '旧报告大学',
-      collegeName: '',
-      programName: '软件工程',
-      judgement: 'safe',
-      reason: '旧结构理由',
-      cons: '旧结构风险'
-    }]
-  }]
-})
-
-assert.equal(legacy.tiers[0].schools[0].judgement, 'safe')
-assert.deepEqual(legacy.tiers[0].schools[0].evidence, ['旧结构理由'])
-assert.deepEqual(legacy.tiers[0].schools[0].risks, ['旧结构风险'])
 ```
 
-- [ ] **Step 2: Run the frontend test and verify failure**
+- [ ] **Step 2: Run and verify failure**
 
 Run:
 
@@ -768,11 +905,11 @@ Run:
 node user-ui\src\utils\aiReport.opinion.test.mjs
 ```
 
-Expected: FAIL because `normalizeSchool` does not merge `opinion` into `evidence`, `risks`, and `recommendedAction`.
+Expected: FAIL because `normalizeSchool` does not merge `opinion` yet.
 
 - [ ] **Step 3: Update `normalizeSchool`**
 
-In `user-ui/src/utils/aiReport.js`, replace `normalizeSchool` with:
+Replace `normalizeSchool` with:
 
 ```js
 function normalizeSchool(school) {
@@ -782,9 +919,10 @@ function normalizeSchool(school) {
   const verificationStatus = VERIFICATION_STATUS_LABELS[school.verificationStatus]
     ? school.verificationStatus
     : 'local_data_only'
-  const reasonItems = toArray(opinion.reason || school.reason)
-  const proItems = toArray(opinion.pros || school.pros)
-  const evidence = [...reasonItems, ...proItems]
+  const evidence = [
+    ...toArray(opinion.reason || school.reason),
+    ...toArray(opinion.pros || school.pros)
+  ]
   const risks = toArray(opinion.cons || opinion.risks || school.risks || school.cons)
   const avgScoreGap = school.avgScoreGap ?? school.gap ?? null
 
@@ -806,7 +944,7 @@ function normalizeSchool(school) {
 }
 ```
 
-- [ ] **Step 4: Run frontend normalization tests**
+- [ ] **Step 4: Run frontend tests**
 
 Run:
 
@@ -814,6 +952,7 @@ Run:
 node user-ui\src\utils\aiReport.opinion.test.mjs
 node user-ui\src\views\AiReport.cards.test.mjs
 node user-ui\src\views\AiReport.loading.test.mjs
+node user-ui\src\views\Results.backup.test.mjs
 ```
 
 Expected: PASS.
@@ -827,12 +966,10 @@ git commit -m "feat(ai-report): normalize hydrated opinion reports"
 
 ---
 
-### Task 7: End-To-End Verification And Cleanup
+### Task 7: Full Verification
 
 **Files:**
-- Verify: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java`
-- Verify: `user-ui/src/utils/aiReport.js`
-- Verify: `user-ui/src/views/AiReport.vue`
+- Verify backend and frontend files touched by Tasks 1-6.
 
 - [ ] **Step 1: Run backend module tests**
 
@@ -840,33 +977,36 @@ Run:
 
 ```powershell
 mvn -pl ruoyi-postgrad test
+mvn -pl ruoyi-admin -Dtest=AiReportConsumerContractTest test
 ```
 
 Expected: PASS.
 
-- [ ] **Step 2: Run frontend static tests**
+- [ ] **Step 2: Run frontend tests and build**
 
 Run:
 
 ```powershell
+node user-ui\src\views\Profile.preferences.test.mjs
 node user-ui\src\utils\aiReport.opinion.test.mjs
 node user-ui\src\views\AiReport.cards.test.mjs
 node user-ui\src\views\AiReport.loading.test.mjs
 node user-ui\src\views\Results.backup.test.mjs
-```
-
-Expected: PASS.
-
-- [ ] **Step 3: Build the frontend**
-
-Run:
-
-```powershell
 cd user-ui
 npm run build
 ```
 
-Expected: build completes. Existing Vite chunk-size or CommonJS warnings are acceptable if no new errors appear.
+Expected: PASS. Existing Vite warnings are acceptable if build exits successfully.
+
+- [ ] **Step 3: Inspect duplicate logic is gone**
+
+Run:
+
+```powershell
+rg -n "private String buildReportPrompt|private void injectFullData" ruoyi-admin/src/main/java/com/ruoyi/web/controller/postgrad/AiReportConsumer.java ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/AiRecommendationServiceImpl.java
+```
+
+Expected: no matches.
 
 - [ ] **Step 4: Inspect working tree**
 
@@ -876,21 +1016,13 @@ Run:
 git status --short
 ```
 
-Expected: only intentional files remain modified. Existing unrelated UI changes from earlier work may still be present; do not revert them.
-
-- [ ] **Step 5: Final commit if verification required small fixes**
-
-If Step 1, 2, or 3 required small fixes, commit only the files changed for those fixes:
-
-```powershell
-git add <fixed-file-1> <fixed-file-2>
-git commit -m "fix(ai-report): stabilize hydrated report verification"
-```
+Expected: only intentional files remain modified. Existing unrelated UI changes from prior work may still appear; do not revert them.
 
 ---
 
 ## Self-Review
 
-- Spec coverage: The plan implements backend fact hydration, opinion-only AI output, ID validation, fallback handling, frontend opinion normalization, and verification.
-- Placeholder scan: The plan contains exact files, commands, and code snippets for each code-changing task.
-- Type consistency: The schema uses `programId`, `opinion`, `judgement`, `risk`, `decision`, `reason`, `pros`, `cons`, `tradeoffs`, and `recommendedAction` consistently across backend and frontend.
+- Spec coverage: This revised plan covers profile preferences, shared report builder, synchronous path, MQ path, backend hydration, frontend opinion normalization, and verification.
+- Reviewer feedback coverage: The MQ consumer path is explicit in Task 5. Pool summary is concise and limited to judgement-relevant facts. Opinion compatibility is mostly handled in frontend normalization. User preference fields are now first-class profile fields.
+- Completion scan: No unresolved filler task remains.
+- Type consistency: Preference fields use `priorityPreference`, `schoolTierPreference`, `regionStrategy`, and `dataReliabilityPreference`; report fields use `programId`, `opinion`, `judgement`, `risk`, `decision`, `reason`, `pros`, `cons`, `tradeoffs`, and `recommendedAction`.
