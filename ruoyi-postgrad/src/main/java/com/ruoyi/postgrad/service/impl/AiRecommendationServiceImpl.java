@@ -346,7 +346,21 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         try {
             AiRecommendationTools.setConversationId(conversationId);
             TokenStream stream = assistant.chat("<user_input>" + message + "</user_input>");
-            stream.beforeToolExecution(ignored -> AiRecommendationTools.setConversationId(conversationId))
+            stream.beforeToolExecution(toolRequest -> {
+                    AiRecommendationTools.setConversationId(conversationId);
+                    // 提取工具名称，发送进度反馈给前端
+                    String toolName = toolRequest != null && toolRequest.request() != null
+                        ? toolRequest.request().name() : "";
+                    String thinkingMsg = switch (toolName) {
+                        case "getProgramDetail" -> "正在查询学校详细数据...";
+                        case "searchPrograms" -> "正在搜索符合条件的学校...";
+                        case "comparePrograms" -> "正在对比学校数据...";
+                        case "expandCandidatePool" -> "正在扩展候选学校范围...";
+                        case "queryDatabase" -> "正在查询数据库...";
+                        default -> toolName.isEmpty() ? "正在分析你的问题..." : "正在调用 " + toolName + "...";
+                    };
+                    callback.onThinking(thinkingMsg);
+                })
                 .onPartialResponse(token -> {
                     fullResponse.append(token);
                     callback.onToken(token);

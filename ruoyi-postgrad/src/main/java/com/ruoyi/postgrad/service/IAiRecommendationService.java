@@ -82,6 +82,9 @@ public interface IAiRecommendationService
     Map<String, Object> analyze(Long userId);
 
     interface StreamCallback {
+        /** Progress event sent before a tool is about to be executed. */
+        default void onThinking(String message) {}
+
         void onToken(String token);
 
         void onComplete(Map<String, Object> result);

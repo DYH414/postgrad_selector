@@ -21,7 +21,10 @@
 
       <div v-if="loading" class="msg assistant">
         <div class="msg-avatar"><i class="el-icon-cpu" /></div>
-        <div class="msg-bubble typing"><span>.</span><span>.</span><span>.</span></div>
+        <div class="msg-bubble thinking-bubble">
+          <span class="thinking-text">{{ thinkingText || '思考中...' }}</span>
+          <span class="thinking-pulse" />
+        </div>
       </div>
     </div>
 
@@ -69,6 +72,7 @@ const messages = ref([])
 const currentOptions = ref([])
 const input = ref('')
 const loading = ref(false)
+const thinkingText = ref('')
 
 watch(() => props.visible, (val) => {
   if (val && !conversationId.value) startConversation()
@@ -95,6 +99,7 @@ async function sendMessage() {
   messages.value.push({ role: 'user', content: text })
   input.value = ''
   currentOptions.value = []
+  thinkingText.value = ''
   loading.value = true
   await callChat(text)
   scrollToBottom()
@@ -103,6 +108,7 @@ async function sendMessage() {
 async function sendOption(opt) {
   messages.value.push({ role: 'user', content: opt })
   currentOptions.value = []
+  thinkingText.value = ''
   loading.value = true
   await callChat(opt)
   scrollToBottom()
@@ -122,6 +128,9 @@ async function callChat(text) {
     await postAiChatStream(
       { conversationId: conversationId.value, message: text },
       {
+        onThinking(text) {
+          thinkingText.value = text
+        },
         onToken(token) {
           rawAssistantContent += token
           const idx = ensureAssistantMsg()
@@ -167,7 +176,10 @@ function stripMarkdown(text) {
 }
 
 async function callChatFallback(text, assistantIndex) {
-  messages.value[assistantIndex].content = '正在处理...'
+  const hadContent = messages.value[assistantIndex] && messages.value[assistantIndex].content
+  if (!hadContent) {
+    messages.value[assistantIndex].content = '正在处理...'
+  }
   // 等一下让 AI 完成工具调用
   await new Promise(r => setTimeout(r, 2000))
   try {
@@ -260,10 +272,21 @@ function scrollToBottom() {
   font-size: 14px; line-height: 1.6; }
 .msg.assistant .msg-bubble { background: #f0f2f5; border-top-left-radius: 2px; }
 .msg.user .msg-bubble { background: #409eff; color: #fff; border-top-right-radius: 2px; }
-.typing span { animation: blink 1.4s infinite both; }
-.typing span:nth-child(2) { animation-delay: .2s; }
-.typing span:nth-child(3) { animation-delay: .4s; }
-@keyframes blink { 0%,80%,100% { opacity: 0; } 40% { opacity: 1; } }
+.thinking-bubble {
+  display: flex; align-items: center; gap: 6px;
+  background: #e8f0fe !important;
+}
+.thinking-text { font-size: 13px; color: #5b7fa5; }
+.thinking-pulse {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #409eff;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
 .options-bar { padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .input-bar { padding: 8px 12px; border-top: 1px solid #ebeef5; }
 </style>

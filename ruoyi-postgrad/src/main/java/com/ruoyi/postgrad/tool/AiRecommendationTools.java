@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Component
@@ -23,6 +24,9 @@ public class AiRecommendationTools {
 
     private static final Logger log = LoggerFactory.getLogger(AiRecommendationTools.class);
     private static final ThreadLocal<String> CURRENT_CONVERSATION = new ThreadLocal<>();
+
+    /** 对话级工具结果缓存，key = "conversationId:programId"，避免同一对话中重复查询 */
+    private static final ConcurrentHashMap<String, String> DETAIL_CACHE = new ConcurrentHashMap<>();
     private static final ThreadLocal<AiToolBudget> CURRENT_BUDGET =
         ThreadLocal.withInitial(AiToolBudget::reportDefaults);
     private static final ThreadLocal<AiToolTrace> CURRENT_TRACE =
@@ -49,9 +53,15 @@ public class AiRecommendationTools {
     }
 
     public static void clear() {
+        String convId = CURRENT_CONVERSATION.get();
         CURRENT_CONVERSATION.remove();
         CURRENT_BUDGET.remove();
         CURRENT_TRACE.remove();
+        // 清理该对话的工具结果缓存
+        if (convId != null) {
+            String prefix = convId + ":";
+            DETAIL_CACHE.keySet().removeIf(key -> key.startsWith(prefix));
+        }
     }
 
     @Tool("获取指定学校的完整录取数据，包括近三年复试线、小分、招生计划、录取均分")
@@ -62,6 +72,14 @@ public class AiRecommendationTools {
         if (!CURRENT_BUDGET.get().tryUse("getProgramDetail", 800)) {
             CURRENT_TRACE.get().setExplorationLimited(true);
             return "{\"error\":\"tool_budget_exceeded\",\"explorationLimited\":true}";
+        }
+
+        // 对话级缓存：同一 programId 在本次对话中已查过，直接返回
+        String cacheKey = conversationId + ":" + programId;
+        String cached = DETAIL_CACHE.get(cacheKey);
+        if (cached != null) {
+            log.info("[Tool] getProgramDetail cache hit — conversationId={}, programId={}", conversationId, programId);
+            return cached;
         }
 
         String poolJson = loadPoolJson(conversationId);
@@ -79,7 +97,9 @@ public class AiRecommendationTools {
                 Map<String, Object> summary = new LinkedHashMap<>();
                 summary.put("found", true);
                 CURRENT_TRACE.get().record("getProgramDetail", args, summary);
-                return JSON.toJSONString(p);
+                String result = JSON.toJSONString(p);
+                DETAIL_CACHE.put(cacheKey, result);
+                return result;
             }
         }
         Map<String, Object> args = new LinkedHashMap<>();

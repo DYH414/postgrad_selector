@@ -67,6 +67,11 @@ public class AppAiRecommendationController {
             String message = (String) body.get("message");
             aiService.chatStream(user.getUserId(), conversationId, message, new IAiRecommendationService.StreamCallback() {
                 @Override
+                public void onThinking(String message) {
+                    sendEvent(emitter, "thinking", Map.of("text", message));
+                }
+
+                @Override
                 public void onToken(String token) {
                     sendEvent(emitter, "token", Map.of("text", token));
                 }

@@ -11,7 +11,7 @@ export function postAiChat(data) {
 export async function postAiChatStream(data, handlers = {}) {
   const token = getToken()
   const controller = new AbortController()
-  const timeoutMs = handlers.timeoutMs || 30000
+  const timeoutMs = handlers.timeoutMs || 120000
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch('/dev-api/app/ai-recommend/chat/stream', {
@@ -61,7 +61,9 @@ function handleSseBlock(block, handlers) {
   if (!dataLines.length) return
   const rawData = dataLines.join('\n')
   const data = JSON.parse(rawData)
-  if (event === 'token') {
+  if (event === 'thinking') {
+    handlers.onThinking?.(data.text || '')
+  } else if (event === 'token') {
     handlers.onToken?.(data.text || '')
   } else if (event === 'done') {
     handlers.onDone?.(data)
