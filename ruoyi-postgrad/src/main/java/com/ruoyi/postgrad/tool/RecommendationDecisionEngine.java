@@ -77,34 +77,6 @@ public final class RecommendationDecisionEngine {
         steadyList.sort(byScore);
         safeList.sort(byScore);
 
-        // 3a. 兜底：保底档不能为空，从稳妥档取 top 3 降级填充
-        if (safeList.isEmpty() && !steadyList.isEmpty()) {
-            int fill = Math.min(3, steadyList.size());
-            for (int i = 0; i < fill; i++) {
-                ScoredProgram sp = steadyList.get(i);
-                sp.tier = "safe";
-                sp.riskLevel = "low";
-                sp.judgement = "safe";
-                safeList.add(sp);
-            }
-            steadyList.removeAll(safeList);
-        }
-        // 如果稳妥档也为空，从冲刺档取 gap 最大的（最有安全感的）填充保底档
-        if (safeList.isEmpty() && !sprintList.isEmpty()) {
-            List<ScoredProgram> byGap = new ArrayList<>(sprintList);
-            byGap.sort(Comparator.comparingInt((ScoredProgram s) -> s.gap).reversed());
-            int fill = Math.min(3, byGap.size());
-            for (int i = 0; i < fill; i++) {
-                ScoredProgram sp = byGap.get(i);
-                sp.tier = "safe";
-                sp.riskLevel = "medium";
-                sp.judgement = "steady";
-                safeList.add(sp);
-            }
-            sprintList.removeAll(safeList);
-            safeList.sort(byScore);
-        }
-
         // 4. 组装结果
         DecisionResult result = new DecisionResult();
         result.totalCandidates = scored.size();
@@ -164,7 +136,7 @@ public final class RecommendationDecisionEngine {
         sp.weightedScore = computeWeighted(sp, weights);
 
         // --- 分档 ---
-        sp.tier = assignTier(sp.gap, sp.dataCompletenessScore);
+        sp.tier = assignTier(sp.gap, sp.dataCompletenessScore, sp.competitionScore);
         sp.riskLevel = assignRiskLevel(sp.gap, sp.competitionScore);
         sp.judgement = assignJudgement(sp.tier, sp.riskLevel, sp.dataCompletenessScore);
 
@@ -258,8 +230,9 @@ public final class RecommendationDecisionEngine {
     // 分档 / 风险 / 判断
     // ========================================================================
 
-    static String assignTier(int gap, int completenessScore) {
-        if (gap >= 15) return "safe";
+    static String assignTier(int gap, int completenessScore, int competitionScore) {
+        if (gap >= 15 && competitionScore >= 55) return "safe";
+        if (gap >= 15) return "steady";
         if (gap >= 5)  return "steady";
         if (completenessScore < 50) return "sprint"; // 数据不完整 → 偏冲刺
         return "sprint";

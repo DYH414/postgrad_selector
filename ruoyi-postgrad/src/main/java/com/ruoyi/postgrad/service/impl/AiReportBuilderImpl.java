@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.service.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.domain.AiReportSupport;
+import com.ruoyi.postgrad.domain.AiRecommendationSafety;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.service.AiReportBuilder;
 import dev.langchain4j.model.chat.ChatModel;
@@ -103,7 +104,7 @@ public class AiReportBuilderImpl implements AiReportBuilder {
                 sb.append(" | 最低录取:").append(displayInt(row.get("admissionLow")));
                 sb.append(" | 招生:").append(displayInt(row.getOrDefault("unifiedExamQuota", row.get("planCount"))));
                 sb.append(" | 完整度:").append(row.getOrDefault("dataCompleteness", ""));
-                Map<String, Object> guard = safeEligibility(row, estimatedScore);
+                Map<String, Object> guard = AiRecommendationSafety.safeEligibility(row, estimatedScore);
                 sb.append(" | quotaRisk:").append(guard.get("quotaRisk"));
                 sb.append(" | canBeSafe:").append(guard.get("canBeSafe"));
                 Object reason = guard.get("safeBlockReason");
@@ -271,7 +272,7 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         item.put("avgAdmittedScore", avg);
         item.put("avgScoreGap", avg == null || estimatedScore <= 0 ? null : estimatedScore - avg);
         item.put("admissionRange", admissionRange(detail.get("admissionLow"), detail.get("admissionHigh")));
-        Map<String, Object> guard = safeEligibility(detail, estimatedScore);
+        Map<String, Object> guard = AiRecommendationSafety.safeEligibility(detail, estimatedScore);
         item.put("quotaRisk", guard.get("quotaRisk"));
         item.put("canBeSafe", guard.get("canBeSafe"));
         if (guard.get("safeBlockReason") != null) item.put("safeBlockReason", guard.get("safeBlockReason"));
@@ -314,37 +315,6 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         if (existing instanceof List<?> values) list.addAll(values);
         if (value != null && !list.contains(value)) list.add(value);
         return list;
-    }
-
-    private Map<String, Object> safeEligibility(Map<String, Object> row, int estimatedScore) {
-        Map<String, Object> guard = new LinkedHashMap<>();
-        Integer quota = integerValue(row.getOrDefault("unifiedExamQuota", row.get("planCount")));
-        Integer avg = integerValue(row.get("avgAdmittedScore"));
-        Integer avgGap = avg == null || estimatedScore <= 0 ? null : estimatedScore - avg;
-        boolean hasAdmissionRange = integerValue(row.get("admissionLow")) != null || integerValue(row.get("admissionHigh")) != null;
-        String completeness = String.valueOf(row.getOrDefault("dataCompleteness", ""));
-
-        guard.put("quotaRisk", quotaRisk(quota));
-        guard.put("canBeSafe", true);
-        if (quota != null && quota <= 3) {
-            guard.put("canBeSafe", false);
-            guard.put("safeBlockReason", "统考名额仅" + quota + "人，录取波动极大，不能作为保底");
-        } else if (quota != null && quota < 10 && (avgGap == null || avgGap < 35 || "C".equalsIgnoreCase(completeness) || !hasAdmissionRange)) {
-            guard.put("canBeSafe", false);
-            guard.put("safeBlockReason", "统考名额仅" + quota + "人，且数据或分数优势不足以支撑保底判断");
-        } else if (quota == null && "C".equalsIgnoreCase(completeness) && !hasAdmissionRange) {
-            guard.put("canBeSafe", false);
-            guard.put("safeBlockReason", "缺少统考名额和拟录取区间，数据完整度较低，不能作为保底");
-        }
-        return guard;
-    }
-
-    private String quotaRisk(Integer quota) {
-        if (quota == null) return "unknown";
-        if (quota <= 3) return "very_high";
-        if (quota < 10) return "high";
-        if (quota < 20) return "medium";
-        return "normal";
     }
 
     @SuppressWarnings("unchecked")

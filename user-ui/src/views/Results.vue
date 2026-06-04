@@ -163,9 +163,13 @@
             </div>
             <p v-if="activeCompareTab === 'compare' && compareSchools.length" class="table-note">注：拟录取区间为近三年拟录取总分范围，仅供参考；招生人数含推免，具体以院校当年公告为准。</p>
 
-            <div v-if="activeCompareTab === 'backup'" class="section-title compare-section-title">
-              <strong>我的备选</strong>
-              <span>共 {{ backupTotal }} 个项目</span>
+            <div v-if="activeCompareTab === 'backup'" class="backup-overview">
+              <div>
+                <span>备选池</span>
+                <strong>{{ backupTotal }}</strong>
+                <small>已加入的院校专业</small>
+              </div>
+              <p>把备选方案加入对比后，可以横向查看分数、名额、数据完整度和来源。</p>
             </div>
             <div v-if="activeCompareTab === 'backup' && backupGroups.length" class="backup-grid">
               <div v-for="group in backupGroups" :key="group.name" class="backup-card" :class="group.theme">
@@ -176,11 +180,16 @@
                   </div>
                   <i class="el-icon-plus"></i>
                 </div>
-                <ul>
-                  <li v-for="item in group.items" :key="item.name">
-                    <span>{{ item.name }}</span>
+                <ul class="backup-item-list">
+                  <li v-for="item in group.items" :key="item.name" class="backup-item-card">
+                    <div>
+                      <span>{{ item.name }}</span>
+                      <p class="backup-item-meta">
+                        <em>{{ item.grade }}</em>
+                        <small>{{ item.degreeType }}</small>
+                      </p>
+                    </div>
                     <div class="backup-actions">
-                      <em>{{ item.grade }}</em>
                       <button type="button" @click="addBackupToCompare(item)">
                         {{ isInCompare(item.programId) ? '已加入' : '加入对比' }}
                       </button>
@@ -191,7 +200,7 @@
               </div>
             </div>
             <div v-else-if="activeCompareTab === 'backup'" class="empty-group">
-              暂无备选项目，请先在推荐结果页收藏意向专业。
+              暂无备选项目，请先在推荐结果页加入备选。
             </div>
           </section>
         </template>
@@ -244,7 +253,7 @@
                     :class="{ favorited: isFavorited(school), loading: favoriteLoadingIds.includes(favoriteKey(school)) }"
                     type="button"
                     @click="handleFavorite(school)"
-                    :aria-label="isFavorited(school) ? '取消收藏' : '加入收藏'">
+                    :aria-label="isFavorited(school) ? '移出备选' : '加入备选'">
                     <i :class="isFavorited(school) ? 'el-icon-star-on' : 'el-icon-star-off'"></i>
                   </button>
                 </div>
@@ -317,7 +326,7 @@
                         type="button"
                         :disabled="favoriteLoadingIds.includes(favoriteKey(direction))"
                         @click="handleFavorite(direction)">
-                        {{ isFavorited(direction) ? '取消收藏' : '收藏' }}
+                        {{ isFavorited(direction) ? '移出备选' : '加入备选' }}
                       </button>
                       <button type="button" @click="openDetail(direction.programId)">详情</button>
                     </div>
@@ -1018,11 +1027,12 @@ function loadBackupGroups() {
     syncFavoriteIds(res.data || [])
     const items = (res.data || []).map(item => ({
       name: `${item.schoolName || item.school_name || '-'} · ${item.programName || item.program_name || '-'}`,
-      grade: item.programCode || item.program_code || '已收藏',
+      grade: item.programCode || item.program_code || '已备选',
+      degreeType: (item.degreeType || item.degree_type) === 'professional' ? '专硕' : '学硕',
       programId: item.programId || item.program_id
     }))
     backupGroups.value = items.length
-      ? [{ name: '我的收藏', desc: '从筛选结果中收藏的院校专业', theme: 'blue', items }]
+      ? [{ name: '备选池', desc: '从筛选结果中加入备选的院校专业', theme: 'blue', items }]
       : []
     selectedBackupCompareIds.value = selectedBackupCompareIds.value
       .filter(id => backupProgramIds.value.has(Number(id)) && !isInCompare(id))
@@ -1066,7 +1076,7 @@ function handleFavorite(school) {
       ? favoriteProgramIds.value.filter(id => id !== key)
       : [...favoriteProgramIds.value, key]
     ElMessage({
-      message: favorited ? '已取消收藏' : '已收藏，登录后可同步到我的收藏',
+      message: favorited ? '已移出备选' : '已加入备选，登录后可同步到我的备选',
       type: favorited ? 'success' : 'warning'
     })
     return
@@ -1075,7 +1085,7 @@ function handleFavorite(school) {
   if (favorited) {
     favoriteProgramIds.value = favoriteProgramIds.value.filter(id => id !== key)
     removeFavorite(programId).then(res => {
-      ElMessage.success(res.msg || '已取消收藏')
+      ElMessage.success(res.msg || '已移出备选')
       if (activeTab.value === 'compare') loadBackupGroups()
     }).catch(() => {
       favoriteProgramIds.value = [...favoriteProgramIds.value, key]
@@ -1085,7 +1095,7 @@ function handleFavorite(school) {
   } else {
     favoriteProgramIds.value = [...favoriteProgramIds.value, key]
     addFavorite(programId).then(res => {
-      ElMessage.success(res.msg || '已加入收藏')
+      ElMessage.success(res.msg || '已加入备选')
       if (activeTab.value === 'compare') loadBackupGroups()
     }).catch(() => {
       favoriteProgramIds.value = favoriteProgramIds.value.filter(id => id !== key)
@@ -1914,9 +1924,41 @@ if (activeTab.value === 'compare') {
   margin: 12px 0 0;
 }
 
+.backup-overview {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid #dbe5f4;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.backup-overview span {
+  color: #1769f6;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.backup-overview strong {
+  display: block;
+  margin: 4px 0 2px;
+  color: #10203f;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.backup-overview small,
+.backup-overview p {
+  margin: 0;
+  color: #6b778a;
+}
+
 .backup-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
 }
 
@@ -1978,6 +2020,11 @@ if (activeTab.value === 'compare') {
   margin: 0;
 }
 
+.backup-item-list {
+  display: grid;
+  gap: 10px;
+}
+
 .backup-card li {
   display: flex;
   justify-content: space-between;
@@ -1986,17 +2033,40 @@ if (activeTab.value === 'compare') {
   align-items: center;
 }
 
+.backup-item-card {
+  padding: 12px;
+  border: 1px solid #e6edf8;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .backup-card li span {
+  display: block;
   min-width: 0;
+  color: #1f2937;
+  font-weight: 800;
   line-height: 1.45;
 }
 
-.backup-card li em {
+.backup-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 7px 0 0;
+}
+
+.backup-card li em,
+.backup-card li small {
   font-style: normal;
   color: #1769f6;
   background: #eef4ff;
   border-radius: 4px;
   padding: 2px 8px;
+}
+
+.backup-card li small {
+  color: #475569;
+  background: #f1f5f9;
 }
 
 .backup-actions {

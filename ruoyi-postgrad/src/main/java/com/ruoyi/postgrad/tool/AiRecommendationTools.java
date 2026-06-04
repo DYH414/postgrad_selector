@@ -1,6 +1,7 @@
 package com.ruoyi.postgrad.tool;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.AiRecommendationSafety;
 import com.ruoyi.postgrad.domain.AiToolBudget;
 import com.ruoyi.postgrad.domain.AiToolTrace;
 import com.ruoyi.postgrad.domain.RowMap;
@@ -195,7 +196,12 @@ public class AiRecommendationTools {
         item.put("unifiedExamQuota", program.getOrDefault("unifiedExamQuota", program.get("planCount")));
         item.put("planCount", program.get("planCount"));
         item.put("dataCompleteness", program.get("dataCompleteness"));
-        item.put("quotaRisk", quotaRisk(integerValue(program.getOrDefault("unifiedExamQuota", program.get("planCount")))));
+        Map<String, Object> guard = AiRecommendationSafety.safeEligibility(program, 0);
+        item.put("quotaRisk", guard.get("quotaRisk"));
+        item.put("canBeSafe", guard.get("canBeSafe"));
+        if (guard.get("safeBlockReason") != null) {
+            item.put("safeBlockReason", guard.get("safeBlockReason"));
+        }
         return item;
     }
 
@@ -205,7 +211,7 @@ public class AiRecommendationTools {
         facets.put("tiers", countBy(result, "schoolTier"));
         facets.put("quotaRisk", result.stream()
             .collect(Collectors.groupingBy(
-                row -> quotaRisk(integerValue(row.getOrDefault("unifiedExamQuota", row.get("planCount")))),
+                row -> AiRecommendationSafety.quotaRisk(integerValue(row.getOrDefault("unifiedExamQuota", row.get("planCount")))),
                 LinkedHashMap::new,
                 Collectors.counting())));
         return facets;
@@ -219,14 +225,6 @@ public class AiRecommendationTools {
                 String::valueOf,
                 LinkedHashMap::new,
                 Collectors.counting()));
-    }
-
-    private String quotaRisk(Integer quota) {
-        if (quota == null) return "unknown";
-        if (quota <= 3) return "very_high";
-        if (quota < 10) return "high";
-        if (quota < 20) return "medium";
-        return "normal";
     }
 
     private Integer integerValue(Object value) {

@@ -18,6 +18,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.AiRecommendationSafety;
 import com.ruoyi.postgrad.domain.AiReportSupport;
 import com.ruoyi.postgrad.domain.AiToolTrace;
 import com.ruoyi.postgrad.domain.RecommendationLog;
@@ -51,19 +52,18 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "- 本科层次: %s\n"
         + "- 跨考: %s\n"
         + "- 目标地区: %s\n\n"
-        + "## 分数差距与上岸率规则（重要）\n"
-        + "候选学校中的「差距」= 用户预估分 - 学校录取均分。正数越大上岸率越高。\n"
-        + "| 差距 | 分类 | 上岸率 |\n"
-        + "| ≥ +15 | 保底 | 高，推荐给看重上岸率的用户 |\n"
-        + "| +5 ~ +14 | 稳妥 | 中高 |\n"
-        + "| -10 ~ +4 | 可冲刺 | 中等，需努力 |\n"
-        + "| < -10 | 难度高 | 低，风险大 |\n"
-        + "当用户说「看重上岸率」时，必须优先推荐差距 ≥ +5 的学校（稳妥/保底档）。\n"
-        + "讨论学校时必须明确说出其录取均分和差距，不要只说学校名字。\n\n"
+        + "## 多维择校规则（重要）\n"
+        + "候选学校中的「差距」= 用户预估分 - 学校录取均分。差距只是分数安全维度，不能单独决定冲刺/稳妥/保底。\n"
+        + "必须综合判断：分数差距、统考/计划招生名额、拟录取区间、数据完整度、学校层次、地区偏好、专业方向匹配。\n"
+        + "如果 canBeSafe=false，禁止称为保底；即使差距很大，也只能说“分数有余量但存在明显风险/只能作稳妥或线索”。\n"
+        + "招生名额极少是强风险信号：≤3 人不能作为保底；4-9 人若数据不完整、没有拟录取区间或分数优势不足，也不能作为保底。\n"
+        + "当用户说「看重上岸率」时，优先找分差为正且招生规模、数据完整度也支撑的学校，而不是只按差距排序。\n"
+        + "当用户说「学校层次优先」「城市/地区优先」「专业实力最重要」时，可以接受更高风险，但必须把取舍说清楚。\n"
+        + "讨论学校时必须明确说出录取均分、差距、招生名额和主要风险，不要只说学校名字。\n\n"
         + "## 地区规则\n"
         + "- 目标地区为\"不限\"时：只在候选池内推荐，不主动提及候选池外的城市，快捷选项不要主动引导用户去看某个具体城市\n"
         + "- 目标地区有具体城市时：优先推荐该城市学校，其他城市只在用户主动询问时才讨论\n\n"
-        + "## 候选学校摘要（每行含均分和差距，差距越大上岸率越高）\n"
+        + "## 候选学校摘要（每行含分数、招生、数据和保底边界）\n"
         + "%s\n\n"
         + "## 可用工具（必须使用）\n"
         + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
@@ -77,10 +77,11 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "2. 用户要求筛选/过滤/列清单时，必须调用 searchPrograms，不要凭摘要信息推测\n"
         + "3. 对比学校时，必须调用 comparePrograms 获取详细对比数据\n"
         + "4. 回复中引用数据时，确保数据来自工具返回结果，不要编造数字\n"
-        + "5. 每次推荐学校时，必须说明该校的录取均分和差距（数据来自工具返回的 avgAdmittedScore 和 gap 字段）\n\n"
+        + "5. 每次推荐学校时，必须说明该校的录取均分、差距、招生名额和关键风险（数据来自工具返回字段）\n"
+        + "6. 工具返回 canBeSafe=false 时，不得把该校描述为保底或绝对稳妥，必须解释 safeBlockReason\n\n"
         + "## 对话节奏\n"
         + "第1轮: 了解最看重的维度（学校层次/专业排名/城市/上岸率）\n"
-        + "第2-3轮: 如果用户最看重上岸率，用 searchPrograms(maxScore=预估分+5) 筛稳妥/保底校；如果用户愿意冲刺，用 searchPrograms(minScore=预估分-10) 筛冲刺校。每次只分析1-2所\n"
+        + "第2-3轮: 如果用户最看重上岸率，用 searchPrograms(maxScore=预估分-5，例如300分用295) 找分数有余量的候选；保底倾向可用 maxScore=预估分-15。之后还必须结合招生名额、数据完整度和 canBeSafe 判断。每次只分析1-2所\n"
         + "第4-5轮: 确认冲刺/稳妥/保底意向\n\n"
         + "## 输出格式\n"
         + "每轮回复含简短文字(2-4句)。\n"
@@ -853,6 +854,12 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             item.put("dataCompleteness", p.get("dataCompleteness"));
             item.put("sourceUrl", p.get("sourceUrl"));
             item.put("sourceOwner", p.get("sourceOwner"));
+            Map<String, Object> guard = AiRecommendationSafety.safeEligibility(item, estimatedScore);
+            item.put("quotaRisk", guard.get("quotaRisk"));
+            item.put("canBeSafe", guard.get("canBeSafe"));
+            if (guard.get("safeBlockReason") != null) {
+                item.put("safeBlockReason", guard.get("safeBlockReason"));
+            }
             summary.add(item);
         }
         return summary;
@@ -875,11 +882,26 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             if (gap instanceof Number num) {
                 int g = num.intValue();
                 sb.append(" | 差距:").append(g > 0 ? "+" : "").append(g);
-                sb.append("分（").append(g >= 15 ? "保底" : g >= 5 ? "稳妥" : g >= -10 ? "可冲刺" : "难度高").append("）");
+                sb.append("分（分数维度:").append(g >= 15 ? "偏安全" : g >= 5 ? "有余量" : g >= -10 ? "可冲刺" : "难度高").append("）");
+            }
+            sb.append(" | 招生:").append(displaySummaryValue(item.get("planCount")));
+            sb.append(" | 拟录取区间:").append(displaySummaryValue(item.get("admissionLow")))
+                .append("-").append(displaySummaryValue(item.get("admissionHigh")));
+            sb.append(" | 完整度:").append(displaySummaryValue(item.get("dataCompleteness")));
+            sb.append(" | quotaRisk:").append(displaySummaryValue(item.get("quotaRisk")));
+            sb.append(" | canBeSafe:").append(displaySummaryValue(item.get("canBeSafe")));
+            if (item.get("safeBlockReason") != null) {
+                sb.append(" | 不可保底原因:").append(item.get("safeBlockReason"));
             }
             sb.append("\n");
         }
         return sb.toString();
+    }
+
+    private String displaySummaryValue(Object value) {
+        if (value == null) return "-";
+        String text = String.valueOf(value);
+        return text.isBlank() ? "-" : text;
     }
 
     private String buildChatPrompt(List<Map<String, Object>> messages) {
