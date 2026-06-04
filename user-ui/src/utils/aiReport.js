@@ -54,24 +54,33 @@ function completenessRank(value) {
 }
 
 function normalizeSchool(school) {
-  const judgement = JUDGEMENT_LABELS[school.judgement] ? school.judgement : 'data_insufficient_pending'
+  const opinion = school.opinion || {}
+  const opinionJudgement = opinion.judgement || school.judgement || school.aiJudgement
+  const judgement = JUDGEMENT_LABELS[opinionJudgement] ? opinionJudgement : 'data_insufficient_pending'
   const verificationStatus = VERIFICATION_STATUS_LABELS[school.verificationStatus]
     ? school.verificationStatus
     : 'local_data_only'
-  const evidence = toArray(school.evidence || school.reason)
-  const risks = toArray(school.risks || school.cons)
+  const evidence = [
+    ...toArray(opinion.reason || school.reason),
+    ...toArray(opinion.pros || school.pros)
+  ]
+  const risks = toArray(opinion.cons || opinion.risks || school.risks || school.cons)
   const avgScoreGap = school.avgScoreGap ?? school.gap ?? null
 
   return {
     ...school,
+    opinion,
     judgement,
+    risk: opinion.risk || school.risk || 'medium',
+    decision: opinion.decision || school.decision || '',
     judgementLabel: school.judgementLabel || JUDGEMENT_LABELS[judgement],
     verificationStatus,
     verificationStatusLabel: VERIFICATION_STATUS_LABELS[verificationStatus],
     evidence,
     risks,
+    tradeoffs: toArray(opinion.tradeoffs || school.tradeoffs),
     avgScoreGap,
-    recommendedAction: school.recommendedAction || ''
+    recommendedAction: opinion.recommendedAction || school.recommendedAction || ''
   }
 }
 
