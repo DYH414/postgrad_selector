@@ -248,10 +248,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             AiRecommendationTools.setConversationId(conversationId);
             aiResponse = assistant.chat("<user_input>" + message + "</user_input>");
         } catch (Exception e) {
+            log.warn("[AI-Chat] Primary chat failed, retrying. userId={}, conversationId={}, message={}",
+                userId, conversationId, e.getMessage(), e);
             try {
                 AiRecommendationTools.setConversationId(conversationId);
                 aiResponse = assistant.chat("<user_input>" + message + "</user_input>");
             } catch (Exception e2) {
+                log.error("[AI-Chat] Chat fallback failed. userId={}, conversationId={}, message={}",
+                    userId, conversationId, e2.getMessage(), e2);
                 Map<String, Object> fallback = new LinkedHashMap<>();
                 fallback.put("fallback", true);
                 fallback.put("message", "AI 服务暂时不可用，请稍后重试");
@@ -387,6 +391,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 .start();
         } catch (Exception e) {
             AiRecommendationTools.clear();
+            log.error("[AI-Chat-Stream] Stream setup failed. userId={}, conversationId={}, message={}",
+                userId, conversationId, e.getMessage(), e);
             callback.onError(e);
         }
     }

@@ -23,6 +23,8 @@ import java.util.stream.Collectors;
 public class AiRecommendationTools {
 
     private static final Logger log = LoggerFactory.getLogger(AiRecommendationTools.class);
+    private static final int SEARCH_PROGRAMS_DEFAULT_LIMIT = 12;
+    private static final int SEARCH_PROGRAMS_MAX_LIMIT = 20;
     private static final ThreadLocal<String> CURRENT_CONVERSATION = new ThreadLocal<>();
 
     /** 对话级工具结果缓存，key = "conversationId:programId"，避免同一对话中重复查询 */
@@ -110,37 +112,58 @@ public class AiRecommendationTools {
         return "{}";
     }
 
-    @Tool("在候选池内按条件筛选学校，如按城市、学校层次、分数范围过滤")
-    public String searchPrograms(@P("筛选条件，JSON 格式，如 {\"city\":\"北京\",\"tier\":\"985\",\"minScore\":300,\"maxScore\":400}") String filters) {
+    @Tool("在候选池内按条件筛选学校，返回有限摘要和总数。需要完整信息时再用 getProgramDetail(programId)")
+    public String searchPrograms(@P("筛选条件，JSON 格式，如 {\"city\":\"北京\",\"tier\":\"985\",\"minScore\":300,\"maxScore\":400,\"limit\":12}") String filters) {
         String conversationId = CURRENT_CONVERSATION.get();
         log.info("[Tool] searchPrograms called — conversationId={}, filters={}", conversationId, filters);
-        if (conversationId == null) return "[]";
+        if (conversationId == null) return "{\"total\":0,\"returned\":0,\"hasMore\":false,\"items\":[]}";
         if (!CURRENT_BUDGET.get().tryUse("searchPrograms", 1000)) {
             CURRENT_TRACE.get().setExplorationLimited(true);
             return "{\"error\":\"tool_budget_exceeded\",\"explorationLimited\":true}";
         }
 
         String poolJson = loadPoolJson(conversationId);
-        if (poolJson == null) return "[]";
+        if (poolJson == null) return "{\"total\":0,\"returned\":0,\"hasMore\":false,\"items\":[]}";
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> pool = JSON.parseObject(poolJson, List.class);
 
-        Map<String, Object> filterMap = JSON.parseObject(filters);
+        Map<String, Object> filterMap = filters == null || filters.isBlank()
+            ? new LinkedHashMap<>()
+            : JSON.parseObject(filters);
         List<Map<String, Object>> result = pool.stream()
             .filter(p -> matchFilter(p, filterMap))
             .collect(Collectors.toList());
+        int limit = Math.min(intVal(filterMap, "limit", SEARCH_PROGRAMS_DEFAULT_LIMIT), SEARCH_PROGRAMS_MAX_LIMIT);
+        if (limit <= 0) limit = SEARCH_PROGRAMS_DEFAULT_LIMIT;
+        List<Map<String, Object>> items = result.stream()
+            .limit(limit)
+            .map(this::searchSummaryItem)
+            .collect(Collectors.toList());
+
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("filters", filters);
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("count", result.size());
+        summary.put("returned", items.size());
         CURRENT_TRACE.get().record("searchPrograms", args, summary);
-        return JSON.toJSONString(result);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("total", result.size());
+        response.put("returned", items.size());
+        response.put("hasMore", result.size() > items.size());
+        response.put("items", items);
+        response.put("facets", buildSearchFacets(result));
+        response.put("hint", result.size() > items.size()
+            ? "仅返回前" + items.size() + "条摘要。若要查看某所学校完整数据，请调用 getProgramDetail(programId)；若要继续缩小范围，请追加 province/tier/minScore/maxScore/limit。"
+            : "已返回全部匹配摘要。需要完整数据请调用 getProgramDetail(programId)。");
+        return JSON.toJSONString(response);
     }
 
     private boolean matchFilter(Map<String, Object> program, Map<String, Object> filter) {
         if (filter.containsKey("city") && !filter.get("city").equals(program.get("city"))) return false;
-        if (filter.containsKey("tier") && !filter.get("tier").equals(program.get("tier"))) return false;
+        if (filter.containsKey("province") && !filter.get("province").equals(program.get("province"))) return false;
+        if (filter.containsKey("tier") && !filter.get("tier").equals(program.get("schoolTier"))) return false;
         if (filter.containsKey("minScore")) {
             Object avgObj = program.get("avgAdmittedScore");
             double avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : 0;
@@ -154,6 +177,66 @@ public class AiRecommendationTools {
             if (avg > max) return false;
         }
         return true;
+    }
+
+    private Map<String, Object> searchSummaryItem(Map<String, Object> program) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("programId", program.get("programId"));
+        item.put("schoolName", program.get("schoolName"));
+        item.put("schoolTier", program.get("schoolTier"));
+        item.put("province", program.get("province"));
+        item.put("city", program.get("city"));
+        item.put("collegeName", program.get("collegeName"));
+        item.put("programName", program.get("programName"));
+        item.put("avgAdmittedScore", program.get("avgAdmittedScore"));
+        item.put("gap", program.get("gap"));
+        item.put("admissionLow", program.get("admissionLow"));
+        item.put("admissionHigh", program.get("admissionHigh"));
+        item.put("unifiedExamQuota", program.getOrDefault("unifiedExamQuota", program.get("planCount")));
+        item.put("planCount", program.get("planCount"));
+        item.put("dataCompleteness", program.get("dataCompleteness"));
+        item.put("quotaRisk", quotaRisk(integerValue(program.getOrDefault("unifiedExamQuota", program.get("planCount")))));
+        return item;
+    }
+
+    private Map<String, Object> buildSearchFacets(List<Map<String, Object>> result) {
+        Map<String, Object> facets = new LinkedHashMap<>();
+        facets.put("provinces", countBy(result, "province"));
+        facets.put("tiers", countBy(result, "schoolTier"));
+        facets.put("quotaRisk", result.stream()
+            .collect(Collectors.groupingBy(
+                row -> quotaRisk(integerValue(row.getOrDefault("unifiedExamQuota", row.get("planCount")))),
+                LinkedHashMap::new,
+                Collectors.counting())));
+        return facets;
+    }
+
+    private Map<String, Long> countBy(List<Map<String, Object>> rows, String key) {
+        return rows.stream()
+            .map(row -> row.get(key))
+            .filter(value -> value != null && !String.valueOf(value).isBlank())
+            .collect(Collectors.groupingBy(
+                String::valueOf,
+                LinkedHashMap::new,
+                Collectors.counting()));
+    }
+
+    private String quotaRisk(Integer quota) {
+        if (quota == null) return "unknown";
+        if (quota <= 3) return "very_high";
+        if (quota < 10) return "high";
+        if (quota < 20) return "medium";
+        return "normal";
+    }
+
+    private Integer integerValue(Object value) {
+        if (value instanceof Number n) return n.intValue();
+        if (value == null) return null;
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     @Tool("直接查询 MySQL 数据库中的院校数据，不受候选池限制。可按关键词、学校层次、省份、分数范围筛选")
