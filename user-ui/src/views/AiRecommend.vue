@@ -60,6 +60,10 @@
             <small>学位偏好</small>
             <strong>{{ profile.acceptAcademic ? '接受学硕' : '偏专硕' }}</strong>
           </div>
+          <div class="basis-item">
+            <small>择校偏好</small>
+            <strong>{{ priorityLabels[profile.priorityPreference] || '上岸概率' }}</strong>
+          </div>
         </div>
 
         <div v-if="missingFields.length" class="missing-box">
@@ -112,8 +116,19 @@ const profile = reactive({
   acceptAcademic: false,
   undergradTier: '',
   undergraduateMajor: '',
-  isCrossMajor: false
+  isCrossMajor: false,
+  priorityPreference: 'success_rate',
+  schoolTierPreference: 'no_strict_requirement',
+  regionStrategy: 'no_limit',
+  dataReliabilityPreference: 'medium'
 })
+
+const priorityLabels = {
+  success_rate: '上岸概率',
+  school_tier: '学校层次',
+  developed_region: '发达地区',
+  major_strength: '专业实力'
+}
 
 const targetRegionsLabel = computed(() => {
   return profile.targetRegions && profile.targetRegions.length ? profile.targetRegions.join('、') : '不限'
@@ -163,6 +178,10 @@ function loadProfile() {
     profile.undergradTier = data.undergradTier || ''
     profile.undergraduateMajor = data.undergraduateMajor || ''
     profile.isCrossMajor = data.isCrossMajor === 1 || data.isCrossMajor === true
+    profile.priorityPreference = data.priorityPreference || 'success_rate'
+    profile.schoolTierPreference = data.schoolTierPreference || 'no_strict_requirement'
+    profile.regionStrategy = data.regionStrategy || 'no_limit'
+    profile.dataReliabilityPreference = data.dataReliabilityPreference || 'medium'
   }).finally(() => {
     loadingProfile.value = false
   })
