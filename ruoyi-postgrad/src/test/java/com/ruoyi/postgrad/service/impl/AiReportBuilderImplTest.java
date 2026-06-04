@@ -71,6 +71,41 @@ class AiReportBuilderImplTest {
         assertEquals("主力稳妥", opinion.get("decision"));
     }
 
+    @Test
+    void shouldDowngradeTinyQuotaSafeRecommendationToSteady() {
+        when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("""
+            {"summary":"保底推荐","tiers":[{"level":"reach","label":"冲刺档","schools":[]},{"level":"steady","label":"稳妥档","schools":[]},{"level":"safe","label":"保底档","schools":[{"programId":123,"judgement":"safe","risk":"low","decision":"适合作为保底","reason":"分差较大","pros":["分数优势"],"cons":[],"tradeoffs":[],"recommendedAction":"加入保底"}]}]}
+            """);
+        RowMap tinyQuota = detailRow(123L);
+        tinyQuota.put("unifiedExamQuota", 1);
+        tinyQuota.put("planCount", 1);
+        tinyQuota.put("admissionLow", null);
+        tinyQuota.put("admissionHigh", null);
+        when(recommendationMapper.selectProgramForRecommendation(123L)).thenReturn(tinyQuota);
+
+        Map<String, Object> report = builder.buildAnalyzeReport(chatModel, "[{\"programId\":123,\"unifiedExamQuota\":1}]", 300,
+            Map.of("riskPreference", "balanced"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> tiers = (List<Map<String, Object>>) report.get("tiers");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> steadySchools = (List<Map<String, Object>>) tiers.get(1).get("schools");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> safeSchools = (List<Map<String, Object>>) tiers.get(2).get("schools");
+        assertFalse(steadySchools.isEmpty(), "tiny quota safe recommendation should be downgraded to steady");
+        Map<String, Object> school = steadySchools.get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> opinion = (Map<String, Object>) school.get("opinion");
+
+        assertTrue(safeSchools.isEmpty());
+        assertEquals(false, school.get("canBeSafe"));
+        assertEquals("very_high", school.get("quotaRisk"));
+        assertEquals("steady", opinion.get("judgement"));
+        assertEquals("high", opinion.get("risk"));
+        assertTrue(((String) school.get("safeBlockReason")).contains("统考名额仅1人"));
+        assertTrue(((List<?>) opinion.get("cons")).contains(school.get("safeBlockReason")));
+    }
+
     private RowMap detailRow(long programId) {
         RowMap row = new RowMap();
         row.put("programId", programId);

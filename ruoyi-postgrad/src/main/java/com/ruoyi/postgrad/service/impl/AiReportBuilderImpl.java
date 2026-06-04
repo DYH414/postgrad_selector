@@ -26,7 +26,7 @@ public class AiReportBuilderImpl implements AiReportBuilder {
     @Override
     public Map<String, Object> buildConversationReport(ChatModel chatModel, String conversationJson,
         String poolJson, int estimatedScore, Map<String, Object> preferenceProfile) {
-        String prompt = buildConversationPrompt(conversationJson, poolJson, preferenceProfile);
+        String prompt = basePrompt(poolJson, preferenceProfile, estimatedScore) + "\n## 对话历史\n" + conversationJson;
         return hydrateReportPrograms(parseReportJson(chatModel.chat(prompt), poolJson), estimatedScore, poolJson);
     }
 
@@ -38,14 +38,14 @@ public class AiReportBuilderImpl implements AiReportBuilder {
     }
 
     String buildConversationPrompt(String convJson, String poolJson, Map<String, Object> preferenceProfile) {
-        return basePrompt(poolJson, preferenceProfile) + "\n## 对话历史\n" + convJson;
+        return basePrompt(poolJson, preferenceProfile, 0) + "\n## 对话历史\n" + convJson;
     }
 
     String buildAnalyzePrompt(String poolJson, int estimatedScore, Map<String, Object> preferenceProfile) {
-        return basePrompt(poolJson, preferenceProfile) + "\n## 用户预估分\n" + estimatedScore;
+        return basePrompt(poolJson, preferenceProfile, estimatedScore) + "\n## 用户预估分\n" + estimatedScore;
     }
 
-    private String basePrompt(String poolJson, Map<String, Object> preferenceProfile) {
+    private String basePrompt(String poolJson, Map<String, Object> preferenceProfile, int estimatedScore) {
         return """
             这不是对话。请直接输出推荐报告 JSON，不要回复确认语。
 
@@ -61,10 +61,11 @@ public class AiReportBuilderImpl implements AiReportBuilder {
             3. AI 只输出观点字段，事实字段由后端数据库补全
             4. 不要输出 schoolName、collegeName、programName、分数、招生人数等事实字段
             5. 推荐理由必须基于候选事实摘要和 preferenceProfile 的取舍
+            6. canBeSafe=false 是事实硬约束，禁止放入保底档；这类项目即使分数差较大，也只能作为稳妥/待核验/线索
 
             ## 输出格式（严格 JSON）
             {"summary":"一句话总结","tiers":[{"level":"reach","label":"冲刺档","schools":[{"programId":1,"judgement":"small_reach","risk":"high","decision":"适合作为冲刺候选","reason":"推荐理由","pros":["优势"],"cons":["风险"],"tradeoffs":["取舍"],"recommendedAction":"行动建议"}]},{"level":"steady","label":"稳妥档","schools":[]},{"level":"safe","label":"保底档","schools":[]}]}
-            """.formatted(JSON.toJSONString(defaultedPreferenceProfile(preferenceProfile)), buildPoolSummary(poolJson));
+            """.formatted(JSON.toJSONString(defaultedPreferenceProfile(preferenceProfile)), buildPoolSummary(poolJson, estimatedScore));
     }
 
     private Map<String, Object> defaultedPreferenceProfile(Map<String, Object> preferenceProfile) {
@@ -78,7 +79,7 @@ public class AiReportBuilderImpl implements AiReportBuilder {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private String buildPoolSummary(String poolJson) {
+    private String buildPoolSummary(String poolJson, int estimatedScore) {
         if (poolJson == null || poolJson.isBlank() || "[]".equals(poolJson.trim())) {
             return "（无候选学校数据）";
         }
@@ -102,6 +103,11 @@ public class AiReportBuilderImpl implements AiReportBuilder {
                 sb.append(" | 最低录取:").append(displayInt(row.get("admissionLow")));
                 sb.append(" | 招生:").append(displayInt(row.getOrDefault("unifiedExamQuota", row.get("planCount"))));
                 sb.append(" | 完整度:").append(row.getOrDefault("dataCompleteness", ""));
+                Map<String, Object> guard = safeEligibility(row, estimatedScore);
+                sb.append(" | quotaRisk:").append(guard.get("quotaRisk"));
+                sb.append(" | canBeSafe:").append(guard.get("canBeSafe"));
+                Object reason = guard.get("safeBlockReason");
+                if (reason != null) sb.append(" | 保底限制:").append(reason);
                 sb.append("\n");
                 index++;
             }
@@ -172,6 +178,8 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         List<Long> invalidIds = new ArrayList<>();
         List<Long> duplicateIds = new ArrayList<>();
         List<Long> missingDetailIds = new ArrayList<>();
+        List<Long> safeDowngradedIds = new ArrayList<>();
+        List<Map<String, Object>> safeDowngradedSchools = new ArrayList<>();
         Set<Long> seen = new LinkedHashSet<>();
 
         List<Map<String, Object>> tiers = (List<Map<String, Object>>) result.get("tiers");
@@ -181,6 +189,7 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         }
 
         for (Map<String, Object> tier : tiers) {
+            String tierLevel = String.valueOf(tier.getOrDefault("level", ""));
             List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
             if (schools == null) {
                 tier.put("schools", Collections.emptyList());
@@ -202,9 +211,25 @@ public class AiReportBuilderImpl implements AiReportBuilder {
                     missingDetailIds.add(programId);
                     continue;
                 }
-                hydratedSchools.add(hydratedReportSchool(school, detail, estimatedScore));
+                Map<String, Object> hydrated = hydratedReportSchool(school, detail, estimatedScore, "safe".equals(tierLevel));
+                if ("safe".equals(tierLevel) && Boolean.FALSE.equals(hydrated.get("canBeSafe"))) {
+                    safeDowngradedIds.add(programId);
+                    safeDowngradedSchools.add(hydrated);
+                    continue;
+                }
+                hydratedSchools.add(hydrated);
             }
             tier.put("schools", hydratedSchools);
+        }
+
+        if (!safeDowngradedSchools.isEmpty()) {
+            Map<String, Object> steadyTier = findTier(tiers, "steady");
+            if (steadyTier != null) {
+                List<Map<String, Object>> steadySchools = (List<Map<String, Object>>) steadyTier.get("schools");
+                if (steadySchools == null) steadySchools = new ArrayList<>();
+                steadySchools.addAll(safeDowngradedSchools);
+                steadyTier.put("schools", steadySchools);
+            }
         }
 
         Map<String, Object> meta = new LinkedHashMap<>();
@@ -213,6 +238,7 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         meta.put("invalidProgramIds", invalidIds);
         meta.put("duplicateProgramIds", duplicateIds);
         meta.put("missingDetailProgramIds", missingDetailIds);
+        meta.put("safeDowngradedProgramIds", safeDowngradedIds);
         result.put("meta", meta);
         result.put("metadata", meta);
         return result;
@@ -231,7 +257,8 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         return poolMap;
     }
 
-    private Map<String, Object> hydratedReportSchool(Map<String, Object> opinionSource, Map<String, Object> detail, int estimatedScore) {
+    private Map<String, Object> hydratedReportSchool(Map<String, Object> opinionSource, Map<String, Object> detail,
+        int estimatedScore, boolean fromSafeTier) {
         Map<String, Object> item = new LinkedHashMap<>();
         for (String key : List.of("programId", "schoolId", "schoolName", "province", "city", "collegeName",
             "programName", "programCode", "degreeType", "examCombo", "schoolTier", "scoreLine", "admissionLow",
@@ -244,26 +271,80 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         item.put("avgAdmittedScore", avg);
         item.put("avgScoreGap", avg == null || estimatedScore <= 0 ? null : estimatedScore - avg);
         item.put("admissionRange", admissionRange(detail.get("admissionLow"), detail.get("admissionHigh")));
-        item.put("opinion", buildOpinion(opinionSource));
+        Map<String, Object> guard = safeEligibility(detail, estimatedScore);
+        item.put("quotaRisk", guard.get("quotaRisk"));
+        item.put("canBeSafe", guard.get("canBeSafe"));
+        if (guard.get("safeBlockReason") != null) item.put("safeBlockReason", guard.get("safeBlockReason"));
+        item.put("opinion", buildOpinion(opinionSource, guard, fromSafeTier));
         mirrorOpinionForCurrentFrontend(item);
         return item;
     }
 
-    private Map<String, Object> buildOpinion(Map<String, Object> source) {
+    private Map<String, Object> buildOpinion(Map<String, Object> source, Map<String, Object> guard, boolean fromSafeTier) {
         Map<String, Object> opinion = new LinkedHashMap<>();
         String judgement = AiReportSupport.normalizeJudgement(source.getOrDefault("judgement", source.get("aiJudgement")));
         if (AiReportSupport.JUDGEMENT_DATA_INSUFFICIENT_PENDING.equals(judgement)) {
             judgement = "steady";
         }
+        boolean blockedSafe = fromSafeTier && Boolean.FALSE.equals(guard.get("canBeSafe"));
+        if (blockedSafe) {
+            judgement = "steady";
+        }
         opinion.put("judgement", judgement);
-        opinion.put("risk", source.getOrDefault("risk", "medium"));
-        opinion.put("decision", source.getOrDefault("decision", ""));
+        opinion.put("risk", blockedSafe ? "high" : source.getOrDefault("risk", "medium"));
+        opinion.put("decision", blockedSafe ? "不宜作为保底，降级为稳妥待核验" : source.getOrDefault("decision", ""));
         opinion.put("reason", source.getOrDefault("reason", ""));
         opinion.put("pros", source.getOrDefault("pros", Collections.emptyList()));
-        opinion.put("cons", source.getOrDefault("cons", Collections.emptyList()));
+        opinion.put("cons", appendIfPresent(source.getOrDefault("cons", Collections.emptyList()), guard.get("safeBlockReason")));
         opinion.put("tradeoffs", source.getOrDefault("tradeoffs", Collections.emptyList()));
-        opinion.put("recommendedAction", source.getOrDefault("recommendedAction", ""));
+        opinion.put("recommendedAction", blockedSafe ? "仅作为稳妥待核验选项，优先复查当年统考名额和拟录取名单" : source.getOrDefault("recommendedAction", ""));
         return opinion;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findTier(List<Map<String, Object>> tiers, String level) {
+        for (Map<String, Object> tier : tiers) {
+            if (level.equals(String.valueOf(tier.get("level")))) return tier;
+        }
+        return null;
+    }
+
+    private List<Object> appendIfPresent(Object existing, Object value) {
+        List<Object> list = new ArrayList<>();
+        if (existing instanceof List<?> values) list.addAll(values);
+        if (value != null && !list.contains(value)) list.add(value);
+        return list;
+    }
+
+    private Map<String, Object> safeEligibility(Map<String, Object> row, int estimatedScore) {
+        Map<String, Object> guard = new LinkedHashMap<>();
+        Integer quota = integerValue(row.getOrDefault("unifiedExamQuota", row.get("planCount")));
+        Integer avg = integerValue(row.get("avgAdmittedScore"));
+        Integer avgGap = avg == null || estimatedScore <= 0 ? null : estimatedScore - avg;
+        boolean hasAdmissionRange = integerValue(row.get("admissionLow")) != null || integerValue(row.get("admissionHigh")) != null;
+        String completeness = String.valueOf(row.getOrDefault("dataCompleteness", ""));
+
+        guard.put("quotaRisk", quotaRisk(quota));
+        guard.put("canBeSafe", true);
+        if (quota != null && quota <= 3) {
+            guard.put("canBeSafe", false);
+            guard.put("safeBlockReason", "统考名额仅" + quota + "人，录取波动极大，不能作为保底");
+        } else if (quota != null && quota < 10 && (avgGap == null || avgGap < 35 || "C".equalsIgnoreCase(completeness) || !hasAdmissionRange)) {
+            guard.put("canBeSafe", false);
+            guard.put("safeBlockReason", "统考名额仅" + quota + "人，且数据或分数优势不足以支撑保底判断");
+        } else if (quota == null && "C".equalsIgnoreCase(completeness) && !hasAdmissionRange) {
+            guard.put("canBeSafe", false);
+            guard.put("safeBlockReason", "缺少统考名额和拟录取区间，数据完整度较低，不能作为保底");
+        }
+        return guard;
+    }
+
+    private String quotaRisk(Integer quota) {
+        if (quota == null) return "unknown";
+        if (quota <= 3) return "very_high";
+        if (quota < 10) return "high";
+        if (quota < 20) return "medium";
+        return "normal";
     }
 
     @SuppressWarnings("unchecked")
