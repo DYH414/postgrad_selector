@@ -110,6 +110,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         result.put("totalCandidates", matchedItems.size());
         result.put("globalWarnings", globalWarnings());
         result.put("items", matchedItems);
+        result.put("groups", recommendationGroups(matchedItems));
 
         Long recommendationId = saveRecommendationLog(userId, requestSnapshot, result);
         result.put("recommendationId", recommendationId);
@@ -206,6 +207,15 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             row.put("avgScoreGap", avg == null || estimatedScore <= 0 ? null : estimatedScore - avg.intValue());
         }
         return rows;
+    }
+
+    private List<Map<String, Object>> recommendationGroups(List<Map<String, Object>> items)
+    {
+        Map<String, Object> group = new LinkedHashMap<>();
+        group.put("groupKey", "matches");
+        group.put("groupName", "匹配院校");
+        group.put("items", items);
+        return Collections.singletonList(group);
     }
 
     private Long saveRecommendationLog(Long userId, Map<String, Object> requestSnapshot, Map<String, Object> result)
