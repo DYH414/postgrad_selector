@@ -18,6 +18,10 @@ public class UserProfile extends BaseEntity
     private Integer acceptAcademic;
     private Integer acceptJoint;
     private String riskPreference;
+    private String priorityPreference;
+    private String schoolTierPreference;
+    private String regionStrategy;
+    private String dataReliabilityPreference;
     private String undergradTier;
     private String undergraduateMajor;
     private Integer isCrossMajor;
@@ -45,6 +49,14 @@ public class UserProfile extends BaseEntity
     public void setAcceptJoint(Integer acceptJoint) { this.acceptJoint = acceptJoint; }
     public String getRiskPreference() { return riskPreference; }
     public void setRiskPreference(String riskPreference) { this.riskPreference = riskPreference; }
+    public String getPriorityPreference() { return priorityPreference; }
+    public void setPriorityPreference(String priorityPreference) { this.priorityPreference = priorityPreference; }
+    public String getSchoolTierPreference() { return schoolTierPreference; }
+    public void setSchoolTierPreference(String schoolTierPreference) { this.schoolTierPreference = schoolTierPreference; }
+    public String getRegionStrategy() { return regionStrategy; }
+    public void setRegionStrategy(String regionStrategy) { this.regionStrategy = regionStrategy; }
+    public String getDataReliabilityPreference() { return dataReliabilityPreference; }
+    public void setDataReliabilityPreference(String dataReliabilityPreference) { this.dataReliabilityPreference = dataReliabilityPreference; }
     public String getUndergradTier() { return undergradTier; }
     public void setUndergradTier(String undergradTier) { this.undergradTier = undergradTier; }
     public String getUndergraduateMajor() { return undergraduateMajor; }
@@ -70,6 +82,10 @@ public class UserProfile extends BaseEntity
             .append("estimatedScore", getEstimatedScore())
             .append("targetRegions", getTargetRegions())
             .append("riskPreference", getRiskPreference())
+            .append("priorityPreference", getPriorityPreference())
+            .append("schoolTierPreference", getSchoolTierPreference())
+            .append("regionStrategy", getRegionStrategy())
+            .append("dataReliabilityPreference", getDataReliabilityPreference())
             .append("undergradTier", getUndergradTier())
             .append("undergraduateMajor", getUndergraduateMajor())
             .append("isCrossMajor", getIsCrossMajor())
