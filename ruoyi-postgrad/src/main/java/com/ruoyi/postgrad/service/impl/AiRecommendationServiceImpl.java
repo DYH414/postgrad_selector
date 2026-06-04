@@ -25,6 +25,7 @@ import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.domain.UserProfile;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import com.ruoyi.postgrad.mapper.UserProfileMapper;
+import com.ruoyi.postgrad.service.AiReportBuilder;
 import com.ruoyi.postgrad.service.IAiCandidatePoolService;
 import com.ruoyi.postgrad.service.IAiRecommendationService;
 import com.ruoyi.postgrad.tool.AiRecommendationTools;
@@ -115,6 +116,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Autowired
     private AiRecommendationTools aiRecommendationTools;
+
+    @Autowired
+    private AiReportBuilder aiReportBuilder;
 
     @Override
     public Map<String, Object> startConversation(Long userId, Map<String, Object> request) {
@@ -427,6 +431,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
         } catch (Exception ignored) {
         }
+        Map<String, Object> profile = loadUserProfile(userId);
 
         RecommendationLog log = new RecommendationLog();
         log.setUserId(userId);
@@ -461,11 +466,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             // 避免 AI 看到这段后误以为报告已经生成完毕
             String cleanedConvJson = stripTailExchange(convJson);
             String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
-            String reportPrompt = buildReportPrompt(cleanedConvJson, poolJson != null ? poolJson : "[]");
             ChatModel chatModel = buildChatModel();
-            Map<String, Object> reportJson = parseReportJson(chatModel, reportPrompt,
-                poolJson != null ? poolJson : "[]");
-            injectMatchScores(reportJson, estimatedScore, poolJson != null ? poolJson : "[]");
+            Map<String, Object> reportJson = aiReportBuilder.buildConversationReport(
+                chatModel,
+                cleanedConvJson,
+                poolJson != null ? poolJson : "[]",
+                estimatedScore,
+                buildPreferenceProfile(profile)
+            );
             Map<String, Object> validated = validateAndNormalizeReport(reportJson, AiRecommendationTools.currentTrace());
             String resultJson = JSON.toJSONString(validated);
 
@@ -734,13 +742,34 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             profile.put("undergradTier", up.getUndergradTier() != null ? up.getUndergradTier() : "双非");
             profile.put("isCrossMajor", (up.getIsCrossMajor() != null && up.getIsCrossMajor() == 1) ? "是" : "否");
             profile.put("targetRegions", up.getTargetRegions() != null ? up.getTargetRegions() : "不限");
+            profile.put("riskPreference", up.getRiskPreference() != null ? up.getRiskPreference() : "balanced");
+            profile.put("priorityPreference", up.getPriorityPreference() != null ? up.getPriorityPreference() : "success_rate");
+            profile.put("schoolTierPreference", up.getSchoolTierPreference() != null ? up.getSchoolTierPreference() : "no_strict_requirement");
+            profile.put("regionStrategy", up.getRegionStrategy() != null ? up.getRegionStrategy() : "no_limit");
+            profile.put("dataReliabilityPreference", up.getDataReliabilityPreference() != null ? up.getDataReliabilityPreference() : "medium");
         } else {
             profile.put("estimatedScore", 300);
             profile.put("undergradTier", "双非");
             profile.put("isCrossMajor", "否");
             profile.put("targetRegions", "不限");
+            profile.put("riskPreference", "balanced");
+            profile.put("priorityPreference", "success_rate");
+            profile.put("schoolTierPreference", "no_strict_requirement");
+            profile.put("regionStrategy", "no_limit");
+            profile.put("dataReliabilityPreference", "medium");
         }
         return profile;
+    }
+
+    private Map<String, Object> buildPreferenceProfile(Map<String, Object> profile) {
+        Map<String, Object> pref = new LinkedHashMap<>();
+        pref.put("riskPreference", profile.getOrDefault("riskPreference", "balanced"));
+        pref.put("priorityPreference", profile.getOrDefault("priorityPreference", "success_rate"));
+        pref.put("schoolTierPreference", profile.getOrDefault("schoolTierPreference", "no_strict_requirement"));
+        pref.put("regionStrategy", profile.getOrDefault("regionStrategy", "no_limit"));
+        pref.put("dataReliabilityPreference", profile.getOrDefault("dataReliabilityPreference", "medium"));
+        pref.put("targetRegions", profile.getOrDefault("targetRegions", "不限"));
+        return pref;
     }
 
     private String formatProfileField(Map<String, Object> profile, String key, String defaultText) {
@@ -895,128 +924,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return List.of("看重上岸率", "学校层次优先", "专业实力最重要", "城市/地区优先");
     }
 
-    private String buildReportPrompt(String convJson, String poolJson) {
-        String poolSummary = buildPoolSummary(poolJson);
-        return """
-            这不是对话。请直接输出推荐报告JSON，不要回复\"好的\"\"正在生成\"或其他确认语。
-
-            ## 完整候选学校列表（请从这里选学校）
-            %s
-
-            ## 对话历史（用户偏好参考）
-            %s
-
-            ## 要求
-            1. 从上面的候选列表中选学校，不要推荐列表之外的学校
-            2. programId 必须与候选列表中的 ID 一致
-            3. 按冲刺/稳妥/保底三档推荐，每档 1-3 所学校
-
-            ## 输出格式（严格 JSON）
-            {
-              "summary": "一句话总结",
-              "tiers": [
-                {"level": "reach", "label": "冲刺档", "schools": [{"programId":1,"schoolName":"...","programName":"...","reason":"推荐理由","risk":"high","pros":[],"cons":[]}]},
-                {"level": "steady", "label": "稳妥档", "schools": []},
-                {"level": "safe", "label": "保底档", "schools": []}
-              ]
-            }
-            """.formatted(poolSummary, convJson);
-    }
-
-    private String buildPoolSummary(String poolJson) {
-        if (poolJson == null || poolJson.isEmpty() || "[]".equals(poolJson)) {
-            return "（无候选学校数据）";
-        }
-        try {
-            @SuppressWarnings({"unchecked", "rawtypes"})
-            List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
-            StringBuilder sb = new StringBuilder();
-            int idx = 1;
-            for (Map<String, Object> p : pool) {
-                sb.append(idx).append(". ID:").append(p.get("programId"));
-                sb.append(" | ").append(p.getOrDefault("schoolName", "?"));
-                sb.append(" | ").append(p.getOrDefault("programName", ""));
-                sb.append(" | ").append(p.getOrDefault("schoolTier", ""));
-                sb.append(" | ").append(p.getOrDefault("city", ""));
-                Object avgObj = p.get("avgAdmittedScore");
-                sb.append(" | 均分:");
-                sb.append(avgObj instanceof Number ? ((Number) avgObj).intValue() : avgObj);
-                Object gapObj = p.get("gap");
-                if (gapObj instanceof Number) {
-                    int gap = ((Number) gapObj).intValue();
-                    sb.append(" | 差距:").append(gap > 0 ? "+" : "").append(gap);
-                }
-                sb.append("\n");
-                idx++;
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return "（候选学校数据解析失败）";
-        }
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private void injectMatchScores(Map<String, Object> report, int estimatedScore, String poolJson) {
-        List<Map<String, Object>> pool = new ArrayList<>();
-        for (Object item : JSON.parseArray(poolJson)) {
-            pool.add((Map<String, Object>) item);
-        }
-        Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
-        for (Map<String, Object> p : pool) {
-            Object idObj = p.get("programId");
-            long pid = idObj instanceof Number ? ((Number) idObj).longValue()
-                : Long.parseLong(String.valueOf(idObj));
-            poolMap.put(pid, p);
-        }
-
-        List<Map<String, Object>> tiers = (List<Map<String, Object>>) report.get("tiers");
-        if (tiers == null) return;
-        for (Map<String, Object> tier : tiers) {
-            List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
-            if (schools == null) continue;
-            String level = (String) tier.getOrDefault("level", "steady");
-            for (Map<String, Object> school : schools) {
-                Object pidObj = school.get("programId");
-                long pid = pidObj instanceof Number ? ((Number) pidObj).longValue()
-                    : Long.parseLong(String.valueOf(pidObj));
-                Map<String, Object> stats = poolMap.get(pid);
-
-                Double avg = null;
-                if (stats != null) {
-                    Object avgObj = stats.get("avgAdmittedScore");
-                    avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : null;
-                }
-
-                if (avg != null && estimatedScore > 0) {
-                    int g = estimatedScore - (int) Math.round(avg);
-                    int score;
-                    if (g >= 0) {
-                        score = (int) Math.min(98, 75 + g * 1.5);
-                    } else {
-                        score = (int) Math.max(15, 75 + g * 4);
-                    }
-                    school.put("matchScore", score);
-                } else {
-                    school.put("matchScore", 50);
-                }
-
-                if (stats != null) {
-                    copyIfNotNull(school, stats, "scoreLine");
-                    copyIfNotNull(school, stats, "avgAdmittedScore");
-                    copyIfNotNull(school, stats, "admissionLow");
-                    copyIfNotNull(school, stats, "admissionHigh");
-                    copyIfNotNull(school, stats, "admittedCount");
-                    copyIfNotNull(school, stats, "planCount");
-                    copyIfNotNull(school, stats, "retestCount");
-                    copyIfNotNull(school, stats, "dataYear");
-                    copyIfNotNull(school, stats, "dataCompleteness");
-                    copyIfNotNull(school, stats, "sourceUrl");
-                    copyIfNotNull(school, stats, "sourceOwner");
-                }
-            }
-        }
-    }
-
     private Map<String, Object> normalizeReportItem(Map<String, Object> item) {
         Map<String, Object> normalized = new LinkedHashMap<>(item);
         String judgement = AiReportSupport.normalizeJudgement(
@@ -1064,108 +971,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return result;
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private Map<String, Object> parseReportJson(ChatModel chatModel, String reportPrompt, String poolJson) {
-        String aiResponse = stripMarkdown(chatModel.chat(reportPrompt));
-        log.info("[Report] AI raw response (first 500 chars): {}",
-            aiResponse != null ? aiResponse.substring(0, Math.min(500, aiResponse.length())) : "null");
-        try {
-            Map<String, Object> result = JSON.parseObject(aiResponse);
-            if (!result.containsKey("tiers")) {
-                log.warn("[Report] Valid JSON but missing 'tiers' — triggering retry");
-                throw new IllegalArgumentException("missing tiers");
-            }
-            log.info("[Report] Successfully parsed with {} tiers",
-                ((List<?>) result.get("tiers")).size());
-            return result;
-        } catch (Exception e) {
-            log.warn("[Report] Parse/validation failed: {} — retrying with fix prompt", e.getMessage());
-            try {
-                String fixPrompt = "你的上一次回复不是合法JSON。请只返回合法JSON，不要任何额外文字。严格按照以下格式：\n{\"summary\":\"...\",\"tiers\":[{\"level\":\"reach\",\"label\":\"冲刺档\",\"schools\":[...]},...]}。\n\n上一次回复：\n" + aiResponse;
-                String fixed = stripMarkdown(chatModel.chat(fixPrompt));
-                log.info("[Report] Fix response (first 300 chars): {}",
-                    fixed != null ? fixed.substring(0, Math.min(300, fixed.length())) : "null");
-                Map<String, Object> result = JSON.parseObject(fixed);
-                if (!result.containsKey("tiers")) {
-                    log.error("[Report] Fix also failed — falling back to rule-based");
-                    throw new IllegalArgumentException("retry missing tiers");
-                }
-                log.info("[Report] Fix succeeded");
-                return result;
-            } catch (Exception e2) {
-                log.error("[Report] All attempts failed, using rule-based fallback");
-                return ruleBasedFallback(poolJson);
-            }
-        }
-    }
-
-    /** Strip markdown code block markers (```json ... ```) from AI response. */
-    private static String stripMarkdown(String text) {
-        if (text == null) return null;
-        String trimmed = text.trim();
-        if (trimmed.startsWith("```")) {
-            int firstNewline = trimmed.indexOf('\n');
-            if (firstNewline > 0) {
-                trimmed = trimmed.substring(firstNewline + 1);
-            }
-        }
-        if (trimmed.endsWith("```")) {
-            trimmed = trimmed.substring(0, trimmed.length() - 3).trim();
-        }
-        return trimmed;
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private Map<String, Object> ruleBasedFallback(String poolJson) {
-        Map<String, Object> report = new LinkedHashMap<>();
-        report.put("summary", "AI 报告生成失败，以下为基于分数差距自动分配的结果");
-
-        List<Map<String, Object>> reachList = new ArrayList<>();
-        List<Map<String, Object>> steadyList = new ArrayList<>();
-        List<Map<String, Object>> safeList = new ArrayList<>();
-
-        if (poolJson != null && !poolJson.isEmpty() && !"[]".equals(poolJson)) {
-            List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
-            for (Map<String, Object> p : pool) {
-                Map<String, Object> school = new LinkedHashMap<>();
-                school.put("programId", p.get("programId"));
-                school.put("schoolName", p.getOrDefault("schoolName", "?"));
-                school.put("programName", p.getOrDefault("programName", ""));
-                school.put("reason", "自动分配（AI 报告生成失败）");
-                school.put("risk", "medium");
-                school.put("pros", Arrays.asList(p.getOrDefault("schoolTier",""), p.getOrDefault("city","")));
-                school.put("cons", Collections.emptyList());
-
-                Object gapObj = p.get("gap");
-                int gap = gapObj instanceof Number ? ((Number) gapObj).intValue() : 0;
-                if (gap >= 15) {
-                    safeList.add(school);
-                } else if (gap >= 5) {
-                    steadyList.add(school);
-                } else if (gap >= -10) {
-                    reachList.add(school);
-                }
-                // gap < -10: skip, difficulty too high
-            }
-        }
-
-        Map<String, Object> tierReach = new LinkedHashMap<>();
-        tierReach.put("level", "reach");
-        tierReach.put("label", "冲刺档");
-        tierReach.put("schools", reachList);
-        Map<String, Object> tierSteady = new LinkedHashMap<>();
-        tierSteady.put("level", "steady");
-        tierSteady.put("label", "稳妥档");
-        tierSteady.put("schools", steadyList);
-        Map<String, Object> tierSafe = new LinkedHashMap<>();
-        tierSafe.put("level", "safe");
-        tierSafe.put("label", "保底档");
-        tierSafe.put("schools", safeList);
-
-        report.put("tiers", Arrays.asList(tierReach, tierSteady, tierSafe));
-        return report;
-    }
-
     /** 裁剪对话最后两轮（用户"出报告" + AI"好的..."），避免 AI 误以为报告已生成 */
     @SuppressWarnings("unchecked")
     private String stripTailExchange(String convJson) {
@@ -1182,13 +987,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             return JSON.toJSONString(msgs);
         } catch (Exception e) {
             return convJson;
-        }
-    }
-
-    private void copyIfNotNull(Map<String, Object> target, Map<String, Object> source, String key) {
-        Object val = source.get(key);
-        if (val != null) {
-            target.put(key, val);
         }
     }
 
