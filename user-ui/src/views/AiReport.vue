@@ -156,92 +156,37 @@
           </div>
           <el-row :gutter="16">
             <el-col :xs="24" :sm="12" :lg="8" v-for="school in tier.schools" :key="school.programId">
-              <article class="school-card" :class="'card-' + tier.level">
-                <div class="card-top">
-                  <div class="school-seal">{{ schoolSeal(school) }}</div>
-                  <div>
-                    <h3>{{ school.schoolName }} <small>{{ schoolBadge(school) }}</small></h3>
-                    <p>{{ valueOrDash(school.collegeName) }} / {{ valueOrDash(school.programName) }}</p>
-                    <div class="school-meta-line">
-                      <span>{{ schoolExam(school) }} | {{ schoolProvince(school) }}</span>
-                      <em v-if="schoolDataYear(school)" class="data-year-badge">{{ schoolDataYear(school) }}年数据</em>
-                      <em v-else class="data-year-badge muted">年份待补</em>
-                    </div>
-                  </div>
-                  <span class="judgement-pill" :class="'judgement-' + school.judgement">
-                    {{ displayJudgement(school, tier.level) }}
-                  </span>
-                </div>
-
-                <div class="score-line">
-                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的平均总分，是判断冲稳保的主依据。">
-                    <span>拟录取均分</span>
-                    <strong>{{ valueOrDash(school.avgAdmittedScore) }}</strong>
-                  </div>
-                  <div class="score-metric" tabindex="0" data-tip="你的预计初试总分减去拟录取均分，负数代表低于历史均分。">
-                    <span>均分差距</span>
-                    <strong :class="gapClass(school.avgScoreGap ?? school.gap)">
-                      {{ formatGap(school.avgScoreGap ?? school.gap) }}
-                    </strong>
-                  </div>
-                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，仅作风险边界参考。">
-                    <span>最低录取分</span>
-                    <strong>{{ valueOrDash(school.admissionLow) }}</strong>
-                  </div>
-                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
-                    <span>拟录取区间</span>
-                    <strong>{{ schoolAdmissionRange(school) }}</strong>
-                  </div>
-                  <div class="score-metric" tabindex="0" data-tip="优先展示该专业统考名额；缺少统考名额时展示计划人数，计划人数可能包含推免。">
-                    <span>{{ schoolQuotaDisplay(school).label }}</span>
-                    <strong>
-                      {{ schoolQuotaDisplay(school).value }}
-                      <small v-if="schoolQuotaDisplay(school).note">{{ schoolQuotaDisplay(school).note }}</small>
-                    </strong>
-                  </div>
-                  <div class="score-metric" tabindex="0" data-tip="数据完整度越高，说明复试线、录取区间、人数等关键字段越齐全。">
-                    <span>数据完整度</span>
-                    <strong>{{ schoolCompleteness(school) }}</strong>
-                  </div>
-                </div>
-
-                <span
-                  class="grade completeness-tip"
-                  :class="'grade-' + schoolCompleteness(school).toLowerCase()"
-                  tabindex="0"
-                  :data-tip="dataCompletenessText(schoolCompleteness(school))">
-                  完整度 {{ schoolCompleteness(school) }}
-                </span>
-
-                <div v-if="school.evidence && school.evidence.length" class="evidence-list">
-                  <strong>推荐依据</strong>
-                  <p v-for="item in school.evidence.slice(0, 2)" :key="item">{{ item }}</p>
-                </div>
-                <div v-if="school.risks && school.risks.length" class="risk-list">
-                  <strong>需要注意</strong>
-                  <p v-for="item in school.risks.slice(0, 2)" :key="item">{{ item }}</p>
-                </div>
-
-                <a v-if="school.sourceUrl" class="source-link"
-                  :href="school.sourceUrl" target="_blank" rel="noopener noreferrer" @click.stop>
-                  <i class="el-icon-link"></i> {{ school.sourceOwner || 'N诺' }}来源
-                </a>
-                <span v-else class="source-link source-missing">
-                  <i class="el-icon-link"></i> 本地数据（来源待补）
-                </span>
-
-                <div class="school-actions">
-                  <el-button size="small" @click.stop="goDetail(school)">查看详情</el-button>
-                  <el-button size="small" @click.stop="addCompare(school)">加入对比</el-button>
-                  <el-button
-                    size="small"
-                    :type="isBackupSchool(school) ? 'success' : 'primary'"
-                    :loading="isAddingBackup(school)"
-                    @click.stop="favoriteSchool(school)">
-                    {{ isBackupSchool(school) ? '取消备选' : '加入备选' }}
-                  </el-button>
-                </div>
-              </article>
+              <SchoolCard
+                :program-id="school.programId"
+                :school-name="school.schoolName"
+                :badge="schoolBadge(school)"
+                :college-name="school.collegeName"
+                :program-name="school.programName"
+                :province="schoolProvince(school)"
+                :exam-display="schoolExam(school)"
+                :data-year="schoolDataYear(school)"
+                :avg-admitted-score="school.avgAdmittedScore"
+                :gap="school.avgScoreGap ?? school.gap ?? 0"
+                :admission-low="school.admissionLow"
+                :admission-high="school.admissionHigh"
+                :quota-label="schoolQuotaDisplay(school).label"
+                :quota-value="schoolQuotaDisplay(school).value"
+                :quota-hint="schoolQuotaDisplay(school).note || ''"
+                :completeness-level="schoolCompleteness(school)"
+                :source-url="school.sourceUrl"
+                :source-owner="school.sourceOwner"
+                :judgement="displayJudgement(school, tier.level)"
+                :evidence="school.evidence || school.pros || []"
+                :risks="school.risks || school.cons || []"
+                :is-fav="isBackupSchool(school)"
+                :fav-loading="isAddingBackup(school)"
+                show-favorite
+                show-compare
+                show-completeness
+                :estimated-score="Number(reportScore)"
+                @toggle-favorite="favoriteSchool(school)"
+                @toggle-compare="addCompare(school)"
+              />
             </el-col>
           </el-row>
         </div>
@@ -320,6 +265,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import AppHeader from '@/components/AppHeader.vue'
+import SchoolCard from '@/components/SchoolCard.vue'
 import { getAiReport } from '@/api/ai'
 import { getProgramDetail } from '@/api/programs'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
@@ -542,6 +488,21 @@ function addCompare(school) {
     ElMessage.warning(`对比列表已满 (${COMPARE_MAX_ITEMS}所)`)
   }
 }
+
+// Derive estimated score from first school with gap data
+const reportScore = computed(() => {
+  for (const tier of (result.value?.tiers || [])) {
+    for (const s of (tier.schools || [])) {
+      if (s.avgAdmittedScore != null && s.gap != null) {
+        return Number(s.avgAdmittedScore) + Number(s.gap)
+      }
+      if (s.avgAdmittedScore != null && s.avgScoreGap != null) {
+        return Number(s.avgAdmittedScore) + Number(s.avgScoreGap)
+      }
+    }
+  }
+  return 0
+})
 
 function isBackupSchool(school) {
   return backupProgramIds.value.includes(Number(school?.programId))

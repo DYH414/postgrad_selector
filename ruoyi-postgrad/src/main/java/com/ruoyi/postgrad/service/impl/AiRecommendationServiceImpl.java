@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -179,6 +180,11 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
 
         log.info("[AI-TRACE] AI RAW OUTPUT (round 0):\n{}", aiResponse);
+
+        Map<String, Object> userMsg = new LinkedHashMap<>();
+        userMsg.put("role", "user");
+        userMsg.put("content", firstUserMessage);
+        messages.add(userMsg);
 
         Map<String, Object> assistantMsg = new LinkedHashMap<>();
         assistantMsg.put("role", "assistant");
@@ -496,6 +502,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
         // 异步投递 RabbitMQ；MQ 不可用时同步降级
         if (rabbitTemplate != null) {
+            // 延长池子和对话的 TTL，防止 MQ 消费时 Redis key 已过期
+            redisTemplate.expire("ai:conv:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+            redisTemplate.expire("ai:pool:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+
             Map<String, Object> msg = new LinkedHashMap<>();
             msg.put("reportId", reportId);
             msg.put("conversationId", conversationId);
@@ -613,6 +623,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         // 7. Send MQ message (lightweight: no prompt in message)
         if (rabbitTemplate != null)
         {
+            // 延长候选池 TTL，防止 MQ 消费时已过期
+            redisTemplate.expire("ai:agent:pool:" + reportId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+            redisTemplate.expire("ai:analyze:pool:" + reportId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+
             Map<String, Object> mqMsg = new LinkedHashMap<>();
             mqMsg.put("reportId", reportId);
             mqMsg.put("estimatedScore", estimatedScore);
@@ -893,7 +907,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             item.put("admittedCount", p.get("admittedCount"));
             item.put("retestCount", p.get("retestCount"));
             item.put("dataYear", p.get("dataYear"));
-            item.put("dataCompleteness", p.get("dataCompleteness"));
+            // Recompute from actual fields — DB value is often stale/missing
+            item.put("dataCompleteness", computedCompleteness(item));
             item.put("sourceUrl", p.get("sourceUrl"));
             item.put("sourceOwner", p.get("sourceOwner"));
             Map<String, Object> guard = AiRecommendationSafety.safeEligibility(item, estimatedScore);
@@ -938,6 +953,28 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             sb.append("\n");
         }
         return sb.toString();
+    }
+
+    private String computedCompleteness(Map<String, Object> row) {
+        boolean hasScore = integerValue(row.get("scoreLine")) != null;
+        boolean hasRange = integerValue(row.get("admissionLow")) != null
+            && integerValue(row.get("admissionHigh")) != null;
+        boolean hasAverage = integerValue(row.get("avgAdmittedScore")) != null;
+        boolean hasCount = integerValue(row.get("planCount")) != null
+            || integerValue(row.get("admittedCount")) != null;
+        boolean hasMainExtra = hasAverage
+            || integerValue(row.get("admissionLow")) != null
+            || integerValue(row.get("planCount")) != null
+            || integerValue(row.get("unifiedExamQuota")) != null;
+        if (hasScore && hasRange && hasAverage && hasCount) return "A";
+        if (hasScore && hasMainExtra) return "B";
+        return "C";
+    }
+
+    private Integer integerValue(Object value) {
+        if (value instanceof Number n) return n.intValue();
+        if (value == null) return null;
+        try { return Integer.parseInt(String.valueOf(value)); } catch (NumberFormatException e) { return null; }
     }
 
     private String displaySummaryValue(Object value) {
@@ -986,12 +1023,13 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         for (Map<String, Object> row : pool) {
             String school = String.valueOf(row.getOrDefault("schoolName", ""));
             String program = String.valueOf(row.getOrDefault("programName", ""));
-            if (school.isBlank() || !messageText.contains(school)) {
+            if (school.isBlank() || !mentionedSchool(messageText, school)) {
                 continue;
             }
-            if (!program.isBlank() && messageText.contains(program)) {
+            if (!program.isBlank() && mentionedProgram(messageText, program)) {
                 cards.add(toChatCard(row, messageText));
-            } else if (program.isBlank() || mentionedNearSchool(messageText, school, program)) {
+            } else if (program.isBlank() || mentionedNearSchool(messageText, school, program)
+                || mentionedSchoolWithFacts(messageText, school, row)) {
                 cards.add(toChatCard(row, messageText));
             }
             if (cards.size() >= 8) {
@@ -1001,13 +1039,117 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return cards;
     }
 
+    private boolean mentionedSchool(String text, String school) {
+        return normalizeMentionText(text).contains(normalizeMentionText(school));
+    }
+
+    private boolean mentionedProgram(String text, String program) {
+        String normalizedText = normalizeMentionText(text);
+        String normalizedProgram = normalizeMentionText(program);
+        if (normalizedProgram.isBlank()) {
+            return true;
+        }
+        if (normalizedText.contains(normalizedProgram)) {
+            return true;
+        }
+        for (String alias : programAliases(normalizedProgram)) {
+            if (!alias.isBlank() && normalizedText.contains(alias)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean mentionedSchoolWithFacts(String text, String school, Map<String, Object> row) {
+        String window = normalizeMentionText(localMentionWindow(text, school));
+        if (window.isBlank() || !window.contains(normalizeMentionText(school))) {
+            return false;
+        }
+        return mentionsNumericFact(window, row.get("avgAdmittedScore"))
+            || mentionsSignedGap(window, row.get("gap"))
+            || mentionsNumericFact(window, row.getOrDefault("unifiedExamQuota", row.get("planCount")));
+    }
+
+    /**
+     * Digit-boundary match: a number like "295" or "33" should only match
+     * standalone, not as a substring of another number or decimal like "2.5".
+     */
+    private boolean mentionsNumericFact(String normalizedText, Object value) {
+        if (!(value instanceof Number n)) {
+            return false;
+        }
+        int num = n.intValue();
+        return Pattern.compile("(?<![\\d.])" + num + "(?!\\d)").matcher(normalizedText).find();
+    }
+
+    /**
+     * Match a signed gap like "+5" or an unsigned gap "5" as a standalone
+     * number.  The digit-boundary ensures "5" does not match inside "2.5:1"
+     * or "25".  "差距+5" should match; "复录比2.5:1" should not.
+     */
+    private boolean mentionsSignedGap(String normalizedText, Object value) {
+        if (!(value instanceof Number n)) {
+            return false;
+        }
+        int gap = n.intValue();
+        String unsigned = Integer.toString(gap);
+        // Unsigned: standalone "5" not preceded by digit/dot/sign
+        if (Pattern.compile("(?<![\\d.+\\-])" + unsigned + "(?!\\d)")
+                .matcher(normalizedText).find()) {
+            return true;
+        }
+        if (gap > 0) {
+            String signed = "+" + unsigned;
+            return Pattern.compile("(?<![\\d.+\\-])" + Pattern.quote(signed) + "(?!\\d)")
+                    .matcher(normalizedText).find();
+        }
+        return false;
+    }
+
     private boolean mentionedNearSchool(String text, String school, String program) {
         if (program == null || program.isBlank()) {
             return true;
         }
-        int schoolIndex = text.indexOf(school);
-        int programIndex = text.indexOf(program);
+        String normalizedText = normalizeMentionText(text);
+        int schoolIndex = normalizedText.indexOf(normalizeMentionText(school));
+        int programIndex = normalizedText.indexOf(normalizeMentionText(program));
         return schoolIndex >= 0 && programIndex >= 0 && Math.abs(programIndex - schoolIndex) <= 80;
+    }
+
+    private List<String> programAliases(String normalizedProgram) {
+        List<String> aliases = new ArrayList<>();
+        if (normalizedProgram.contains("计算机")) {
+            aliases.add("计算机");
+        }
+        if (normalizedProgram.contains("软件")) {
+            aliases.add("软件");
+        }
+        if (normalizedProgram.contains("人工智能")) {
+            aliases.add("人工智能");
+        }
+        if ("电子信息".equals(normalizedProgram)) {
+            aliases.add("电子信息");
+        }
+        if (normalizedProgram.contains("网络空间安全")) {
+            aliases.add("网安");
+            aliases.add("网络空间安全");
+        }
+        return aliases;
+    }
+
+    private String normalizeMentionText(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text
+            .replace('（', '(')
+            .replace('）', ')')
+            .replace('【', '[')
+            .replace('】', ']')
+            .replace('－', '-')
+            .replace('—', '-')
+            .replace('·', '-')
+            .replaceAll("\\s+", "");
     }
 
     private Map<String, Object> toChatCard(Map<String, Object> row, String messageText) {
@@ -1033,26 +1175,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return card;
     }
 
+    /**
+     * Chat cards no longer infer a tier label from the AI's free-form text.
+     * The AI's tier judgment is expressed in its natural-language reply; the card
+     * only provides the factual data (均分/差距/招生) that backs that judgment.
+     * Tier labels belong in the structured report, not in chat cards.
+     */
     private String inferChatCardLevel(Map<String, Object> row, String messageText) {
-        String school = String.valueOf(row.getOrDefault("schoolName", ""));
-        String window = localMentionWindow(messageText, school);
-        if (window.contains("冲刺") || window.contains("高风险")) {
-            return "冲刺";
-        }
-        if (window.contains("保底") && !Boolean.FALSE.equals(row.get("canBeSafe"))) {
-            return "保底";
-        }
-        if (window.contains("稳妥")) {
-            return "稳妥";
-        }
-        Object gapObj = row.get("gap");
-        int gap = gapObj instanceof Number n ? n.intValue() : 0;
-        if (Boolean.FALSE.equals(row.get("canBeSafe"))) {
-            return gap >= 5 ? "稳妥" : "冲刺";
-        }
-        if (gap >= 15) return "保底";
-        if (gap >= 5) return "稳妥";
-        return "冲刺";
+        return "";
     }
 
     private String localMentionWindow(String text, String school) {

@@ -41,7 +41,9 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         log.debug("[AI-TRACE] REPORT PROMPT (full):\n{}", prompt);
         String aiRaw = chatModel.chat(prompt);
         log.info("[AI-TRACE] REPORT AI RAW OUTPUT:\n{}", aiRaw);
-        return hydrateReportPrograms(parseReportJson(aiRaw, poolJson), estimatedScore, poolJson);
+        Map<String, Object> report = hydrateReportPrograms(parseReportJson(aiRaw, poolJson), estimatedScore, poolJson);
+        fillMissingDiscussedSchools(report, discussedIds, poolJson, estimatedScore);
+        return report;
     }
 
     @Override
@@ -79,9 +81,9 @@ public class AiReportBuilderImpl implements AiReportBuilder {
             %s
 
             ## 要求
-            1. 优先使用对话历史中你已明确推荐/认可过的学校。对话中讨论过的学校是用户和你共同筛选的结果，不要重新选一批不同的学校。如果对话历史的推荐学校与候选摘要矛盾（如被canBeSafe=false封锁），请在 reason/cons 中说明并替换
+            1. **强制规则**：对话历史中你明确推荐过的每一所学校（标记了冲刺/稳妥/保底、给出了具体分析），都必须出现在报告中对应的档次里，不得遗漏。这是硬约束。只有在 canBeSafe=false 且原定保底档时，才能降级放入稳妥档并说明原因
             2. 只能从候选列表中选学校，programId 必须与候选列表一致
-            3. 按冲刺/稳妥/保底三档推荐，每档 1-3 所
+            3. 按冲刺/稳妥/保底三档推荐，每档 2-5 所，宁多勿少
             4. AI 只输出观点字段，事实字段由后端数据库补全
             5. 不要输出 schoolName、collegeName、programName、分数、招生人数等事实字段
             6. 推荐理由必须基于候选事实摘要和 preferenceProfile 的取舍
@@ -112,6 +114,8 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         try {
             List<Map<String, Object>> messages = (List) JSON.parseArray(conversationJson, Map.class);
             for (Map<String, Object> msg : messages) {
+                // 跳过系统提示——它包含候选池摘要，ID:xxx 会误匹配全部学校
+                if ("system".equals(msg.get("role"))) continue;
                 String content = (String) msg.get("content");
                 if (content == null) continue;
                 // 匹配 "programId":123 或 ID:123 或 getProgramDetail(123)
@@ -337,6 +341,10 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         item.put("avgAdmittedScore", avg);
         item.put("avgScoreGap", avg == null || estimatedScore <= 0 ? null : estimatedScore - avg);
         item.put("admissionRange", admissionRange(detail.get("admissionLow"), detail.get("admissionHigh")));
+        // Override DB dataCompleteness with runtime recomputation — same logic as
+        // ProgramRecommendationServiceImpl.computedCompleteness() used by the filter/results page.
+        item.put("dataCompleteness", computedCompleteness(detail));
+
         Map<String, Object> guard = AiRecommendationSafety.safeEligibility(detail, estimatedScore);
         item.put("quotaRisk", guard.get("quotaRisk"));
         item.put("canBeSafe", guard.get("canBeSafe"));
@@ -439,9 +447,130 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         return number == null ? "-" : String.valueOf(number);
     }
 
+    /**
+     * Backstop: after the report is built, check whether any schools that were explicitly
+     * discussed in the conversation are missing. If so, add them to the appropriate tier
+     * so the user never sees "AI recommended it in chat but the report dropped it".
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void fillMissingDiscussedSchools(Map<String, Object> report, Set<Long> discussedIds,
+        String poolJson, int estimatedScore) {
+        if (discussedIds.isEmpty() || poolJson == null || poolJson.isBlank()) return;
+
+        // Collect all programIds already in the report
+        Set<Long> presentIds = new LinkedHashSet<>();
+        List<Map<String, Object>> tiers = (List<Map<String, Object>>) report.get("tiers");
+        if (tiers == null) return;
+        for (Map<String, Object> tier : tiers) {
+            List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
+            if (schools == null) continue;
+            for (Map<String, Object> school : schools) {
+                Long pid = longValue(school.get("programId"));
+                if (pid != null) presentIds.add(pid);
+            }
+        }
+
+        // Find missing discussed schools in the pool
+        Map<Long, Map<String, Object>> poolMap = parsePoolMap(poolJson);
+        List<Long> missing = new ArrayList<>();
+        for (Long id : discussedIds) {
+            if (!presentIds.contains(id) && poolMap.containsKey(id)) {
+                missing.add(id);
+            }
+        }
+        if (missing.isEmpty()) return;
+
+        log.info("[AI-TRACE] fillMissingDiscussedSchools: adding {} missing schools: {}", missing.size(), missing);
+
+        // For each missing school, create a basic opinion entry and add to the right tier
+        for (Long pid : missing) {
+            Map<String, Object> detail = recommendationMapper.selectProgramForRecommendation(pid);
+            if (detail == null) continue;
+            Map<String, Object> poolRow = poolMap.get(pid);
+            if (poolRow == null) continue;
+
+            Map<String, Object> hydrated = hydratedReportSchool(buildFallbackOpinion(poolRow, estimatedScore),
+                detail, estimatedScore, false);
+
+            // Determine tier from gap + canBeSafe
+            Object gapObj = hydrated.get("avgScoreGap");
+            int gap = gapObj instanceof Number n ? n.intValue() : 0;
+            boolean blockedSafe = Boolean.FALSE.equals(hydrated.get("canBeSafe"));
+            String targetLevel;
+            if (blockedSafe) {
+                targetLevel = "steady";
+            } else if (gap >= 15) {
+                targetLevel = "safe";
+            } else if (gap >= 5) {
+                targetLevel = "steady";
+            } else {
+                targetLevel = "reach";
+            }
+
+            Map<String, Object> targetTier = findTier(tiers, targetLevel);
+            if (targetTier != null) {
+                List<Map<String, Object>> schools = (List<Map<String, Object>>) targetTier.get("schools");
+                if (schools == null) {
+                    schools = new ArrayList<>();
+                    targetTier.put("schools", schools);
+                }
+                schools.add(hydrated);
+                log.info("[AI-TRACE] fillMissingDiscussedSchools: added programId={} to tier={}", pid, targetLevel);
+            }
+        }
+    }
+
+    /** Build a minimal opinion object for a fallback-added school so the frontend can render it. */
+    private Map<String, Object> buildFallbackOpinion(Map<String, Object> poolRow, int estimatedScore) {
+        Map<String, Object> opinion = new LinkedHashMap<>();
+        Object gapObj = poolRow.get("gap");
+        int gap = gapObj instanceof Number n ? n.intValue() : 0;
+        if (gap >= 15) {
+            opinion.put("judgement", "safe");
+            opinion.put("risk", "low");
+            opinion.put("decision", "适合作为保底候选");
+        } else if (gap >= 5) {
+            opinion.put("judgement", "steady");
+            opinion.put("risk", "medium");
+            opinion.put("decision", "适合作为稳妥候选");
+        } else {
+            opinion.put("judgement", "small_reach");
+            opinion.put("risk", "high");
+            opinion.put("decision", "适合作为冲刺候选");
+        }
+        opinion.put("reason", "对话中已讨论，系统自动补入报告");
+        opinion.put("pros", Collections.emptyList());
+        opinion.put("cons", Collections.emptyList());
+        opinion.put("tradeoffs", Collections.emptyList());
+        opinion.put("recommendedAction", "建议核验院校官网后再加入最终备选");
+        return opinion;
+    }
+
     private String displaySignedInt(Object value) {
         Integer number = integerValue(value);
         if (number == null) return "-";
         return number > 0 ? "+" + number : String.valueOf(number);
+    }
+
+    /**
+     * Recompute data completeness from actual data fields — same logic as
+     * {@code ProgramRecommendationServiceImpl.computedCompleteness()}.
+     * Gives A when scoreLine + range + average + count are all present;
+     * B when scoreLine plus one main extra field is present; C otherwise.
+     */
+    private String computedCompleteness(Map<String, Object> row) {
+        boolean hasScore = integerValue(row.get("scoreLine")) != null;
+        boolean hasRange = integerValue(row.get("admissionLow")) != null
+            && integerValue(row.get("admissionHigh")) != null;
+        boolean hasAverage = integerValue(row.get("avgAdmittedScore")) != null;
+        boolean hasCount = integerValue(row.get("planCount")) != null
+            || integerValue(row.get("admittedCount")) != null;
+        boolean hasMainExtra = hasAverage
+            || integerValue(row.get("admissionLow")) != null
+            || integerValue(row.get("planCount")) != null
+            || integerValue(row.get("unifiedExamQuota")) != null;
+        if (hasScore && hasRange && hasAverage && hasCount) return "A";
+        if (hasScore && hasMainExtra) return "B";
+        return "C";
     }
 }

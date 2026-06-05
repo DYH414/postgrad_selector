@@ -265,12 +265,7 @@ function messageParagraphs(content) {
     .replace(/\n{2,}/g, '\n')
     .trim()
   const paragraphs = normalized.split('\n').map(p => p.trim()).filter(Boolean)
-  if (paragraphs.length <= 4) return paragraphs
-  return [
-    paragraphs.slice(0, 2).join(''),
-    paragraphs.slice(2, 4).join(''),
-    paragraphs.slice(4).join('')
-  ].filter(Boolean)
+  return paragraphs.filter(paragraph => !/^-{3,}$/.test(paragraph.replace(/\s/g, '')))
 }
 
 // ---- school card extraction ----
@@ -278,9 +273,9 @@ function messageSections(content, hydratedCards) {
   const text = stripMarkdown(visibleStreamContent(content || ''))
   if (!text) return []
   if (Array.isArray(hydratedCards) && hydratedCards.length) {
-    const introSections = hydratedIntroSections(text, hydratedCards)
+    const textSections = messageParagraphs(content).map(paragraph => ({ type: 'text', text: paragraph }))
     return [
-      ...introSections,
+      ...textSections,
       ...hydratedCards.slice(0, 8).map(hydratedCardSection)
     ]
   }
