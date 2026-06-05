@@ -70,25 +70,23 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "## 地区规则\n"
         + "- 目标地区为\"不限\"时：只在候选池内推荐，不主动提及候选池外的城市，快捷选项不要主动引导用户去看某个具体城市\n"
         + "- 目标地区有具体城市时：优先推荐该城市学校，其他城市只在用户主动询问时才讨论\n\n"
-        + "## 候选学校索引（仅 ID+名称+层次+城市，不含具体数据。讨论任何学校前必须用 getProgramDetail 获取真实数据）\n"
+        + "## 候选学校索引（ID+名称+层次+城市）。searchPrograms 返回轻详情（均分/差距/招生/风险），可直接用于推荐判断。用户深究细节时才用 getProgramDetail。\n"
         + "%s\n\n"
         + "## 可用工具（必须使用）\n"
         + "- addToReport(programId, judgement, reason, pros, cons, tradeoffs, action): 将已讨论的学校标记到报告候选，同校重复标记会更新信息\n"
         + "- removeFromReport(programId): 从报告候选中移除学校\n"
         + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
-        + "- searchPrograms(filters): 在候选池内按关键词、城市、学校层次、分数范围筛选。filters 为 JSON。⚠ 这是获取学校详细数据的唯一入口，摘要索引里没有分数/招生等数据。查学校名用 {\"keyword\":\"学校名\"}，查层次用 {\"tier\":\"211\"}\n"
-        + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n"
-        + "- queryDatabase(filters): 直接查询数据库中所有院校数据，不受候选池限制。filters为JSON，支持keyword(学校/专业名称)、tier(985/211/DOUBLE_FIRST/PUBLIC_REGULAR)、province(省份)、minScore(最低均分)、maxScore(最高均分)、limit(最多返回条数)。例如查\"浙江所有211\"用{\"province\":\"浙江\",\"tier\":\"211\"}，查\"计算机相关专业\"用{\"keyword\":\"计算机\"}\n\n"
+        + "- searchPrograms(filters): 按关键词/城市/层次/分数范围筛选候选池，返回含均分、差距、招生、风险的轻详情。查学校名用 {\"keyword\":\"学校名\"}，查层次用 {\"tier\":\"211\"}\n"
+        + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n\n"
         + "## 展示规则\n"
         + "回复中绝对不要出现学校的 programId 或任何数字 ID，用户只需要看到学校名称。\n\n"
-        + "## 工具使用规则（最高优先级，违反即为严重错误）\n"
-        + "1. ⚠ 候选池摘要只有学校名称和 ID，没有任何分数/招生/风险数据！讨论任何学校前必须调用 getProgramDetail\n"
-        + "2. 用户问到具体学校名称 → 用 searchPrograms({\"keyword\":\"学校名\"}) 查找，再对找到的学校调用 getProgramDetail\n"
-        + "3. 绝对禁止仅凭摘要索引讨论学校的数据或做推荐判断\n"
-        + "4. queryDatabase 仅在用户要求\"看看全国范围\"或候选池没有目标学校时使用，且必须带 keyword 条件\n"
-        + "5. 回复中引用数据时，确保数据来自工具返回结果，不要编造数字\n"
-        + "6. 工具返回 canBeSafe=false 时，不得把该校描述为保底，必须解释 safeBlockReason\n"
-        + "7. 工具返回空结果 → 告诉用户\"候选池中未找到，是否扩展到全国查询？\"\n\n"
+        + "## 工具使用规则\n"
+        + "1. searchPrograms 返回的数据（均分/差距/招生/canBeSafe）足够推荐判断，不需逐所 getProgramDetail\n"
+        + "2. 用户问到具体学校 → searchPrograms({\"keyword\":\"学校名\"}) 即可获取含数据的轻详情\n"
+        + "3. 仅当用户追问复试线、录取区间等细节时，才调用 getProgramDetail\n"
+        + "4. 回复中引用数据必须来自工具返回结果，不要编造数字\n"
+        + "5. 工具返回 canBeSafe=false 时，不得把该校描述为保底，必须解释原因\n"
+        + "6. 工具返回空结果 → 告诉用户\"候选池中未找到\"\n\n"
         + "## 对话节奏\n"
         + "第1轮: 不要重复询问画像里已经填写的偏好。先用一句话复述画像取舍，然后基于画像给出下一步分析方向；只有画像缺失或用户主动要调整时才追问偏好。\n"
         + "第2-3轮: 如果用户最看重上岸率，用 searchPrograms(maxScore=预估分-5，例如300分用295) 找分数有余量的候选；保底倾向可用 maxScore=预估分-15。之后还必须结合招生名额、数据完整度和 canBeSafe 判断。每次只分析1-2所\n"
@@ -164,42 +162,34 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         systemMsg.put("content", systemPrompt);
         messages.add(systemMsg);
 
-        ChatModel chatModel = buildChatModel();
-        ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(20);
-
-        RecommendationAssistant assistant = AiServices.builder(RecommendationAssistant.class)
-            .chatModel(chatModel)
-            .tools(aiRecommendationTools)
-            .chatMemory(chatMemory)
-            .systemMessageProvider(ignored -> systemPrompt)
-            .build();
-
-        String firstUserMessage = "开始择校对话。不要自我介绍，不要重复询问画像里已有的偏好。请先用一句话说明已读取用户画像，并按画像给出第一步择校分析方向；结尾给出可继续推进或调整画像取舍的快捷选项。";
-
         log.info("[AI-TRACE] ======== START conversationId={} userId={} ========", conversationId, userId);
         log.info("[AI-TRACE] SYSTEM PROMPT (first 500 chars):\n{}...",
             systemPrompt.length() > 500 ? systemPrompt.substring(0, 500) : systemPrompt);
         log.debug("[AI-TRACE] SYSTEM PROMPT (full):\n{}", systemPrompt);
-        log.info("[AI-TRACE] USER INPUT (round 0): {}", firstUserMessage);
 
-        String aiResponse;
-        try {
-            AiRecommendationTools.setConversationId(conversationId);
-            aiResponse = assistant.chat(firstUserMessage);
-        } finally {
-            AiRecommendationTools.clear();
-        }
+        // 首轮模板化：不调 LLM，避免 60s+ 的工具探索
+        String regionLabel = preferenceLabel("regionStrategy", profile.get("regionStrategy"));
+        String riskLabel = preferenceLabel("riskPreference", profile.get("riskPreference"));
+        String messageText = String.format(
+            "已读取你的画像：预估 %d 分、%s、地区偏好%s、策略%s。候选池 %d 所学校。"
+                + "建议从稳妥候选入手，再补充冲刺与保底。",
+            estimatedScore,
+            formatProfileField(profile, "undergradTier", "双非"),
+            regionLabel.length() > 20 ? regionLabel.substring(0, 20) : regionLabel,
+            riskLabel.length() > 16 ? riskLabel.substring(0, 16) : riskLabel,
+            summaryList.size());
+        List<String> options = initialPreferenceOptions(profile);
 
-        log.info("[AI-TRACE] AI RAW OUTPUT (round 0):\n{}", aiResponse);
-
-        Map<String, Object> userMsg = new LinkedHashMap<>();
-        userMsg.put("role", "user");
-        userMsg.put("content", firstUserMessage);
-        messages.add(userMsg);
+        // 保存首轮模板消息到对话历史（作为 assistant 消息）
+        Map<String, Object> initUserMsg = new LinkedHashMap<>();
+        initUserMsg.put("role", "user");
+        initUserMsg.put("content", "开始择校对话。");
+        messages.add(initUserMsg);
 
         Map<String, Object> assistantMsg = new LinkedHashMap<>();
         assistantMsg.put("role", "assistant");
-        assistantMsg.put("content", aiResponse);
+        assistantMsg.put("content", messageText + "\n---OPTIONS---\n"
+            + String.join("\n", options));
         messages.add(assistantMsg);
 
         String convJson = JSON.toJSONString(messages);
@@ -209,14 +199,11 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         redisTemplate.opsForValue().set("ai:pool:" + conversationId, poolJson, TTL_SECONDS, TimeUnit.SECONDS);
         redisTemplate.opsForValue().set("ai:owner:" + conversationId, userId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
 
-        String messageText = parseMessageText(aiResponse);
-        List<String> options = initialPreferenceOptions(profile);
-
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conversationId", conversationId);
         result.put("message", messageText);
         result.put("options", options);
-        result.put("cards", hydrateChatCards(messageText, JSON.toJSONString(summaryList)));
+        result.put("cards", Collections.emptyList());
         result.put("profileBasis", buildProfileBasis(profile, estimatedScore));
         result.put("candidateCount", summaryList.size());
         return result;

@@ -6,29 +6,36 @@ public class AiToolBudget {
     private final int maxExpandCalls;
     private final int maxVerificationCalls;
     private final int maxResultTokens;
+    private final int maxSearchCalls;
+    private final int maxBookmarkCalls;
 
     private int totalCalls;
     private int detailCalls;
     private int expandCalls;
     private int verificationCalls;
+    private int searchCalls;
+    private int bookmarkCalls;
     private int resultTokens;
     private boolean explorationLimited;
 
     public AiToolBudget(int maxTotalCalls, int maxDetailCalls, int maxExpandCalls,
-        int maxVerificationCalls, int maxResultTokens) {
+        int maxVerificationCalls, int maxResultTokens,
+        int maxSearchCalls, int maxBookmarkCalls) {
         this.maxTotalCalls = maxTotalCalls;
         this.maxDetailCalls = maxDetailCalls;
         this.maxExpandCalls = maxExpandCalls;
         this.maxVerificationCalls = maxVerificationCalls;
         this.maxResultTokens = maxResultTokens;
+        this.maxSearchCalls = maxSearchCalls;
+        this.maxBookmarkCalls = maxBookmarkCalls;
     }
 
     public static AiToolBudget reportDefaults() {
-        return new AiToolBudget(20, 12, 3, 5, 12000);
+        return new AiToolBudget(20, 12, 3, 0, 12000, 10, 20);
     }
 
     public static AiToolBudget chatTurnDefaults() {
-        return new AiToolBudget(8, 5, 2, 3, 5000);
+        return new AiToolBudget(3, 2, 2, 0, 3000, 2, 3);
     }
 
     public boolean tryUse(String toolName, int estimatedResultTokens) {
@@ -37,6 +44,14 @@ public class AiToolBudget {
             return false;
         }
         if ("getProgramDetail".equals(toolName) && detailCalls + 1 > maxDetailCalls) {
+            explorationLimited = true;
+            return false;
+        }
+        if ("searchPrograms".equals(toolName) && searchCalls + 1 > maxSearchCalls) {
+            explorationLimited = true;
+            return false;
+        }
+        if ("addToReport".equals(toolName) && bookmarkCalls + 1 > maxBookmarkCalls) {
             explorationLimited = true;
             return false;
         }
@@ -51,6 +66,8 @@ public class AiToolBudget {
         totalCalls++;
         resultTokens += Math.max(0, estimatedResultTokens);
         if ("getProgramDetail".equals(toolName)) detailCalls++;
+        if ("searchPrograms".equals(toolName)) searchCalls++;
+        if ("addToReport".equals(toolName)) bookmarkCalls++;
         if ("expandCandidatePool".equals(toolName)) expandCalls++;
         if ("verifyOfficialInfo".equals(toolName)) verificationCalls++;
         return true;

@@ -17,7 +17,7 @@ export function removeToken() {
 
 const service = axios.create({
   baseURL: '/dev-api',
-  timeout: 30000
+  timeout: 120000
 })
 
 service.interceptors.request.use(config => {
