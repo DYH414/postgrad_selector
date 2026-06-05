@@ -22,6 +22,11 @@
             </div>
           </div>
 
+          <div v-if="serverProgress" class="real-progress-banner">
+            <span class="progress-dot" />
+            <span>{{ PROGRESS_LABELS[serverProgress] || serverProgress }}</span>
+          </div>
+
           <div class="analysis-steps">
             <div v-for="(line, idx) in displayLogs" :key="idx" class="analysis-step done">
               <span class="step-mark" />
@@ -266,7 +271,7 @@ import { ElMessage } from 'element-plus'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import AppHeader from '@/components/AppHeader.vue'
 import SchoolCard from '@/components/SchoolCard.vue'
-import { getAiReport } from '@/api/ai'
+import { getAiReport, getAiReportProgress } from '@/api/ai'
 import { getProgramDetail } from '@/api/programs'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { normalizeAiReport } from '@/utils/aiReport'
@@ -301,6 +306,12 @@ const logIdx = ref(0)
 const charIdx = ref(0)
 const typingLine = ref('')
 const allDone = ref(false)
+const serverProgress = ref('')
+const PROGRESS_LABELS = {
+  QUEUED: '排队等待中...',
+  CALLING_AI: 'AI 正在综合对话历史与候选数据，生成冲稳保推荐...',
+  FINALIZING: '报告已生成，正在整理数据与核验...'
+}
 const detailVisible = ref(false)
 const detailSchool = ref(null)
 const detailData = ref(null)
@@ -378,7 +389,13 @@ async function fetchReport() {
       loadingStartedAt.value = Date.now()
       startTypewriter()
       pollTimer.value = setInterval(async () => {
-        const r = await getAiReport(route.params.id)
+        const [r, p] = await Promise.all([
+          getAiReport(route.params.id),
+          getAiReportProgress(route.params.id).catch(() => ({ data: { progress: '' } }))
+        ])
+        if (p.data && p.data.progress) {
+          serverProgress.value = p.data.progress
+        }
         if (r.data.status === 'PENDING') {
           report.value = r.data
         } else {
@@ -708,6 +725,32 @@ onBeforeUnmount(() => {
   color: #66758a;
   font-size: 14px;
   line-height: 1.8;
+}
+.real-progress-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #eef4ff;
+  border: 1px solid #c5d8f7;
+  color: #1b52b8;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.real-progress-banner .progress-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1f6fff;
+  flex-shrink: 0;
+  animation: progress-pulse 1.4s ease-in-out infinite;
+}
+@keyframes progress-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
 }
 .progress-card {
   margin-bottom: 20px;

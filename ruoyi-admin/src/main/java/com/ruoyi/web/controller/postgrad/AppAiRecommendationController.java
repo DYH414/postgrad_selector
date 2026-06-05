@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import com.alibaba.fastjson2.JSON;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +25,9 @@ public class AppAiRecommendationController {
 
     @Autowired
     private IAiRecommendationService aiService;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
 
     @PostMapping("/start")
     public AjaxResult start(@RequestBody Map<String, Object> body) {
@@ -128,6 +132,16 @@ public class AppAiRecommendationController {
         } catch (IllegalArgumentException e) {
             return AjaxResult.error(e.getMessage());
         }
+    }
+
+    @GetMapping("/report/{id}/progress")
+    public AjaxResult getReportProgress(@PathVariable Long id) {
+        AppLoginUser user = getCurrentAppUser();
+        if (user == null) return AjaxResult.error("未登录");
+        String progress = redisTemplate.opsForValue().get("ai:report:progress:" + id);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("progress", progress != null ? progress : "QUEUED");
+        return AjaxResult.success(result);
     }
 
     @GetMapping("/reports")

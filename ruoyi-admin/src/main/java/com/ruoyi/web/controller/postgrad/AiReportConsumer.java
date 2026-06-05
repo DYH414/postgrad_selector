@@ -26,6 +26,8 @@ import java.util.concurrent.TimeUnit;
 public class AiReportConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(AiReportConsumer.class);
+    private static final long REPORT_TTL_DAYS = 7L;
+    private static final String PROGRESS_KEY_PREFIX = "ai:report:progress:";
 
     @Autowired private StringRedisTemplate redisTemplate;
     @Autowired private RecommendationLogMapper logMapper;
@@ -46,7 +48,7 @@ public class AiReportConsumer {
             }
         } catch (Exception e) {
             String errorJson = "{\"status\":\"FAILED\",\"error\":\"" + safeJsonMessage(e.getMessage()) + "\"}";
-            redisTemplate.opsForValue().set("ai:report:" + reportId, errorJson, 7, TimeUnit.DAYS);
+            redisTemplate.opsForValue().set("ai:report:" + reportId, errorJson, REPORT_TTL_DAYS, TimeUnit.DAYS);
             try {
                 logMapper.updateReportResult(reportId, errorJson);
             } catch (Exception dbEx) { /* best-effort */ }
@@ -58,7 +60,7 @@ public class AiReportConsumer {
         String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
         if (convJson == null) {
             redisTemplate.opsForValue().set("ai:report:" + reportId,
-                "{\"error\": \"对话已过期\"}", 7, TimeUnit.DAYS);
+                "{\"error\": \"对话已过期\"}", REPORT_TTL_DAYS, TimeUnit.DAYS);
             return;
         }
         String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
@@ -67,12 +69,15 @@ public class AiReportConsumer {
             .baseUrl("https://api.deepseek.com/v1")
             .apiKey(System.getenv("DEEPSEEK_API_KEY"))
             .modelName("deepseek-v4-pro")
+            .maxTokens(4096)
             .build();
 
         String cleanedConvJson = stripTailExchange(convJson);
         Map<String, Object> preferences = msg.get("userId") instanceof Number userId
             ? loadPreferenceProfile(userId)
             : new LinkedHashMap<>();
+
+        updateProgress(reportId, "CALLING_AI");
         Map<String, Object> reportJson = aiReportBuilder.buildConversationReport(
             chatModel,
             cleanedConvJson,
@@ -81,8 +86,9 @@ public class AiReportConsumer {
             preferences
         );
 
+        updateProgress(reportId, "FINALIZING");
         String resultJsonStr = JSON.toJSONString(reportJson);
-        redisTemplate.opsForValue().set("ai:report:" + reportId, resultJsonStr, 7, TimeUnit.DAYS);
+        redisTemplate.opsForValue().set("ai:report:" + reportId, resultJsonStr, REPORT_TTL_DAYS, TimeUnit.DAYS);
         try {
             logMapper.updateReportResult(reportId, resultJsonStr);
         } catch (Exception dbEx) { /* best-effort */ }
@@ -99,7 +105,7 @@ public class AiReportConsumer {
         }
         if (poolJson == null || poolJson.isEmpty()) {
             redisTemplate.opsForValue().set("ai:report:" + reportId,
-                "{\"error\": \"候选学校数据已过期，请重新发起快速推荐\"}", 7, TimeUnit.DAYS);
+                "{\"error\": \"候选学校数据已过期，请重新发起快速推荐\"}", REPORT_TTL_DAYS, TimeUnit.DAYS);
             return;
         }
 
@@ -107,8 +113,10 @@ public class AiReportConsumer {
             .baseUrl("https://api.deepseek.com/v1")
             .apiKey(System.getenv("DEEPSEEK_API_KEY"))
             .modelName("deepseek-v4-pro")
+            .maxTokens(4096)
             .build();
 
+        updateProgress(reportId, "CALLING_AI");
         Map<String, Object> reportJson = aiReportBuilder.buildAnalyzeReport(
             chatModel,
             poolJson,
@@ -116,8 +124,9 @@ public class AiReportConsumer {
             loadPreferenceProfile(userId)
         );
 
+        updateProgress(reportId, "FINALIZING");
         String resultJsonStr = JSON.toJSONString(reportJson);
-        redisTemplate.opsForValue().set("ai:report:" + reportId, resultJsonStr, 7, TimeUnit.DAYS);
+        redisTemplate.opsForValue().set("ai:report:" + reportId, resultJsonStr, REPORT_TTL_DAYS, TimeUnit.DAYS);
         try {
             logMapper.updateReportResult(reportId, resultJsonStr);
         } catch (Exception dbEx) { /* best-effort */ }
@@ -189,6 +198,12 @@ public class AiReportConsumer {
         } catch (Exception e) {
             return convJson;
         }
+    }
+
+    private void updateProgress(Long reportId, String progress) {
+        try {
+            redisTemplate.opsForValue().set(PROGRESS_KEY_PREFIX + reportId, progress, REPORT_TTL_DAYS, TimeUnit.DAYS);
+        } catch (Exception ignored) { /* non-critical */ }
     }
 
     private String safeJsonMessage(String message) {

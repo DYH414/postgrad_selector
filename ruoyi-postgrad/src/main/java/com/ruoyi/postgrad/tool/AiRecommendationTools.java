@@ -1,6 +1,7 @@
 package com.ruoyi.postgrad.tool;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.AiBookmark;
 import com.ruoyi.postgrad.domain.AiRecommendationSafety;
 import com.ruoyi.postgrad.domain.AiToolBudget;
 import com.ruoyi.postgrad.domain.AiToolTrace;
@@ -17,7 +18,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Component
@@ -34,6 +37,13 @@ public class AiRecommendationTools {
         ThreadLocal.withInitial(AiToolBudget::reportDefaults);
     private static final ThreadLocal<AiToolTrace> CURRENT_TRACE =
         ThreadLocal.withInitial(AiToolTrace::new);
+
+    private static final String BOOKMARK_KEY_PREFIX = "ai:bookmarks:";
+    private static final int BOOKMARK_TTL_MINUTES = 30;
+    private static final Set<String> VALID_JUDGEMENTS = Set.of("reach", "steady", "safe");
+    private static final int MAX_REASON_LENGTH = 300;
+    private static final int MAX_PRO_CON_LENGTH = 20;
+    private static final int MAX_LIST_ITEMS = 8;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -174,6 +184,7 @@ public class AiRecommendationTools {
         if (filter.containsKey("city") && !csvContains(filter.get("city"), program.get("city"))) return false;
         if (filter.containsKey("province") && !csvContains(filter.get("province"), program.get("province"))) return false;
         if (filter.containsKey("tier") && !csvContains(filter.get("tier"), program.get("schoolTier"))) return false;
+        if (filter.containsKey("keyword") && !keywordMatches(program, filter.get("keyword"))) return false;
         if (filter.containsKey("minScore")) {
             Object avgObj = program.get("avgAdmittedScore");
             double avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : 0;
@@ -203,6 +214,17 @@ public class AiRecommendationTools {
             if (part.trim().equals(actualStr)) return true;
         }
         return false;
+    }
+
+    /** 关键词匹配：在学校名、专业名、学院名中模糊搜索 */
+    private static boolean keywordMatches(Map<String, Object> program, Object keywordObj) {
+        if (keywordObj == null) return true;
+        String kw = String.valueOf(keywordObj).trim();
+        if (kw.isEmpty()) return true;
+        String school = String.valueOf(program.getOrDefault("schoolName", ""));
+        String prog = String.valueOf(program.getOrDefault("programName", ""));
+        String college = String.valueOf(program.getOrDefault("collegeName", ""));
+        return school.contains(kw) || prog.contains(kw) || college.contains(kw);
     }
 
     private Map<String, Object> searchSummaryItem(Map<String, Object> program) {
@@ -278,6 +300,10 @@ public class AiRecommendationTools {
         String province = stringVal(filterMap, "province", null);
         Integer minScore = nullableInt(filterMap, "minScore");
         Integer maxScore = nullableInt(filterMap, "maxScore");
+        // 至少需要一个筛选条件，防止无筛选全库查询导致无关结果
+        if (keyword == null && tier == null && province == null && minScore == null && maxScore == null) {
+            return "{\"error\":\"请至少指定一个筛选条件，如 keyword(学校名)、tier(985/211)、province(省份)、minScore/maxScore(分数范围)\",\"hint\":\"例如查宁夏大学用 {\\\"keyword\\\":\\\"宁夏\\\"}\"}";
+        }
         int limit = Math.min(intVal(filterMap, "limit", 20), 30);
 
         List<RowMap> rows = aiDatabaseToolMapper.querySchools(keyword, tier, province, minScore, maxScore, limit);
@@ -447,6 +473,110 @@ public class AiRecommendationTools {
         return JSON.toJSONString(result);
     }
 
+    @Tool("将当前讨论的学校加入推荐报告候选。必须在 getProgramDetail 后调用；重复调用会更新推荐理由")
+    public String addToReport(
+            @P("programId") long programId,
+            @P("judgement，取值 reach/steady/safe 之一") String judgement,
+            @P("推荐理由，一句话说明为何推荐") String reason,
+            @P("优势列表") List<String> pros,
+            @P("风险列表") List<String> cons,
+            @P("取舍说明列表") List<String> tradeoffs,
+            @P("行动建议") String recommendedAction) {
+
+        String conversationId = CURRENT_CONVERSATION.get();
+        if (conversationId == null) return "{\"error\":\"no_conversation\"}";
+
+        // 1. 白名单校验
+        if (judgement == null || !VALID_JUDGEMENTS.contains(judgement.trim())) {
+            return "{\"error\":\"judgement 必须是 reach/steady/safe 之一\"}";
+        }
+        judgement = judgement.trim();
+
+        // 2. 从候选池校验 programId 并注入 schoolName/programName
+        String poolJson = loadPoolJson(conversationId);
+        String schoolName = null, programName = null;
+        boolean inPool = false;
+        if (poolJson != null) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> pool = JSON.parseObject(poolJson, List.class);
+            for (Map<String, Object> row : pool) {
+                Long pid = toLong(row.get("programId"));
+                if (pid != null && pid == programId) {
+                    schoolName = String.valueOf(row.getOrDefault("schoolName", ""));
+                    programName = String.valueOf(row.getOrDefault("programName", ""));
+                    inPool = true;
+                    break;
+                }
+            }
+        }
+        if (!inPool) {
+            return "{\"error\":\"programId=" + programId + " 不在当前候选池中\"}";
+        }
+
+        // 3. 长度截断
+        reason = safeTruncate(reason, MAX_REASON_LENGTH);
+        recommendedAction = safeTruncate(recommendedAction, MAX_REASON_LENGTH);
+        pros = safeTruncateList(pros, MAX_LIST_ITEMS, MAX_PRO_CON_LENGTH);
+        cons = safeTruncateList(cons, MAX_LIST_ITEMS, MAX_PRO_CON_LENGTH);
+        tradeoffs = safeTruncateList(tradeoffs, MAX_LIST_ITEMS, MAX_PRO_CON_LENGTH);
+
+        // 4. 构建书签
+        AiBookmark bookmark = new AiBookmark();
+        bookmark.setProgramId(programId);
+        bookmark.setSchoolName(schoolName);
+        bookmark.setProgramName(programName);
+        bookmark.setJudgement(judgement);
+        bookmark.setReason(reason);
+        bookmark.setPros(pros);
+        bookmark.setCons(cons);
+        bookmark.setTradeoffs(tradeoffs);
+        bookmark.setRecommendedAction(recommendedAction);
+
+        // 5. 读取现有书签列表，同 programId 覆盖
+        String key = BOOKMARK_KEY_PREFIX + conversationId;
+        String existing = redisTemplate.opsForValue().get(key);
+        List<AiBookmark> bookmarks;
+        if (existing != null && !existing.isBlank()) {
+            bookmarks = JSON.parseArray(existing, AiBookmark.class);
+        } else {
+            bookmarks = new ArrayList<>();
+        }
+        bookmarks.removeIf(b -> b.getProgramId() == programId);
+        bookmarks.add(bookmark);
+
+        // 6. 写回 Redis
+        redisTemplate.opsForValue().set(key, JSON.toJSONString(bookmarks),
+            BOOKMARK_TTL_MINUTES, TimeUnit.MINUTES);
+
+        // 7. 记录 trace
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("programId", programId);
+        args.put("judgement", judgement);
+        CURRENT_TRACE.get().record("addToReport", args, Map.of("totalBookmarks", bookmarks.size()));
+
+        log.info("[Tool] addToReport — programId={}, judgement={}, total={}", programId, judgement, bookmarks.size());
+        return "{\"ok\":true,\"total\":" + bookmarks.size() + "}";
+    }
+
+    @Tool("从推荐报告候选中移除一所学校")
+    public String removeFromReport(@P("programId") long programId) {
+        String conversationId = CURRENT_CONVERSATION.get();
+        if (conversationId == null) return "{\"error\":\"no_conversation\"}";
+
+        String key = BOOKMARK_KEY_PREFIX + conversationId;
+        String existing = redisTemplate.opsForValue().get(key);
+        if (existing == null || existing.isBlank()) {
+            return "{\"total\":0}";
+        }
+        List<AiBookmark> bookmarks = JSON.parseArray(existing, AiBookmark.class);
+        bookmarks.removeIf(b -> b.getProgramId() == programId);
+        redisTemplate.opsForValue().set(key, JSON.toJSONString(bookmarks),
+            BOOKMARK_TTL_MINUTES, TimeUnit.MINUTES);
+
+        log.info("[Tool] removeFromReport — programId={}, remaining={}", programId, bookmarks.size());
+        return "{\"ok\":true,\"total\":" + bookmarks.size() + "}";
+    }
+
     private String loadPoolJson(String conversationId) {
         String poolJson = redisTemplate.opsForValue().get("ai:agent:pool:" + conversationId);
         if (poolJson == null) {
@@ -476,5 +606,24 @@ public class AiRecommendationTools {
             try { return Integer.parseInt(v.toString()); } catch (NumberFormatException ignored) {}
         }
         return null;
+    }
+
+    private static String safeTruncate(String text, int maxLen) {
+        if (text == null) return "";
+        return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
+    }
+
+    private static List<String> safeTruncateList(List<String> list, int maxItems, int maxItemLen) {
+        if (list == null) return List.of();
+        return list.stream()
+            .limit(maxItems)
+            .map(s -> safeTruncate(s, maxItemLen))
+            .collect(Collectors.toList());
+    }
+
+    private static Long toLong(Object val) {
+        if (val instanceof Number n) return n.longValue();
+        if (val == null) return null;
+        try { return Long.parseLong(String.valueOf(val)); } catch (NumberFormatException e) { return null; }
     }
 }

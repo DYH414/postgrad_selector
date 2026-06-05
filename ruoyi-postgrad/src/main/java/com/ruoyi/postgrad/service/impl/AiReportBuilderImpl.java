@@ -14,14 +14,21 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.ruoyi.postgrad.domain.RowMap;
+
 @Service
 public class AiReportBuilderImpl implements AiReportBuilder {
     private static final int PROMPT_POOL_ROW_LIMIT = 120;
+    private static final int PER_LAYER_LIMIT = 15;
+    private static final int MAX_CONVERSATION_ROUNDS = 6;
+    private static final int MAX_MESSAGE_CHARS = 500;
     private static final Logger log = LoggerFactory.getLogger(AiReportBuilderImpl.class);
 
     @Autowired
@@ -33,7 +40,8 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         // 从对话历史中提取讨论过的学校ID，确保它们在候选池摘要中优先出现
         Set<Long> discussedIds = extractDiscussedProgramIds(conversationJson);
         String poolSummary = buildPoolSummary(poolJson, estimatedScore, discussedIds);
-        String prompt = basePrompt(poolSummary, preferenceProfile, estimatedScore) + "\n## 对话历史\n" + conversationJson;
+        String trimmedConv = trimConversationForReport(conversationJson);
+        String prompt = basePrompt(poolSummary, preferenceProfile, estimatedScore) + "\n## 对话历史\n" + trimmedConv;
         log.info("[AI-TRACE] ======== REPORT-CONVERSATION ========");
         log.info("[AI-TRACE] discussedProgramIds={}", discussedIds);
         log.info("[AI-TRACE] REPORT PROMPT (first 800 chars):\n{}...",
@@ -41,7 +49,13 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         log.debug("[AI-TRACE] REPORT PROMPT (full):\n{}", prompt);
         String aiRaw = chatModel.chat(prompt);
         log.info("[AI-TRACE] REPORT AI RAW OUTPUT:\n{}", aiRaw);
-        Map<String, Object> report = hydrateReportPrograms(parseReportJson(aiRaw, poolJson), estimatedScore, poolJson);
+        Map<String, Object> parsed = parseReportJson(aiRaw, poolJson);
+        // 如果 AI 输出了空 tiers 或仅有 summary 的空壳，回退到兜底推荐
+        if (isEmptyTiers(parsed)) {
+            log.warn("[AI-TRACE] AI returned empty tiers, falling back to rule-based report");
+            parsed = ruleBasedFallback(poolJson);
+        }
+        Map<String, Object> report = hydrateReportPrograms(parsed, estimatedScore, poolJson);
         fillMissingDiscussedSchools(report, discussedIds, poolJson, estimatedScore);
         return report;
     }
@@ -56,7 +70,12 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         log.debug("[AI-TRACE] REPORT PROMPT (full):\n{}", prompt);
         String aiRaw = chatModel.chat(prompt);
         log.info("[AI-TRACE] REPORT AI RAW OUTPUT:\n{}", aiRaw);
-        return hydrateReportPrograms(parseReportJson(aiRaw, poolJson), estimatedScore, poolJson);
+        Map<String, Object> parsed = parseReportJson(aiRaw, poolJson);
+        if (isEmptyTiers(parsed)) {
+            log.warn("[AI-TRACE] AI returned empty tiers, falling back to rule-based report");
+            parsed = ruleBasedFallback(poolJson);
+        }
+        return hydrateReportPrograms(parsed, estimatedScore, poolJson);
     }
 
     String buildConversationPrompt(String convJson, String poolJson, Map<String, Object> preferenceProfile) {
@@ -130,6 +149,41 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         return ids;
     }
 
+    /**
+     * 裁剪对话历史用于报告 prompt：移除 system 消息、只保留最近 N 轮、
+     * 每条消息截断到 MAX_MESSAGE_CHARS 字符，减少 token 消耗。
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private String trimConversationForReport(String conversationJson) {
+        if (conversationJson == null || conversationJson.isBlank()) return "";
+        try {
+            List<Map<String, Object>> messages = (List) JSON.parseArray(conversationJson, Map.class);
+            // 移除 system 消息（候选池摘要已通过 poolSummary 发送，无需重复）
+            List<Map<String, Object>> filtered = new ArrayList<>();
+            for (Map<String, Object> msg : messages) {
+                if (!"system".equals(msg.get("role"))) {
+                    filtered.add(msg);
+                }
+            }
+            // 只保留最后 N 轮对话（每轮 = user + assistant）
+            int maxMsgs = MAX_CONVERSATION_ROUNDS * 2;
+            if (filtered.size() > maxMsgs) {
+                filtered = filtered.subList(filtered.size() - maxMsgs, filtered.size());
+            }
+            // 截断每条消息
+            for (Map<String, Object> msg : filtered) {
+                String content = (String) msg.get("content");
+                if (content != null && content.length() > MAX_MESSAGE_CHARS) {
+                    msg.put("content", content.substring(0, MAX_MESSAGE_CHARS) + "...[已截断]");
+                }
+            }
+            return JSON.toJSONString(filtered);
+        } catch (Exception e) {
+            log.warn("[AI-TRACE] Failed to trim conversation: {}", e.getMessage());
+            return conversationJson; // fallback: return original
+        }
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private String buildPoolSummary(String poolJson, int estimatedScore, Set<Long> priorityIds) {
         if (poolJson == null || poolJson.isBlank() || "[]".equals(poolJson.trim())) {
@@ -137,49 +191,62 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         }
         try {
             List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
-            // 把对话中讨论过的学校排到最前面，确保报告 AI 一定能看到它们
-            if (!priorityIds.isEmpty()) {
-                pool.sort((a, b) -> {
-                    long idA = longValue(a.get("programId"));
-                    long idB = longValue(b.get("programId"));
-                    boolean aPrio = priorityIds.contains(idA);
-                    boolean bPrio = priorityIds.contains(idB);
-                    if (aPrio && !bPrio) return -1;
-                    if (!aPrio && bPrio) return 1;
-                    return 0;
-                });
-            }
-            StringBuilder sb = new StringBuilder();
-            if (!priorityIds.isEmpty()) {
-                sb.append("⚠ 以下「对话已讨论」的学校已排在候选列表最前面，报告应优先从中选择：\n");
-            }
-            int index = 1;
+
+            // 分离已讨论学校和其他学校
+            List<Map<String, Object>> discussed = new ArrayList<>();
+            List<Map<String, Object>> rest = new ArrayList<>();
             for (Map<String, Object> row : pool) {
-                if (index > PROMPT_POOL_ROW_LIMIT) {
-                    sb.append("... 已截断，仅发送前 ").append(PROMPT_POOL_ROW_LIMIT).append(" 条代表行给模型\n");
-                    break;
-                }
                 long pid = longValue(row.get("programId"));
-                boolean isDiscussed = priorityIds.contains(pid);
-                sb.append(index).append(". ID:").append(row.get("programId"));
-                if (isDiscussed) sb.append(" [对话已讨论]");
-                sb.append(" | ").append(row.getOrDefault("schoolName", "?"));
-                sb.append(" | 专业:").append(row.getOrDefault("programName", ""));
-                sb.append(" | 学院:").append(row.getOrDefault("collegeName", ""));
-                sb.append(" | 地区:").append(row.getOrDefault("province", row.getOrDefault("city", "")));
-                sb.append(" | 层次:").append(row.getOrDefault("schoolTier", ""));
-                sb.append(" | 均分:").append(displayInt(row.get("avgAdmittedScore")));
-                sb.append(" | 差距:").append(displaySignedInt(row.get("gap")));
-                sb.append(" | 最低录取:").append(displayInt(row.get("admissionLow")));
-                sb.append(" | 招生:").append(displayInt(row.getOrDefault("unifiedExamQuota", row.get("planCount"))));
-                sb.append(" | 完整度:").append(row.getOrDefault("dataCompleteness", ""));
-                Map<String, Object> guard = AiRecommendationSafety.safeEligibility(row, estimatedScore);
-                sb.append(" | quotaRisk:").append(guard.get("quotaRisk"));
-                sb.append(" | canBeSafe:").append(guard.get("canBeSafe"));
-                Object reason = guard.get("safeBlockReason");
-                if (reason != null) sb.append(" | 保底限制:").append(reason);
-                sb.append("\n");
-                index++;
+                if (priorityIds.contains(pid)) discussed.add(row);
+                else rest.add(row);
+            }
+
+            // 剩余学校按 gap 分层
+            List<Map<String, Object>> reachLayer = new ArrayList<>();  // gap <= 0
+            List<Map<String, Object>> steadyLayer = new ArrayList<>(); // gap 1..14
+            List<Map<String, Object>> safeLayer = new ArrayList<>();   // gap >= 15
+            for (Map<String, Object> row : rest) {
+                int gap = integerValue(row.get("gap"));
+                if (gap <= 0) reachLayer.add(row);
+                else if (gap <= 14) steadyLayer.add(row);
+                else safeLayer.add(row);
+            }
+
+            // 每层按综合得分排序取前 15 行
+            reachLayer = selectTop(reachLayer, "reach", PER_LAYER_LIMIT);
+            steadyLayer = selectTop(steadyLayer, "steady", PER_LAYER_LIMIT);
+            safeLayer = selectTop(safeLayer, "safe", PER_LAYER_LIMIT);
+
+            StringBuilder sb = new StringBuilder();
+            int totalBefore = pool.size();
+            int totalAfter = discussed.size() + reachLayer.size() + steadyLayer.size() + safeLayer.size();
+            sb.append("候选池共 ").append(totalBefore).append(" 所学校，精选 ").append(totalAfter)
+                .append(" 所供报告参考（按冲/稳/保分层）：\n");
+
+            int index = 1;
+            if (!discussed.isEmpty()) {
+                sb.append("\n== 对话已讨论（必须纳入报告）==\n");
+                for (Map<String, Object> row : discussed) {
+                    appendPoolRow(sb, index++, row, estimatedScore, true);
+                }
+            }
+            if (!reachLayer.isEmpty()) {
+                sb.append("\n== 冲刺候选层（gap ≤ 0，分数接近或略低于均分）==\n");
+                for (Map<String, Object> row : reachLayer) {
+                    appendPoolRow(sb, index++, row, estimatedScore, false);
+                }
+            }
+            if (!steadyLayer.isEmpty()) {
+                sb.append("\n== 稳妥候选层（gap 1~14，分数有余量）==\n");
+                for (Map<String, Object> row : steadyLayer) {
+                    appendPoolRow(sb, index++, row, estimatedScore, false);
+                }
+            }
+            if (!safeLayer.isEmpty()) {
+                sb.append("\n== 保底候选层（gap ≥ 15，分数安全度高）==\n");
+                for (Map<String, Object> row : safeLayer) {
+                    appendPoolRow(sb, index++, row, estimatedScore, false);
+                }
             }
             return sb.toString();
         } catch (Exception e) {
@@ -187,12 +254,78 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         }
     }
 
+    /** 每层按综合得分排序，取前 limit 行 */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private List<Map<String, Object>> selectTop(List<Map<String, Object>> layer, String tier, int limit) {
+        if (layer.size() <= limit) return layer;
+        layer.sort((a, b) -> Integer.compare(compositeScore(b, tier), compositeScore(a, tier)));
+        return new ArrayList<>(layer.subList(0, limit));
+    }
+
+    /**
+     * 综合得分：综合数据完整度、招生规模、学校层次和 gap 适配度。
+     * 不同分档对 gap 的"理想值"不同：冲刺档 0 最佳，稳妥档 ~10，保底档 ~20。
+     */
+    private int compositeScore(Map<String, Object> row, String tier) {
+        int score = 0;
+        // 数据完整度：A > B > C
+        String comp = String.valueOf(row.getOrDefault("dataCompleteness", "C"));
+        score += "A".equals(comp) ? 30 : "B".equals(comp) ? 20 : 10;
+        // 招生风险：normal > medium > high
+        String risk = String.valueOf(row.getOrDefault("quotaRisk", "unknown"));
+        score += "normal".equals(risk) ? 30 : "medium".equals(risk) ? 20 : 10;
+        // 学校层次：985 > 211/双一流 > 其他
+        String schoolTier = String.valueOf(row.getOrDefault("schoolTier", "OTHER"));
+        score += "985".equals(schoolTier) ? 25 : ("211".equals(schoolTier) || "DOUBLE_FIRST".equals(schoolTier)) ? 18 : 10;
+        // gap 接近该档"理想值"的程度
+        int gap = integerValue(row.get("gap"));
+        int idealGap = "reach".equals(tier) ? 0 : "steady".equals(tier) ? 10 : 20;
+        score += Math.max(0, 15 - Math.abs(gap - idealGap));
+        return score;
+    }
+
+    /** 输出单行候选学校摘要，包含 复录比 供 AI 判断复试竞争程度 */
+    private void appendPoolRow(StringBuilder sb, int index, Map<String, Object> row,
+            int estimatedScore, boolean isDiscussed) {
+        sb.append(index).append(". ID:").append(row.get("programId"));
+        if (isDiscussed) sb.append(" [对话已讨论]");
+        sb.append(" | ").append(row.getOrDefault("schoolName", "?"));
+        sb.append(" | 专业:").append(row.getOrDefault("programName", ""));
+        sb.append(" | 学院:").append(row.getOrDefault("collegeName", ""));
+        sb.append(" | 地区:").append(row.getOrDefault("province", row.getOrDefault("city", "")));
+        sb.append(" | 层次:").append(row.getOrDefault("schoolTier", ""));
+        sb.append(" | 均分:").append(displayInt(row.get("avgAdmittedScore")));
+        sb.append(" | 差距:").append(displaySignedInt(row.get("gap")));
+        sb.append(" | 最低录取:").append(displayInt(row.get("admissionLow")));
+        sb.append(" | 招生:").append(displayInt(row.getOrDefault("unifiedExamQuota", row.get("planCount"))));
+        // 复录比 = 复试人数 / 录取人数，反映复试竞争激烈程度
+        appendRetestRatio(sb, row);
+        sb.append(" | 完整度:").append(row.getOrDefault("dataCompleteness", ""));
+        Map<String, Object> guard = AiRecommendationSafety.safeEligibility(row, estimatedScore);
+        sb.append(" | quotaRisk:").append(guard.get("quotaRisk"));
+        sb.append(" | canBeSafe:").append(guard.get("canBeSafe"));
+        Object reason = guard.get("safeBlockReason");
+        if (reason != null) sb.append(" | 保底限制:").append(reason);
+        sb.append("\n");
+    }
+
+    /** 在摘要行中追加复录比信息 */
+    private void appendRetestRatio(StringBuilder sb, Map<String, Object> row) {
+        Integer retest = integerValue(row.get("retestCount"));
+        Integer admitted = integerValue(row.get("admittedCount"));
+        if (retest != null && admitted != null && retest > 0 && admitted > 0) {
+            double ratio = (double) retest / admitted;
+            sb.append(" | 复录比:").append(String.format("%.1f:1", ratio));
+        }
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Map<String, Object> parseReportJson(String aiResponse, String poolJson) {
         try {
-            String cleaned = stripMarkdown(aiResponse);
+            String cleaned = extractJson(aiResponse);
             return (Map<String, Object>) JSON.parseObject(cleaned, Map.class);
         } catch (Exception e) {
+            log.warn("[AI-TRACE] Failed to parse AI JSON, using fallback. Error: {}", e.getMessage());
             return ruleBasedFallback(poolJson);
         }
     }
@@ -209,22 +342,27 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         List<Map<String, Object>> reach = new ArrayList<>();
         List<Map<String, Object>> steady = new ArrayList<>();
         List<Map<String, Object>> safe = new ArrayList<>();
-        for (int i = 0; i < pool.size() && i < 6; i++) {
-            Map<String, Object> row = pool.get(i);
+        for (Map<String, Object> row : pool) {
+            if (reach.size() >= 5 && steady.size() >= 5 && safe.size() >= 5) break;
+            Integer gapVal = integerValue(row.get("gap"));
+            int gap = gapVal != null ? gapVal : 0;
+            String level = gap <= 0 ? "reach" : gap <= 14 ? "steady" : "safe";
+            boolean blockedSafe = "safe".equals(level) && Boolean.FALSE.equals(row.get("canBeSafe"));
+            if (blockedSafe) level = "steady";
+            List<Map<String, Object>> target = "reach".equals(level) ? reach : "steady".equals(level) ? steady : safe;
+            if (target.size() >= 5) continue;
+
             Map<String, Object> school = new LinkedHashMap<>();
             school.put("programId", row.get("programId"));
-            String level = i < 2 ? "reach" : i < 4 ? "steady" : "safe";
             school.put("judgement", "reach".equals(level) ? "small_reach" : level);
             school.put("risk", "reach".equals(level) ? "high" : "safe".equals(level) ? "low" : "medium");
             school.put("decision", "reach".equals(level) ? "适合作为冲刺候选" : "safe".equals(level) ? "适合作为保底候选" : "适合作为稳妥候选");
-            school.put("reason", "基于候选池数据自动生成的兜底推荐");
+            school.put("reason", "AI 输出解析异常，基于候选池数据自动编排的兜底推荐。建议重新生成报告获取 AI 分析。");
             school.put("pros", Collections.emptyList());
             school.put("cons", Collections.emptyList());
             school.put("tradeoffs", Collections.emptyList());
-            school.put("recommendedAction", "建议核验院校官网后再加入最终备选");
-            if ("reach".equals(level)) reach.add(school);
-            else if ("steady".equals(level)) steady.add(school);
-            else safe.add(school);
+            school.put("recommendedAction", "建议核验院校官网或重新发起对话后再次生成报告");
+            target.add(school);
         }
 
         Map<String, Object> report = new LinkedHashMap<>();
@@ -258,6 +396,9 @@ public class AiReportBuilderImpl implements AiReportBuilder {
             return result;
         }
 
+        // 批量查询所有学校的完整数据（消除 N+1）
+        Map<Long, Map<String, Object>> detailMap = batchLoadDetails(tiers, estimatedScore);
+
         for (Map<String, Object> tier : tiers) {
             String tierLevel = String.valueOf(tier.getOrDefault("level", ""));
             List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
@@ -276,7 +417,7 @@ public class AiReportBuilderImpl implements AiReportBuilder {
                     duplicateIds.add(programId);
                     continue;
                 }
-                Map<String, Object> detail = recommendationMapper.selectProgramForRecommendation(programId);
+                Map<String, Object> detail = detailMap.get(programId);
                 if (detail == null) {
                     missingDetailIds.add(programId);
                     continue;
@@ -312,6 +453,30 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         result.put("meta", meta);
         result.put("metadata", meta);
         return result;
+    }
+
+    /** 收集 tiers 中所有学校的 programId，一次批量查询数据库 */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private Map<Long, Map<String, Object>> batchLoadDetails(List<Map<String, Object>> tiers, int estimatedScore) {
+        Set<Long> allIds = new LinkedHashSet<>();
+        for (Map<String, Object> tier : tiers) {
+            List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
+            if (schools == null) continue;
+            for (Map<String, Object> school : schools) {
+                Long pid = longValue(school.get("programId"));
+                if (pid != null) allIds.add(pid);
+            }
+        }
+        if (allIds.isEmpty()) return Collections.emptyMap();
+        List<RowMap> rows = recommendationMapper.selectProgramsByIds(new ArrayList<>(allIds), estimatedScore);
+        Map<Long, Map<String, Object>> map = new LinkedHashMap<>();
+        for (RowMap row : rows) {
+            Object pidObj = row.get("programId");
+            if (pidObj instanceof Number n) {
+                map.put(n.longValue(), row);
+            }
+        }
+        return map;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -375,6 +540,18 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         return opinion;
     }
 
+    /** 检查报告是否没有实质性内容（空 tiers 或无学校） */
+    @SuppressWarnings("unchecked")
+    private boolean isEmptyTiers(Map<String, Object> report) {
+        List<Map<String, Object>> tiers = (List<Map<String, Object>>) report.get("tiers");
+        if (tiers == null || tiers.isEmpty()) return true;
+        for (Map<String, Object> tier : tiers) {
+            List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
+            if (schools != null && !schools.isEmpty()) return false;
+        }
+        return true;
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> findTier(List<Map<String, Object>> tiers, String level) {
         for (Map<String, Object> tier : tiers) {
@@ -403,14 +580,30 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         item.put("recommendedAction", opinion.get("recommendedAction"));
     }
 
-    private String stripMarkdown(String text) {
-        if (text == null) return "";
+    /**
+     * 从 AI 原始回复中提取 JSON 对象。
+     * 处理常见情况：前置确认语/说明、markdown 代码块、尾部补充说明。
+     */
+    private String extractJson(String text) {
+        if (text == null) return "{}";
         String cleaned = text.trim();
-        if (cleaned.startsWith("```")) {
-            cleaned = cleaned.replaceFirst("^```[a-zA-Z]*\\s*", "");
-            cleaned = cleaned.replaceFirst("\\s*```$", "");
+
+        // 1. 优先处理 markdown 代码块：```json ... ``` 或 ``` ... ```
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("```(?:json)?\\s*([\\s\\S]*?)```", java.util.regex.Pattern.CASE_INSENSITIVE)
+            .matcher(cleaned);
+        if (m.find()) {
+            cleaned = m.group(1).trim();
         }
-        return cleaned.trim();
+
+        // 2. 找到第一个 { 和最后一个 }，提取 JSON 对象
+        int firstBrace = cleaned.indexOf('{');
+        int lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            cleaned = cleaned.substring(firstBrace, lastBrace + 1).trim();
+        }
+
+        return cleaned;
     }
 
     private Long longValue(Object value) {
@@ -482,9 +675,20 @@ public class AiReportBuilderImpl implements AiReportBuilder {
 
         log.info("[AI-TRACE] fillMissingDiscussedSchools: adding {} missing schools: {}", missing.size(), missing);
 
+        // 批量查询缺失学校的完整数据
+        Map<Long, Map<String, Object>> missingDetailMap;
+        {
+            List<RowMap> rows = recommendationMapper.selectProgramsByIds(missing, estimatedScore);
+            missingDetailMap = new LinkedHashMap<>();
+            for (RowMap row : rows) {
+                Object pidObj = row.get("programId");
+                if (pidObj instanceof Number n) missingDetailMap.put(n.longValue(), row);
+            }
+        }
+
         // For each missing school, create a basic opinion entry and add to the right tier
         for (Long pid : missing) {
-            Map<String, Object> detail = recommendationMapper.selectProgramForRecommendation(pid);
+            Map<String, Object> detail = missingDetailMap.get(pid);
             if (detail == null) continue;
             Map<String, Object> poolRow = poolMap.get(pid);
             if (poolRow == null) continue;

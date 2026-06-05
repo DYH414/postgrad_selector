@@ -67,22 +67,23 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "## 地区规则\n"
         + "- 目标地区为\"不限\"时：只在候选池内推荐，不主动提及候选池外的城市，快捷选项不要主动引导用户去看某个具体城市\n"
         + "- 目标地区有具体城市时：优先推荐该城市学校，其他城市只在用户主动询问时才讨论\n\n"
-        + "## 候选学校摘要（每行含分数、招生、数据和保底边界）\n"
+        + "## 候选学校索引（仅 ID+名称+层次+城市，不含具体数据。讨论任何学校前必须用 getProgramDetail 获取真实数据）\n"
         + "%s\n\n"
         + "## 可用工具（必须使用）\n"
         + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
-        + "- searchPrograms(filters): 在候选池内按城市、学校层次、分数范围等条件筛选。filters 为 JSON，如 {\"tier\":\"211,985\",\"minScore\":290,\"maxScore\":310}。tier/city/province 均支持逗号分隔多个值\n"
+        + "- searchPrograms(filters): 在候选池内按关键词、城市、学校层次、分数范围筛选。filters 为 JSON。⚠ 这是获取学校详细数据的唯一入口，摘要索引里没有分数/招生等数据。查学校名用 {\"keyword\":\"学校名\"}，查层次用 {\"tier\":\"211\"}\n"
         + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n"
         + "- queryDatabase(filters): 直接查询数据库中所有院校数据，不受候选池限制。filters为JSON，支持keyword(学校/专业名称)、tier(985/211/DOUBLE_FIRST/PUBLIC_REGULAR)、province(省份)、minScore(最低均分)、maxScore(最高均分)、limit(最多返回条数)。例如查\"浙江所有211\"用{\"province\":\"浙江\",\"tier\":\"211\"}，查\"计算机相关专业\"用{\"keyword\":\"计算机\"}\n\n"
         + "## 展示规则\n"
         + "回复中绝对不要出现学校的 programId 或任何数字 ID，用户只需要看到学校名称。\n\n"
-        + "## 工具使用规则\n"
-        + "1. 讨论具体学校时，必须先调用 getProgramDetail 获取真实数据再回复\n"
-        + "2. 用户要求筛选/过滤/列清单时，必须调用 searchPrograms，不要凭摘要信息推测\n"
-        + "3. 对比学校时，必须调用 comparePrograms 获取详细对比数据\n"
-        + "4. 回复中引用数据时，确保数据来自工具返回结果，不要编造数字\n"
-        + "5. 每次推荐学校时，必须说明该校的录取均分、差距、招生名额和关键风险（数据来自工具返回字段）\n"
-        + "6. 工具返回 canBeSafe=false 时，不得把该校描述为保底或绝对稳妥，必须解释 safeBlockReason\n\n"
+        + "## 工具使用规则（最高优先级，违反即为严重错误）\n"
+        + "1. ⚠ 候选池摘要只有学校名称和 ID，没有任何分数/招生/风险数据！讨论任何学校前必须调用 getProgramDetail\n"
+        + "2. 用户问到具体学校名称 → 用 searchPrograms({\"keyword\":\"学校名\"}) 查找，再对找到的学校调用 getProgramDetail\n"
+        + "3. 绝对禁止仅凭摘要索引讨论学校的数据或做推荐判断\n"
+        + "4. queryDatabase 仅在用户要求\"看看全国范围\"或候选池没有目标学校时使用，且必须带 keyword 条件\n"
+        + "5. 回复中引用数据时，确保数据来自工具返回结果，不要编造数字\n"
+        + "6. 工具返回 canBeSafe=false 时，不得把该校描述为保底，必须解释 safeBlockReason\n"
+        + "7. 工具返回空结果 → 告诉用户\"候选池中未找到，是否扩展到全国查询？\"\n\n"
         + "## 对话节奏\n"
         + "第1轮: 不要重复询问画像里已经填写的偏好。先用一句话复述画像取舍，然后基于画像给出下一步分析方向；只有画像缺失或用户主动要调整时才追问偏好。\n"
         + "第2-3轮: 如果用户最看重上岸率，用 searchPrograms(maxScore=预估分-5，例如300分用295) 找分数有余量的候选；保底倾向可用 maxScore=预估分-15。之后还必须结合招生名额、数据完整度和 canBeSafe 判断。每次只分析1-2所\n"
@@ -673,7 +674,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     parsed = new LinkedHashMap<>();
                 }
                 parsed.put("reportId", reportId);
-                parsed.put("status", "COMPLETED");
+                // 保留 FAILED 状态，不要覆盖为 COMPLETED
+                if (!"FAILED".equals(parsed.get("status"))) {
+                    parsed.put("status", "COMPLETED");
+                }
                 return parsed;
             } catch (Exception e) {
                 Map<String, Object> result = new LinkedHashMap<>();
@@ -922,34 +926,25 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return summary;
     }
 
+    /**
+     * 聊天系统提示用的精简版候选池摘要。
+     * 刻意只保留索引信息（ID、学校、专业、层次、城市），不包含分数/招生/风险等具体数据。
+     * 这迫使 AI 在讨论任何学校时必须先调用 getProgramDetail/searchPrograms 获取真实数据，
+     * 而不是直接从系统提示中"偷看"数据后绕过工具调用。
+     */
     private String buildSummaryText(List<Map<String, Object>> summaryList) {
         if (summaryList == null || summaryList.isEmpty()) {
             return "（无候选学校）";
         }
         StringBuilder sb = new StringBuilder();
+        sb.append("共 ").append(summaryList.size()).append(" 所学校。获取详细数据请调用 getProgramDetail(programId)：\n");
         for (int i = 0; i < summaryList.size(); i++) {
             Map<String, Object> item = summaryList.get(i);
             sb.append(i + 1).append(". ID:").append(item.get("programId"));
             sb.append(" | ").append(item.get("schoolName"));
-            sb.append(" | ").append(item.get("programName"));
-            sb.append(" | ").append(item.get("schoolTier"));
-            sb.append(" | ").append(item.get("city"));
-            sb.append(" | 均分:").append(item.get("avgAdmittedScore"));
-            Object gap = item.get("gap");
-            if (gap instanceof Number num) {
-                int g = num.intValue();
-                sb.append(" | 差距:").append(g > 0 ? "+" : "").append(g);
-                sb.append("分（分数维度:").append(g >= 15 ? "偏安全" : g >= 5 ? "有余量" : g >= -10 ? "可冲刺" : "难度高").append("）");
-            }
-            sb.append(" | 招生:").append(displaySummaryValue(item.get("planCount")));
-            sb.append(" | 拟录取区间:").append(displaySummaryValue(item.get("admissionLow")))
-                .append("-").append(displaySummaryValue(item.get("admissionHigh")));
-            sb.append(" | 完整度:").append(displaySummaryValue(item.get("dataCompleteness")));
-            sb.append(" | quotaRisk:").append(displaySummaryValue(item.get("quotaRisk")));
-            sb.append(" | canBeSafe:").append(displaySummaryValue(item.get("canBeSafe")));
-            if (item.get("safeBlockReason") != null) {
-                sb.append(" | 不可保底原因:").append(item.get("safeBlockReason"));
-            }
+            sb.append(" | 专业:").append(item.get("programName"));
+            sb.append(" | 层次:").append(item.get("schoolTier"));
+            sb.append(" | 城市:").append(item.get("city"));
             sb.append("\n");
         }
         return sb.toString();
@@ -993,13 +988,17 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return sb.toString();
     }
 
+    /** 匹配 ---OPTIONS--- 分隔符，容忍空格偏差（如 --- OPTIONS ---） */
+    private static final java.util.regex.Pattern OPTIONS_DELIMITER =
+        java.util.regex.Pattern.compile("---\\s*OPTIONS\\s*---");
+
     private String parseMessageText(String content) {
         if (content == null) {
             return "";
         }
-        int idx = content.indexOf("---OPTIONS---");
-        if (idx >= 0) {
-            return content.substring(0, idx).trim();
+        java.util.regex.Matcher m = OPTIONS_DELIMITER.matcher(content);
+        if (m.find()) {
+            return content.substring(0, m.start()).trim();
         }
         return content.trim();
     }
@@ -1213,11 +1212,11 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         if (content == null) {
             return Collections.emptyList();
         }
-        int idx = content.indexOf("---OPTIONS---");
-        if (idx < 0) {
+        java.util.regex.Matcher m = OPTIONS_DELIMITER.matcher(content);
+        if (!m.find()) {
             return Collections.emptyList();
         }
-        String optionsSection = content.substring(idx + "---OPTIONS---".length());
+        String optionsSection = content.substring(m.end());
         List<String> options = new ArrayList<>();
         for (String line : optionsSection.split("\n")) {
             String trimmed = line.trim();
@@ -1347,6 +1346,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             .baseUrl("https://api.deepseek.com/v1")
             .apiKey(apiKey)
             .modelName("deepseek-v4-pro")
+            .maxTokens(4096)
             .build();
     }
 

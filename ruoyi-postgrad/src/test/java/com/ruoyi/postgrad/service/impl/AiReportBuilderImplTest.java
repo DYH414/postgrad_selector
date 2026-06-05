@@ -52,7 +52,7 @@ class AiReportBuilderImplTest {
         when(chatModel.chat(org.mockito.ArgumentMatchers.anyString())).thenReturn("""
             {"summary":"稳妥优先","tiers":[{"level":"steady","label":"稳妥档","schools":[{"programId":123,"judgement":"steady","risk":"medium","decision":"主力稳妥","reason":"分数和地区匹配","pros":["地区符合"],"cons":["需核验"],"tradeoffs":["稳妥优先"],"recommendedAction":"加入备选"}]}]}
             """);
-        when(recommendationMapper.selectProgramForRecommendation(123L)).thenReturn(detailRow(123L));
+        when(recommendationMapper.selectProgramsByIds(List.of(123L), 300)).thenReturn(List.of(detailRow(123L)));
 
         Map<String, Object> report = builder.buildConversationReport(chatModel, "[]", "[{\"programId\":123}]", 300,
             Map.of("riskPreference", "balanced"));
@@ -81,7 +81,7 @@ class AiReportBuilderImplTest {
         tinyQuota.put("planCount", 1);
         tinyQuota.put("admissionLow", null);
         tinyQuota.put("admissionHigh", null);
-        when(recommendationMapper.selectProgramForRecommendation(123L)).thenReturn(tinyQuota);
+        when(recommendationMapper.selectProgramsByIds(List.of(123L), 300)).thenReturn(List.of(tinyQuota));
 
         Map<String, Object> report = builder.buildAnalyzeReport(chatModel, "[{\"programId\":123,\"unifiedExamQuota\":1}]", 300,
             Map.of("riskPreference", "balanced"));

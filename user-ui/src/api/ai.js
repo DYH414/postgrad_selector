@@ -80,6 +80,10 @@ export function getAiReport(id) {
   return request({ url: '/app/ai-recommend/report/' + id, method: 'get' })
 }
 
+export function getAiReportProgress(id) {
+  return request({ url: '/app/ai-recommend/report/' + id + '/progress', method: 'get' })
+}
+
 export function getAiReports() {
   return request({ url: '/app/ai-recommend/reports', method: 'get' })
 }

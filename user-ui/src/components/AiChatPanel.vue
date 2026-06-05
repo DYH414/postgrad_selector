@@ -213,9 +213,11 @@ async function callChat(text) {
   }
 }
 
+const OPTIONS_RE = /---\s*OPTIONS\s*---/i
+
 function visibleStreamContent(content) {
-  const optionsMarker = content.indexOf('---OPTIONS---')
-  return (optionsMarker >= 0 ? content.slice(0, optionsMarker) : content).trimStart()
+  const m = content.match(OPTIONS_RE)
+  return (m ? content.slice(0, m.index) : content).trimStart()
 }
 
 // ---- text cleaning ----
@@ -260,7 +262,7 @@ function messageParagraphs(content) {
   const text = stripMarkdown(visibleStreamContent(content || ''))
   if (!text) return []
   const normalized = text
-    .replace(/\s*---OPTIONS---[\s\S]*$/g, '')
+    .replace(/\s*---\s*OPTIONS\s*---[\s\S]*$/g, '')
     .replace(/([。！？])\s*/g, '$1\n')
     .replace(/\n{2,}/g, '\n')
     .trim()
@@ -284,7 +286,7 @@ function messageSections(content, hydratedCards) {
   }
 
   const compact = text
-    .replace(/\s*---OPTIONS---[\s\S]*$/g, '')
+    .replace(/\s*---\s*OPTIONS\s*---[\s\S]*$/g, '')
     .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -328,7 +330,7 @@ function hydratedIntroSections(text, hydratedCards) {
   const cutoff = firstSchool ? text.indexOf(firstSchool) : -1
   const intro = cutoff > 0 ? text.slice(0, cutoff) : text
   return intro
-    .replace(/\s*---OPTIONS---[\s\S]*$/g, '')
+    .replace(/\s*---\s*OPTIONS\s*---[\s\S]*$/g, '')
     .replace(/[-—_=]{3,}/g, '')
     .replace(/[·、，,\s]+$/g, '')
     .split(/\n|(?<=[。！？])/)
