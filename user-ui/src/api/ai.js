@@ -95,3 +95,11 @@ export function postAiResume(data) {
 export function postAiAnalyze() {
   return request({ url: '/app/ai-recommend/analyze', method: 'post' })
 }
+
+export function getBookmarks(conversationId) {
+  return request({ url: '/app/ai-recommend/bookmarks/' + conversationId, method: 'get' })
+}
+
+export function deleteBookmark(conversationId, programId) {
+  return request({ url: '/app/ai-recommend/bookmarks/' + conversationId + '/' + programId, method: 'delete' })
+}

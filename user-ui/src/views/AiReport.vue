@@ -105,6 +105,13 @@
         </section>
       </div>
 
+      <div v-if="report.status === 'DONE' && isEmptyReport" class="empty-bookmark">
+        <i class="el-icon-edit-outline" />
+        <h3>还没有标记候选学校</h3>
+        <p>对话中还没有标记候选学校。继续和 AI 讨论学校，AI 会自动将讨论过的学校加入候选。</p>
+        <el-button type="primary" @click="$router.back()">返回对话</el-button>
+      </div>
+
       <!-- COMPLETED: Full report -->
       <template v-else>
         <div class="report-hero">
@@ -343,6 +350,13 @@ const overviewCards = computed(() => {
 const candidatePoolLabel = computed(() => {
   const count = result.value.metadata?.candidateCount || result.value.metadata?.poolSize
   return count ? `候选池 ${count}` : '本地候选池'
+})
+
+const isEmptyReport = computed(() => {
+  if (!report.value) return false
+  const tiers = report.value.tiers || []
+  if (!tiers.length) return true
+  return tiers.every(t => !t.schools || t.schools.length === 0)
 })
 
 const detailTitle = computed(() => {
@@ -1308,6 +1322,19 @@ onBeforeUnmount(() => {
 .trend-list small { color: #7b8798; }
 .detail-source { display: block; color: #409eff; text-decoration: none; font-weight: 600; }
 .detail-empty { padding: 32px 0; color: #7b8798; text-align: center; }
+
+.empty-bookmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  text-align: center;
+  padding: 60px 20px;
+}
+.empty-bookmark i { font-size: 48px; color: #b0c4de; margin-bottom: 16px; }
+.empty-bookmark h3 { color: #10213f; margin: 0 0 8px; }
+.empty-bookmark p { color: #66758a; max-width: 400px; margin: 0 0 20px; line-height: 1.6; }
 
 @media (max-width: 900px) {
   .loading-layout { grid-template-columns: 1fr; }

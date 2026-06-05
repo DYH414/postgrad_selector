@@ -67,6 +67,22 @@
       </div>
     </div>
 
+    <div v-if="bookmarks.length > 0" class="bookmarks-bar">
+      <div class="bookmarks-header" @click="bookmarksExpanded = !bookmarksExpanded">
+        <span>🔖 报告候选 ({{ bookmarks.length }})</span>
+        <i :class="bookmarksExpanded ? 'el-icon-arrow-up' : 'el-icon-arrow-down'" />
+      </div>
+      <div v-if="bookmarksExpanded" class="bookmarks-list">
+        <div v-for="bm in bookmarks" :key="bm.programId" class="bookmark-item">
+          <div class="bookmark-info">
+            <span class="bookmark-school">{{ bm.schoolName }}</span>
+            <span v-if="bm.programName" class="bookmark-program">{{ bm.programName }}</span>
+            <span :class="['bookmark-tier', bm.judgement]">{{ tierLabel(bm.judgement) }}</span>
+          </div>
+          <el-button type="text" size="mini" @click="removeBookmark(bm.programId)" icon="el-icon-close" />
+        </div>
+      </div>
+    </div>
     <div v-if="currentOptions.length > 0 && !loading" class="options-bar">
       <div class="options-title">下一步</div>
       <el-button v-for="(opt, i) in currentOptions" :key="i"
@@ -95,7 +111,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { postAiStart, postAiChat, postAiChatStream, postAiGenerateReport } from '@/api/ai'
+import { postAiStart, postAiChat, postAiChatStream, postAiGenerateReport, getBookmarks, deleteBookmark } from '@/api/ai'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -113,6 +129,8 @@ const currentOptions = ref([])
 const input = ref('')
 const loading = ref(false)
 const thinkingText = ref('')
+const bookmarks = ref([])
+const bookmarksExpanded = ref(false)
 
 // ---- decorated messages ----
 const decoratedMessages = computed(() => {
@@ -200,6 +218,7 @@ async function callChat(text) {
           messages.value[idx].cards = data.cards || []
           currentOptions.value = data.options || []
           saveToLocal()
+          fetchBookmarks()
         },
         onError(error) {
           throw error
@@ -548,6 +567,26 @@ function scrollToBottom() {
     if (el) el.scrollTop = el.scrollHeight
   })
 }
+
+async function fetchBookmarks() {
+  if (!conversationId.value) return
+  try {
+    const res = await getBookmarks(conversationId.value)
+    bookmarks.value = res.data.bookmarks || []
+  } catch (_) {}
+}
+
+async function removeBookmark(programId) {
+  try {
+    await deleteBookmark(conversationId.value, programId)
+    bookmarks.value = bookmarks.value.filter(b => b.programId !== programId)
+  } catch (_) {}
+}
+
+function tierLabel(j) {
+  const map = { reach: '冲刺', steady: '稳妥', safe: '保底' }
+  return map[j] || j
+}
 </script>
 
 <style scoped>
@@ -881,6 +920,44 @@ function scrollToBottom() {
   background: #0f9f6e;
   font-weight: 700;
 }
+.bookmarks-bar {
+  border-top: 1px solid #dce8f7;
+  background: #fafcff;
+}
+.bookmarks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 700;
+  color: #10213f;
+  font-size: 13px;
+}
+.bookmarks-list {
+  padding: 0 14px 8px;
+}
+.bookmark-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f4fa;
+  font-size: 12px;
+}
+.bookmark-school { font-weight: 600; color: #10213f; }
+.bookmark-program { margin-left: 4px; color: #6b7f99; }
+.bookmark-tier {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.bookmark-tier.reach { background: #fff4e5; color: #a85d00; }
+.bookmark-tier.steady { background: #e8f4fd; color: #1769aa; }
+.bookmark-tier.safe { background: #edfdf5; color: #087443; }
+
 @media (max-width: 520px) {
   .ai-chat-panel {
     width: 100vw;
