@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.ruoyi.postgrad.domain.AiBookmark;
 import com.ruoyi.postgrad.domain.RowMap;
 
 @Service
@@ -76,6 +77,100 @@ public class AiReportBuilderImpl implements AiReportBuilder {
             parsed = ruleBasedFallback(poolJson);
         }
         return hydrateReportPrograms(parsed, estimatedScore, poolJson);
+    }
+
+    @Override
+    public Map<String, Object> buildFromBookmarks(String bookmarkJson, String poolJson,
+            int estimatedScore) {
+        List<AiBookmark> bookmarks;
+        try {
+            bookmarks = com.alibaba.fastjson2.JSON.parseArray(bookmarkJson, AiBookmark.class);
+        } catch (Exception e) {
+            bookmarks = java.util.Collections.emptyList();
+        }
+        if (bookmarks == null || bookmarks.isEmpty()) {
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("tiers", List.of(
+                tier("reach", "冲刺档", java.util.Collections.emptyList()),
+                tier("steady", "稳妥档", java.util.Collections.emptyList()),
+                tier("safe", "保底档", java.util.Collections.emptyList())));
+            empty.put("summary", "");
+            return empty;
+        }
+
+        // 收集 programId，批量水合
+        List<Long> ids = bookmarks.stream().map(AiBookmark::getProgramId)
+            .distinct().collect(java.util.stream.Collectors.toList());
+        List<RowMap> rows = recommendationMapper.selectProgramsByIds(ids, estimatedScore);
+        Map<Long, RowMap> detailMap = new LinkedHashMap<>();
+        for (RowMap r : rows) {
+            Object pidObj = r.get("programId");
+            if (pidObj instanceof Number n) detailMap.put(n.longValue(), r);
+        }
+
+        // 构建水合学校列表
+        List<Map<String, Object>> reach = new ArrayList<>();
+        List<Map<String, Object>> steady = new ArrayList<>();
+        List<Map<String, Object>> safe = new ArrayList<>();
+
+        for (AiBookmark bm : bookmarks) {
+            Map<String, Object> detail = detailMap.get(bm.getProgramId());
+            if (detail == null) continue;
+            boolean fromSafeTier = "safe".equals(bm.getJudgement());
+            Map<String, Object> opinion = buildBookmarkOpinion(bm, detail, estimatedScore, fromSafeTier);
+            Map<String, Object> hydrated = hydratedReportSchool(opinion, detail, estimatedScore, fromSafeTier);
+            if (fromSafeTier && Boolean.FALSE.equals(hydrated.get("canBeSafe"))) {
+                steady.add(hydrated);
+            } else {
+                String tier = bm.getJudgement();
+                ("reach".equals(tier) ? reach : "steady".equals(tier) ? steady : safe).add(hydrated);
+            }
+        }
+
+        // 三档排序：每档按 avgScoreGap 降序
+        java.util.Comparator<Map<String, Object>> byGap = (a, b) -> {
+            Integer ga = a.get("avgScoreGap") instanceof Number na ? na.intValue() : 0;
+            Integer gb = b.get("avgScoreGap") instanceof Number nb ? nb.intValue() : 0;
+            return Integer.compare(gb, ga);
+        };
+        reach.sort(byGap); steady.sort(byGap); safe.sort(byGap);
+
+        // summary 模板
+        int total = reach.size() + steady.size() + safe.size();
+        String summary = String.format(
+            "基于对话中的讨论，为你整理 %d 所学校：冲刺 %d 所%s、稳妥 %d 所、保底 %d 所%s。",
+            total, reach.size(), reach.isEmpty() ? "（可继续挖掘）" : "",
+            steady.size(), safe.size(),
+            safe.isEmpty() ? "建议继续讨论保底候选。" : "");
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("summary", summary);
+        report.put("tiers", List.of(
+            tier("reach", "冲刺档", reach),
+            tier("steady", "稳妥档", steady),
+            tier("safe", "保底档", safe)));
+        return report;
+    }
+
+    private Map<String, Object> buildBookmarkOpinion(AiBookmark bm, Map<String, Object> detail,
+            int estimatedScore, boolean fromSafeTier) {
+        Map<String, Object> opinion = new LinkedHashMap<>();
+        opinion.put("judgement", bm.getJudgement());
+        opinion.put("reason", bm.getReason());
+        opinion.put("pros", bm.getPros() != null ? bm.getPros() : java.util.Collections.emptyList());
+        opinion.put("cons", bm.getCons() != null ? bm.getCons() : java.util.Collections.emptyList());
+        opinion.put("tradeoffs", bm.getTradeoffs() != null ? bm.getTradeoffs() : java.util.Collections.emptyList());
+        opinion.put("recommendedAction", bm.getRecommendedAction());
+        // risk/decision 由后端推断
+        Map<String, Object> guard = AiRecommendationSafety.safeEligibility(detail, estimatedScore);
+        boolean blocked = fromSafeTier && Boolean.FALSE.equals(guard.get("canBeSafe"));
+        opinion.put("risk", blocked ? "high" : "safe".equals(bm.getJudgement()) ? "low" :
+            "reach".equals(bm.getJudgement()) ? "high" : "medium");
+        opinion.put("decision", blocked ? "不宜作为保底，降级为稳妥待核验" :
+            "safe".equals(bm.getJudgement()) ? "适合作为保底候选" :
+            "steady".equals(bm.getJudgement()) ? "适合作为稳妥候选" :
+            "适合作为冲刺候选");
+        return opinion;
     }
 
     String buildConversationPrompt(String convJson, String poolJson, Map<String, Object> preferenceProfile) {

@@ -9,4 +9,7 @@ public interface AiReportBuilder {
 
     Map<String, Object> buildAnalyzeReport(ChatModel chatModel, String poolJson,
         int estimatedScore, Map<String, Object> preferenceProfile);
+
+    Map<String, Object> buildFromBookmarks(String bookmarkJson, String poolJson,
+        int estimatedScore);
 }
