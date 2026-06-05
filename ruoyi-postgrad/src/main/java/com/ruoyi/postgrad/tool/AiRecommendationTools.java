@@ -51,6 +51,12 @@ public class AiRecommendationTools {
         CURRENT_TRACE.set(new AiToolTrace());
     }
 
+    public static void startChatContext(String id) {
+        CURRENT_CONVERSATION.set(id);
+        CURRENT_BUDGET.set(AiToolBudget.chatTurnDefaults());
+        CURRENT_TRACE.set(new AiToolTrace());
+    }
+
     public static AiToolTrace currentTrace() {
         return CURRENT_TRACE.get();
     }
@@ -102,6 +108,7 @@ public class AiRecommendationTools {
                 CURRENT_TRACE.get().record("getProgramDetail", args, summary);
                 String result = JSON.toJSONString(p);
                 DETAIL_CACHE.put(cacheKey, result);
+                log.info("[AI-TRACE] TOOL getProgramDetail RESULT programId={} fields={}", programId, p.keySet());
                 return result;
             }
         }
@@ -158,13 +165,15 @@ public class AiRecommendationTools {
         response.put("hint", result.size() > items.size()
             ? "仅返回前" + items.size() + "条摘要。若要查看某所学校完整数据，请调用 getProgramDetail(programId)；若要继续缩小范围，请追加 province/tier/minScore/maxScore/limit。"
             : "已返回全部匹配摘要。需要完整数据请调用 getProgramDetail(programId)。");
-        return JSON.toJSONString(response);
+        String responseJson = JSON.toJSONString(response);
+        log.info("[AI-TRACE] TOOL searchPrograms RESULT total={} returned={} hasMore={}", result.size(), items.size(), result.size() > items.size());
+        return responseJson;
     }
 
     private boolean matchFilter(Map<String, Object> program, Map<String, Object> filter) {
-        if (filter.containsKey("city") && !filter.get("city").equals(program.get("city"))) return false;
-        if (filter.containsKey("province") && !filter.get("province").equals(program.get("province"))) return false;
-        if (filter.containsKey("tier") && !filter.get("tier").equals(program.get("schoolTier"))) return false;
+        if (filter.containsKey("city") && !csvContains(filter.get("city"), program.get("city"))) return false;
+        if (filter.containsKey("province") && !csvContains(filter.get("province"), program.get("province"))) return false;
+        if (filter.containsKey("tier") && !csvContains(filter.get("tier"), program.get("schoolTier"))) return false;
         if (filter.containsKey("minScore")) {
             Object avgObj = program.get("avgAdmittedScore");
             double avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : 0;
@@ -178,6 +187,22 @@ public class AiRecommendationTools {
             if (avg > max) return false;
         }
         return true;
+    }
+
+    /**
+     * Check whether {@code csvFilter} contains {@code actualValue}.
+     * Supports both single values ("211") and comma-separated lists ("211,985,DOUBLE_FIRST").
+     * The AI may send multiple tiers/provinces as a CSV string.
+     */
+    private static boolean csvContains(Object filterValue, Object actualValue) {
+        if (filterValue == null || actualValue == null) return false;
+        String filterStr = String.valueOf(filterValue);
+        String actualStr = String.valueOf(actualValue);
+        if (filterStr.isBlank()) return true;
+        for (String part : filterStr.split(",")) {
+            if (part.trim().equals(actualStr)) return true;
+        }
+        return false;
     }
 
     private Map<String, Object> searchSummaryItem(Map<String, Object> program) {

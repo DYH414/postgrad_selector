@@ -14,12 +14,15 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AiReportBuilderImpl implements AiReportBuilder {
     private static final int PROMPT_POOL_ROW_LIMIT = 120;
+    private static final Logger log = LoggerFactory.getLogger(AiReportBuilderImpl.class);
 
     @Autowired
     private RecommendationMapper recommendationMapper;
@@ -27,26 +30,45 @@ public class AiReportBuilderImpl implements AiReportBuilder {
     @Override
     public Map<String, Object> buildConversationReport(ChatModel chatModel, String conversationJson,
         String poolJson, int estimatedScore, Map<String, Object> preferenceProfile) {
-        String prompt = basePrompt(poolJson, preferenceProfile, estimatedScore) + "\n## 对话历史\n" + conversationJson;
-        return hydrateReportPrograms(parseReportJson(chatModel.chat(prompt), poolJson), estimatedScore, poolJson);
+        // 从对话历史中提取讨论过的学校ID，确保它们在候选池摘要中优先出现
+        Set<Long> discussedIds = extractDiscussedProgramIds(conversationJson);
+        String poolSummary = buildPoolSummary(poolJson, estimatedScore, discussedIds);
+        String prompt = basePrompt(poolSummary, preferenceProfile, estimatedScore) + "\n## 对话历史\n" + conversationJson;
+        log.info("[AI-TRACE] ======== REPORT-CONVERSATION ========");
+        log.info("[AI-TRACE] discussedProgramIds={}", discussedIds);
+        log.info("[AI-TRACE] REPORT PROMPT (first 800 chars):\n{}...",
+            prompt.length() > 800 ? prompt.substring(0, 800) : prompt);
+        log.debug("[AI-TRACE] REPORT PROMPT (full):\n{}", prompt);
+        String aiRaw = chatModel.chat(prompt);
+        log.info("[AI-TRACE] REPORT AI RAW OUTPUT:\n{}", aiRaw);
+        return hydrateReportPrograms(parseReportJson(aiRaw, poolJson), estimatedScore, poolJson);
     }
 
     @Override
     public Map<String, Object> buildAnalyzeReport(ChatModel chatModel, String poolJson,
         int estimatedScore, Map<String, Object> preferenceProfile) {
         String prompt = buildAnalyzePrompt(poolJson, estimatedScore, preferenceProfile);
-        return hydrateReportPrograms(parseReportJson(chatModel.chat(prompt), poolJson), estimatedScore, poolJson);
+        log.info("[AI-TRACE] ======== REPORT-ANALYZE ========");
+        log.info("[AI-TRACE] REPORT PROMPT (first 800 chars):\n{}...",
+            prompt.length() > 800 ? prompt.substring(0, 800) : prompt);
+        log.debug("[AI-TRACE] REPORT PROMPT (full):\n{}", prompt);
+        String aiRaw = chatModel.chat(prompt);
+        log.info("[AI-TRACE] REPORT AI RAW OUTPUT:\n{}", aiRaw);
+        return hydrateReportPrograms(parseReportJson(aiRaw, poolJson), estimatedScore, poolJson);
     }
 
     String buildConversationPrompt(String convJson, String poolJson, Map<String, Object> preferenceProfile) {
-        return basePrompt(poolJson, preferenceProfile, 0) + "\n## 对话历史\n" + convJson;
+        Set<Long> discussedIds = extractDiscussedProgramIds(convJson);
+        String poolSummary = buildPoolSummary(poolJson, 0, discussedIds);
+        return basePrompt(poolSummary, preferenceProfile, 0) + "\n## 对话历史\n" + convJson;
     }
 
     String buildAnalyzePrompt(String poolJson, int estimatedScore, Map<String, Object> preferenceProfile) {
-        return basePrompt(poolJson, preferenceProfile, estimatedScore) + "\n## 用户预估分\n" + estimatedScore;
+        String poolSummary = buildPoolSummary(poolJson, estimatedScore, Set.of());
+        return basePrompt(poolSummary, preferenceProfile, estimatedScore) + "\n## 用户预估分\n" + estimatedScore;
     }
 
-    private String basePrompt(String poolJson, Map<String, Object> preferenceProfile, int estimatedScore) {
+    private String basePrompt(String poolSummary, Map<String, Object> preferenceProfile, int estimatedScore) {
         return """
             这不是对话。请直接输出推荐报告 JSON，不要回复确认语。
 
@@ -57,16 +79,17 @@ public class AiReportBuilderImpl implements AiReportBuilder {
             %s
 
             ## 要求
-            1. 只能从候选列表中选学校，programId 必须与候选列表一致
-            2. 按冲刺/稳妥/保底三档推荐，每档 1-3 所
-            3. AI 只输出观点字段，事实字段由后端数据库补全
-            4. 不要输出 schoolName、collegeName、programName、分数、招生人数等事实字段
-            5. 推荐理由必须基于候选事实摘要和 preferenceProfile 的取舍
-            6. canBeSafe=false 是事实硬约束，禁止放入保底档；这类项目即使分数差较大，也只能作为稳妥/待核验/线索
+            1. 优先使用对话历史中你已明确推荐/认可过的学校。对话中讨论过的学校是用户和你共同筛选的结果，不要重新选一批不同的学校。如果对话历史的推荐学校与候选摘要矛盾（如被canBeSafe=false封锁），请在 reason/cons 中说明并替换
+            2. 只能从候选列表中选学校，programId 必须与候选列表一致
+            3. 按冲刺/稳妥/保底三档推荐，每档 1-3 所
+            4. AI 只输出观点字段，事实字段由后端数据库补全
+            5. 不要输出 schoolName、collegeName、programName、分数、招生人数等事实字段
+            6. 推荐理由必须基于候选事实摘要和 preferenceProfile 的取舍
+            7. canBeSafe=false 是事实硬约束，禁止放入保底档；这类项目即使分数差较大，也只能作为稳妥/待核验/线索
 
             ## 输出格式（严格 JSON）
             {"summary":"一句话总结","tiers":[{"level":"reach","label":"冲刺档","schools":[{"programId":1,"judgement":"small_reach","risk":"high","decision":"适合作为冲刺候选","reason":"推荐理由","pros":["优势"],"cons":["风险"],"tradeoffs":["取舍"],"recommendedAction":"行动建议"}]},{"level":"steady","label":"稳妥档","schools":[]},{"level":"safe","label":"保底档","schools":[]}]}
-            """.formatted(JSON.toJSONString(defaultedPreferenceProfile(preferenceProfile)), buildPoolSummary(poolJson, estimatedScore));
+            """.formatted(JSON.toJSONString(defaultedPreferenceProfile(preferenceProfile)), poolSummary);
     }
 
     private Map<String, Object> defaultedPreferenceProfile(Map<String, Object> preferenceProfile) {
@@ -79,21 +102,63 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         return profile;
     }
 
+    /**
+     * 从对话 JSON 中提取所有出现过的 programId（来自工具调用和 AI 回复）。
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private String buildPoolSummary(String poolJson, int estimatedScore) {
+    private Set<Long> extractDiscussedProgramIds(String conversationJson) {
+        Set<Long> ids = new LinkedHashSet<>();
+        if (conversationJson == null || conversationJson.isBlank()) return ids;
+        try {
+            List<Map<String, Object>> messages = (List) JSON.parseArray(conversationJson, Map.class);
+            for (Map<String, Object> msg : messages) {
+                String content = (String) msg.get("content");
+                if (content == null) continue;
+                // 匹配 "programId":123 或 ID:123 或 getProgramDetail(123)
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b(?:programId[\"']?\\s*[:=]\\s*|ID[:]?\\s*|getProgramDetail\\()\\s*(\\d{1,10})\\b").matcher(content);
+                while (m.find()) {
+                    try { ids.add(Long.parseLong(m.group(1))); } catch (NumberFormatException ignored) {}
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[AI-TRACE] Failed to extract discussed programIds: {}", e.getMessage());
+        }
+        return ids;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private String buildPoolSummary(String poolJson, int estimatedScore, Set<Long> priorityIds) {
         if (poolJson == null || poolJson.isBlank() || "[]".equals(poolJson.trim())) {
             return "（无候选学校数据）";
         }
         try {
             List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+            // 把对话中讨论过的学校排到最前面，确保报告 AI 一定能看到它们
+            if (!priorityIds.isEmpty()) {
+                pool.sort((a, b) -> {
+                    long idA = longValue(a.get("programId"));
+                    long idB = longValue(b.get("programId"));
+                    boolean aPrio = priorityIds.contains(idA);
+                    boolean bPrio = priorityIds.contains(idB);
+                    if (aPrio && !bPrio) return -1;
+                    if (!aPrio && bPrio) return 1;
+                    return 0;
+                });
+            }
             StringBuilder sb = new StringBuilder();
+            if (!priorityIds.isEmpty()) {
+                sb.append("⚠ 以下「对话已讨论」的学校已排在候选列表最前面，报告应优先从中选择：\n");
+            }
             int index = 1;
             for (Map<String, Object> row : pool) {
                 if (index > PROMPT_POOL_ROW_LIMIT) {
                     sb.append("... 已截断，仅发送前 ").append(PROMPT_POOL_ROW_LIMIT).append(" 条代表行给模型\n");
                     break;
                 }
+                long pid = longValue(row.get("programId"));
+                boolean isDiscussed = priorityIds.contains(pid);
                 sb.append(index).append(". ID:").append(row.get("programId"));
+                if (isDiscussed) sb.append(" [对话已讨论]");
                 sb.append(" | ").append(row.getOrDefault("schoolName", "?"));
                 sb.append(" | 专业:").append(row.getOrDefault("programName", ""));
                 sb.append(" | 学院:").append(row.getOrDefault("collegeName", ""));

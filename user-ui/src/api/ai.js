@@ -11,7 +11,7 @@ export function postAiChat(data) {
 export async function postAiChatStream(data, handlers = {}) {
   const token = getToken()
   const controller = new AbortController()
-  const timeoutMs = handlers.timeoutMs || 120000
+  const timeoutMs = handlers.timeoutMs || 300000
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch('/dev-api/app/ai-recommend/chat/stream', {

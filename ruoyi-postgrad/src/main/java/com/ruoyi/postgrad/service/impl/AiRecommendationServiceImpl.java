@@ -51,14 +51,17 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "- 预估总分: %d\n"
         + "- 本科层次: %s\n"
         + "- 跨考: %s\n"
-        + "- 目标地区: %s\n\n"
+        + "- 目标地区: %s\n"
+        + "- 整体策略: %s\n"
+        + "- 院校层次取舍: %s\n"
+        + "- 地区取舍: %s\n\n"
         + "## 多维择校规则（重要）\n"
         + "候选学校中的「差距」= 用户预估分 - 学校录取均分。差距只是分数安全维度，不能单独决定冲刺/稳妥/保底。\n"
         + "必须综合判断：分数差距、统考/计划招生名额、拟录取区间、数据完整度、学校层次、地区偏好、专业方向匹配。\n"
         + "如果 canBeSafe=false，禁止称为保底；即使差距很大，也只能说“分数有余量但存在明显风险/只能作稳妥或线索”。\n"
         + "招生名额极少是强风险信号：≤3 人不能作为保底；4-9 人若数据不完整、没有拟录取区间或分数优势不足，也不能作为保底。\n"
-        + "当用户说「看重上岸率」时，优先找分差为正且招生规模、数据完整度也支撑的学校，而不是只按差距排序。\n"
-        + "当用户说「学校层次优先」「城市/地区优先」「专业实力最重要」时，可以接受更高风险，但必须把取舍说清楚。\n"
+        + "当画像显示整体策略偏稳时，优先找分差为正且招生规模、数据完整度也支撑的学校，而不是只按差距排序。\n"
+        + "当画像显示院校层次或地区优先时，可以接受更高风险，但必须把取舍说清楚。\n"
         + "讨论学校时必须明确说出录取均分、差距、招生名额和主要风险，不要只说学校名字。\n\n"
         + "## 地区规则\n"
         + "- 目标地区为\"不限\"时：只在候选池内推荐，不主动提及候选池外的城市，快捷选项不要主动引导用户去看某个具体城市\n"
@@ -67,7 +70,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "%s\n\n"
         + "## 可用工具（必须使用）\n"
         + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
-        + "- searchPrograms(filters): 在候选池内按城市、学校层次、分数范围等条件筛选。filters 为 JSON，如 {\"city\":\"上海\",\"tier\":\"211\",\"minScore\":290,\"maxScore\":310}\n"
+        + "- searchPrograms(filters): 在候选池内按城市、学校层次、分数范围等条件筛选。filters 为 JSON，如 {\"tier\":\"211,985\",\"minScore\":290,\"maxScore\":310}。tier/city/province 均支持逗号分隔多个值\n"
         + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n"
         + "- queryDatabase(filters): 直接查询数据库中所有院校数据，不受候选池限制。filters为JSON，支持keyword(学校/专业名称)、tier(985/211/DOUBLE_FIRST/PUBLIC_REGULAR)、province(省份)、minScore(最低均分)、maxScore(最高均分)、limit(最多返回条数)。例如查\"浙江所有211\"用{\"province\":\"浙江\",\"tier\":\"211\"}，查\"计算机相关专业\"用{\"keyword\":\"计算机\"}\n\n"
         + "## 展示规则\n"
@@ -80,14 +83,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "5. 每次推荐学校时，必须说明该校的录取均分、差距、招生名额和关键风险（数据来自工具返回字段）\n"
         + "6. 工具返回 canBeSafe=false 时，不得把该校描述为保底或绝对稳妥，必须解释 safeBlockReason\n\n"
         + "## 对话节奏\n"
-        + "第1轮: 了解最看重的维度（学校层次/专业排名/城市/上岸率）\n"
+        + "第1轮: 不要重复询问画像里已经填写的偏好。先用一句话复述画像取舍，然后基于画像给出下一步分析方向；只有画像缺失或用户主动要调整时才追问偏好。\n"
         + "第2-3轮: 如果用户最看重上岸率，用 searchPrograms(maxScore=预估分-5，例如300分用295) 找分数有余量的候选；保底倾向可用 maxScore=预估分-15。之后还必须结合招生名额、数据完整度和 canBeSafe 判断。每次只分析1-2所\n"
         + "第4-5轮: 确认冲刺/稳妥/保底意向\n\n"
         + "## 输出格式\n"
         + "每轮回复含简短文字(2-4句)。\n"
         + "回复末尾附 2-3 个快捷选项，用 \"---OPTIONS---\" 分隔，每行一个选项。\n"
         + "## 快捷选项规则（重要）\n"
-        + "快捷选项必须是用户偏好/决策类，如\"看重上岸率\"\"愿意冲刺\"\"稳妥为主\"\"优先211\"\"城市/地区优先\"。\n"
+        + "快捷选项必须顺着当前画像推进，如\"按画像开始筛选\"\"提高学校层次\"\"调整地区范围\"\"先看稳妥候选\"。\n"
         + "不要在用户明确选择城市维度前，生成\"限定某城市\"这类具体城市选项。\n"
         + "选项应顺着你的分析结论往前推进，不要重复已讨论过的内容或给出与分析矛盾的选择。\n"
         + "好的选项示例: \"确认XX为稳妥目标\" \"再看看保底选择\" \"换一个城市看看\"\n"
@@ -136,6 +139,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             formatProfileField(profile, "undergradTier", "双非"),
             formatProfileField(profile, "isCrossMajor", "否"),
             formatProfileField(profile, "targetRegions", "不限"),
+            preferenceLabel("riskPreference", profile.get("riskPreference")),
+            preferenceLabel("schoolTierPreference", profile.get("schoolTierPreference")),
+            preferenceLabel("regionStrategy", profile.get("regionStrategy")),
             summaryText);
 
         String conversationId = UUID.randomUUID().toString();
@@ -156,13 +162,23 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             .systemMessageProvider(ignored -> systemPrompt)
             .build();
 
+        String firstUserMessage = "开始择校对话。不要自我介绍，不要重复询问画像里已有的偏好。请先用一句话说明已读取用户画像，并按画像给出第一步择校分析方向；结尾给出可继续推进或调整画像取舍的快捷选项。";
+
+        log.info("[AI-TRACE] ======== START conversationId={} userId={} ========", conversationId, userId);
+        log.info("[AI-TRACE] SYSTEM PROMPT (first 500 chars):\n{}...",
+            systemPrompt.length() > 500 ? systemPrompt.substring(0, 500) : systemPrompt);
+        log.debug("[AI-TRACE] SYSTEM PROMPT (full):\n{}", systemPrompt);
+        log.info("[AI-TRACE] USER INPUT (round 0): {}", firstUserMessage);
+
         String aiResponse;
         try {
             AiRecommendationTools.setConversationId(conversationId);
-            aiResponse = assistant.chat("开始择校对话。不要自我介绍，直接询问用户最看重哪个维度（学校层次/专业实力/城市/上岸率）。");
+            aiResponse = assistant.chat(firstUserMessage);
         } finally {
             AiRecommendationTools.clear();
         }
+
+        log.info("[AI-TRACE] AI RAW OUTPUT (round 0):\n{}", aiResponse);
 
         Map<String, Object> assistantMsg = new LinkedHashMap<>();
         assistantMsg.put("role", "assistant");
@@ -177,12 +193,13 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         redisTemplate.opsForValue().set("ai:owner:" + conversationId, userId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
 
         String messageText = parseMessageText(aiResponse);
-        List<String> options = initialPreferenceOptions();
+        List<String> options = initialPreferenceOptions(profile);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conversationId", conversationId);
         result.put("message", messageText);
         result.put("options", options);
+        result.put("cards", hydrateChatCards(messageText, JSON.toJSONString(summaryList)));
         result.put("profileBasis", buildProfileBasis(profile, estimatedScore));
         result.put("candidateCount", summaryList.size());
         return result;
@@ -229,6 +246,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         for (Map<String, Object> m : messages) {
             String role = (String) m.get("role");
             String content = (String) m.get("content");
+            // Skip messages with empty/null content — these are tool-call artifacts
+            if (content == null || content.isBlank()) continue;
             if ("assistant".equals(role)) {
                 chatMemory.add(AiMessage.from(content));
             } else if ("user".equals(role)) {
@@ -244,15 +263,19 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             .systemMessageProvider(ignored -> finalSystemPrompt)
             .build();
 
+        int roundNum = (int) chatMemory.messages().stream().filter(m -> m instanceof UserMessage).count();
+        log.info("[AI-TRACE] ======== CHAT conversationId={} userId={} round={} ========", conversationId, userId, roundNum);
+        log.info("[AI-TRACE] USER INPUT (round {}): {}", roundNum, message, conversationId);
+
         String aiResponse;
         try {
-            AiRecommendationTools.setConversationId(conversationId);
+            AiRecommendationTools.startChatContext(conversationId);
             aiResponse = assistant.chat("<user_input>" + message + "</user_input>");
         } catch (Exception e) {
             log.warn("[AI-Chat] Primary chat failed, retrying. userId={}, conversationId={}, message={}",
                 userId, conversationId, e.getMessage(), e);
             try {
-                AiRecommendationTools.setConversationId(conversationId);
+                AiRecommendationTools.startChatContext(conversationId);
                 aiResponse = assistant.chat("<user_input>" + message + "</user_input>");
             } catch (Exception e2) {
                 log.error("[AI-Chat] Chat fallback failed. userId={}, conversationId={}, message={}",
@@ -268,6 +291,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             AiRecommendationTools.clear();
         }
 
+        log.info("[AI-TRACE] AI RAW OUTPUT (round {}):\n{}", roundNum, aiResponse);
+
         // Rebuild messages from memory + system prompt for Redis persistence
         messages = new ArrayList<>();
         Map<String, Object> sysMsg = new LinkedHashMap<>();
@@ -277,13 +302,19 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         for (ChatMessage cm : chatMemory.messages()) {
             Map<String, Object> m = new LinkedHashMap<>();
             if (cm instanceof AiMessage) {
+                String text = ((AiMessage) cm).text();
+                if (text == null || text.isBlank()) continue;
                 m.put("role", "assistant");
-                m.put("content", ((AiMessage) cm).text());
+                m.put("content", text);
             } else if (cm instanceof UserMessage) {
+                String text = ((UserMessage) cm).singleText();
+                if (text == null || text.isBlank()) continue;
                 m.put("role", "user");
-                m.put("content", ((UserMessage) cm).singleText());
+                m.put("content", text);
+            } else {
+                continue;
             }
-            if (!m.isEmpty()) messages.add(m);
+            messages.add(m);
         }
 
         convJson = JSON.toJSONString(messages);
@@ -297,10 +328,12 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
         String messageText = parseMessageText(aiResponse);
         List<String> options = parseOptionsList(aiResponse);
+        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", messageText);
         result.put("options", options);
+        result.put("cards", hydrateChatCards(messageText, poolJson));
         return result;
     }
 
@@ -337,6 +370,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         for (Map<String, Object> m : messages) {
             String role = (String) m.get("role");
             String content = (String) m.get("content");
+            // Skip messages with empty/null content — these are tool-call artifacts
+            if (content == null || content.isBlank()) continue;
             if ("assistant".equals(role)) {
                 chatMemory.add(AiMessage.from(content));
             } else if ("user".equals(role)) {
@@ -351,9 +386,13 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             .systemMessageProvider(ignored -> finalSystemPrompt)
             .build();
 
+        int streamRoundNum = (int) chatMemory.messages().stream().filter(m -> m instanceof UserMessage).count();
+        log.info("[AI-TRACE] ======== CHAT-STREAM conversationId={} userId={} round={} ========", conversationId, userId, streamRoundNum);
+        log.info("[AI-TRACE] USER INPUT (round {}): {}", streamRoundNum, message);
+
         StringBuilder fullResponse = new StringBuilder();
         try {
-            AiRecommendationTools.setConversationId(conversationId);
+            AiRecommendationTools.startChatContext(conversationId);
             TokenStream stream = assistant.chat("<user_input>" + message + "</user_input>");
             stream.beforeToolExecution(toolRequest -> {
                     AiRecommendationTools.setConversationId(conversationId);
@@ -380,9 +419,12 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     String rawText = response != null && response.aiMessage() != null && response.aiMessage().text() != null
                         ? response.aiMessage().text()
                         : fullResponse.toString();
+                    log.info("[AI-TRACE] AI RAW OUTPUT (round {}):\n{}", streamRoundNum, rawText);
                     Map<String, Object> result = new LinkedHashMap<>();
-                    result.put("message", parseMessageText(rawText));
+                    String messageText = parseMessageText(rawText);
+                    result.put("message", messageText);
                     result.put("options", parseOptionsList(rawText));
+                    result.put("cards", hydrateChatCards(messageText, redisTemplate.opsForValue().get("ai:pool:" + conversationId)));
                     callback.onComplete(result);
                 })
                 .onError(error -> {
@@ -925,6 +967,118 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return content.trim();
     }
 
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> hydrateChatCards(String messageText, String poolJson) {
+        if (messageText == null || messageText.isBlank() || poolJson == null || poolJson.isBlank()) {
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> pool;
+        try {
+            pool = JSON.parseObject(poolJson, List.class);
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+        if (pool == null || pool.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Map<String, Object>> cards = new ArrayList<>();
+        for (Map<String, Object> row : pool) {
+            String school = String.valueOf(row.getOrDefault("schoolName", ""));
+            String program = String.valueOf(row.getOrDefault("programName", ""));
+            if (school.isBlank() || !messageText.contains(school)) {
+                continue;
+            }
+            if (!program.isBlank() && messageText.contains(program)) {
+                cards.add(toChatCard(row, messageText));
+            } else if (program.isBlank() || mentionedNearSchool(messageText, school, program)) {
+                cards.add(toChatCard(row, messageText));
+            }
+            if (cards.size() >= 8) {
+                break;
+            }
+        }
+        return cards;
+    }
+
+    private boolean mentionedNearSchool(String text, String school, String program) {
+        if (program == null || program.isBlank()) {
+            return true;
+        }
+        int schoolIndex = text.indexOf(school);
+        int programIndex = text.indexOf(program);
+        return schoolIndex >= 0 && programIndex >= 0 && Math.abs(programIndex - schoolIndex) <= 80;
+    }
+
+    private Map<String, Object> toChatCard(Map<String, Object> row, String messageText) {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("programId", row.get("programId"));
+        card.put("school", row.get("schoolName"));
+        card.put("program", row.get("programName"));
+        card.put("college", row.get("collegeName"));
+        card.put("tier", row.get("schoolTier"));
+        card.put("city", row.get("city"));
+        card.put("province", row.get("province"));
+        card.put("avg", row.get("avgAdmittedScore"));
+        card.put("gap", row.get("gap"));
+        card.put("quota", row.getOrDefault("unifiedExamQuota", row.get("planCount")));
+        card.put("admissionLow", row.get("admissionLow"));
+        card.put("admissionHigh", row.get("admissionHigh"));
+        card.put("dataCompleteness", row.get("dataCompleteness"));
+        card.put("canBeSafe", row.get("canBeSafe"));
+        card.put("quotaRisk", row.get("quotaRisk"));
+        card.put("safeBlockReason", row.get("safeBlockReason"));
+        card.put("level", inferChatCardLevel(row, messageText));
+        card.put("reason", inferChatCardReason(row));
+        return card;
+    }
+
+    private String inferChatCardLevel(Map<String, Object> row, String messageText) {
+        String school = String.valueOf(row.getOrDefault("schoolName", ""));
+        String window = localMentionWindow(messageText, school);
+        if (window.contains("冲刺") || window.contains("高风险")) {
+            return "冲刺";
+        }
+        if (window.contains("保底") && !Boolean.FALSE.equals(row.get("canBeSafe"))) {
+            return "保底";
+        }
+        if (window.contains("稳妥")) {
+            return "稳妥";
+        }
+        Object gapObj = row.get("gap");
+        int gap = gapObj instanceof Number n ? n.intValue() : 0;
+        if (Boolean.FALSE.equals(row.get("canBeSafe"))) {
+            return gap >= 5 ? "稳妥" : "冲刺";
+        }
+        if (gap >= 15) return "保底";
+        if (gap >= 5) return "稳妥";
+        return "冲刺";
+    }
+
+    private String localMentionWindow(String text, String school) {
+        int idx = school == null ? -1 : text.indexOf(school);
+        if (idx < 0) return "";
+        int start = Math.max(0, idx - 40);
+        int end = Math.min(text.length(), idx + 120);
+        return text.substring(start, end);
+    }
+
+    private String inferChatCardReason(Map<String, Object> row) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("均分").append(displaySummaryValue(row.get("avgAdmittedScore")));
+        Object gap = row.get("gap");
+        if (gap instanceof Number n) {
+            int g = n.intValue();
+            sb.append("，差距").append(g > 0 ? "+" : "").append(g);
+        }
+        sb.append("，招生").append(displaySummaryValue(row.getOrDefault("unifiedExamQuota", row.get("planCount"))));
+        Object reason = row.get("safeBlockReason");
+        if (reason != null && !String.valueOf(reason).isBlank()) {
+            sb.append("；").append(reason);
+        }
+        return sb.toString();
+    }
+
     private List<String> parseOptionsList(String content) {
         if (content == null) {
             return Collections.emptyList();
@@ -944,8 +1098,51 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return options;
     }
 
-    private static List<String> initialPreferenceOptions() {
-        return List.of("看重上岸率", "学校层次优先", "专业实力最重要", "城市/地区优先");
+    private static List<String> initialPreferenceOptions(Map<String, Object> profile) {
+        List<String> options = new ArrayList<>();
+        options.add("按我的画像开始筛选");
+        options.add(adjustSchoolTierOption(profile.get("schoolTierPreference")));
+        options.add(adjustRegionOption(profile.get("regionStrategy")));
+        return options;
+    }
+
+    private static String adjustSchoolTierOption(Object value) {
+        String v = value == null ? "" : String.valueOf(value);
+        if ("must_211_or_better".equals(v) || "prefer_211_or_better".equals(v)) {
+            return "降低层次要求，看看更稳的学校";
+        }
+        return "提高学校层次，看看211以上";
+    }
+
+    private static String adjustRegionOption(Object value) {
+        String v = value == null ? "" : String.valueOf(value);
+        if ("developed_priority".equals(v) || "developed_balanced".equals(v)) {
+            return "放宽地区，优先提高上岸率";
+        }
+        return "优先发达地区，看看可选学校";
+    }
+
+    private static String preferenceLabel(String key, Object value) {
+        String v = value == null ? "" : String.valueOf(value);
+        return switch (key) {
+            case "riskPreference" -> switch (v) {
+                case "safe_first" -> "稳妥优先，尽量提高上岸概率";
+                case "reach_first" -> "愿意冲刺，接受更高风险";
+                default -> "稳中求进，冲稳保均衡";
+            };
+            case "schoolTierPreference" -> switch (v) {
+                case "must_211_or_better" -> "强烈希望 211/双一流及以上";
+                case "prefer_211_or_better" -> "优先 211/双一流及以上";
+                default -> "不强求层次，有学上更重要";
+            };
+            case "regionStrategy" -> switch (v) {
+                case "developed_priority" -> "强意愿发达地区，愿意承受风险";
+                case "developed_balanced" -> "发达地区优先，但要兼顾稳妥";
+                case "target_regions_only" -> "只看目标地区";
+                default -> "地区不强求，有学上更重要";
+            };
+            default -> v;
+        };
     }
 
     private Map<String, Object> normalizeReportItem(Map<String, Object> item) {
@@ -1041,13 +1238,19 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         for (ChatMessage cm : chatMemory.messages()) {
             Map<String, Object> m = new LinkedHashMap<>();
             if (cm instanceof AiMessage) {
+                String text = ((AiMessage) cm).text();
+                if (text == null || text.isBlank()) continue;
                 m.put("role", "assistant");
-                m.put("content", ((AiMessage) cm).text());
+                m.put("content", text);
             } else if (cm instanceof UserMessage) {
+                String text = ((UserMessage) cm).singleText();
+                if (text == null || text.isBlank()) continue;
                 m.put("role", "user");
-                m.put("content", ((UserMessage) cm).singleText());
+                m.put("content", text);
+            } else {
+                continue;
             }
-            if (!m.isEmpty()) messages.add(m);
+            messages.add(m);
         }
 
         redisTemplate.opsForValue().set("ai:conv:" + conversationId, JSON.toJSONString(messages), TTL_SECONDS, TimeUnit.SECONDS);

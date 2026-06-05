@@ -519,13 +519,13 @@ const keywordFilter = computed(() => (filterForm.value.keyword || '').trim().toL
 const filteredItems = computed(() => {
   const kw = keywordFilter.value
   const items = result.value.items || []
-  if (!kw) return items
-  return items.filter(school =>
+  const filtered = !kw ? items : items.filter(school =>
     (school.schoolName || '').toLowerCase().includes(kw) ||
     (school.collegeName || '').toLowerCase().includes(kw) ||
     (school.programName || '').toLowerCase().includes(kw) ||
     (school.programCode || '').toLowerCase().includes(kw)
   )
+  return groupSchools(filtered)
 })
 
 const backupTotal = computed(() => {

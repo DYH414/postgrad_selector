@@ -15,6 +15,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.postgrad.domain.AiChatErrorPayload;
 import com.ruoyi.postgrad.service.IAiRecommendationService;
 
 @RestController
@@ -56,7 +57,7 @@ public class AppAiRecommendationController {
 
     @PostMapping(value = "/chat/stream", produces = "text/event-stream")
     public SseEmitter chatStream(@RequestBody Map<String, Object> body) {
-        SseEmitter emitter = new SseEmitter(120_000L);
+        SseEmitter emitter = new SseEmitter(300_000L);
         AppLoginUser user = getCurrentAppUser();
         if (user == null) {
             sendEvent(emitter, "error", Map.of("message", "未登录"));
@@ -85,8 +86,7 @@ public class AppAiRecommendationController {
 
                 @Override
                 public void onError(Throwable error) {
-                    String message = error.getMessage() != null ? error.getMessage() : "AI 对话暂不可用，请稍后重试";
-                    if (sendEvent(emitter, "error", Map.of("message", message))) {
+                    if (sendEvent(emitter, "error", AiChatErrorPayload.from(error))) {
                         emitter.complete();
                     }
                 }
@@ -96,7 +96,7 @@ public class AppAiRecommendationController {
                 emitter.complete();
             }
         } catch (Exception e) {
-            if (sendEvent(emitter, "error", Map.of("message", e.getMessage() != null ? e.getMessage() : "对话请求失败"))) {
+            if (sendEvent(emitter, "error", AiChatErrorPayload.from(e))) {
                 emitter.complete();
             }
         }
