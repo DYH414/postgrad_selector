@@ -81,6 +81,9 @@ public interface IAiRecommendationService
      */
     Map<String, Object> analyze(Long userId);
 
+    /** 获取当前对话的书签列表（供前端展示） */
+    Map<String, Object> getBookmarks(Long userId, String conversationId);
+
     interface StreamCallback {
         /** Progress event sent before a tool is about to be executed. */
         default void onThinking(String message) {}

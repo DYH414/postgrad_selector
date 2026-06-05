@@ -7,8 +7,10 @@ import java.util.Collections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -19,6 +21,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.AiBookmark;
 import com.ruoyi.postgrad.domain.AiRecommendationSafety;
 import com.ruoyi.postgrad.domain.AiReportSupport;
 import com.ruoyi.postgrad.domain.AiToolTrace;
@@ -456,6 +459,23 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
     }
 
+    private int extractEstimatedScore(String convJson) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> msgs = JSON.parseObject(convJson, List.class);
+            if (msgs != null && !msgs.isEmpty()) {
+                String content = (String) msgs.get(0).get("content");
+                if (content != null && content.contains("预估总分:")) {
+                    int s = content.indexOf("预估总分:") + 6;
+                    int e = content.indexOf("\n", s);
+                    if (e < 0) e = content.length();
+                    return Integer.parseInt(content.substring(s, e).trim());
+                }
+            }
+        } catch (Exception ignored) {}
+        return 300;
+    }
+
     @Override
     public Map<String, Object> generateReport(Long userId, String conversationId) {
         String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
@@ -477,92 +497,108 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             return err;
         }
 
-        int estimatedScore = 300;
+        // 读取或自动填充书签
+        String bookmarkJson = redisTemplate.opsForValue().get("ai:bookmarks:" + conversationId);
+        List<AiBookmark> bookmarks;
         try {
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> messages = JSON.parseObject(convJson, List.class);
-            if (messages != null && !messages.isEmpty()) {
-                Map<String, Object> sysMsg = messages.get(0);
-                String content = (String) sysMsg.get("content");
-                if (content != null && content.contains("预估总分:")) {
-                    int start = content.indexOf("预估总分:") + 6;
-                    int end = content.indexOf("\n", start);
-                    if (end < 0) end = content.length();
-                    try {
-                        estimatedScore = Integer.parseInt(content.substring(start, end).trim());
-                    } catch (NumberFormatException ignored) {
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        Map<String, Object> profile = loadUserProfile(userId);
-
-        RecommendationLog log = new RecommendationLog();
-        log.setUserId(userId);
-        log.setProfileSnapshot(JSON.toJSONString(Map.of("userId", userId, "conversationId", conversationId)));
-        log.setResultJson("{\"status\":\"PENDING\"}");
-        log.setRuleVersion("ai-conversation");
-        log.setDataVersion("1.0");
-        log.setIsPaid(0);
-        logMapper.insertRecommendationLog(log);
-        Long reportId = log.getId();
-
-        // 异步投递 RabbitMQ；MQ 不可用时同步降级
-        if (rabbitTemplate != null) {
-            // 延长池子和对话的 TTL，防止 MQ 消费时 Redis key 已过期
-            redisTemplate.expire("ai:conv:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
-            redisTemplate.expire("ai:pool:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
-
-            Map<String, Object> msg = new LinkedHashMap<>();
-            msg.put("reportId", reportId);
-            msg.put("conversationId", conversationId);
-            msg.put("userId", userId);
-            msg.put("estimatedScore", estimatedScore);
-            rabbitTemplate.convertAndSend("ai.report.queue", msg);
-
-            redisTemplate.opsForValue().set("ai:report:" + reportId, "PENDING", REPORT_TTL_DAYS, TimeUnit.DAYS);
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("reportId", reportId);
-            result.put("status", "PENDING");
-            return result;
-        }
-
-        // 降级：同步生成
-        try {
-            // 裁剪掉最后两轮（"出报告" + "好的，正在为你生成报告..."）
-            // 避免 AI 看到这段后误以为报告已经生成完毕
-            String cleanedConvJson = stripTailExchange(convJson);
-            String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
-            ChatModel chatModel = buildChatModel();
-            Map<String, Object> reportJson = aiReportBuilder.buildConversationReport(
-                chatModel,
-                cleanedConvJson,
-                poolJson != null ? poolJson : "[]",
-                estimatedScore,
-                buildPreferenceProfile(profile)
-            );
-            Map<String, Object> validated = validateAndNormalizeReport(reportJson, AiRecommendationTools.currentTrace());
-            String resultJson = JSON.toJSONString(validated);
-
-            redisTemplate.opsForValue().set("ai:report:" + reportId, resultJson, REPORT_TTL_DAYS, TimeUnit.DAYS);
-            log.setResultJson(resultJson);
-            logMapper.insertConversationState(log.getId(), conversationId, resultJson);
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("reportId", reportId);
-            result.put("status", "DONE");
-            result.put("result", validated);
-            return result;
+            bookmarks = bookmarkJson != null ? JSON.parseArray(bookmarkJson, AiBookmark.class) : new ArrayList<>();
         } catch (Exception e) {
-            redisTemplate.opsForValue().set("ai:report:" + reportId, "{\"error\":\"" + e.getMessage() + "\"}", REPORT_TTL_DAYS, TimeUnit.DAYS);
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("reportId", reportId);
-            result.put("status", "ERROR");
-            result.put("error", e.getMessage());
-            return result;
+            bookmarks = new ArrayList<>();
         }
+        if (bookmarks == null) bookmarks = new ArrayList<>();
+        if (bookmarks.isEmpty()) {
+            String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+            bookmarks = autoFillBookmarks(convJson, poolJson);
+        }
+
+        // 提取预估分
+        int estimatedScore = extractEstimatedScore(convJson);
+
+        // 创建 recommendation_log
+        RecommendationLog recLog = new RecommendationLog();
+        recLog.setUserId(userId);
+        recLog.setProfileSnapshot(JSON.toJSONString(Map.of("userId", userId, "conversationId", conversationId, "mode", "bookmark")));
+        recLog.setResultJson("{\"status\":\"PENDING\"}");
+        recLog.setRuleVersion("ai-bookmark");
+        recLog.setDataVersion("1.0");
+        recLog.setIsPaid(0);
+        logMapper.insertRecommendationLog(recLog);
+        Long reportId = recLog.getId();
+
+        // 直接生成报告（无 MQ，无 LLM）
+        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+        Map<String, Object> reportJson = aiReportBuilder.buildFromBookmarks(
+            JSON.toJSONString(bookmarks), poolJson != null ? poolJson : "[]", estimatedScore);
+
+        // 延长 TTL
+        redisTemplate.expire("ai:conv:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+        redisTemplate.expire("ai:pool:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+        redisTemplate.expire("ai:bookmarks:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+
+        String resultJson = JSON.toJSONString(reportJson);
+        redisTemplate.opsForValue().set("ai:report:" + reportId, resultJson, REPORT_TTL_DAYS, TimeUnit.DAYS);
+        recLog.setResultJson(resultJson);
+        try { logMapper.updateReportResult(reportId, resultJson); } catch (Exception ignored) {}
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("reportId", reportId);
+        result.put("status", "DONE");
+        result.put("result", reportJson);
+        return result;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private List<AiBookmark> autoFillBookmarks(String convJson, String poolJson) {
+        // 从对话历史提取曾被 getProgramDetail 查询过的 programId
+        Set<Long> discussedIds = new LinkedHashSet<>();
+        if (convJson != null && !convJson.isBlank()) {
+            try {
+                List<Map<String, Object>> messages = JSON.parseObject(convJson, List.class);
+                for (Map<String, Object> msg : messages) {
+                    if ("system".equals(msg.get("role"))) continue;
+                    String content = (String) msg.get("content");
+                    if (content == null) continue;
+                    java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("\\b(?:programId[\"']?\\s*[:=]\\s*|ID[:]?\\s*|getProgramDetail\\()\\s*(\\d{1,10})\\b")
+                        .matcher(content);
+                    while (m.find()) { try { discussedIds.add(Long.parseLong(m.group(1))); } catch (NumberFormatException ignored) {} }
+                }
+            } catch (Exception ignored) {}
+        }
+        if (discussedIds.isEmpty()) return Collections.emptyList();
+
+        Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
+        if (poolJson != null && !poolJson.isBlank()) {
+            try {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+                for (Map<String, Object> row : pool) {
+                    Long pid = row.get("programId") instanceof Number n ? n.longValue() : null;
+                    if (pid != null) poolMap.put(pid, row);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        List<AiBookmark> result = new ArrayList<>();
+        for (Long pid : discussedIds) {
+            Map<String, Object> row = poolMap.get(pid);
+            if (row == null) continue;
+            Integer gapVal = row.get("gap") instanceof Number n ? n.intValue() : 0;
+            int gap = gapVal != null ? gapVal : 0;
+            String judgement = gap <= 0 ? "reach" : gap <= 14 ? "steady" : "safe";
+            AiBookmark bm = new AiBookmark();
+            bm.setProgramId(pid);
+            bm.setSchoolName(String.valueOf(row.getOrDefault("schoolName", "")));
+            bm.setProgramName(String.valueOf(row.getOrDefault("programName", "")));
+            bm.setJudgement(judgement);
+            bm.setReason("对话中已讨论，系统自动补入报告。建议继续对话获取 AI 详细分析。");
+            bm.setPros(List.of());
+            bm.setCons(List.of());
+            bm.setTradeoffs(List.of());
+            bm.setRecommendedAction("建议继续对话，由 AI 深入分析后再更新推荐。");
+            result.add(bm);
+        }
+        return result;
     }
 
     @Override
@@ -733,6 +769,29 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         List<RowMap> reports = logMapper.selectAiReportListByUserId(userId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("reports", reports != null ? reports : Collections.emptyList());
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> getBookmarks(Long userId, String conversationId) {
+        String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+        if (owner == null || !owner.equals(userId.toString())) {
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("bookmarks", Collections.emptyList());
+            err.put("count", 0);
+            return err;
+        }
+        String json = redisTemplate.opsForValue().get("ai:bookmarks:" + conversationId);
+        List<AiBookmark> bookmarks;
+        try {
+            bookmarks = json != null ? JSON.parseArray(json, AiBookmark.class) : Collections.emptyList();
+        } catch (Exception e) {
+            bookmarks = Collections.emptyList();
+        }
+        if (bookmarks == null) bookmarks = Collections.emptyList();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("bookmarks", bookmarks);
+        result.put("count", bookmarks.size());
         return result;
     }
 

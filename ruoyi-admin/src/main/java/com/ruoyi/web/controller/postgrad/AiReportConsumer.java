@@ -94,46 +94,11 @@ public class AiReportConsumer {
         } catch (Exception dbEx) { /* best-effort */ }
     }
 
+    @Deprecated(since = "2026-06", forRemoval = false)
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void handleAnalyzeMessage(Long reportId, int estimatedScore, Map<String, Object> msg) {
-        Long userId = ((Number) msg.get("userId")).longValue();
-
-        // 1. Read pool from Redis
-        String poolJson = redisTemplate.opsForValue().get("ai:agent:pool:" + reportId);
-        if (poolJson == null) {
-            poolJson = redisTemplate.opsForValue().get("ai:analyze:pool:" + reportId);
-        }
-        if (poolJson == null || poolJson.isEmpty()) {
-            redisTemplate.opsForValue().set("ai:report:" + reportId,
-                "{\"error\": \"候选学校数据已过期，请重新发起快速推荐\"}", REPORT_TTL_DAYS, TimeUnit.DAYS);
-            return;
-        }
-
-        ChatModel chatModel = OpenAiChatModel.builder()
-            .baseUrl("https://api.deepseek.com/v1")
-            .apiKey(System.getenv("DEEPSEEK_API_KEY"))
-            .modelName("deepseek-v4-pro")
-            .maxTokens(4096)
-            .build();
-
-        updateProgress(reportId, "CALLING_AI");
-        Map<String, Object> reportJson = aiReportBuilder.buildAnalyzeReport(
-            chatModel,
-            poolJson,
-            estimatedScore,
-            loadPreferenceProfile(userId)
-        );
-
-        updateProgress(reportId, "FINALIZING");
-        String resultJsonStr = JSON.toJSONString(reportJson);
-        redisTemplate.opsForValue().set("ai:report:" + reportId, resultJsonStr, REPORT_TTL_DAYS, TimeUnit.DAYS);
-        try {
-            logMapper.updateReportResult(reportId, resultJsonStr);
-        } catch (Exception dbEx) { /* best-effort */ }
-
-        // 7. Clean up analysis pool key
-        redisTemplate.delete("ai:agent:pool:" + reportId);
-        redisTemplate.delete("ai:analyze:pool:" + reportId);
+        redisTemplate.opsForValue().set("ai:report:" + reportId,
+            "{\"error\":\"快速推荐已迁移，请通过对话与AI讨论学校\"}", 7, TimeUnit.DAYS);
     }
 
     private Map<String, Object> loadProfileForAnalysis(Long userId) {

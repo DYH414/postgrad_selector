@@ -2,10 +2,12 @@ package com.ruoyi.web.controller.postgrad;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import com.alibaba.fastjson2.JSON;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,6 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.postgrad.domain.AiBookmark;
 import com.ruoyi.postgrad.domain.AiChatErrorPayload;
 import com.ruoyi.postgrad.service.IAiRecommendationService;
 
@@ -149,6 +152,40 @@ public class AppAiRecommendationController {
         AppLoginUser user = getCurrentAppUser();
         if (user == null) return AjaxResult.error("未登录");
         return AjaxResult.success(aiService.getReports(user.getUserId()));
+    }
+
+    @GetMapping("/bookmarks/{conversationId}")
+    public AjaxResult getBookmarks(@PathVariable String conversationId) {
+        AppLoginUser user = getCurrentAppUser();
+        if (user == null) return AjaxResult.error("未登录");
+        try {
+            return AjaxResult.success(aiService.getBookmarks(user.getUserId(), conversationId));
+        } catch (SecurityException e) {
+            return AjaxResult.error(403, "无权访问");
+        }
+    }
+
+    @DeleteMapping("/bookmarks/{conversationId}/{programId}")
+    public AjaxResult deleteBookmark(@PathVariable String conversationId, @PathVariable Long programId) {
+        AppLoginUser user = getCurrentAppUser();
+        if (user == null) return AjaxResult.error("未登录");
+        try {
+            String key = "ai:bookmarks:" + conversationId;
+            String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+            if (owner == null || !owner.equals(user.getUserId().toString())) {
+                return AjaxResult.error(403, "无权访问");
+            }
+            String existing = redisTemplate.opsForValue().get(key);
+            if (existing != null && !existing.isBlank()) {
+                List<AiBookmark> bookmarks = com.alibaba.fastjson2.JSON.parseArray(existing, AiBookmark.class);
+                bookmarks.removeIf(b -> b.getProgramId() == programId);
+                redisTemplate.opsForValue().set(key, com.alibaba.fastjson2.JSON.toJSONString(bookmarks),
+                    30, java.util.concurrent.TimeUnit.MINUTES);
+            }
+            return AjaxResult.success();
+        } catch (Exception e) {
+            return AjaxResult.error(e.getMessage());
+        }
     }
 
     @PostMapping("/resume")
