@@ -70,6 +70,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "## 候选学校索引（仅 ID+名称+层次+城市，不含具体数据。讨论任何学校前必须用 getProgramDetail 获取真实数据）\n"
         + "%s\n\n"
         + "## 可用工具（必须使用）\n"
+        + "- addToReport(programId, judgement, reason, pros, cons, tradeoffs, action): 将已讨论的学校标记到报告候选，同校重复标记会更新信息\n"
+        + "- removeFromReport(programId): 从报告候选中移除学校\n"
         + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
         + "- searchPrograms(filters): 在候选池内按关键词、城市、学校层次、分数范围筛选。filters 为 JSON。⚠ 这是获取学校详细数据的唯一入口，摘要索引里没有分数/招生等数据。查学校名用 {\"keyword\":\"学校名\"}，查层次用 {\"tier\":\"211\"}\n"
         + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n"
@@ -99,6 +101,11 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "禁止将工具调用作为快捷选项。以下选项禁止出现：\n"
         + "- \"查看XX学校详细数据\" \"查看XX专业分数线\" \"对比XX和XX\" — 这些都是工具调用，由你自动完成\n"
         + "- \"🔍\" \"📊\" 等带工具图标的选项\n"
+        + "## 书签规则\n"
+        + "8. 讨论完任何学校后，调用 addToReport 将该校标记到报告候选\n"
+        + "9. 用户说\"加入报告\"\"标记\"\"这所也要\"时，立即调用 addToReport\n"
+        + "10. 之前标记过的学校，后续又深入讨论了，应重新调用 addToReport 更新推荐理由\n"
+        + "11. 可用 removeFromReport 移除列表中不需要的学校\n\n"
         + "用户说\"出报告\"时，只回复\"好的，正在为你生成报告...\"，不要附带选项。\n";
 
     private static final Logger log = LoggerFactory.getLogger(AiRecommendationServiceImpl.class);
