@@ -159,6 +159,17 @@ public class AiRecommendationTools {
             .map(this::searchSummaryItem)
             .collect(Collectors.toList());
 
+        // 记录返回的 programId（每批最多 5 个，用于 autoFillBookmarks 兜底）
+        int recordedFromSearch = 0;
+        for (Map<String, Object> item : items) {
+            if (recordedFromSearch >= 5) break;
+            Object pidObj = item.get("programId");
+            if (pidObj instanceof Number n) {
+                CURRENT_TRACE.get().recordSearchResult(n.longValue());
+                recordedFromSearch++;
+            }
+        }
+
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("filters", filters);
         Map<String, Object> summary = new LinkedHashMap<>();
@@ -531,6 +542,9 @@ public class AiRecommendationTools {
         bookmark.setCons(cons);
         bookmark.setTradeoffs(tradeoffs);
         bookmark.setRecommendedAction(recommendedAction);
+        bookmark.setSource("conversation_ai");
+        bookmark.setStatus("discussed");
+        bookmark.setUserConfirmed(false);
 
         // 5. 读取现有书签列表，同 programId 覆盖
         String key = BOOKMARK_KEY_PREFIX + conversationId;

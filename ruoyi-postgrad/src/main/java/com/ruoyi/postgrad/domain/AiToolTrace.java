@@ -11,6 +11,8 @@ public class AiToolTrace {
     private final List<Map<String, Object>> calls = new ArrayList<>();
     private final Set<Long> detailedProgramIds = new LinkedHashSet<>();
     private final Set<Long> expandedProgramIds = new LinkedHashSet<>();
+    /** searchPrograms 返回的 programId（用于 autoFillBookmarks 兜底） */
+    private final Set<Long> searchedProgramIds = new LinkedHashSet<>();
     private int removedIncompleteCount;
     private boolean explorationLimited;
 
@@ -26,12 +28,20 @@ public class AiToolTrace {
         detailedProgramIds.add(programId);
     }
 
+    public void recordSearchResult(long programId) {
+        searchedProgramIds.add(programId);
+    }
+
     public void recordExpanded(long programId) {
         expandedProgramIds.add(programId);
     }
 
     public boolean hasDetail(long programId) {
         return detailedProgramIds.contains(programId);
+    }
+
+    public Set<Long> getSearchedProgramIds() {
+        return searchedProgramIds;
     }
 
     public List<Map<String, Object>> getCalls() {

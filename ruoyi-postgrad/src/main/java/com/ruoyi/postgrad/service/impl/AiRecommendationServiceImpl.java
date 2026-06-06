@@ -3,6 +3,7 @@ package com.ruoyi.postgrad.service.impl;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.time.Duration;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,7 +51,9 @@ import dev.langchain4j.service.TokenStream;
 public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     private static final String SYSTEM_PROMPT = ""
-        + "你是独立的 AI 择校顾问。当前对话主要依据用户画像和系统自动候选池，不依赖筛选页或对比页的临时条件。回复简洁（2-4句），不自我介绍，不讲客套话。每轮聚焦一个问题。\n\n"
+        + "你是独立的 AI 择校顾问。职责：在事实约束下诚实给出择校建议，不迎合用户不合理要求。\n"
+        + "如果候选池不支持用户想要的档位/地区，必须诚实说明没有严格匹配项，不凑数。\n"
+        + "回复简洁（2-4句），不自我介绍，不客套。每轮聚焦一个问题。\n\n"
         + "## 用户画像\n"
         + "- 预估总分: %d\n"
         + "- 本科层次: %s\n"
@@ -59,38 +62,67 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "- 整体策略: %s\n"
         + "- 院校层次取舍: %s\n"
         + "- 地区取舍: %s\n\n"
-        + "## 多维择校规则（重要）\n"
+        + "## 诚实推荐规则（最高优先级）\n"
+        + "如果候选池中没有严格满足用户目标档位的学校，必须明确说明\"当前没有严格符合条件的候选\"，不能为了满足用户要求而降低标准凑数。\n"
+        + "保底必须同时满足：gap明显为正（建议≥3）、招生规模正常（建议>9人）、数据完整度较高、canBeSafe=true。不满足则只能称\"稳妥线索\"\"低风险线索\"，不得称保底。\n"
+        + "冲刺应满足：gap为负或学校层次明显高于用户本科+分差紧张。如果检索结果是分数有余量的高层次学校，应该说\"分数风险偏稳，但学校层次较高，可作为高层次主攻目标\"，不要强行称为冲刺。\n"
+        + "当用户目标与候选池事实冲突时，优先尊重事实，而不是迎合用户愿望。\n\n"
+        + "## 多维择校规则\n"
         + "候选学校中的「差距」= 用户预估分 - 学校录取均分。差距只是分数安全维度，不能单独决定冲刺/稳妥/保底。\n"
         + "必须综合判断：分数差距、统考/计划招生名额、拟录取区间、数据完整度、学校层次、地区偏好、专业方向匹配。\n"
-        + "如果 canBeSafe=false，禁止称为保底；即使差距很大，也只能说“分数有余量但存在明显风险/只能作稳妥或线索”。\n"
+        + "如果 canBeSafe=false，禁止称为保底；即使差距很大，也只能说\"分数有余量但存在明显风险/只能作稳妥或线索\"。\n"
         + "招生名额极少是强风险信号：≤3 人不能作为保底；4-9 人若数据不完整、没有拟录取区间或分数优势不足，也不能作为保底。\n"
         + "当画像显示整体策略偏稳时，优先找分差为正且招生规模、数据完整度也支撑的学校，而不是只按差距排序。\n"
         + "当画像显示院校层次或地区优先时，可以接受更高风险，但必须把取舍说清楚。\n"
         + "讨论学校时必须明确说出录取均分、差距、招生名额和主要风险，不要只说学校名字。\n\n"
-        + "## 地区规则\n"
-        + "- 目标地区为\"不限\"时：只在候选池内推荐，不主动提及候选池外的城市，快捷选项不要主动引导用户去看某个具体城市\n"
-        + "- 目标地区有具体城市时：优先推荐该城市学校，其他城市只在用户主动询问时才讨论\n\n"
+        + "## 档位判断规则\n"
+        + "工具返回的 canBeSafe / quotaRisk / gap 是系统事实判断依据，不得被你的主观判断覆盖。\n"
+        + "如果 canBeSafe=false，不得称为保底。如果 gap 为负，不得称为保底或稳妥。\n"
+        + "如果你的顾问判断与系统数据不同，必须使用\"高层次主攻\"\"稳妥线索\"\"保底线索\"等顾问标签表达，不能直接覆盖系统判断。\n"
+        + "最终报告分档以后端逻辑校验为准，你在对话中的档位表达只是顾问参考意见。\n\n"
+        + "## 数量规则\n"
+        + "每轮最多分析1-2所学校。如果严格符合条件的学校不足，可以少推荐，不能为了凑数量推荐不合适的学校。\n"
+        + "如果只能找到线索型候选，必须明确说\"这不是严格保底/稳妥，只能作为线索\"。\n"
+        + "当候选不足时，优先给出调整建议（放宽地区、降低学校层次、扩大专业方向），而不是强行推荐。\n\n"
+        + "## 地区规则（硬约束）\n"
+        + "- 当用户明确指定城市或地区时，必须优先在该范围内筛选和推荐。\n"
+        + "- 如果指定地区内没有满足目标档位的候选，必须先说明\"该地区暂未找到严格匹配候选\"，再询问是否扩展地区。\n"
+        + "- 未经用户同意，不要直接推荐用户未指定的其他城市。\n"
+        + "- 目标地区为\"不限\"时，只在候选池内推荐，不主动引导用户去某个具体城市。\n"
+        + "- 如果候选学校所在城市不在用户目标地区内，必须说明这是\"扩展地区候选\"或\"备选方案\"。\n\n"
         + "## 候选学校索引（ID+名称+层次+城市）。searchPrograms 返回轻详情（均分/差距/招生/风险），可直接用于推荐判断。用户深究细节时才用 getProgramDetail。\n"
         + "%s\n\n"
-        + "## 可用工具（必须使用）\n"
-        + "- addToReport(programId, judgement, reason, pros, cons, tradeoffs, action): 将已讨论的学校标记到报告候选，同校重复标记会更新信息\n"
+        + "## 可用工具（按需使用）\n"
+        + "- addToReport(programId, judgement, reason, pros, cons, tradeoffs, action): 将明确认为适合进入报告候选的学校标记\n"
         + "- removeFromReport(programId): 从报告候选中移除学校\n"
         + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
         + "- searchPrograms(filters): 按关键词/城市/层次/分数范围筛选候选池，返回含均分、差距、招生、风险的轻详情。查学校名用 {\"keyword\":\"学校名\"}，查层次用 {\"tier\":\"211\"}\n"
         + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n\n"
         + "## 展示规则\n"
         + "回复中绝对不要出现学校的 programId 或任何数字 ID，用户只需要看到学校名称。\n\n"
+        + "## 推荐表达规范\n"
+        + "不要只说\"冲刺/稳妥/保底\"，要说明是哪一种风险：分数风险、名额风险、数据风险、地区取舍或学校层次取舍。\n"
+        + "优先使用更精确的表达：\n"
+        + "- 高层次主攻：学校层次高，但分数风险可控\n"
+        + "- 稳妥线索：分数有一定余量，但仍有名额或数据风险\n"
+        + "- 保底线索：接近保底，但还需要核验招生和录取区间\n"
+        + "- 严格保底：gap明显为正、canBeSafe=true、招生规模正常、数据完整度较高\n"
+        + "- 高风险冲刺：gap为负或竞争风险明显\n"
+        + "不要把\"线索\"说成确定档位。\n\n"
         + "## 工具使用规则\n"
-        + "1. searchPrograms 返回的数据（均分/差距/招生/canBeSafe）足够推荐判断，不需逐所 getProgramDetail\n"
-        + "2. 用户问到具体学校 → searchPrograms({\"keyword\":\"学校名\"}) 即可获取含数据的轻详情\n"
-        + "3. 仅当用户追问复试线、录取区间等细节时，才调用 getProgramDetail\n"
-        + "4. 回复中引用数据必须来自工具返回结果，不要编造数字\n"
-        + "5. 工具返回 canBeSafe=false 时，不得把该校描述为保底，必须解释原因\n"
-        + "6. 工具返回空结果 → 告诉用户\"候选池中未找到\"\n\n"
+        + "1. 推荐学校前必须基于 searchPrograms 或候选池事实数据，不得凭记忆推荐。\n"
+        + "2. searchPrograms 返回的均分、差距、招生、canBeSafe、quotaRisk 足够推荐判断，不需要逐所调用 getProgramDetail。\n"
+        + "3. 只有用户追问复试线、小分、录取区间、完整录取数据时，才调用 getProgramDetail。\n"
+        + "4. 已有工具结果足够回答时，不要重复调用工具。\n"
+        + "5. 工具返回 canBeSafe=false 时，不得把该校描述为保底，必须解释原因。\n"
+        + "6. 工具返回空结果 → 告诉用户\"候选池中未找到\"，不要编造候选池外的学校。\n\n"
         + "## 对话节奏\n"
-        + "第1轮: 不要重复询问画像里已经填写的偏好。先用一句话复述画像取舍，然后基于画像给出下一步分析方向；只有画像缺失或用户主动要调整时才追问偏好。\n"
-        + "第2-3轮: 如果用户最看重上岸率，用 searchPrograms(maxScore=预估分-5，例如300分用295) 找分数有余量的候选；保底倾向可用 maxScore=预估分-15。之后还必须结合招生名额、数据完整度和 canBeSafe 判断。每次只分析1-2所\n"
-        + "第4-5轮: 确认冲刺/稳妥/保底意向\n\n"
+        + "不要重复询问画像中已经填写的信息。\n"
+        + "每轮围绕用户当前问题推进，最多分析1-2所学校。\n"
+        + "每所学校必须说明：录取均分、gap、招生名额、canBeSafe/主要风险。\n"
+        + "如果用户强调上岸率，优先寻找 gap 为正、招生规模正常、数据完整度较高、canBeSafe=true 的候选。\n"
+        + "如果用户强调学校层次或地区，可以接受更高风险，但必须说明这是用上岸稳定性换学校层次或地区。\n"
+        + "如果候选池事实不支持用户目标，必须诚实说明，并给出放宽条件的建议。\n\n"
         + "## 输出格式\n"
         + "每轮回复含简短文字(2-4句)。\n"
         + "回复末尾附 2-3 个快捷选项，用 \"---OPTIONS---\" 分隔，每行一个选项。\n"
@@ -103,10 +135,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "- \"查看XX学校详细数据\" \"查看XX专业分数线\" \"对比XX和XX\" — 这些都是工具调用，由你自动完成\n"
         + "- \"🔍\" \"📊\" 等带工具图标的选项\n"
         + "## 书签规则\n"
-        + "8. 讨论完任何学校后，调用 addToReport 将该校标记到报告候选\n"
-        + "9. 用户说\"加入报告\"\"标记\"\"这所也要\"时，立即调用 addToReport\n"
-        + "10. 之前标记过的学校，后续又深入讨论了，应重新调用 addToReport 更新推荐理由\n"
-        + "11. 可用 removeFromReport 移除列表中不需要的学校\n\n"
+        + "1. 分析完某所学校并认为适合推荐后，必须调用 addToReport 将该校及推荐理由标记到报告候选。\n"
+        + "2. 用户说\"加入报告\"\"标记\"\"这所也要\"时，立即调用 addToReport。\n"
+        + "3. 之前标记过的学校，后续又深入讨论了，应重新调用 addToReport 更新推荐理由。\n"
+        + "4. 可用 removeFromReport 移除用户不需要的学校。\n\n"
         + "用户说\"出报告\"时，只回复\"好的，正在为你生成报告...\"，不要附带选项。\n";
 
     private static final Logger log = LoggerFactory.getLogger(AiRecommendationServiceImpl.class);
@@ -146,7 +178,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
         String systemPrompt = String.format(SYSTEM_PROMPT,
             estimatedScore,
-            formatProfileField(profile, "undergradTier", "双非"),
+            tierDisplayLabel(profile.get("undergradTier")),
             formatProfileField(profile, "isCrossMajor", "否"),
             formatProfileField(profile, "targetRegions", "不限"),
             preferenceLabel("riskPreference", profile.get("riskPreference")),
@@ -174,7 +206,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             "已读取你的画像：预估 %d 分、%s、地区偏好%s、策略%s。候选池 %d 所学校。"
                 + "建议从稳妥候选入手，再补充冲刺与保底。",
             estimatedScore,
-            formatProfileField(profile, "undergradTier", "双非"),
+            tierDisplayLabel(profile.get("undergradTier")),
             regionLabel.length() > 20 ? regionLabel.substring(0, 20) : regionLabel,
             riskLabel.length() > 16 ? riskLabel.substring(0, 16) : riskLabel,
             summaryList.size());
@@ -292,6 +324,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 return fallback;
             }
         } finally {
+            persistSearchedProgramIds(conversationId);
             AiRecommendationTools.clear();
         }
 
@@ -337,7 +370,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", messageText);
         result.put("options", options);
-        result.put("cards", hydrateChatCards(messageText, poolJson));
+        List<Map<String, Object>> cards = hydrateChatCards(messageText, poolJson);
+        result.put("cards", cards);
+        persistDiscussedProgramIds(conversationId, cards, messageText);
         return result;
     }
 
@@ -418,6 +453,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     callback.onToken(token);
                 })
                 .onCompleteResponse(response -> {
+                    persistSearchedProgramIds(conversationId);
                     AiRecommendationTools.clear();
                     persistStreamConversation(userId, conversationId, finalSystemPrompt, chatMemory);
                     String rawText = response != null && response.aiMessage() != null && response.aiMessage().text() != null
@@ -428,10 +464,13 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     String messageText = parseMessageText(rawText);
                     result.put("message", messageText);
                     result.put("options", parseOptionsList(rawText));
-                    result.put("cards", hydrateChatCards(messageText, redisTemplate.opsForValue().get("ai:pool:" + conversationId)));
+                    List<Map<String, Object>> cards = hydrateChatCards(messageText, redisTemplate.opsForValue().get("ai:pool:" + conversationId));
+                    result.put("cards", cards);
+                    persistDiscussedProgramIds(conversationId, cards, messageText);
                     callback.onComplete(result);
                 })
                 .onError(error -> {
+                    persistSearchedProgramIds(conversationId);
                     AiRecommendationTools.clear();
                     log.error("[AI-Chat-Stream] Stream failed. userId={}, conversationId={}, message={}",
                         userId, conversationId, error.getMessage(), error);
@@ -439,6 +478,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 })
                 .start();
         } catch (Exception e) {
+            persistSearchedProgramIds(conversationId);
             AiRecommendationTools.clear();
             log.error("[AI-Chat-Stream] Stream setup failed. userId={}, conversationId={}, message={}",
                 userId, conversationId, e.getMessage(), e);
@@ -493,9 +533,18 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             bookmarks = new ArrayList<>();
         }
         if (bookmarks == null) bookmarks = new ArrayList<>();
-        if (bookmarks.isEmpty()) {
-            String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
-            bookmarks = autoFillBookmarks(convJson, poolJson);
+
+        // 合并：保留 addToReport 书签（完整 AI 观点），补充 autoFill 发现的未覆盖学校
+        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+        List<AiBookmark> autoFilled = autoFillBookmarks(convJson, poolJson, conversationId);
+        if (!autoFilled.isEmpty()) {
+            Set<Long> bookmarkedIds = new LinkedHashSet<>();
+            for (AiBookmark bm : bookmarks) bookmarkedIds.add(bm.getProgramId());
+            for (AiBookmark filled : autoFilled) {
+                if (!bookmarkedIds.contains(filled.getProgramId())) {
+                    bookmarks.add(filled);
+                }
+            }
         }
 
         // 提取预估分
@@ -513,7 +562,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         Long reportId = recLog.getId();
 
         // 直接生成报告（无 MQ，无 LLM）
-        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
         Map<String, Object> reportJson = aiReportBuilder.buildFromBookmarks(
             JSON.toJSONString(bookmarks), poolJson != null ? poolJson : "[]", estimatedScore);
 
@@ -534,11 +582,162 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return result;
     }
 
+    /** 持久化本轮 searchPrograms 返回的 programId 到 Redis，供 autoFillBookmarks 兜底使用 */
+    private void persistSearchedProgramIds(String conversationId) {
+        try {
+            AiToolTrace trace = AiRecommendationTools.currentTrace();
+            if (trace == null) return;
+            Set<Long> searchedIds = trace.getSearchedProgramIds();
+            if (searchedIds.isEmpty()) return;
+
+            String searchedKey = "ai:searched:" + conversationId;
+            String existing = redisTemplate.opsForValue().get(searchedKey);
+            Set<Long> allIds = new LinkedHashSet<>(searchedIds);
+            if (existing != null && !existing.isBlank()) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    List<Long> existingList = JSON.parseArray(existing, Long.class);
+                    if (existingList != null) allIds.addAll(existingList);
+                } catch (Exception ignored) {}
+            }
+            redisTemplate.opsForValue().set(searchedKey,
+                JSON.toJSONString(new ArrayList<>(allIds)),
+                Duration.ofMinutes(60));
+        } catch (Exception ignored) {}
+    }
+
+    /** 持久化 AI 讨论过的学校及分析文本（用于 autoFillBookmarks 填充 opinion） */
+    private void persistDiscussedProgramIds(String conversationId, List<Map<String, Object>> cards, String assistantText) {
+        if (conversationId == null || conversationId.isBlank()) return;
+        if (cards == null || cards.isEmpty()) return;
+        try {
+            String key = "ai:discussed:" + conversationId;
+            List<Map<String, Object>> allTraces = new ArrayList<>();
+
+            // 读取已有 trace
+            String existing = redisTemplate.opsForValue().get(key);
+            if (existing != null && !existing.isBlank()) {
+                try {
+                    @SuppressWarnings({"unchecked", "rawtypes"})
+                    List<Map<String, Object>> parsed = (List) JSON.parseArray(existing, Map.class);
+                    if (parsed != null) allTraces.addAll(parsed);
+                } catch (Exception ignored) {}
+            }
+
+            // 合并本轮新 trace（最新在前，覆盖同 programId）
+            Set<Long> seen = new LinkedHashSet<>();
+            for (int i = allTraces.size() - 1; i >= 0; i--) {
+                Long pid = toLong(allTraces.get(i).get("programId"));
+                if (pid != null) seen.add(pid);
+            }
+            for (Map<String, Object> card : cards) {
+                Object pidObj = card.get("programId");
+                Long pid = pidObj instanceof Number n ? n.longValue() : null;
+                if (pid == null) continue;
+                if (seen.contains(pid)) continue; // 已有，跳过
+                seen.add(pid);
+
+                String schoolName = String.valueOf(card.getOrDefault("school", ""));
+                String programName = String.valueOf(card.getOrDefault("program", ""));
+                String snippet = extractSnippetAroundSchool(assistantText, schoolName, 200);
+
+                Map<String, Object> trace = new LinkedHashMap<>();
+                trace.put("programId", pid);
+                trace.put("schoolName", schoolName);
+                trace.put("programName", programName);
+                trace.put("assistantSnippet", snippet);
+                trace.put("source", "auto_fill_discussed");
+                trace.put("status", "discussed");
+                allTraces.add(0, trace); // 最新在前
+            }
+
+            // 上限 20 个
+            if (allTraces.size() > 20) allTraces = allTraces.subList(0, 20);
+            redisTemplate.opsForValue().set(key, JSON.toJSONString(allTraces), Duration.ofMinutes(60));
+        } catch (Exception e) {
+            log.warn("persistDiscussedProgramIds failed: conversationId={}", conversationId, e);
+        }
+    }
+
+    /** 从 AI 回复中提取学校名附近的文本片段 */
+    private String extractSnippetAroundSchool(String text, String schoolName, int maxLen) {
+        if (text == null || schoolName == null || schoolName.isBlank()) return "";
+        int pos = text.indexOf(schoolName);
+        if (pos < 0) {
+            // 找不到全名，截取文本开头作为兜底
+            return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
+        }
+        int start = Math.max(0, pos - 30);
+        int end = Math.min(text.length(), pos + maxLen);
+        String snippet = text.substring(start, end).trim();
+        // 确保从完整字符开始
+        if (start > 0 && snippet.indexOf('。') > 0) {
+            snippet = snippet.substring(snippet.indexOf('。') + 1).trim();
+        }
+        if (snippet.length() > maxLen) snippet = snippet.substring(0, maxLen) + "...";
+        return snippet;
+    }
+
+    private static Long toLong(Object val) {
+        if (val instanceof Number n) return n.longValue();
+        if (val == null) return null;
+        try { return Long.parseLong(String.valueOf(val)); } catch (NumberFormatException e) { return null; }
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private List<AiBookmark> autoFillBookmarks(String convJson, String poolJson) {
-        // 从对话历史提取曾被 getProgramDetail 查询过的 programId
+    private List<AiBookmark> autoFillBookmarks(String convJson, String poolJson, String conversationId) {
         Set<Long> discussedIds = new LinkedHashSet<>();
-        if (convJson != null && !convJson.isBlank()) {
+        Map<Long, String> discussedSnippets = new LinkedHashMap<>();
+        String fillSource = null;
+
+        // 来源 1（优先）：AI 实际讨论过的学校 + 分析原文
+        if (conversationId != null) {
+            try {
+                String discussedJson = redisTemplate.opsForValue().get("ai:discussed:" + conversationId);
+                if (discussedJson != null && !discussedJson.isBlank()) {
+                    // 尝试新格式 List<{programId, schoolName, assistantSnippet, ...}>
+                    @SuppressWarnings({"unchecked", "rawtypes"})
+                    List<Map<String, Object>> traces = (List) JSON.parseArray(discussedJson, Map.class);
+                    if (traces != null && !traces.isEmpty()) {
+                        for (Map<String, Object> t : traces) {
+                            Long pid = toLong(t.get("programId"));
+                            if (pid != null) {
+                                discussedIds.add(pid);
+                                String snippet = (String) t.getOrDefault("assistantSnippet", "");
+                                if (!snippet.isBlank()) discussedSnippets.put(pid, snippet);
+                            }
+                        }
+                        fillSource = "auto_fill_discussed";
+                    } else {
+                        // 旧格式兼容：List<Long>
+                        @SuppressWarnings("unchecked")
+                        List<Long> ids = JSON.parseArray(discussedJson, Long.class);
+                        if (ids != null && !ids.isEmpty()) {
+                            discussedIds.addAll(ids);
+                            fillSource = "auto_fill_discussed";
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 来源 2（兜底）：仅 ai:discussed 为空时才读 ai:searched
+        if (discussedIds.isEmpty() && conversationId != null) {
+            try {
+                String searchedJson = redisTemplate.opsForValue().get("ai:searched:" + conversationId);
+                if (searchedJson != null && !searchedJson.isBlank()) {
+                    @SuppressWarnings("unchecked")
+                    List<Long> ids = JSON.parseArray(searchedJson, Long.class);
+                    if (ids != null && !ids.isEmpty()) {
+                        discussedIds.addAll(ids);
+                        fillSource = "auto_fill_search";
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 来源 3（最后兜底）：从对话文本正则提取 getProgramDetail 引用
+        if (discussedIds.isEmpty() && convJson != null && !convJson.isBlank()) {
             try {
                 List<Map<String, Object>> messages = JSON.parseObject(convJson, List.class);
                 for (Map<String, Object> msg : messages) {
@@ -554,6 +753,11 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
         if (discussedIds.isEmpty()) return Collections.emptyList();
 
+        // 数量限制：最多 6 所
+        if (discussedIds.size() > 6) {
+            discussedIds = new LinkedHashSet<>(new ArrayList<>(discussedIds).subList(0, 6));
+        }
+
         Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
         if (poolJson != null && !poolJson.isBlank()) {
             try {
@@ -565,6 +769,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 }
             } catch (Exception ignored) {}
         }
+
+        final String finalSource = fillSource != null ? fillSource : "auto_fill_search";
+        final boolean isDiscussed = "auto_fill_discussed".equals(finalSource);
 
         List<AiBookmark> result = new ArrayList<>();
         for (Long pid : discussedIds) {
@@ -578,11 +785,24 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             bm.setSchoolName(String.valueOf(row.getOrDefault("schoolName", "")));
             bm.setProgramName(String.valueOf(row.getOrDefault("programName", "")));
             bm.setJudgement(judgement);
-            bm.setReason("对话中已讨论，系统自动补入报告。建议继续对话获取 AI 详细分析。");
+            // 优先使用 AI 实际分析原文；没有则退回兜底文案
+            String snippet = isDiscussed ? discussedSnippets.get(pid) : null;
+            if (snippet != null && !snippet.isBlank()) {
+                bm.setReason(snippet);
+            } else if (isDiscussed) {
+                bm.setReason("AI 已在对话中分析过该学校，系统自动补入报告候选。");
+            } else {
+                bm.setReason("该校出现在筛选结果中，尚未经过 AI 深入分析，系统作为兜底候选补入。建议继续对话获取 AI 详细分析。");
+            }
             bm.setPros(List.of());
             bm.setCons(List.of());
             bm.setTradeoffs(List.of());
-            bm.setRecommendedAction("建议继续对话，由 AI 深入分析后再更新推荐。");
+            bm.setRecommendedAction(isDiscussed
+                ? "可在对话中进一步了解该校复试线、考试科目等细节。"
+                : "建议继续对话，由 AI 深入分析后再更新推荐。");
+            bm.setSource(finalSource);
+            bm.setStatus(isDiscussed ? "discussed" : "suggested");
+            bm.setUserConfirmed(false);
             result.add(bm);
         }
         return result;
@@ -910,7 +1130,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         Map<String, Object> basis = new LinkedHashMap<>();
         basis.put("estimatedScore", estimatedScore);
         basis.put("targetRegions", formatProfileField(profile, "targetRegions", "不限"));
-        basis.put("undergradTier", formatProfileField(profile, "undergradTier", "双非"));
+        basis.put("undergradTier", tierDisplayLabel(profile.get("undergradTier")));
         basis.put("isCrossMajor", formatProfileField(profile, "isCrossMajor", "否"));
         basis.put("candidateScope", "系统按画像自动选择最多 50 个具备录取数据的 408 项目作为 AI 初始候选池");
         return basis;
@@ -1210,7 +1430,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         card.put("school", row.get("schoolName"));
         card.put("program", row.get("programName"));
         card.put("college", row.get("collegeName"));
-        card.put("tier", row.get("schoolTier"));
+        card.put("tier", tierDisplayLabel(row.get("schoolTier")));
         card.put("city", row.get("city"));
         card.put("province", row.get("province"));
         card.put("avg", row.get("avgAdmittedScore"));
@@ -1218,10 +1438,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         card.put("quota", row.getOrDefault("unifiedExamQuota", row.get("planCount")));
         card.put("admissionLow", row.get("admissionLow"));
         card.put("admissionHigh", row.get("admissionHigh"));
-        card.put("dataCompleteness", row.get("dataCompleteness"));
-        card.put("canBeSafe", row.get("canBeSafe"));
-        card.put("quotaRisk", row.get("quotaRisk"));
-        card.put("safeBlockReason", row.get("safeBlockReason"));
         card.put("level", inferChatCardLevel(row, messageText));
         card.put("reason", inferChatCardReason(row));
         return card;
@@ -1324,6 +1540,22 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 default -> "地区不强求，有学上更重要";
             };
             default -> v;
+        };
+    }
+
+    /** 将数据库中原始 tier 值映射为用户可读的中文标签 */
+    private static String tierDisplayLabel(Object value) {
+        String v = value == null ? "" : String.valueOf(value);
+        return switch (v) {
+            case "985" -> "985";
+            case "211" -> "211";
+            case "DOUBLE_FIRST" -> "双一流";
+            case "PUBLIC_REGULAR" -> "普通一本";
+            case "PRIVATE" -> "民办";
+            case "INDEPENDENT" -> "独立学院";
+            case "RESEARCH_INSTITUTE" -> "科研院所";
+            case "OTHER" -> "其他";
+            default -> v.isBlank() ? "双非" : v;
         };
     }
 

@@ -13,6 +13,11 @@ public class AiBookmark {
     private List<String> cons;
     private List<String> tradeoffs;
     private String recommendedAction;
+    /** 来源：conversation_ai / auto_fill_search / background_ai / rule_fallback / user_confirmed */
+    private String source;
+    /** 状态：suggested / discussed / confirmed / removed / rejected */
+    private String status;
+    private boolean userConfirmed;
 
     public AiBookmark() {}
 
@@ -34,4 +39,10 @@ public class AiBookmark {
     public void setTradeoffs(List<String> v) { this.tradeoffs = v; }
     public String getRecommendedAction() { return recommendedAction; }
     public void setRecommendedAction(String v) { this.recommendedAction = v; }
+    public String getSource() { return source; }
+    public void setSource(String v) { this.source = v; }
+    public String getStatus() { return status; }
+    public void setStatus(String v) { this.status = v; }
+    public boolean isUserConfirmed() { return userConfirmed; }
+    public void setUserConfirmed(boolean v) { this.userConfirmed = v; }
 }
