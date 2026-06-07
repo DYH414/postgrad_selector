@@ -5,7 +5,9 @@ import com.ruoyi.postgrad.domain.AiBookmark;
 import com.ruoyi.postgrad.domain.AiRecommendationSafety;
 import com.ruoyi.postgrad.domain.AiToolBudget;
 import com.ruoyi.postgrad.domain.AiToolTrace;
+import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import org.slf4j.Logger;
@@ -50,6 +52,9 @@ public class AiRecommendationTools {
 
     @Autowired
     private com.ruoyi.postgrad.mapper.AiDatabaseToolMapper aiDatabaseToolMapper;
+
+    @Autowired
+    private RecommendationLogMapper recommendationLogMapper;
 
     public static void setConversationId(String id) {
         CURRENT_CONVERSATION.set(id);
@@ -656,6 +661,9 @@ public class AiRecommendationTools {
         redisTemplate.opsForValue().set(key, JSON.toJSONString(bookmarks),
             BOOKMARK_TTL_MINUTES, TimeUnit.MINUTES);
 
+        // 6a. 书签变更后持久化到 DB，防止 Redis 过期丢失
+        persistBookmarkState(conversationId);
+
         // 7. 记录 trace
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("programId", programId);
@@ -683,6 +691,34 @@ public class AiRecommendationTools {
 
         log.info("[Tool] removeFromReport — programId={}, remaining={}", programId, bookmarks.size());
         return "{\"ok\":true,\"total\":" + bookmarks.size() + "}";
+    }
+
+    /** 书签变更后持久化 conv+bookmarks 到 DB */
+    private void persistBookmarkState(String conversationId) {
+        try {
+            String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+            if (owner == null) return;
+            String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+            if (convJson == null || convJson.isBlank()) return;
+            String bookmarkJson = redisTemplate.opsForValue().get(BOOKMARK_KEY_PREFIX + conversationId);
+
+            RecommendationLog logEntry = new RecommendationLog();
+            logEntry.setUserId(Long.parseLong(owner));
+            logEntry.setProfileSnapshot(JSON.toJSONString(Map.of("userId", owner)));
+            Map<String, Object> state = new LinkedHashMap<>();
+            state.put("conversationId", conversationId);
+            state.put("messages", JSON.parseArray(convJson, Map.class));
+            if (bookmarkJson != null && !bookmarkJson.isBlank()) {
+                state.put("bookmarksJson", bookmarkJson);
+            }
+            state.put("savedAt", System.currentTimeMillis());
+            logEntry.setResultJson(JSON.toJSONString(state));
+            logEntry.setRuleVersion("ai-conversation-state");
+            logEntry.setDataVersion("1.0");
+            logEntry.setIsPaid(0);
+            recommendationLogMapper.insertRecommendationLog(logEntry);
+        } catch (Exception ignored) {
+        }
     }
 
     private String loadPoolJson(String conversationId) {

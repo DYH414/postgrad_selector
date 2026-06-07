@@ -369,6 +369,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
                 AiBookmark bm = new AiBookmark();
                 bm.setProgramId(pid);
+                bm.setSchoolName(String.valueOf(fact.getOrDefault("schoolName", "")));
+                bm.setProgramName(String.valueOf(fact.getOrDefault("programName", "")));
                 bm.setSource("background_ai");
                 bm.setStatus("suggested");
                 bm.setUserConfirmed(false);
@@ -388,6 +390,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
             redisTemplate.opsForValue().set(bookmarkKey, JSON.toJSONString(existing), Duration.ofMinutes(60));
             log.info("[Preselect] Wrote {} bookmarks for conv={}", includeList.size(), conversationId);
+            // 书签变更后立即持久化状态，防止 Redis 过期丢失
+            persistStateFromRedis(conversationId);
         }
     }
 
@@ -1388,6 +1392,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Override
     public Map<String, Object> resumeConversation(Long userId, String conversationId) {
+        // ── Redis 路径：数据仍在 ──
         String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
         if (convJson != null) {
             String convOwner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
@@ -1408,8 +1413,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 }
             }
 
+            // 刷新全部四个 key 的 TTL
             redisTemplate.expire("ai:conv:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
             redisTemplate.expire("ai:pool:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+            redisTemplate.expire("ai:bookmarks:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
             redisTemplate.expire("ai:owner:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
 
             Map<String, Object> result = new LinkedHashMap<>();
@@ -1420,6 +1427,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             return result;
         }
 
+        // ── DB 路径：Redis 已过期，从 DB 恢复 ──
         String dbState = logMapper.selectConversationState(conversationId);
         if (dbState != null) {
             try {
@@ -1438,7 +1446,43 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     }
                 }
 
+                // 1. 恢复 conv 到 Redis
                 redisTemplate.opsForValue().set("ai:conv:" + conversationId, dbState, TTL_SECONDS, TimeUnit.SECONDS);
+
+                // 2. 恢复 bookmarks 到 Redis
+                String savedBookmarksJson = state != null ? (String) state.get("bookmarksJson") : null;
+                if (savedBookmarksJson != null && !savedBookmarksJson.isBlank()) {
+                    redisTemplate.opsForValue().set("ai:bookmarks:" + conversationId,
+                        savedBookmarksJson, TTL_SECONDS, TimeUnit.SECONDS);
+                }
+
+                // 3. 重建 pool（如果 Redis 中不存在）
+                String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+                if (poolJson == null || poolJson.isBlank()) {
+                    try {
+                        Map<String, Object> profile = loadUserProfile(userId);
+                        int estimatedScore = getEstimatedScore(Collections.emptyMap(), profile);
+                        String regionsStr = formatProfileField(profile, "targetRegions", "不限");
+                        List<String> regions = parseRegionsForAnalysis(regionsStr);
+                        List<RowMap> pool = aiCandidatePoolService.buildAgentPool(estimatedScore, regions);
+                        List<Map<String, Object>> poolList = new ArrayList<>();
+                        for (RowMap row : pool) poolList.add(row);
+                        redisTemplate.opsForValue().set("ai:pool:" + conversationId,
+                            JSON.toJSONString(poolList), TTL_SECONDS, TimeUnit.SECONDS);
+                        log.info("[Resume] Rebuilt pool for conv={}, size={}", conversationId, poolList.size());
+                    } catch (Exception e) {
+                        log.warn("[Resume] Failed to rebuild pool for conv={}: {}", conversationId, e.getMessage());
+                    }
+                }
+
+                // 4. 设置 owner
+                redisTemplate.opsForValue().set("ai:owner:" + conversationId, userId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
+
+                // 5. 刷新全部 TTL
+                redisTemplate.expire("ai:conv:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+                redisTemplate.expire("ai:pool:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+                redisTemplate.expire("ai:bookmarks:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+                redisTemplate.expire("ai:owner:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
 
                 Map<String, Object> result = new LinkedHashMap<>();
                 result.put("conversationId", conversationId);
@@ -1448,16 +1492,18 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 return result;
             } catch (Exception e) {
                 Map<String, Object> err = new LinkedHashMap<>();
-                err.put("status", "expired");
+                err.put("status", "conversation_expired");
+                err.put("canRestart", true);
                 err.put("message", "对话已过期，请开始新对话");
                 return err;
             }
         }
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("status", "expired");
-        result.put("message", "对话已过期，请开始新对话");
-        return result;
+        Map<String, Object> err = new LinkedHashMap<>();
+        err.put("status", "conversation_expired");
+        err.put("canRestart", true);
+        err.put("message", "对话已过期，请开始新对话");
+        return err;
     }
 
     private Map<String, Object> loadUserProfile(Long userId) {
@@ -2058,6 +2104,38 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             Map<String, Object> state = new LinkedHashMap<>();
             state.put("conversationId", conversationId);
             state.put("messages", messages);
+            state.put("savedAt", System.currentTimeMillis());
+            // 书签一起持久化，避免 Redis 过期后丢失
+            String bookmarkJson = redisTemplate.opsForValue().get("ai:bookmarks:" + conversationId);
+            if (bookmarkJson != null && !bookmarkJson.isBlank()) {
+                state.put("bookmarksJson", bookmarkJson);
+            }
+            log.setResultJson(JSON.toJSONString(state));
+            log.setRuleVersion("ai-conversation-state");
+            log.setDataVersion("1.0");
+            log.setIsPaid(0);
+            logMapper.insertRecommendationLog(log);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 从 Redis 读取当前 conv + bookmarks 并持久化到 DB（书签变更时调用） */
+    private void persistStateFromRedis(String conversationId) {
+        try {
+            String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+            if (owner == null) return;
+            String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+            if (convJson == null || convJson.isBlank()) return;
+            String bookmarkJson = redisTemplate.opsForValue().get("ai:bookmarks:" + conversationId);
+            RecommendationLog log = new RecommendationLog();
+            log.setUserId(Long.parseLong(owner));
+            log.setProfileSnapshot(JSON.toJSONString(Map.of("userId", owner)));
+            Map<String, Object> state = new LinkedHashMap<>();
+            state.put("conversationId", conversationId);
+            state.put("messages", JSON.parseArray(convJson, Map.class));
+            if (bookmarkJson != null && !bookmarkJson.isBlank()) {
+                state.put("bookmarksJson", bookmarkJson);
+            }
             state.put("savedAt", System.currentTimeMillis());
             log.setResultJson(JSON.toJSONString(state));
             log.setRuleVersion("ai-conversation-state");

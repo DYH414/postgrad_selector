@@ -17,7 +17,17 @@
     </div>
 
     <div class="panel-body" ref="body">
-      <div v-if="messages.length === 0 && !loading" class="empty-state">
+      <!-- 过期提示蒙层 -->
+      <div v-if="expired" class="expired-overlay">
+        <div class="expired-card">
+          <i class="el-icon-warning-outline" />
+          <strong>对话已过期</strong>
+          <p>对话数据已过期，书签和候选池无法恢复。请重新开始 AI 推荐。</p>
+          <el-button type="primary" size="small" @click="resetAndStart">重新开始</el-button>
+        </div>
+      </div>
+
+      <div v-if="messages.length === 0 && !loading && !expired" class="empty-state">
         <i class="el-icon-chat-line-round" />
         <p>等待生成你的择校判断</p>
       </div>
@@ -82,10 +92,10 @@
 
     <div class="input-bar">
       <el-input v-model="input" placeholder="输入你的想法..."
-        size="small" @keyup.enter="sendMessage">
+        size="small" @keyup.enter="sendMessage" :disabled="expired">
         <template #append>
           <el-button icon="el-icon-s-promotion"
-            :disabled="!input.trim() || loading" @click="sendMessage" />
+            :disabled="expired || !input.trim() || loading" @click="sendMessage" />
         </template>
       </el-input>
     </div>
@@ -114,6 +124,7 @@ const currentOptions = ref([])
 const input = ref('')
 const loading = ref(false)
 const thinkingText = ref('')
+const expired = ref(false)
 function askAboutBookmark(bm) {
   const name = bm.schoolName || ''
   const inputText = '帮我详细分析 ' + name + '，包括复试线风险、考试科目和就业前景'
@@ -121,7 +132,26 @@ function askAboutBookmark(bm) {
   sendMessage()
 }
 
-defineExpose({ askAboutBookmark })
+function resetAndStart() {
+  // 停止旧状态
+  loading.value = false
+  thinkingText.value = ''
+  expired.value = false
+  conversationId.value = null
+  messages.value = []
+  currentOptions.value = []
+  input.value = ''
+  // 清除 localStorage
+  const storedId = localStorage.getItem(AI_RECENT_CONVERSATION_KEY)
+  if (storedId) {
+    localStorage.removeItem('ai_conv_' + storedId)
+  }
+  localStorage.removeItem(AI_RECENT_CONVERSATION_KEY)
+  // 发起新对话
+  startConversation()
+}
+
+defineExpose({ askAboutBookmark, resetAndStart })
 
 function restoreConversation() {
   try {
@@ -524,6 +554,11 @@ async function callChatFallback(text, assistantIndex, streamError) {
   }
 }
 
+function isExpiredError(error) {
+  const raw = error && error.message ? error.message : ''
+  return raw.includes('对话已过期') || raw.includes('conversation_expired')
+}
+
 function friendlyChatError(error, fallback) {
   fallback = fallback || 'AI 对话暂不可用，请稍后重试。'
   const raw = error && error.message ? error.message : ''
@@ -531,8 +566,9 @@ function friendlyChatError(error, fallback) {
   if (/abort|timeout|timed out/i.test(raw)) {
     return '本轮分析耗时较久，已停止等待。你可以缩小问题范围，或直接生成当前推荐报告。'
   }
-  if (raw.includes('对话已过期')) {
-    return '对话已过期，请重新开始 AI 推荐。'
+  if (isExpiredError(error)) {
+    expired.value = true
+    return '对话已过期，请点击下方按钮重新开始。'
   }
   return raw
 }
@@ -673,6 +709,44 @@ onMounted(restoreConversation)
   display: block;
   margin-bottom: 12px;
   color: #5b8dff;
+}
+/* ── 过期提示蒙层 ── */
+.expired-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(246, 249, 255, 0.92);
+  border-radius: 16px;
+}
+.expired-card {
+  text-align: center;
+  max-width: 280px;
+  padding: 28px 24px;
+  background: #fff;
+  border: 1px solid #e7eef8;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 35, 75, 0.08);
+}
+.expired-card i {
+  font-size: 36px;
+  color: #df9a2f;
+  display: block;
+  margin-bottom: 10px;
+}
+.expired-card strong {
+  display: block;
+  font-size: 16px;
+  color: #10213f;
+  margin-bottom: 8px;
+}
+.expired-card p {
+  margin: 0 0 18px;
+  color: #667992;
+  font-size: 13px;
+  line-height: 1.6;
 }
 .msg {
   display: flex;

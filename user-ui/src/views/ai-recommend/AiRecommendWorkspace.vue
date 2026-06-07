@@ -22,6 +22,9 @@
             <small>当前策略</small>
             <strong>{{ currentStrategy }}</strong>
           </div>
+          <div class="stat-card new-conv-card">
+            <el-button type="primary" size="small" plain @click="handleNewConversation">新对话</el-button>
+          </div>
         </div>
       </section>
 
@@ -347,6 +350,27 @@ async function generateReport() {
   }
 }
 
+function handleNewConversation() {
+  // 清除 localStorage 中的旧对话状态
+  const storedId = localStorage.getItem(AI_RECENT_CONVERSATION_KEY)
+  if (storedId) {
+    localStorage.removeItem('ai_conv_' + storedId)
+  }
+  localStorage.removeItem(AI_RECENT_CONVERSATION_KEY)
+  // 重置工作台状态
+  conversationId.value = null
+  bookmarks.value = []
+  panelOpen.value = true
+  // 清除轮询定时器
+  if (bookmarkPollTimer) {
+    clearTimeout(bookmarkPollTimer)
+    bookmarkPollTimer = null
+  }
+  bookmarkPolling.value = false
+  // 触发 AiChatPanel 重置并开始新对话
+  chatPanelRef.value?.resetAndStart()
+}
+
 function handleFallback() {
   panelOpen.value = false
   ElMessage.warning('AI 对话暂不可用，请稍后再试')
@@ -417,9 +441,9 @@ onBeforeUnmount(() => {
 
 .hero-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
   gap: 14px;
-  width: min(560px, 48vw);
+  width: min(720px, 52vw);
 }
 
 .stat-card {
@@ -444,6 +468,14 @@ onBeforeUnmount(() => {
   color: #10213f;
   font-size: 20px;
   line-height: 26px;
+}
+
+.new-conv-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fbff;
+  border-style: dashed;
 }
 
 .workspace-grid {
@@ -496,7 +528,7 @@ onBeforeUnmount(() => {
   }
 
   .hero-stats {
-    width: min(520px, 46vw);
+    width: min(680px, 50vw);
   }
 }
 
