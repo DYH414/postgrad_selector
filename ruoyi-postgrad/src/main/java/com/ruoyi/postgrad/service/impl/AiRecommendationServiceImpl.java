@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
@@ -40,6 +41,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -51,95 +53,47 @@ import dev.langchain4j.service.TokenStream;
 public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     private static final String SYSTEM_PROMPT = ""
-        + "你是独立的 AI 择校顾问。职责：在事实约束下诚实给出择校建议，不迎合用户不合理要求。\n"
-        + "如果候选池不支持用户想要的档位/地区，必须诚实说明没有严格匹配项，不凑数。\n"
-        + "回复简洁（2-4句），不自我介绍，不客套。每轮聚焦一个问题。\n\n"
-        + "## 用户画像\n"
-        + "- 预估总分: %d\n"
-        + "- 本科层次: %s\n"
-        + "- 跨考: %s\n"
-        + "- 目标地区: %s\n"
-        + "- 整体策略: %s\n"
-        + "- 院校层次取舍: %s\n"
-        + "- 地区取舍: %s\n\n"
-        + "## 诚实推荐规则（最高优先级）\n"
-        + "如果候选池中没有严格满足用户目标档位的学校，必须明确说明\"当前没有严格符合条件的候选\"，不能为了满足用户要求而降低标准凑数。\n"
-        + "保底必须同时满足：gap明显为正（建议≥3）、招生规模正常（建议>9人）、数据完整度较高、canBeSafe=true。不满足则只能称\"稳妥线索\"\"低风险线索\"，不得称保底。\n"
-        + "冲刺应满足：gap为负或学校层次明显高于用户本科+分差紧张。如果检索结果是分数有余量的高层次学校，应该说\"分数风险偏稳，但学校层次较高，可作为高层次主攻目标\"，不要强行称为冲刺。\n"
-        + "当用户目标与候选池事实冲突时，优先尊重事实，而不是迎合用户愿望。\n\n"
-        + "## 多维择校规则\n"
-        + "候选学校中的「差距」= 用户预估分 - 学校录取均分。差距只是分数安全维度，不能单独决定冲刺/稳妥/保底。\n"
-        + "必须综合判断：分数差距、统考/计划招生名额、拟录取区间、数据完整度、学校层次、地区偏好、专业方向匹配。\n"
-        + "如果 canBeSafe=false，禁止称为保底；即使差距很大，也只能说\"分数有余量但存在明显风险/只能作稳妥或线索\"。\n"
-        + "招生名额极少是强风险信号：≤3 人不能作为保底；4-9 人若数据不完整、没有拟录取区间或分数优势不足，也不能作为保底。\n"
-        + "当画像显示整体策略偏稳时，优先找分差为正且招生规模、数据完整度也支撑的学校，而不是只按差距排序。\n"
-        + "当画像显示院校层次或地区优先时，可以接受更高风险，但必须把取舍说清楚。\n"
-        + "讨论学校时必须明确说出录取均分、差距、招生名额和主要风险，不要只说学校名字。\n\n"
-        + "## 档位判断规则\n"
-        + "工具返回的 canBeSafe / quotaRisk / gap 是系统事实判断依据，不得被你的主观判断覆盖。\n"
-        + "如果 canBeSafe=false，不得称为保底。如果 gap 为负，不得称为保底或稳妥。\n"
-        + "如果你的顾问判断与系统数据不同，必须使用\"高层次主攻\"\"稳妥线索\"\"保底线索\"等顾问标签表达，不能直接覆盖系统判断。\n"
-        + "最终报告分档以后端逻辑校验为准，你在对话中的档位表达只是顾问参考意见。\n\n"
-        + "## 数量规则\n"
-        + "每轮最多分析1-2所学校。如果严格符合条件的学校不足，可以少推荐，不能为了凑数量推荐不合适的学校。\n"
-        + "如果只能找到线索型候选，必须明确说\"这不是严格保底/稳妥，只能作为线索\"。\n"
-        + "当候选不足时，优先给出调整建议（放宽地区、降低学校层次、扩大专业方向），而不是强行推荐。\n\n"
-        + "## 地区规则（硬约束）\n"
-        + "- 当用户明确指定城市或地区时，必须优先在该范围内筛选和推荐。\n"
-        + "- 如果指定地区内没有满足目标档位的候选，必须先说明\"该地区暂未找到严格匹配候选\"，再询问是否扩展地区。\n"
-        + "- 未经用户同意，不要直接推荐用户未指定的其他城市。\n"
-        + "- 目标地区为\"不限\"时，只在候选池内推荐，不主动引导用户去某个具体城市。\n"
-        + "- 如果候选学校所在城市不在用户目标地区内，必须说明这是\"扩展地区候选\"或\"备选方案\"。\n\n"
-        + "## 候选学校索引（ID+名称+层次+城市）。searchPrograms 返回轻详情（均分/差距/招生/风险），可直接用于推荐判断。用户深究细节时才用 getProgramDetail。\n"
-        + "%s\n\n"
-        + "## 可用工具（按需使用）\n"
-        + "- addToReport(programId, judgement, reason, pros, cons, tradeoffs, action): 将明确认为适合进入报告候选的学校标记\n"
-        + "- removeFromReport(programId): 从报告候选中移除学校\n"
-        + "- getProgramDetail(programId): 获取指定学校的完整录取数据（复试线、小分、招生计划、录取均分等）\n"
-        + "- searchPrograms(filters): 按关键词/城市/层次/分数范围筛选候选池，返回含均分、差距、招生、风险的轻详情。查学校名用 {\"keyword\":\"学校名\"}，查层次用 {\"tier\":\"211\"}\n"
-        + "- comparePrograms(ids): 横向对比多所学校的详细录取数据\n\n"
-        + "## 展示规则\n"
-        + "回复中绝对不要出现学校的 programId 或任何数字 ID，用户只需要看到学校名称。\n\n"
-        + "## 推荐表达规范\n"
-        + "不要只说\"冲刺/稳妥/保底\"，要说明是哪一种风险：分数风险、名额风险、数据风险、地区取舍或学校层次取舍。\n"
-        + "优先使用更精确的表达：\n"
-        + "- 高层次主攻：学校层次高，但分数风险可控\n"
-        + "- 稳妥线索：分数有一定余量，但仍有名额或数据风险\n"
-        + "- 保底线索：接近保底，但还需要核验招生和录取区间\n"
-        + "- 严格保底：gap明显为正、canBeSafe=true、招生规模正常、数据完整度较高\n"
-        + "- 高风险冲刺：gap为负或竞争风险明显\n"
-        + "不要把\"线索\"说成确定档位。\n\n"
-        + "## 工具使用规则\n"
-        + "1. 推荐学校前必须基于 searchPrograms 或候选池事实数据，不得凭记忆推荐。\n"
-        + "2. searchPrograms 返回的均分、差距、招生、canBeSafe、quotaRisk 足够推荐判断，不需要逐所调用 getProgramDetail。\n"
-        + "3. 只有用户追问复试线、小分、录取区间、完整录取数据时，才调用 getProgramDetail。\n"
-        + "4. 已有工具结果足够回答时，不要重复调用工具。\n"
-        + "5. 工具返回 canBeSafe=false 时，不得把该校描述为保底，必须解释原因。\n"
-        + "6. 工具返回空结果 → 告诉用户\"候选池中未找到\"，不要编造候选池外的学校。\n\n"
-        + "## 对话节奏\n"
-        + "不要重复询问画像中已经填写的信息。\n"
-        + "每轮围绕用户当前问题推进，最多分析1-2所学校。\n"
-        + "每所学校必须说明：录取均分、gap、招生名额、canBeSafe/主要风险。\n"
-        + "如果用户强调上岸率，优先寻找 gap 为正、招生规模正常、数据完整度较高、canBeSafe=true 的候选。\n"
-        + "如果用户强调学校层次或地区，可以接受更高风险，但必须说明这是用上岸稳定性换学校层次或地区。\n"
-        + "如果候选池事实不支持用户目标，必须诚实说明，并给出放宽条件的建议。\n\n"
-        + "## 输出格式\n"
-        + "每轮回复含简短文字(2-4句)。\n"
-        + "回复末尾附 2-3 个快捷选项，用 \"---OPTIONS---\" 分隔，每行一个选项。\n"
-        + "## 快捷选项规则（重要）\n"
-        + "快捷选项必须顺着当前画像推进，如\"按画像开始筛选\"\"提高学校层次\"\"调整地区范围\"\"先看稳妥候选\"。\n"
-        + "不要在用户明确选择城市维度前，生成\"限定某城市\"这类具体城市选项。\n"
-        + "选项应顺着你的分析结论往前推进，不要重复已讨论过的内容或给出与分析矛盾的选择。\n"
-        + "好的选项示例: \"确认XX为稳妥目标\" \"再看看保底选择\" \"换一个城市看看\"\n"
-        + "禁止将工具调用作为快捷选项。以下选项禁止出现：\n"
-        + "- \"查看XX学校详细数据\" \"查看XX专业分数线\" \"对比XX和XX\" — 这些都是工具调用，由你自动完成\n"
-        + "- \"🔍\" \"📊\" 等带工具图标的选项\n"
-        + "## 书签规则\n"
-        + "1. 分析完某所学校并认为适合推荐后，必须调用 addToReport 将该校及推荐理由标记到报告候选。\n"
-        + "2. 用户说\"加入报告\"\"标记\"\"这所也要\"时，立即调用 addToReport。\n"
-        + "3. 之前标记过的学校，后续又深入讨论了，应重新调用 addToReport 更新推荐理由。\n"
-        + "4. 可用 removeFromReport 移除用户不需要的学校。\n\n"
-        + "用户说\"出报告\"时，只回复\"好的，正在为你生成报告...\"，不要附带选项。\n";
+        // ── 角色 ──
+        + "<role>\n"
+        + "你是考研择校顾问。基于候选池事实数据诚实推荐，不迎合不凑数。\n"
+        + "回复简洁(2-4句)，不自我介绍不客套。不对用户说内部字段名(programId/canBeSafe/quotaRisk/dataCompleteness)。\n"
+        + "</role>\n\n"
+        // ── 画像 ──
+        + "<profile>\n"
+        + "预估%d分 | 本科%s | 跨考%s | 目标地区%s | 策略%s | 层次偏好%s | 地区偏好%s\n"
+        + "</profile>\n\n"
+        // ── 候选池 ──
+        + "<pool>\n"
+        + "%s\n"
+        + "</pool>\n\n"
+        // ── 工作流（核心：强制工具调用顺序） ──
+        + "<workflow>\n"
+        + "每轮回复严格按以下步骤：\n"
+        + "S1 需要新数据时调用 searchPrograms（已有数据则跳过）\n"
+        + "S2 基于数据给出1-2所学校的分析，包含：录取均分、gap、招生名额、主要风险\n"
+        + "S3 ★每分析完一所学校，立即调用 addToReport 写入书签★（本步骤不可跳过）\n"
+        + "S4 输出2-3个快捷选项，用\"---OPTIONS---\"分隔\n"
+        + "用户说\"出报告\"时只回复\"好的，正在为你生成报告...\"，不附带选项。\n"
+        + "</workflow>\n\n"
+        // ── 档位标签 ──
+        + "<tier_labels>\n"
+        + "严格保底: gap≥15, canBeSafe=true, 招生≥10, 数据完整度≥B — 四个条件全满足\n"
+        + "保底线索: gap 0~14 即使 canBeSafe=true 也只能称为「保底线索」或「稳妥线索」，不得称为严格保底\n"
+        + "稳妥线索: gap≈0或小幅为负，风险可控 — 可考虑但需进一步核实\n"
+        + "高层次主攻: 学校层次高于本科，分数风险可控 — 用稳定性换层次\n"
+        + "高风险冲刺: gap明显为负，竞争风险高\n"
+        + "不符合更高级别时自动降级，比如只满足2个条件就是「保底线索」而非「严格保底」。\n"
+        + "</tier_labels>\n\n"
+        // ── 硬约束 ──
+        + "<constraints>\n"
+        + "C1 严格保底硬条件: gap≥15、canBeSafe=true、招生≥10、数据完整度≥B。任一条件不满足时必须降级，不得称为「严格保底」\n"
+        + "C2 地区硬约束: 优先用户指定地区；超出地区需明确告知「扩展候选」\n"
+        + "C3 候选不足时不凑数：找不到严格匹配就说没有，给出放宽建议\n"
+        + "C4 不显示programId，不说canBeSafe/quotaRisk/dataCompleteness等内部术语\n"
+        + "C5 禁止凭空推荐：没有工具数据支撑时别编造学校\n"
+        + "C6 快捷选项禁止放工具调用（如\"查看XX详情\"）或emoji图标\n"
+        + "C7 不要对每所学校都调用 getProgramDetail。searchPrograms 返回的 gapLabel/quotaLabel/safeLabel 已足够判断档位。只有用户明确说\"详细信息\"\"复试线\"\"录取区间\"\"小分\"时才调用 getProgramDetail。每轮最多调 1 次。\n"
+        + "</constraints>\n";
 
     private static final Logger log = LoggerFactory.getLogger(AiRecommendationServiceImpl.class);
     private static final long TTL_SECONDS = 1800L;
@@ -231,6 +185,18 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         redisTemplate.opsForValue().set("ai:pool:" + conversationId, poolJson, TTL_SECONDS, TimeUnit.SECONDS);
         redisTemplate.opsForValue().set("ai:owner:" + conversationId, userId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
 
+        // 异步触发 AI 预选（不阻塞首轮 336ms 响应）
+        final String finalConvId = conversationId;
+        CompletableFuture.runAsync(() -> {
+            try {
+                log.info("[Preselect] Starting background preselection for conv={}", finalConvId);
+                preselectCandidates(finalConvId);
+                log.info("[Preselect] Background preselection completed for conv={}", finalConvId);
+            } catch (Exception e) {
+                log.warn("[Preselect] Background preselection failed for conv={}: {}", finalConvId, e.getMessage(), e);
+            }
+        });
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conversationId", conversationId);
         result.put("message", messageText);
@@ -239,6 +205,313 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         result.put("profileBasis", buildProfileBasis(profile, estimatedScore));
         result.put("candidateCount", summaryList.size());
         return result;
+    }
+
+    // ==================== AI 预选（background_ai）====================
+
+    private static final String PRESELECT_PROMPT = """
+        你是考研择校顾问。根据用户画像和候选学校的事实标签，筛选最适合进入报告候选的学校。
+
+        事实标签说明：
+        - 分数大幅超出：gap ≥ +15，用户分数远超录取均分
+        - 分数适度超出：gap +5~+14，有一定余量
+        - 分数微弱超出：gap 0~+4，微弱优势
+        - 分数微弱不足：gap -5~0，轻微劣势
+        - 分数适度不足：gap -15~-5，明显劣势
+        - 分数大幅不足：gap ≤ -15，差距很大
+        - 招生充裕(≥30人) / 招生正常(10-29人) / 招生偏少(4-9人) / 招生极少(≤3人)
+        - 可以保底 / 不可保底：后端判断
+        - 名额风险=低/中/高/极高
+
+        ## 宁缺毋滥规则（最高优先级）
+        - include 是"值得进入最终报告候选"，不是"看起来还行"。
+        - 有明显硬伤的学校必须 skip：分数大幅不足且不可保底、招生极少且数据低于A。
+        - 有优势但风险明显的学校用 hold。
+
+        ## 选择预算
+        - 本批最多 include 6 所，宁可少不可凑。
+        - safe 最多 2 所，且必须同时满足：①分数大幅超出 ②可以保底 ③招生充裕或正常。
+
+        ## tier 判断
+        - safe：分数大幅超出 + 可以保底 + 招生充裕或正常（三项缺一不可）
+        - steady：分数微弱超出到适度超出，风险可控
+        - reach：分数不足，需要冲刺
+
+        输出严格 JSON 数组：{"programId":X,"decision":"include|skip|hold","tier":"...","reason":"...","risk":"..."}
+        """;
+
+    /** 从候选池分层抽样 + AI 批量判断 + 写入书签（从 Redis 读池，避免类型兼容问题） */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void preselectCandidates(String conversationId) {
+        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+        if (poolJson == null || poolJson.isBlank()) {
+            log.warn("[Preselect] No pool found for conv={}", conversationId);
+            return;
+        }
+        List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+        if (pool == null || pool.size() < 10) {
+            log.warn("[Preselect] Pool too small for conv={}, size={}", conversationId, pool == null ? 0 : pool.size());
+            return;
+        }
+        log.info("[Preselect] Loaded pool size={} for conv={}", pool.size(), conversationId);
+
+        // 1. 分层抽样
+        List<Map<String, Object>> reach = new ArrayList<>(), steady = new ArrayList<>(), safe = new ArrayList<>();
+        for (Map<String, Object> p : pool) {
+            int gap = toInt(p.get("gap"), 0);
+            boolean canSafe = Boolean.TRUE.equals(p.get("canBeSafe"));
+            if (gap < 0) reach.add(p);
+            else if (gap > 14 && canSafe) safe.add(p);
+            else steady.add(p);
+        }
+        List<Map<String, Object>> samples = new ArrayList<>();
+        Collections.shuffle(reach); Collections.shuffle(steady); Collections.shuffle(safe);
+        samples.addAll(reach.stream().limit(8).toList());
+        samples.addAll(steady.stream().limit(8).toList());
+        samples.addAll(safe.stream().limit(8).toList());
+        if (samples.isEmpty()) return;
+
+        // 2. 构建事实卡
+        List<String> factCards = samples.stream().map(this::buildPreselectFactCard).toList();
+
+        // 3. 分批调用 AI
+        ChatModel chatModel = buildChatModel();
+        List<Map<String, Object>> decisions = new ArrayList<>();
+        int batchSize = 12;
+        for (int i = 0; i < factCards.size(); i += batchSize) {
+            int end = Math.min(i + batchSize, factCards.size());
+            String batchStr = String.join("\n", factCards.subList(i, end));
+            String userMsg = "候选学校：\n" + batchStr + "\n\n请对上述学校逐一判断，输出 JSON 数组。";
+
+            try {
+                String aiResp = chatModel.chat(
+                    dev.langchain4j.data.message.SystemMessage.from(PRESELECT_PROMPT),
+                    dev.langchain4j.data.message.UserMessage.from(userMsg)
+                ).aiMessage().text();
+
+                if (aiResp == null || aiResp.isBlank()) {
+                    log.warn("[Preselect] Batch {}/{} empty response, skip", i/batchSize+1,
+                        (int)Math.ceil(factCards.size()/(double)batchSize));
+                    continue;
+                }
+                log.info("[Preselect] Batch {}/{} raw response (first 200): {}",
+                    i/batchSize+1, (int)Math.ceil(factCards.size()/(double)batchSize),
+                    aiResp.length() > 200 ? aiResp.substring(0, 200) : aiResp);
+
+                // 提取 JSON
+                String json = aiResp;
+                if (json.contains("```json")) json = json.substring(json.indexOf("```json") + 7);
+                if (json.contains("```")) json = json.substring(0, json.lastIndexOf("```")).trim();
+                int braceStart = json.indexOf('[');
+                int braceEnd = json.lastIndexOf(']');
+                if (braceStart >= 0 && braceEnd > braceStart) json = json.substring(braceStart, braceEnd + 1);
+                if (json.isBlank()) {
+                    log.warn("[Preselect] Batch {}/{} no valid JSON found after extraction", i/batchSize+1,
+                        (int)Math.ceil(factCards.size()/(double)batchSize));
+                    continue;
+                }
+
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                List<Map<String, Object>> batch = (List) JSON.parseArray(json, Map.class);
+                if (batch != null) decisions.addAll(batch);
+            } catch (Exception e) {
+                log.warn("[Preselect] Batch {}/{} failed: {}", i/batchSize+1,
+                    (int)Math.ceil(factCards.size()/(double)batchSize), e.getMessage());
+            }
+        }
+        if (decisions.isEmpty()) return;
+
+        // 4. 后端硬校验
+        List<Map<String, Object>> includeList = preselectHardValidate(decisions, samples);
+
+        // 5. 写入书签
+        if (!includeList.isEmpty()) {
+            String bookmarkKey = "ai:bookmarks:" + conversationId;
+            List<AiBookmark> existing = new ArrayList<>();
+            String existingJson = redisTemplate.opsForValue().get(bookmarkKey);
+            if (existingJson != null && !existingJson.isBlank()) {
+                try { existing = JSON.parseArray(existingJson, AiBookmark.class); } catch (Exception ignored) {}
+                if (existing == null) existing = new ArrayList<>();
+            }
+
+            // 建 poolMap 供 finalJudgement 查找 fact
+            Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
+            for (Map<String, Object> p : pool) {
+                Long pid = toLong(p.get("programId"));
+                if (pid != null) poolMap.put(pid, p);
+            }
+
+            for (Map<String, Object> inc : includeList) {
+                Long pid = toLong(inc.get("programId"));
+                if (pid == null) continue;
+                Map<String, Object> fact = poolMap.get(pid);
+                if (fact == null) {
+                    log.warn("[Preselect] Skip pid={}: not in pool", pid);
+                    continue;
+                }
+
+                // P0.5: background_ai 不能覆盖更高优先级的已有 bookmark
+                final long targetPid = pid;
+                AiBookmark existingBm = existing.stream()
+                    .filter(b -> java.util.Objects.equals(b.getProgramId(), targetPid))
+                    .findFirst().orElse(null);
+                if (existingBm != null && sourceRank(existingBm.getSource()) < sourceRank("background_ai")) {
+                    log.info("[Preselect] Skip pid={}: already covered by higher-priority source={}",
+                        pid, existingBm.getSource());
+                    continue;
+                }
+                existing.removeIf(b -> java.util.Objects.equals(b.getProgramId(), targetPid));
+
+                // ★ 后端闸门：AI 的 tier 必须过 finalJudgement
+                String aiTier = String.valueOf(inc.getOrDefault("tier", "steady"));
+                AiRecommendationSafety.JudgementResult jr =
+                    AiRecommendationSafety.finalJudgement(fact, aiTier);
+
+                AiBookmark bm = new AiBookmark();
+                bm.setProgramId(pid);
+                bm.setSource("background_ai");
+                bm.setStatus("suggested");
+                bm.setUserConfirmed(false);
+                bm.setJudgement(jr.finalJudgement());           // 兼容旧逻辑
+                bm.setFinalJudgement(jr.finalJudgement());
+                bm.setAiJudgement(aiTier);
+                bm.setAdjusted(jr.adjusted());
+                bm.setAdjustReason(jr.adjustReason());
+                bm.setReason(String.valueOf(inc.getOrDefault("reason", "")));
+                // risk 塞进 cons 第一条
+                String risk = String.valueOf(inc.getOrDefault("risk", ""));
+                bm.setCons(risk.isBlank() ? List.of() : List.of(risk));
+                bm.setPros(List.of());
+                bm.setTradeoffs(List.of());
+                bm.setRecommendedAction("");
+                existing.add(bm);
+            }
+            redisTemplate.opsForValue().set(bookmarkKey, JSON.toJSONString(existing), Duration.ofMinutes(60));
+            log.info("[Preselect] Wrote {} bookmarks for conv={}", includeList.size(), conversationId);
+        }
+    }
+
+    private String buildPreselectFactCard(Map<String, Object> p) {
+        int gap = toInt(p.get("gap"), 0);
+        int quota = toInt(p.getOrDefault("unifiedExamQuota", p.get("planCount")), 0);
+        boolean canSafe = Boolean.TRUE.equals(p.get("canBeSafe"));
+        String quotaRisk = String.valueOf(p.getOrDefault("quotaRisk", ""));
+        return String.format("ID=%s | %s | %s | 层次=%s | 城市=%s | %s | %s | %s | %s | 数据=%s",
+            p.get("programId"), p.get("schoolName"), p.get("programName"),
+            p.get("schoolTier"), p.get("city"),
+            AiRecommendationTools.gapLabel(gap),
+            AiRecommendationTools.quotaLabel(quota),
+            canSafe ? "可以保底" : "不可保底",
+            AiRecommendationTools.quotaRiskLabel(quotaRisk),
+            p.getOrDefault("dataCompleteness", "?"));
+    }
+
+    private List<Map<String, Object>> preselectHardValidate(List<Map<String, Object>> decisions,
+                                                             List<Map<String, Object>> samples) {
+        Map<Long, Map<String, Object>> sampleMap = new LinkedHashMap<>();
+        for (Map<String, Object> s : samples) {
+            Long pid = toLong(s.get("programId"));
+            if (pid != null) sampleMap.put(pid, s);
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        int[] counts = new int[3]; // reach, steady, safe
+        for (Map<String, Object> d : decisions) {
+            if (!"include".equals(d.get("decision"))) continue;
+            Long pid = toLong(d.get("programId"));
+            if (pid == null) continue;
+            Map<String, Object> p = sampleMap.get(pid);
+            if (p == null) continue;
+
+            int gap = toInt(p.get("gap"), 0);
+            int quota = toInt(p.getOrDefault("unifiedExamQuota", p.get("planCount")), 0);
+            boolean canSafe = Boolean.TRUE.equals(p.get("canBeSafe"));
+
+            String tier = String.valueOf(d.getOrDefault("tier", "steady"));
+            // Rule 1: gap<0 cannot be safe
+            if (gap < 0 && "safe".equals(tier)) tier = "reach";
+            // Rule 2: canBeSafe=false cannot be safe
+            if (!canSafe && "safe".equals(tier)) tier = gap >= 5 ? "steady" : "reach";
+            // Rule 3: quota ≤ 3 cannot be safe
+            if (quota <= 3 && "safe".equals(tier)) tier = "steady";
+
+            // 数量限制
+            int idx = "reach".equals(tier) ? 0 : "steady".equals(tier) ? 1 : 2;
+            int max = idx == 0 ? 2 : idx == 1 ? 3 : 2;
+            if (counts[idx] >= max) continue;
+            counts[idx]++;
+
+            d.put("tier", tier);
+            result.add(d);
+        }
+        return result;
+    }
+
+    private static int toInt(Object val, int fallback) {
+        if (val instanceof Number n) return n.intValue();
+        if (val == null) return fallback;
+        try { return Integer.parseInt(String.valueOf(val)); } catch (NumberFormatException e) { return fallback; }
+    }
+
+    /** source 优先级：user_confirmed(0) > conversation_ai(1) > auto_fill_discussed(2)
+     *  > background_ai(3) > auto_fill_search(4) > rule_fallback(5) */
+    private static int sourceRank(String source) {
+        if (source == null) return 9;
+        return switch (source) {
+            case "user_confirmed" -> 0;
+            case "conversation_ai" -> 1;
+            case "auto_fill_discussed" -> 2;
+            case "background_ai" -> 3;
+            case "auto_fill_search" -> 4;
+            case "rule_fallback" -> 5;
+            default -> 9;
+        };
+    }
+
+    /** P3: 每档限量（reach≤3, steady≤4, safe≤3），user_confirmed 不占名额 */
+    @SuppressWarnings("unchecked")
+    private void trimReportTiers(Map<String, Object> reportJson) {
+        java.util.Map<String, Integer> limits = java.util.Map.of("reach", 3, "steady", 4, "safe", 3);
+        Object tiersObj = reportJson.get("tiers");
+        if (!(tiersObj instanceof List<?> tiers)) return;
+
+        for (Object t : tiers) {
+            if (!(t instanceof Map<?, ?> tierMapRaw)) continue;
+            Map<String, Object> tierMap = (Map<String, Object>) tierMapRaw;
+            String level = String.valueOf(tierMap.getOrDefault("level", ""));
+            int limit = limits.getOrDefault(level, 5);
+            Object schoolsObj = tierMap.get("schools");
+            if (!(schoolsObj instanceof List<?> schoolsRaw)) continue;
+
+            // opinion 对象里可能没有 source，同时尝试顶层 bookmark 的 source
+            // buildFromBookmarks 把 source 放入了 opinion.source
+            List<Map<String, Object>> schools = new ArrayList<>();
+            for (Object s : schoolsRaw) {
+                if (s instanceof Map<?, ?> sm) schools.add((Map<String, Object>) sm);
+            }
+
+            // 排序：confirmed 优先 → sourceRank
+            schools.sort((a, b) -> {
+                boolean aConfirmed = Boolean.TRUE.equals(a.get("userConfirmed"));
+                boolean bConfirmed = Boolean.TRUE.equals(b.get("userConfirmed"));
+                if (aConfirmed != bConfirmed) return aConfirmed ? -1 : 1;
+                String sa = String.valueOf(a.getOrDefault("source", ""));
+                String sb = String.valueOf(b.getOrDefault("source", ""));
+                return Integer.compare(sourceRank(sa), sourceRank(sb));
+            });
+
+            int nonConfirmed = 0;
+            List<Map<String, Object>> kept = new ArrayList<>();
+            for (Map<String, Object> school : schools) {
+                if (Boolean.TRUE.equals(school.get("userConfirmed"))) {
+                    kept.add(school);
+                } else if (nonConfirmed < limit) {
+                    kept.add(school);
+                    nonConfirmed++;
+                }
+            }
+            tierMap.put("schools", (List) kept);
+        }
     }
 
     @Override
@@ -547,6 +820,37 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
         }
 
+        // 兜底：旧 bookmark 可能 finalJudgement 为空（如旧版 preselect 写入的），临时补算
+        Map<Long, Map<String, Object>> reportPoolMap = null;
+        for (AiBookmark bm : bookmarks) {
+            if (bm.getFinalJudgement() != null && !bm.getFinalJudgement().isBlank()) continue;
+            if (reportPoolMap == null) {
+                reportPoolMap = new LinkedHashMap<>();
+                if (poolJson != null && !poolJson.isBlank()) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+                    if (pool != null) {
+                        for (Map<String, Object> p : pool) {
+                            Long pid = p.get("programId") instanceof Number n ? n.longValue() : null;
+                            if (pid != null) reportPoolMap.put(pid, p);
+                        }
+                    }
+                }
+            }
+            Map<String, Object> fact = reportPoolMap.get(bm.getProgramId());
+            if (fact == null) continue;
+            // 旧 bookmark 可能没有 aiJudgement，用当前的 judgement 作为 aiTier
+            String aiTier = bm.getAiJudgement();
+            if (aiTier == null || aiTier.isBlank()) aiTier = bm.getJudgement();
+            AiRecommendationSafety.JudgementResult jr =
+                AiRecommendationSafety.finalJudgement(fact, aiTier);
+            bm.setFinalJudgement(jr.finalJudgement());
+            bm.setJudgement(jr.finalJudgement());
+            bm.setAiJudgement(aiTier);
+            bm.setAdjusted(jr.adjusted());
+            bm.setAdjustReason(jr.adjustReason());
+        }
+
         // 提取预估分
         int estimatedScore = extractEstimatedScore(convJson);
 
@@ -564,6 +868,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         // 直接生成报告（无 MQ，无 LLM）
         Map<String, Object> reportJson = aiReportBuilder.buildFromBookmarks(
             JSON.toJSONString(bookmarks), poolJson != null ? poolJson : "[]", estimatedScore);
+
+        // P3: 每档限量（confirmed 不占名额）
+        trimReportTiers(reportJson);
 
         // 延长 TTL
         redisTemplate.expire("ai:conv:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
@@ -659,21 +966,49 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
     }
 
-    /** 从 AI 回复中提取学校名附近的文本片段 */
+    /** 从 AI 回复中提取特定学校的分析片段（只取该段，不串到下一所学校） */
     private String extractSnippetAroundSchool(String text, String schoolName, int maxLen) {
         if (text == null || schoolName == null || schoolName.isBlank()) return "";
         int pos = text.indexOf(schoolName);
         if (pos < 0) {
-            // 找不到全名，截取文本开头作为兜底
             return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
         }
-        int start = Math.max(0, pos - 30);
-        int end = Math.min(text.length(), pos + maxLen);
-        String snippet = text.substring(start, end).trim();
-        // 确保从完整字符开始
-        if (start > 0 && snippet.indexOf('。') > 0) {
-            snippet = snippet.substring(snippet.indexOf('。') + 1).trim();
+
+        // 向后找到下一条学校边界（--- 分隔线 或 下一个编号列表项 或 其他学校名）
+        int rawEnd = Math.min(text.length(), pos + maxLen);
+        int hardBoundary = -1;
+        java.util.regex.Matcher nextSchool = java.util.regex.Pattern.compile(
+            "(?:^|\\n)(?:---+|\\*\\*\\d+\\.\\s|\\d+\\.\\s?\\*\\*|###\\s|【)").matcher(text);
+        if (nextSchool.find(pos + schoolName.length())) {
+            hardBoundary = nextSchool.start();
         }
+        int end = (hardBoundary > pos && hardBoundary < rawEnd) ? hardBoundary : rawEnd;
+
+        // 向前找到当前学校的起始（编号或段落开头）
+        int start = pos;
+        int prevBreak = text.lastIndexOf('\n', pos);
+        if (prevBreak > 0 && pos - prevBreak < 200) {
+            // 再往前找更早的段落边界（编号开头 | --- | 】
+            int earlier = Math.max(0, pos - 50);
+            String prefix = text.substring(earlier, pos);
+            java.util.regex.Matcher prefixMatch = java.util.regex.Pattern.compile(
+                "(?:\\n|^)((?:\\*\\*)?\\d+\\.\\s|【|[#*\\-—]{3,})").matcher(prefix);
+            while (prefixMatch.find()) {
+                int absPos = earlier + prefixMatch.start();
+                if (absPos > start - 80 && absPos < start) {
+                    start = absPos + 1; // 从标记之后开始
+                }
+            }
+            // 回退到上一个句号+换行处，确保句子完整
+            int sentenceStart = text.lastIndexOf("。\n", pos);
+            if (sentenceStart > start && sentenceStart < pos - 10) start = sentenceStart + 1;
+        }
+
+        String snippet = text.substring(Math.max(0, start), end).trim();
+        // 清理 Markdown
+        snippet = snippet.replaceAll("\\*\\*([^*]+)\\*\\*", "$1");
+        snippet = snippet.replaceAll("\\*([^*]+)\\*", "$1");
+        snippet = snippet.replaceAll("`([^`]+)`", "$1");
         if (snippet.length() > maxLen) snippet = snippet.substring(0, maxLen) + "...";
         return snippet;
     }
@@ -777,25 +1112,74 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         for (Long pid : discussedIds) {
             Map<String, Object> row = poolMap.get(pid);
             if (row == null) continue;
+            // 从 pool 提取结构化数据
+            String schoolName = String.valueOf(row.getOrDefault("schoolName", ""));
+            String programName = String.valueOf(row.getOrDefault("programName", ""));
             Integer gapVal = row.get("gap") instanceof Number n ? n.intValue() : 0;
             int gap = gapVal != null ? gapVal : 0;
-            String judgement = gap <= 0 ? "reach" : gap <= 14 ? "steady" : "safe";
+            Object avgObj = row.get("avgAdmittedScore");
+            int avg = avgObj instanceof Number n ? n.intValue() : 0;
+            Object quotaObj = row.get("planCount");
+            int quota = quotaObj instanceof Number n ? n.intValue() : 0;
+            boolean canBeSafe = row.get("canBeSafe") instanceof Boolean b && b;
+            String tierLabel = AiRecommendationTools.tierDisplayLabel(row.get("schoolTier"));
+            String city = String.valueOf(row.getOrDefault("city", ""));
+            String gapLabel = AiRecommendationTools.gapLabel(gap);
+            String quotaLabel = AiRecommendationTools.quotaLabel(quota);
+
+            // ★ 后端统一裁决：不再自己按 gap 算 judgement
+            AiRecommendationSafety.JudgementResult ruling =
+                AiRecommendationSafety.finalJudgement(row, null);
+            String judgement = ruling.finalJudgement();
+
             AiBookmark bm = new AiBookmark();
             bm.setProgramId(pid);
-            bm.setSchoolName(String.valueOf(row.getOrDefault("schoolName", "")));
-            bm.setProgramName(String.valueOf(row.getOrDefault("programName", "")));
+            bm.setSchoolName(schoolName);
+            bm.setProgramName(programName);
             bm.setJudgement(judgement);
-            // 优先使用 AI 实际分析原文；没有则退回兜底文案
-            String snippet = isDiscussed ? discussedSnippets.get(pid) : null;
-            if (snippet != null && !snippet.isBlank()) {
-                bm.setReason(snippet);
-            } else if (isDiscussed) {
-                bm.setReason("AI 已在对话中分析过该学校，系统自动补入报告候选。");
-            } else {
-                bm.setReason("该校出现在筛选结果中，尚未经过 AI 深入分析，系统作为兜底候选补入。建议继续对话获取 AI 详细分析。");
+            bm.setFinalJudgement(ruling.finalJudgement());
+            bm.setAdjusted(false); // autoFill 没有 AI judgement，不存在调整
+
+            // ── 结构化 reason（不再截取 AI 文本）──
+            StringBuilder reasonBuilder = new StringBuilder();
+            reasonBuilder.append(avg > 0
+                ? String.format("录取均分%d，%s，%s", avg, gapLabel, quotaLabel)
+                : String.format("%s，%s", gapLabel, quotaLabel));
+            if (tierLabel != null && !tierLabel.isBlank() && !"其他".equals(tierLabel)) {
+                reasonBuilder.append("，").append(tierLabel);
             }
-            bm.setPros(List.of());
-            bm.setCons(List.of());
+            if (city != null && !city.isBlank()) {
+                reasonBuilder.append("，").append(city);
+            }
+            if (canBeSafe) {
+                reasonBuilder.append("，可保底");
+            }
+            bm.setReason(reasonBuilder.toString());
+
+            // ── 结构化 pros ──
+            List<String> pros = new ArrayList<>();
+            int absGap = Math.abs(gap);
+            if (gap > 14) pros.add(gapLabel + "，分数充裕");
+            else if (gap > 5) pros.add(gapLabel + "，分数有余量");
+            else if (gap > 0) pros.add(gapLabel + "，分数勉强够");
+            if (canBeSafe) pros.add("可保底");
+            if (quota > 20) pros.add(quotaLabel + "，名额充裕");
+            else if (quota > 9) pros.add(quotaLabel + "，名额正常");
+            if (tierLabel != null && (tierLabel.contains("211") || tierLabel.contains("双一流") || tierLabel.contains("985"))) {
+                pros.add(tierLabel + "平台");
+            }
+            if (city != null && !city.isBlank()) pros.add(city + "地域");
+            bm.setPros(pros);
+
+            // ── 结构化 cons ──
+            List<String> cons = new ArrayList<>();
+            if (!canBeSafe) cons.add("条件不满足，不能作为保底");
+            if (quota <= 3) cons.add(quotaLabel + "，名额风险极高");
+            else if (quota <= 9) cons.add(quotaLabel + "，名额偏少");
+            if (gap <= -10) cons.add(gapLabel + "，分数风险高");
+            else if (gap < 0) cons.add(gapLabel + "，分数有压力");
+            bm.setCons(cons);
+
             bm.setTradeoffs(List.of());
             bm.setRecommendedAction(isDiscussed
                 ? "可在对话中进一步了解该校复试线、考试科目等细节。"
@@ -1545,18 +1929,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     /** 将数据库中原始 tier 值映射为用户可读的中文标签 */
     private static String tierDisplayLabel(Object value) {
-        String v = value == null ? "" : String.valueOf(value);
-        return switch (v) {
-            case "985" -> "985";
-            case "211" -> "211";
-            case "DOUBLE_FIRST" -> "双一流";
-            case "PUBLIC_REGULAR" -> "普通一本";
-            case "PRIVATE" -> "民办";
-            case "INDEPENDENT" -> "独立学院";
-            case "RESEARCH_INSTITUTE" -> "科研院所";
-            case "OTHER" -> "其他";
-            default -> v.isBlank() ? "双非" : v;
-        };
+        return AiRecommendationTools.tierDisplayLabel(value);
     }
 
     private Map<String, Object> normalizeReportItem(Map<String, Object> item) {

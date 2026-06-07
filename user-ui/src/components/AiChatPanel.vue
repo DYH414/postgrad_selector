@@ -1,5 +1,10 @@
 <template>
   <div class="ai-chat-panel" :class="{ open: visible }">
+    <div v-if="!visible && !conversationId" class="chat-start-overlay">
+      <i class="el-icon-chat-line-round" />
+      <strong>按我的画像开始筛选</strong>
+      <p>AI 顾问会基于你的画像启动对话，并逐步沉淀报告候选。</p>
+    </div>
     <div class="panel-header">
       <div class="advisor-title">
         <span class="advisor-mark">AI</span>
@@ -67,22 +72,6 @@
       </div>
     </div>
 
-    <div v-if="bookmarks.length > 0" class="bookmarks-bar">
-      <div class="bookmarks-header" @click="bookmarksExpanded = !bookmarksExpanded">
-        <span>🔖 报告候选 ({{ bookmarks.length }})</span>
-        <i :class="bookmarksExpanded ? 'el-icon-arrow-up' : 'el-icon-arrow-down'" />
-      </div>
-      <div v-if="bookmarksExpanded" class="bookmarks-list">
-        <div v-for="bm in bookmarks" :key="bm.programId" class="bookmark-item">
-          <div class="bookmark-info">
-            <span class="bookmark-school">{{ bm.schoolName }}</span>
-            <span v-if="bm.programName" class="bookmark-program">{{ bm.programName }}</span>
-            <span :class="['bookmark-tier', bm.judgement]">{{ tierLabel(bm.judgement) }}</span>
-          </div>
-          <el-button type="text" size="mini" @click="removeBookmark(bm.programId)" icon="el-icon-close" />
-        </div>
-      </div>
-    </div>
     <div v-if="currentOptions.length > 0 && !loading" class="options-bar">
       <div class="options-title">下一步</div>
       <el-button v-for="(opt, i) in currentOptions" :key="i"
@@ -99,28 +88,24 @@
             :disabled="!input.trim() || loading" @click="sendMessage" />
         </template>
       </el-input>
-      <el-button v-if="messages.length >= 4" type="success" size="small"
-        class="report-button" @click="generateReport">
-        生成推荐报告
-      </el-button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { postAiStart, postAiChat, postAiChatStream, postAiGenerateReport, getBookmarks, deleteBookmark } from '@/api/ai'
+import { postAiStart, postAiChat, postAiChatStream } from '@/api/ai'
+import { cleanVisibleText } from '@/views/ai-recommend/utils/display'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
   candidateIds: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['close', 'fallback'])
+const emit = defineEmits(['close', 'fallback', 'conversation-started', 'bookmarks-updated'])
 
-const router = useRouter()
+const AI_RECENT_CONVERSATION_KEY = 'ai_recent_conversation_id'
 
 const body = ref(null)
 const conversationId = ref(null)
@@ -129,8 +114,30 @@ const currentOptions = ref([])
 const input = ref('')
 const loading = ref(false)
 const thinkingText = ref('')
-const bookmarks = ref([])
-const bookmarksExpanded = ref(false)
+function askAboutBookmark(bm) {
+  const name = bm.schoolName || ''
+  const inputText = '帮我详细分析 ' + name + '，包括复试线风险、考试科目和就业前景'
+  input.value = inputText
+  sendMessage()
+}
+
+defineExpose({ askAboutBookmark })
+
+function restoreConversation() {
+  try {
+    const storedId = localStorage.getItem(AI_RECENT_CONVERSATION_KEY)
+    if (!storedId) return
+    const raw = localStorage.getItem('ai_conv_' + storedId)
+    if (!raw) return
+    const data = JSON.parse(raw)
+    conversationId.value = storedId
+    messages.value = Array.isArray(data.messages) ? data.messages : []
+    currentOptions.value = Array.isArray(data.options) ? data.options : []
+    emit('conversation-started', conversationId.value)
+    emit('bookmarks-updated', conversationId.value)
+    scrollToBottom()
+  } catch (_) {}
+}
 
 // ---- decorated messages ----
 const decoratedMessages = computed(() => {
@@ -157,9 +164,11 @@ async function startConversation() {
   try {
     const res = await postAiStart({ candidateIds: props.candidateIds })
     conversationId.value = res.data.conversationId
+    emit('conversation-started', conversationId.value)
     messages.value = [{ role: 'assistant', content: res.data.message, cards: res.data.cards || [] }]
     currentOptions.value = res.data.options || []
     saveToLocal()
+    emit('bookmarks-updated', conversationId.value)
   } catch (e) {
     ElMessage.error('启动 AI 对话失败')
   } finally {
@@ -218,7 +227,7 @@ async function callChat(text) {
           messages.value[idx].cards = data.cards || []
           currentOptions.value = data.options || []
           saveToLocal()
-          fetchBookmarks()
+          emit('bookmarks-updated', conversationId.value)
         },
         onError(error) {
           throw error
@@ -242,7 +251,7 @@ function visibleStreamContent(content) {
 // ---- text cleaning ----
 function cleanTechnicalText(text) {
   if (!text) return text
-  return text
+  const cleaned = text
     .replace(/✅\s*canBeSafe[，,、\s]*/gi, '可作为低风险候选，')
     .replace(/canBeSafe\s*[:=]?\s*true/gi, '保底边界通过')
     .replace(/canBeSafe\s*[:=]?\s*false/gi, '不能作为保底')
@@ -261,6 +270,7 @@ function cleanTechnicalText(text) {
     .replace(/\bprogramId\s*[:：=]?\s*\d+\b/gi, '')
     .replace(/\bsourceUrl\s*[:：=]?\s*\S+/gi, '')
     .replace(/\bsourceOwner\s*[:：=]?\s*\S+/gi, '')
+  return cleanVisibleText(cleaned)
 }
 
 function stripMarkdown(text) {
@@ -499,6 +509,7 @@ async function callChatFallback(text, assistantIndex, streamError) {
     messages.value[assistantIndex].cards = res.data.cards || []
     currentOptions.value = res.data.options || []
     saveToLocal()
+    emit('bookmarks-updated', conversationId.value)
   } catch (e) {
     await new Promise(r => setTimeout(r, 3000))
     try {
@@ -506,6 +517,7 @@ async function callChatFallback(text, assistantIndex, streamError) {
       messages.value[assistantIndex].content = visibleStreamContent(res.data.message || 'AI 对话暂不可用，请稍后重试。')
       messages.value[assistantIndex].cards = res.data.cards || []
       currentOptions.value = res.data.options || []
+      emit('bookmarks-updated', conversationId.value)
     } catch (_) {
       messages.value[assistantIndex].content = friendlyChatError(streamError)
     }
@@ -525,32 +537,10 @@ function friendlyChatError(error, fallback) {
   return raw
 }
 
-// ---- report generation ----
-function trackPendingReport(reportId) {
-  try {
-    const pending = JSON.parse(sessionStorage.getItem('pending_reports') || '[]')
-    pending.push({ id: reportId, ts: Date.now() })
-    sessionStorage.setItem('pending_reports', JSON.stringify(pending.slice(-5)))
-  } catch (_) {}
-}
-
-async function generateReport() {
-  loading.value = true
-  try {
-    const res = await postAiGenerateReport({ conversationId: conversationId.value })
-    const reportId = res.data.reportId
-    trackPendingReport(reportId)
-    router.push({ name: 'AiReport', params: { id: reportId } })
-  } catch (e) {
-    ElMessage.error('生成报告失败')
-  } finally {
-    loading.value = false
-  }
-}
-
 // ---- persistence ----
 function saveToLocal() {
   try {
+    localStorage.setItem(AI_RECENT_CONVERSATION_KEY, conversationId.value)
     const data = JSON.stringify({ messages: messages.value, options: currentOptions.value })
     if (data.length > 500_000) {
       const trimmed = { messages: messages.value.slice(-10), options: currentOptions.value }
@@ -568,44 +558,54 @@ function scrollToBottom() {
   })
 }
 
-async function fetchBookmarks() {
-  if (!conversationId.value) return
-  try {
-    const res = await getBookmarks(conversationId.value)
-    bookmarks.value = res.data.bookmarks || []
-  } catch (_) {}
-}
-
-async function removeBookmark(programId) {
-  try {
-    await deleteBookmark(conversationId.value, programId)
-    bookmarks.value = bookmarks.value.filter(b => b.programId !== programId)
-  } catch (_) {}
-}
-
-function tierLabel(j) {
-  const map = { reach: '冲刺', steady: '稳妥', safe: '保底' }
-  return map[j] || j
-}
+onMounted(restoreConversation)
 </script>
 
 <style scoped>
 .ai-chat-panel {
-  position: fixed;
-  right: -440px;
-  top: 0;
-  width: 420px;
-  height: 100vh;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   background: #f6f9ff;
-  box-shadow: -12px 0 34px rgba(31, 64, 124, .16);
+  box-shadow: 0 8px 24px rgba(15, 35, 75, 0.06);
   display: flex;
   flex-direction: column;
-  transition: right .24s ease;
-  z-index: 2000;
-  border-left: 1px solid #d9e6f8;
+  border: 1px solid #e5edf8;
+  border-radius: 16px;
+  overflow: hidden;
   color: #10213f;
 }
-.ai-chat-panel.open { right: 0; }
+.ai-chat-panel.open { right: auto; }
+.chat-start-overlay {
+  position: absolute;
+  inset: 70px 0 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: linear-gradient(180deg, rgba(246, 249, 255, .94), rgba(255, 255, 255, .96));
+  text-align: center;
+}
+.chat-start-overlay i {
+  font-size: 42px;
+  color: #1769f6;
+  margin-bottom: 14px;
+}
+.chat-start-overlay strong {
+  color: #10213f;
+  font-size: 18px;
+  line-height: 24px;
+}
+.chat-start-overlay p {
+  max-width: 360px;
+  margin: 8px 0 0;
+  color: #71829a;
+  font-size: 14px;
+  line-height: 1.7;
+}
 .panel-header {
   min-height: 70px;
   padding: 14px 16px;
@@ -652,8 +652,9 @@ function tierLabel(j) {
 }
 .panel-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 16px 14px 18px;
+  padding: 18px 22px 20px;
 }
 .panel-body::-webkit-scrollbar {
   width: 8px;
@@ -700,7 +701,7 @@ function tierLabel(j) {
   border-color: #1f6fff;
 }
 .advisor-card {
-  width: min(100%, 334px);
+  width: min(100%, 720px);
   background: #ffffff;
   border: 1px solid #d7e5f8;
   border-radius: 8px;
@@ -840,7 +841,7 @@ function tierLabel(j) {
   line-height: 1.62 !important;
 }
 .user-pill {
-  max-width: 300px;
+  max-width: min(620px, 72%);
   min-height: 34px;
   padding: 8px 12px;
   border-radius: 8px;
@@ -911,57 +912,10 @@ function tierLabel(j) {
 .input-bar :deep(.el-input-group__append) {
   box-shadow: 0 0 0 1px #cddbec inset;
 }
-.report-button {
-  margin-top: 8px;
-  width: 100%;
-  min-height: 34px;
-  border-radius: 7px;
-  border: none;
-  background: #0f9f6e;
-  font-weight: 700;
-}
-.bookmarks-bar {
-  border-top: 1px solid #dce8f7;
-  background: #fafcff;
-}
-.bookmarks-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 14px;
-  cursor: pointer;
-  font-weight: 700;
-  color: #10213f;
-  font-size: 13px;
-}
-.bookmarks-list {
-  padding: 0 14px 8px;
-}
-.bookmark-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0;
-  border-bottom: 1px solid #f0f4fa;
-  font-size: 12px;
-}
-.bookmark-school { font-weight: 600; color: #10213f; }
-.bookmark-program { margin-left: 4px; color: #6b7f99; }
-.bookmark-tier {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-}
-.bookmark-tier.reach { background: #fff4e5; color: #a85d00; }
-.bookmark-tier.steady { background: #e8f4fd; color: #1769aa; }
-.bookmark-tier.safe { background: #edfdf5; color: #087443; }
-
 @media (max-width: 520px) {
   .ai-chat-panel {
-    width: 100vw;
-    right: -100vw;
+    width: 100%;
+    min-height: 560px;
   }
   .advisor-card {
     width: calc(100vw - 72px);

@@ -83,17 +83,13 @@ public class AiRecommendationTools {
         }
     }
 
-    @Tool("获取指定学校的完整录取数据，包括近三年复试线、小分、招生计划、录取均分")
+    @Tool("获取指定学校的完整录取数据，包括近三年复试线、小分、招生计划、录取均分。每轮最多调用1次")
     public String getProgramDetail(@P("学校 programId") long programId) {
         String conversationId = CURRENT_CONVERSATION.get();
         log.info("[Tool] getProgramDetail called — conversationId={}, programId={}", conversationId, programId);
         if (conversationId == null) return "{}";
-        if (!CURRENT_BUDGET.get().tryUse("getProgramDetail", 800)) {
-            CURRENT_TRACE.get().setExplorationLimited(true);
-            return "{\"error\":\"tool_budget_exceeded\",\"explorationLimited\":true}";
-        }
 
-        // 对话级缓存：同一 programId 在本次对话中已查过，直接返回
+        // 对话级缓存：同一 programId 已查过直接返回，不占预算
         String cacheKey = conversationId + ":" + programId;
         String cached = DETAIL_CACHE.get(cacheKey);
         if (cached != null) {
@@ -101,11 +97,26 @@ public class AiRecommendationTools {
             return cached;
         }
 
+        // 候选池校验：pid 不在 pool 中直接拒绝
         String poolJson = loadPoolJson(conversationId);
         if (poolJson == null) return "{}";
-
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> pool = JSON.parseObject(poolJson, List.class);
+        boolean inPool = pool != null && pool.stream().anyMatch(p -> {
+            Object idObj = p.get("programId");
+            long pid = idObj instanceof Number ? ((Number) idObj).longValue() : Long.parseLong(String.valueOf(idObj));
+            return pid == programId;
+        });
+        if (!inPool) {
+            return "{\"error\":\"program_not_in_pool\",\"message\":\"该学校不在当前候选池中，请使用 searchPrograms 在候选池内筛选。\"}";
+        }
+
+        // 硬限制：每轮最多 1 次
+        if (!CURRENT_BUDGET.get().tryUse("getProgramDetail", 800)) {
+            CURRENT_TRACE.get().setExplorationLimited(true);
+            return "{\"error\":\"tool_budget_exceeded\",\"explorationLimited\":true,\"message\":\"本轮已获取过详细数据(每轮最多1次)，请基于已有数据继续分析。\"}";
+        }
+
         for (Map<String, Object> p : pool) {
             Object idObj = p.get("programId");
             long pid = idObj instanceof Number ? ((Number) idObj).longValue() : Long.parseLong(String.valueOf(idObj));
@@ -192,8 +203,16 @@ public class AiRecommendationTools {
     }
 
     private boolean matchFilter(Map<String, Object> program, Map<String, Object> filter) {
-        if (filter.containsKey("city") && !csvContains(filter.get("city"), program.get("city"))) return false;
-        if (filter.containsKey("province") && !csvContains(filter.get("province"), program.get("province"))) return false;
+        // 地区匹配：统一处理 regions / city / province，支持 String 和 JSON Array
+        // 命中 program 的 province 或 city 任一即算匹配
+        List<String> regionFilters = collectRegions(filter);
+        if (!regionFilters.isEmpty()) {
+            String rowProvince = String.valueOf(program.getOrDefault("province", ""));
+            String rowCity = String.valueOf(program.getOrDefault("city", ""));
+            boolean regionMatch = regionFilters.stream().anyMatch(r ->
+                r.equals(rowProvince) || r.equals(rowCity));
+            if (!regionMatch) return false;
+        }
         if (filter.containsKey("tier") && !csvContains(filter.get("tier"), program.get("schoolTier"))) return false;
         if (filter.containsKey("keyword") && !keywordMatches(program, filter.get("keyword"))) return false;
         if (filter.containsKey("minScore")) {
@@ -211,13 +230,39 @@ public class AiRecommendationTools {
         return true;
     }
 
+    /** 从 filter 中收集所有地区条件（regions / city / province），支持 String 和 JSON Array */
+    @SuppressWarnings("unchecked")
+    private static List<String> collectRegions(Map<String, Object> filter) {
+        List<String> regions = new ArrayList<>();
+        for (String key : List.of("regions", "city", "province")) {
+            Object val = filter.get(key);
+            if (val == null) continue;
+            if (val instanceof List<?> list) {
+                for (Object item : list) {
+                    String s = String.valueOf(item).trim();
+                    if (!s.isBlank()) regions.add(s);
+                }
+            } else {
+                String s = String.valueOf(val).trim();
+                if (!s.isBlank()) regions.add(s);
+            }
+        }
+        return regions;
+    }
+
     /**
      * Check whether {@code csvFilter} contains {@code actualValue}.
      * Supports both single values ("211") and comma-separated lists ("211,985,DOUBLE_FIRST").
      * The AI may send multiple tiers/provinces as a CSV string.
      */
+    @SuppressWarnings("unchecked")
     private static boolean csvContains(Object filterValue, Object actualValue) {
         if (filterValue == null || actualValue == null) return false;
+        // 支持 JSON Array：LLM 可能传 ["211","985","DOUBLE_FIRST"]
+        if (filterValue instanceof List<?> list) {
+            String actualStr = String.valueOf(actualValue);
+            return list.stream().anyMatch(item -> actualStr.equals(String.valueOf(item).trim()));
+        }
         String filterStr = String.valueOf(filterValue);
         String actualStr = String.valueOf(actualValue);
         if (filterStr.isBlank()) return true;
@@ -260,7 +305,69 @@ public class AiRecommendationTools {
         if (guard.get("safeBlockReason") != null) {
             item.put("safeBlockReason", guard.get("safeBlockReason"));
         }
+
+        // 语义标签（数字离散化）：LLM 更适合消费语义标签而非原始数字
+        int gapVal = toInt(program.get("gap"), 0);
+        int quotaVal = toInt(program.getOrDefault("unifiedExamQuota", program.get("planCount")), 0);
+        boolean canSafe = Boolean.TRUE.equals(guard.get("canBeSafe"));
+
+        item.put("gapLabel", gapLabel(gapVal));
+        item.put("quotaLabel", quotaLabel(quotaVal));
+        item.put("safeLabel", canSafe ? "可以保底" : "不可保底");
+        item.put("quotaRiskLabel", quotaRiskLabel(String.valueOf(guard.getOrDefault("quotaRisk", ""))));
+
         return item;
+    }
+
+    // ==================== 数字离散化工具方法 ====================
+
+    private static int toInt(Object val, int fallback) {
+        if (val instanceof Number n) return n.intValue();
+        if (val == null) return fallback;
+        try { return Integer.parseInt(String.valueOf(val)); } catch (NumberFormatException e) { return fallback; }
+    }
+
+    public static String gapLabel(int gap) {
+        if (gap >= 15) return "分数大幅超出(+" + gap + ")";
+        if (gap >= 5)  return "分数适度超出(+" + gap + ")";
+        if (gap >= 0)  return "分数微弱超出(+" + gap + ")";
+        if (gap >= -5) return "分数微弱不足(" + gap + ")";
+        if (gap >= -15) return "分数适度不足(" + gap + ")";
+        return "分数大幅不足(" + gap + ")";
+    }
+
+    public static String quotaLabel(int quota) {
+        if (quota >= 30) return "招生充裕(" + quota + "人)";
+        if (quota >= 10) return "招生正常(" + quota + "人)";
+        if (quota >= 4)  return "招生偏少(" + quota + "人)";
+        return "招生极少(" + quota + "人)";
+    }
+
+    /** 将数据库中原始 tier 值映射为用户可读的中文标签 */
+    public static String tierDisplayLabel(Object value) {
+        String v = value == null ? "" : String.valueOf(value);
+        return switch (v) {
+            case "985" -> "985";
+            case "211" -> "211";
+            case "DOUBLE_FIRST" -> "双一流";
+            case "PUBLIC_REGULAR" -> "普通一本";
+            case "PRIVATE" -> "民办";
+            case "INDEPENDENT" -> "独立学院";
+            case "RESEARCH_INSTITUTE" -> "科研院所";
+            case "OTHER" -> "其他";
+            default -> v.isBlank() ? "双非" : v;
+        };
+    }
+
+    public static String quotaRiskLabel(String risk) {
+        if (risk == null) return "";
+        return switch (risk) {
+            case "normal"    -> "名额风险=低";
+            case "medium"    -> "名额风险=中";
+            case "high"      -> "名额风险=高";
+            case "very_high" -> "名额风险=极高";
+            default          -> "";
+        };
     }
 
     private Map<String, Object> buildSearchFacets(List<Map<String, Object>> result) {
@@ -295,37 +402,9 @@ public class AiRecommendationTools {
         }
     }
 
-    @Tool("直接查询 MySQL 数据库中的院校数据，不受候选池限制。可按关键词、学校层次、省份、分数范围筛选")
-    public String queryDatabase(@P("查询条件，JSON 格式，如 {\"keyword\":\"计算机\",\"tier\":\"985\",\"province\":\"北京\",\"minScore\":300,\"maxScore\":400,\"limit\":20}") String filters) {
-        log.info("[Tool] queryDatabase called — filters={}", filters);
-        if (!CURRENT_BUDGET.get().tryUse("queryDatabase", 500)) {
-            CURRENT_TRACE.get().setExplorationLimited(true);
-            return "{\"error\":\"tool_budget_exceeded\",\"explorationLimited\":true}";
-        }
-
-        Map<String, Object> filterMap = filters == null || filters.isEmpty()
-            ? new LinkedHashMap<>()
-            : JSON.parseObject(filters);
-        String keyword = stringVal(filterMap, "keyword", null);
-        String tier = stringVal(filterMap, "tier", null);
-        String province = stringVal(filterMap, "province", null);
-        Integer minScore = nullableInt(filterMap, "minScore");
-        Integer maxScore = nullableInt(filterMap, "maxScore");
-        // 至少需要一个筛选条件，防止无筛选全库查询导致无关结果
-        if (keyword == null && tier == null && province == null && minScore == null && maxScore == null) {
-            return "{\"error\":\"请至少指定一个筛选条件，如 keyword(学校名)、tier(985/211)、province(省份)、minScore/maxScore(分数范围)\",\"hint\":\"例如查宁夏大学用 {\\\"keyword\\\":\\\"宁夏\\\"}\"}";
-        }
-        int limit = Math.min(intVal(filterMap, "limit", 20), 30);
-
-        List<RowMap> rows = aiDatabaseToolMapper.querySchools(keyword, tier, province, minScore, maxScore, limit);
-
-        Map<String, Object> args = new LinkedHashMap<>();
-        args.put("filters", filters);
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("count", rows.size());
-        summary.put("limit", limit);
-        CURRENT_TRACE.get().record("queryDatabase", args, summary);
-        return JSON.toJSONString(rows);
+    @Tool("已禁用。请使用 searchPrograms 在候选池内筛选")
+    public String queryDatabase(@P("查询条件") String filters) {
+        return "{\"error\":\"queryDatabase_disabled\",\"message\":\"该工具已禁用。请使用 searchPrograms 在候选池内筛选。如需扩展候选池，请使用 expandCandidatePool。\"}";
     }
 
     @Tool("横向对比多所学校的录取数据，返回详细对比")
@@ -503,10 +582,11 @@ public class AiRecommendationTools {
         }
         judgement = judgement.trim();
 
-        // 2. 从候选池校验 programId 并注入 schoolName/programName
+        // 2. 从候选池校验 programId 并注入 schoolName/programName，同时保存完整 fact 行供裁决使用
         String poolJson = loadPoolJson(conversationId);
         String schoolName = null, programName = null;
         boolean inPool = false;
+        Map<String, Object> matchedRow = null;
         if (poolJson != null) {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> pool = JSON.parseObject(poolJson, List.class);
@@ -515,6 +595,7 @@ public class AiRecommendationTools {
                 if (pid != null && pid == programId) {
                     schoolName = String.valueOf(row.getOrDefault("schoolName", ""));
                     programName = String.valueOf(row.getOrDefault("programName", ""));
+                    matchedRow = row;
                     inPool = true;
                     break;
                 }
@@ -536,7 +617,6 @@ public class AiRecommendationTools {
         bookmark.setProgramId(programId);
         bookmark.setSchoolName(schoolName);
         bookmark.setProgramName(programName);
-        bookmark.setJudgement(judgement);
         bookmark.setReason(reason);
         bookmark.setPros(pros);
         bookmark.setCons(cons);
@@ -545,6 +625,20 @@ public class AiRecommendationTools {
         bookmark.setSource("conversation_ai");
         bookmark.setStatus("discussed");
         bookmark.setUserConfirmed(false);
+
+        // 4a. 后端裁决：AI 的 judgement 必须经过事实层校验
+        bookmark.setAiJudgement(judgement);
+        com.ruoyi.postgrad.domain.AiRecommendationSafety.JudgementResult ruling =
+            com.ruoyi.postgrad.domain.AiRecommendationSafety.finalJudgement(
+                matchedRow, judgement);
+        bookmark.setFinalJudgement(ruling.finalJudgement());
+        bookmark.setJudgement(ruling.finalJudgement()); // 兼容旧代码，judgement = finalJudgement
+        bookmark.setAdjusted(ruling.adjusted());
+        bookmark.setAdjustReason(ruling.adjustReason());
+        if (ruling.adjusted()) {
+            log.info("[Tool] addToReport judgement adjusted: programId={}, AI={} → final={}, reason={}",
+                programId, judgement, ruling.finalJudgement(), ruling.adjustReason());
+        }
 
         // 5. 读取现有书签列表，同 programId 覆盖
         String key = BOOKMARK_KEY_PREFIX + conversationId;

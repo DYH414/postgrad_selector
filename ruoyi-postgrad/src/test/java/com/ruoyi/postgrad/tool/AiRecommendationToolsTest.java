@@ -25,22 +25,30 @@ class AiRecommendationToolsTest {
         ValueOperations<String, String> ops = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(ops);
 
-        RowMap row = new RowMap();
-        row.put("programId", 1L);
-        when(ops.get("ai:agent:pool:c1")).thenReturn(JSON.toJSONString(List.of(row)));
+        // Pool with multiple programIds so budget can be exhausted with different pids
+        List<RowMap> pool = new ArrayList<>();
+        for (long i = 1; i <= 15; i++) {
+            RowMap row = new RowMap();
+            row.put("programId", i);
+            pool.add(row);
+        }
+        when(ops.get("ai:agent:pool:c1")).thenReturn(JSON.toJSONString(pool));
 
         Field redisField = AiRecommendationTools.class.getDeclaredField("redisTemplate");
         redisField.setAccessible(true);
         redisField.set(tools, redis);
 
         AiRecommendationTools.startReportContext("c1");
-        for (int i = 0; i < 12; i++) {
-            tools.getProgramDetail(1L);
+        // Call with different pids to exhaust detail budget (reportDefaults maxDetailCalls=12)
+        for (int i = 1; i <= 12; i++) {
+            tools.getProgramDetail(i);
         }
-        String result = tools.getProgramDetail(1L);
+        // 13th different pid should hit budget limit
+        String result = tools.getProgramDetail(13L);
         AiRecommendationTools.clear();
 
-        assertTrue(result.contains("tool_budget_exceeded"));
+        assertTrue(result.contains("tool_budget_exceeded"),
+            "13th getProgramDetail should be blocked, got: " + result);
     }
 
     @Test

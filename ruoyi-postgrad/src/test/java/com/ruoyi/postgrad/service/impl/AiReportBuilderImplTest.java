@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
@@ -98,12 +99,17 @@ class AiReportBuilderImplTest {
         Map<String, Object> opinion = (Map<String, Object>) school.get("opinion");
 
         assertTrue(safeSchools.isEmpty());
-        assertEquals(false, school.get("canBeSafe"));
-        assertEquals("very_high", school.get("quotaRisk"));
         assertEquals("steady", opinion.get("judgement"));
         assertEquals("high", opinion.get("risk"));
-        assertTrue(((String) school.get("safeBlockReason")).contains("统考名额仅1人"));
-        assertTrue(((List<?>) opinion.get("cons")).contains(school.get("safeBlockReason")));
+
+        // P1: 脱敏后检查 tags 替代 canBeSafe/quotaRisk/safeBlockReason
+        @SuppressWarnings("unchecked")
+        List<String> tags = (List<String>) school.get("tags");
+        assertNotNull(tags);
+        assertTrue(tags.stream().anyMatch(t -> t.contains("不满足严格保底条件")), "should tag canBeSafe=false");
+        assertTrue(tags.stream().anyMatch(t -> t.contains("名额风险极高")), "should tag quotaRisk=very_high");
+        assertTrue(tags.stream().anyMatch(t -> t.contains("统考名额仅1人")), "should tag safeBlockReason");
+        assertTrue(((List<?>) opinion.get("cons")).stream().anyMatch(c -> String.valueOf(c).contains("统考名额仅1人")));
     }
 
     private RowMap detailRow(long programId) {

@@ -19,6 +19,16 @@ public class AiBookmark {
     private String status;
     private boolean userConfirmed;
 
+    // ── 裁决字段 ──
+    /** AI 原始判断（addToReport 传入的值） */
+    private String aiJudgement;
+    /** 后端统一裁决后的最终档位 reach/steady/safe，judgement 字段存此值以兼容旧逻辑 */
+    private String finalJudgement;
+    /** 是否被后端降级/调整 */
+    private Boolean adjusted;
+    /** 调整原因（仅 adjusted=true 时有值） */
+    private String adjustReason;
+
     public AiBookmark() {}
 
     public long getProgramId() { return programId; }
@@ -28,6 +38,7 @@ public class AiBookmark {
     public String getProgramName() { return programName; }
     public void setProgramName(String v) { this.programName = v; }
     public String getJudgement() { return judgement; }
+    /** 设置 judgement，同时兼容旧代码。调用方应优先使用 setFinalJudgement */
     public void setJudgement(String v) { this.judgement = v; }
     public String getReason() { return reason; }
     public void setReason(String v) { this.reason = v; }
@@ -45,4 +56,14 @@ public class AiBookmark {
     public void setStatus(String v) { this.status = v; }
     public boolean isUserConfirmed() { return userConfirmed; }
     public void setUserConfirmed(boolean v) { this.userConfirmed = v; }
+
+    // ── 裁决字段 getter/setter ──
+    public String getAiJudgement() { return aiJudgement; }
+    public void setAiJudgement(String v) { this.aiJudgement = v; }
+    public String getFinalJudgement() { return finalJudgement; }
+    public void setFinalJudgement(String v) { this.finalJudgement = v; }
+    public Boolean getAdjusted() { return adjusted; }
+    public void setAdjusted(Boolean v) { this.adjusted = v; }
+    public String getAdjustReason() { return adjustReason; }
+    public void setAdjustReason(String v) { this.adjustReason = v; }
 }

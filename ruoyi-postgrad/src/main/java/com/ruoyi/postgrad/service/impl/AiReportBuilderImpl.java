@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 
 import com.ruoyi.postgrad.domain.AiBookmark;
 import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.tool.AiRecommendationTools;
 
 @Service
 public class AiReportBuilderImpl implements AiReportBuilder {
@@ -149,6 +150,15 @@ public class AiReportBuilderImpl implements AiReportBuilder {
             tier("reach", "冲刺档", reach),
             tier("steady", "稳妥档", steady),
             tier("safe", "保底档", safe)));
+
+        // P1: 脱敏所有 school 对象
+        for (Map<String, Object> tierMap : List.of(
+            tier("reach", "", reach), tier("steady", "", steady), tier("safe", "", safe))) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> schools = (List<Map<String, Object>>) tierMap.get("schools");
+            for (Map<String, Object> school : schools) sanitizeReportItem(school);
+        }
+
         return report;
     }
 
@@ -547,6 +557,14 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         meta.put("safeDowngradedProgramIds", safeDowngradedIds);
         result.put("meta", meta);
         result.put("metadata", meta);
+
+        // P1: 脱敏
+        for (Map<String, Object> tier : tiers) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> schools = (List<Map<String, Object>>) tier.get("schools");
+            if (schools != null) for (Map<String, Object> s : schools) sanitizeReportItem(s);
+        }
+
         return result;
     }
 
@@ -596,6 +614,10 @@ public class AiReportBuilderImpl implements AiReportBuilder {
             "dataCompleteness", "sourceUrl", "sourceOwner")) {
             if (detail.containsKey(key)) item.put(key, detail.get(key));
         }
+        // 将 schoolTier 从 DB 枚举值映射为中文标签
+        if (item.containsKey("schoolTier")) {
+            item.put("schoolTier", AiRecommendationTools.tierDisplayLabel(item.get("schoolTier")));
+        }
 
         Integer avg = integerValue(detail.get("avgAdmittedScore"));
         item.put("avgAdmittedScore", avg);
@@ -612,6 +634,43 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         item.put("opinion", buildOpinion(opinionSource, guard, fromSafeTier));
         mirrorOpinionForCurrentFrontend(item);
         return item;
+    }
+
+    /** 将内部字段转为 tags 后删除，避免 raw 字段泄露到前端 */
+    private void sanitizeReportItem(Map<String, Object> item) {
+        List<String> tags = new ArrayList<>();
+
+        // canBeSafe → 是否满足严格保底
+        if (Boolean.FALSE.equals(item.get("canBeSafe"))) {
+            tags.add("不满足严格保底条件");
+        }
+
+        // quotaRisk → 名额风险
+        String qr = String.valueOf(item.getOrDefault("quotaRisk", ""));
+        if ("very_high".equals(qr)) tags.add("名额风险极高");
+        else if ("high".equals(qr)) tags.add("名额风险较高");
+        else if ("medium".equals(qr)) tags.add("名额风险中等");
+
+        // dataCompleteness → 数据完整度
+        String dc = String.valueOf(item.getOrDefault("dataCompleteness", ""));
+        if (!dc.isBlank() && !"null".equalsIgnoreCase(dc)) {
+            tags.add("数据完整度:" + dc);
+        }
+
+        // safeBlockReason → 直接作为 tag
+        String sbr = String.valueOf(item.getOrDefault("safeBlockReason", ""));
+        if (!sbr.isBlank() && !"null".equalsIgnoreCase(sbr)) {
+            tags.add(sbr);
+        }
+
+        item.put("tags", tags);
+
+        // 删除内部字段
+        for (String key : List.of("canBeSafe", "quotaRisk", "dataCompleteness", "safeBlockReason",
+            "scoreLine", "admissionLow", "admissionHigh", "planCount", "unifiedExamQuota",
+            "retestCount", "dataYear", "sourceUrl", "sourceOwner")) {
+            item.remove(key);
+        }
     }
 
     private Map<String, Object> buildOpinion(Map<String, Object> source, Map<String, Object> guard, boolean fromSafeTier) {

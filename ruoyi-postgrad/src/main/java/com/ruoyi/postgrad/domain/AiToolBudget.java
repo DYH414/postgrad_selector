@@ -35,13 +35,19 @@ public class AiToolBudget {
     }
 
     public static AiToolBudget chatTurnDefaults() {
-        return new AiToolBudget(3, 2, 2, 0, 3000, 2, 3);
+        // totalCalls=6 (only counts query tools), detailCalls=1, searchCalls=3, bookmarkCalls=10
+        return new AiToolBudget(6, 1, 2, 0, 3000, 3, 10);
     }
 
     public boolean tryUse(String toolName, int estimatedResultTokens) {
-        if (totalCalls + 1 > maxTotalCalls || resultTokens + estimatedResultTokens > maxResultTokens) {
-            explorationLimited = true;
-            return false;
+        boolean isBookmarkTool = "addToReport".equals(toolName) || "removeFromReport".equals(toolName);
+
+        // 查询工具受总预算限制；写入工具（书签）不占查询配额
+        if (!isBookmarkTool) {
+            if (totalCalls + 1 > maxTotalCalls || resultTokens + estimatedResultTokens > maxResultTokens) {
+                explorationLimited = true;
+                return false;
+            }
         }
         if ("getProgramDetail".equals(toolName) && detailCalls + 1 > maxDetailCalls) {
             explorationLimited = true;
@@ -63,8 +69,10 @@ public class AiToolBudget {
             explorationLimited = true;
             return false;
         }
-        totalCalls++;
-        resultTokens += Math.max(0, estimatedResultTokens);
+        if (!isBookmarkTool) {
+            totalCalls++;
+            resultTokens += Math.max(0, estimatedResultTokens);
+        }
         if ("getProgramDetail".equals(toolName)) detailCalls++;
         if ("searchPrograms".equals(toolName)) searchCalls++;
         if ("addToReport".equals(toolName)) bookmarkCalls++;
