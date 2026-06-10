@@ -407,11 +407,6 @@ public class AiRecommendationTools {
         }
     }
 
-    @Tool("已禁用。请使用 searchPrograms 在候选池内筛选")
-    public String queryDatabase(@P("查询条件") String filters) {
-        return "{\"error\":\"queryDatabase_disabled\",\"message\":\"该工具已禁用。请使用 searchPrograms 在候选池内筛选。如需扩展候选池，请使用 expandCandidatePool。\"}";
-    }
-
     @Tool("横向对比多所学校的录取数据，返回详细对比")
     public String comparePrograms(@P("学校 programId 列表") List<Long> ids) {
         String conversationId = CURRENT_CONVERSATION.get();
@@ -548,24 +543,6 @@ public class AiRecommendationTools {
             }
         } catch (Exception ignored) {}
         return 300;
-    }
-
-    @Tool("核验院校官网或研究生院信息。Phase 1 仅返回本地数据状态，不联网")
-    public String verifyOfficialInfo(@P("核验输入 JSON") String inputJson) {
-        if (!CURRENT_BUDGET.get().tryUse("verifyOfficialInfo", 500)) {
-            CURRENT_TRACE.get().setExplorationLimited(true);
-            return "{\"error\":\"tool_budget_exceeded\",\"explorationLimited\":true}";
-        }
-        Map<String, Object> args = new LinkedHashMap<>();
-        args.put("input", inputJson);
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("provider", null);
-        CURRENT_TRACE.get().record("verifyOfficialInfo", args, summary);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("verificationStatus", "local_data_only");
-        result.put("verificationProvider", null);
-        return JSON.toJSONString(result);
     }
 
     @Tool("将当前讨论的学校加入推荐报告候选。必须在 getProgramDetail 后调用；重复调用会更新推荐理由")

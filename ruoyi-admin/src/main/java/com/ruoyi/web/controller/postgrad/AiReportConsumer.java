@@ -38,14 +38,9 @@ public class AiReportConsumer {
     public void onMessage(Map<String, Object> msg) {
         Long reportId = ((Number) msg.get("reportId")).longValue();
         int estimatedScore = ((Number) msg.get("estimatedScore")).intValue();
-        String mode = (String) msg.getOrDefault("mode", "conversation");
 
         try {
-            if ("analyze".equals(mode)) {
-                handleAnalyzeMessage(reportId, estimatedScore, msg);
-            } else {
-                handleConversationMessage(reportId, estimatedScore, msg);
-            }
+            handleConversationMessage(reportId, estimatedScore, msg);
         } catch (Exception e) {
             String errorJson = "{\"status\":\"FAILED\",\"error\":\"" + safeJsonMessage(e.getMessage()) + "\"}";
             redisTemplate.opsForValue().set("ai:report:" + reportId, errorJson, REPORT_TTL_DAYS, TimeUnit.DAYS);
@@ -94,12 +89,6 @@ public class AiReportConsumer {
         } catch (Exception dbEx) { /* best-effort */ }
     }
 
-    @Deprecated(since = "2026-06", forRemoval = false)
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private void handleAnalyzeMessage(Long reportId, int estimatedScore, Map<String, Object> msg) {
-        redisTemplate.opsForValue().set("ai:report:" + reportId,
-            "{\"error\":\"快速推荐已迁移，请通过对话与AI讨论学校\"}", 7, TimeUnit.DAYS);
-    }
 
     private Map<String, Object> loadProfileForAnalysis(Long userId) {
         Map<String, Object> profile = new LinkedHashMap<>();

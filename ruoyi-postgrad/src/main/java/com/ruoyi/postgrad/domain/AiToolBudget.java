@@ -4,7 +4,6 @@ public class AiToolBudget {
     private final int maxTotalCalls;
     private final int maxDetailCalls;
     private final int maxExpandCalls;
-    private final int maxVerificationCalls;
     private final int maxResultTokens;
     private final int maxSearchCalls;
     private final int maxBookmarkCalls;
@@ -12,31 +11,29 @@ public class AiToolBudget {
     private int totalCalls;
     private int detailCalls;
     private int expandCalls;
-    private int verificationCalls;
     private int searchCalls;
     private int bookmarkCalls;
     private int resultTokens;
     private boolean explorationLimited;
 
     public AiToolBudget(int maxTotalCalls, int maxDetailCalls, int maxExpandCalls,
-        int maxVerificationCalls, int maxResultTokens,
+        int maxResultTokens,
         int maxSearchCalls, int maxBookmarkCalls) {
         this.maxTotalCalls = maxTotalCalls;
         this.maxDetailCalls = maxDetailCalls;
         this.maxExpandCalls = maxExpandCalls;
-        this.maxVerificationCalls = maxVerificationCalls;
         this.maxResultTokens = maxResultTokens;
         this.maxSearchCalls = maxSearchCalls;
         this.maxBookmarkCalls = maxBookmarkCalls;
     }
 
     public static AiToolBudget reportDefaults() {
-        return new AiToolBudget(20, 12, 3, 0, 12000, 10, 20);
+        return new AiToolBudget(20, 12, 3, 12000, 10, 20);
     }
 
     public static AiToolBudget chatTurnDefaults() {
         // totalCalls=6 (only counts query tools), detailCalls=1, searchCalls=3, bookmarkCalls=10
-        return new AiToolBudget(6, 1, 2, 0, 3000, 3, 10);
+        return new AiToolBudget(6, 1, 2, 3000, 3, 10);
     }
 
     public boolean tryUse(String toolName, int estimatedResultTokens) {
@@ -65,10 +62,6 @@ public class AiToolBudget {
             explorationLimited = true;
             return false;
         }
-        if ("verifyOfficialInfo".equals(toolName) && verificationCalls + 1 > maxVerificationCalls) {
-            explorationLimited = true;
-            return false;
-        }
         if (!isBookmarkTool) {
             totalCalls++;
             resultTokens += Math.max(0, estimatedResultTokens);
@@ -77,7 +70,6 @@ public class AiToolBudget {
         if ("searchPrograms".equals(toolName)) searchCalls++;
         if ("addToReport".equals(toolName)) bookmarkCalls++;
         if ("expandCandidatePool".equals(toolName)) expandCalls++;
-        if ("verifyOfficialInfo".equals(toolName)) verificationCalls++;
         return true;
     }
 

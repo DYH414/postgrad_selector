@@ -18,7 +18,7 @@ class AiToolBudgetTest {
 
     @Test
     void budgetStopsAfterTokenLimit() {
-        AiToolBudget budget = new AiToolBudget(20, 12, 3, 5, 200, 10, 20);
+        AiToolBudget budget = new AiToolBudget(20, 12, 3, 200, 10, 20);
         assertTrue(budget.tryUse("searchPrograms", 150));
         assertFalse(budget.tryUse("searchPrograms", 60));
         assertTrue(budget.isExplorationLimited());

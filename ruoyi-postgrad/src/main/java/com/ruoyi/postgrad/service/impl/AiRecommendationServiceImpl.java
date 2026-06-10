@@ -720,7 +720,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                         case "searchPrograms" -> "正在搜索符合条件的学校...";
                         case "comparePrograms" -> "正在对比学校数据...";
                         case "expandCandidatePool" -> "正在扩展候选学校范围...";
-                        case "queryDatabase" -> "正在查询数据库...";
                         default -> toolName.isEmpty() ? "正在分析你的问题..." : "正在调用 " + toolName + "...";
                     };
                     callback.onThinking(thinkingMsg);
