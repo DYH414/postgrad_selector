@@ -665,10 +665,13 @@ public class AiReportBuilderImpl implements AiReportBuilder {
 
         item.put("tags", tags);
 
-        // 删除内部字段
-        for (String key : List.of("canBeSafe", "quotaRisk", "dataCompleteness", "safeBlockReason",
-            "scoreLine", "admissionLow", "admissionHigh", "planCount", "unifiedExamQuota",
-            "retestCount", "dataYear", "sourceUrl", "sourceOwner")) {
+        // 删除内部裁决字段（展示用字段保留,前端 SchoolCard / 报告页要直接读）
+        // - canBeSafe / quotaRisk / safeBlockReason: 内部推断中间值,已经转成 tags/pros/cons
+        // - dataYear: 冗余,前端从 schoolDataYear() 走 fallback
+        // - 不删 dataCompleteness: 前端 schoolCompleteness() 直接读
+        // - 不删 scoreLine / admissionLow / admissionHigh / planCount / unifiedExamQuota /
+        //   admittedCount / retestCount / sourceUrl / sourceOwner: 都是 UI 展示字段
+        for (String key : List.of("canBeSafe", "quotaRisk", "safeBlockReason", "dataYear")) {
             item.remove(key);
         }
     }
