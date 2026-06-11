@@ -3,6 +3,8 @@ package com.ruoyi.postgrad.service.impl;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
+
+import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -286,7 +288,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
 
         String subjectCodes = stringVal(row.get("subjectCodes"), "");
         String examCombo = examComboBySubjects(subjectCodes);
-        String completeness = computedCompleteness(row);
+        String completeness = AiRecommendationSafety.computedCompleteness(row);
 
         Integer scoreLineGap = scoreLine == null || estimatedScore <= 0 ? null : estimatedScore - scoreLine;
         Integer admissionLowGap = low == null || estimatedScore <= 0 ? null : estimatedScore - low;
@@ -317,18 +319,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         return item;
     }
 
-    private String computedCompleteness(Map<String, Object> row)
-    {
-        boolean hasScore = nullableInt(row.get("scoreLine")) != null;
-        boolean hasRange = nullableInt(row.get("admissionLow")) != null && nullableInt(row.get("admissionHigh")) != null;
-        boolean hasAverage = decimalVal(row.get("avgAdmittedScore")) != null;
-        boolean hasCount = nullableInt(row.get("planCount")) != null || nullableInt(row.get("admittedCount")) != null;
-        boolean hasMainExtra = hasAverage || nullableInt(row.get("admissionLow")) != null
-            || nullableInt(row.get("planCount")) != null || nullableInt(row.get("unifiedExamQuota")) != null;
-        if (hasScore && hasRange && hasAverage && hasCount) return "A";
-        if (hasScore && hasMainExtra) return "B";
-        return "C";
-    }
+
 
     // ---- business logic helpers (unchanged from original) ----
 

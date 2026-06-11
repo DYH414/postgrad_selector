@@ -1,4 +1,4 @@
-package com.ruoyi.postgrad.domain;
+package com.ruoyi.postgrad.domain.ai;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

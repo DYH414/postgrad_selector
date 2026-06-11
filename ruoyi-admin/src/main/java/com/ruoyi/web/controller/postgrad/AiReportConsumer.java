@@ -16,6 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import com.ruoyi.postgrad.domain.ai.AiConstants;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,8 +27,6 @@ import java.util.concurrent.TimeUnit;
 public class AiReportConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(AiReportConsumer.class);
-    private static final long REPORT_TTL_DAYS = 7L;
-    private static final String PROGRESS_KEY_PREFIX = "ai:report:progress:";
 
     @Autowired private StringRedisTemplate redisTemplate;
     @Autowired private RecommendationLogMapper logMapper;
@@ -43,7 +42,7 @@ public class AiReportConsumer {
             handleConversationMessage(reportId, estimatedScore, msg);
         } catch (Exception e) {
             String errorJson = "{\"status\":\"FAILED\",\"error\":\"" + safeJsonMessage(e.getMessage()) + "\"}";
-            redisTemplate.opsForValue().set("ai:report:" + reportId, errorJson, REPORT_TTL_DAYS, TimeUnit.DAYS);
+            redisTemplate.opsForValue().set(AiConstants.keyReport(reportId), errorJson, AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
             try {
                 logMapper.updateReportResult(reportId, errorJson);
             } catch (Exception dbEx) { /* best-effort */ }
@@ -52,13 +51,13 @@ public class AiReportConsumer {
 
     private void handleConversationMessage(Long reportId, int estimatedScore, Map<String, Object> msg) {
         String conversationId = (String) msg.get("conversationId");
-        String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+        String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
         if (convJson == null) {
-            redisTemplate.opsForValue().set("ai:report:" + reportId,
-                "{\"error\": \"对话已过期\"}", REPORT_TTL_DAYS, TimeUnit.DAYS);
+            redisTemplate.opsForValue().set(AiConstants.keyReport(reportId),
+                "{\"error\": \"对话已过期\"}", AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
             return;
         }
-        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+        String poolJson = redisTemplate.opsForValue().get(AiConstants.keyPool(conversationId));
 
         ChatModel chatModel = OpenAiChatModel.builder()
             .baseUrl("https://api.deepseek.com/v1")
@@ -83,7 +82,7 @@ public class AiReportConsumer {
 
         updateProgress(reportId, "FINALIZING");
         String resultJsonStr = JSON.toJSONString(reportJson);
-        redisTemplate.opsForValue().set("ai:report:" + reportId, resultJsonStr, REPORT_TTL_DAYS, TimeUnit.DAYS);
+        redisTemplate.opsForValue().set(AiConstants.keyReport(reportId), resultJsonStr, AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
         try {
             logMapper.updateReportResult(reportId, resultJsonStr);
         } catch (Exception dbEx) { /* best-effort */ }
@@ -156,7 +155,7 @@ public class AiReportConsumer {
 
     private void updateProgress(Long reportId, String progress) {
         try {
-            redisTemplate.opsForValue().set(PROGRESS_KEY_PREFIX + reportId, progress, REPORT_TTL_DAYS, TimeUnit.DAYS);
+            redisTemplate.opsForValue().set(AiConstants.keyReportProgress(reportId), progress, AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
         } catch (Exception ignored) { /* non-critical */ }
     }
 

@@ -1,4 +1,4 @@
-package com.ruoyi.postgrad.domain;
+package com.ruoyi.postgrad.domain.ai;
 
 public class AiToolBudget {
     private final int maxTotalCalls;

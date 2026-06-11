@@ -1,8 +1,9 @@
 package com.ruoyi.postgrad.service.impl;
 
 import com.alibaba.fastjson2.JSON;
-import com.ruoyi.postgrad.domain.AiReportSupport;
-import com.ruoyi.postgrad.domain.AiRecommendationSafety;
+import com.ruoyi.postgrad.domain.ai.AiReportSupport;
+import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
+import com.ruoyi.postgrad.domain.dto.CandidateProgramDTO;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.service.AiReportBuilder;
 import dev.langchain4j.model.chat.ChatModel;
@@ -21,7 +22,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import com.ruoyi.postgrad.domain.AiBookmark;
+import com.ruoyi.postgrad.domain.ai.AiBookmark;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.tool.AiRecommendationTools;
 
@@ -295,21 +296,21 @@ public class AiReportBuilderImpl implements AiReportBuilder {
             return "（无候选学校数据）";
         }
         try {
-            List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
+            List<CandidateProgramDTO> pool = JSON.parseArray(poolJson, CandidateProgramDTO.class);
 
             // 分离已讨论学校和其他学校
             List<Map<String, Object>> discussed = new ArrayList<>();
             List<Map<String, Object>> rest = new ArrayList<>();
-            for (Map<String, Object> row : pool) {
-                long pid = longValue(row.get("programId"));
-                if (priorityIds.contains(pid)) discussed.add(row);
-                else rest.add(row);
+            for (CandidateProgramDTO row : pool) {
+                Map<String, Object> m = row.toMap();
+                if (row.getProgramId() != null && priorityIds.contains(row.getProgramId())) discussed.add(m);
+                else rest.add(m);
             }
 
             // 剩余学校按 gap 分层
-            List<Map<String, Object>> reachLayer = new ArrayList<>();  // gap <= 0
-            List<Map<String, Object>> steadyLayer = new ArrayList<>(); // gap 1..14
-            List<Map<String, Object>> safeLayer = new ArrayList<>();   // gap >= 15
+            List<Map<String, Object>> reachLayer = new ArrayList<>();
+            List<Map<String, Object>> steadyLayer = new ArrayList<>();
+            List<Map<String, Object>> safeLayer = new ArrayList<>();
             for (Map<String, Object> row : rest) {
                 int gap = integerValue(row.get("gap"));
                 if (gap <= 0) reachLayer.add(row);
@@ -437,28 +438,28 @@ public class AiReportBuilderImpl implements AiReportBuilder {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private Map<String, Object> ruleBasedFallback(String poolJson) {
-        List<Map<String, Object>> pool;
+        List<CandidateProgramDTO> pool;
         try {
-            pool = (List) JSON.parseArray(poolJson == null ? "[]" : poolJson, Map.class);
+            pool = JSON.parseArray(poolJson == null ? "[]" : poolJson, CandidateProgramDTO.class);
         } catch (Exception e) {
             pool = Collections.emptyList();
         }
+        if (pool == null) pool = Collections.emptyList();
 
         List<Map<String, Object>> reach = new ArrayList<>();
         List<Map<String, Object>> steady = new ArrayList<>();
         List<Map<String, Object>> safe = new ArrayList<>();
-        for (Map<String, Object> row : pool) {
+        for (CandidateProgramDTO row : pool) {
             if (reach.size() >= 5 && steady.size() >= 5 && safe.size() >= 5) break;
-            Integer gapVal = integerValue(row.get("gap"));
-            int gap = gapVal != null ? gapVal : 0;
+            int gap = row.getGap();
             String level = gap <= 0 ? "reach" : gap <= 14 ? "steady" : "safe";
-            boolean blockedSafe = "safe".equals(level) && Boolean.FALSE.equals(row.get("canBeSafe"));
+            boolean blockedSafe = "safe".equals(level) && !row.isCanBeSafe();
             if (blockedSafe) level = "steady";
             List<Map<String, Object>> target = "reach".equals(level) ? reach : "steady".equals(level) ? steady : safe;
             if (target.size() >= 5) continue;
 
             Map<String, Object> school = new LinkedHashMap<>();
-            school.put("programId", row.get("programId"));
+            school.put("programId", row.getProgramId());
             school.put("judgement", "reach".equals(level) ? "small_reach" : level);
             school.put("risk", "reach".equals(level) ? "high" : "safe".equals(level) ? "low" : "medium");
             school.put("decision", "reach".equals(level) ? "适合作为冲刺候选" : "safe".equals(level) ? "适合作为保底候选" : "适合作为稳妥候选");
@@ -596,11 +597,11 @@ public class AiReportBuilderImpl implements AiReportBuilder {
     private Map<Long, Map<String, Object>> parsePoolMap(String poolJson) {
         Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
         if (poolJson == null || poolJson.isBlank() || "[]".equals(poolJson.trim())) return poolMap;
-        for (Object item : JSON.parseArray(poolJson)) {
-            if (!(item instanceof Map)) continue;
-            Map<String, Object> row = (Map<String, Object>) item;
-            Long programId = longValue(row.get("programId"));
-            if (programId != null) poolMap.put(programId, row);
+        List<CandidateProgramDTO> list = JSON.parseArray(poolJson, CandidateProgramDTO.class);
+        if (list != null) {
+            for (CandidateProgramDTO dto : list) {
+                if (dto.getProgramId() != null) poolMap.put(dto.getProgramId(), dto.toMap());
+            }
         }
         return poolMap;
     }
@@ -623,9 +624,7 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         item.put("avgAdmittedScore", avg);
         item.put("avgScoreGap", avg == null || estimatedScore <= 0 ? null : estimatedScore - avg);
         item.put("admissionRange", admissionRange(detail.get("admissionLow"), detail.get("admissionHigh")));
-        // Override DB dataCompleteness with runtime recomputation — same logic as
-        // ProgramRecommendationServiceImpl.computedCompleteness() used by the filter/results page.
-        item.put("dataCompleteness", computedCompleteness(detail));
+        item.put("dataCompleteness", AiRecommendationSafety.computedCompleteness(detail));
 
         Map<String, Object> guard = AiRecommendationSafety.safeEligibility(detail, estimatedScore);
         item.put("quotaRisk", guard.get("quotaRisk"));
@@ -665,14 +664,19 @@ public class AiReportBuilderImpl implements AiReportBuilder {
 
         item.put("tags", tags);
 
-        // 删除内部裁决字段（展示用字段保留,前端 SchoolCard / 报告页要直接读）
+        // 删除内部裁决字段（展示用字段保留）
         // - canBeSafe / quotaRisk / safeBlockReason: 内部推断中间值,已经转成 tags/pros/cons
-        // - dataYear: 冗余,前端从 schoolDataYear() 走 fallback
+        // ★ dataYear 保留：前端报告页直接展示，不再依赖 fallback
         // - 不删 dataCompleteness: 前端 schoolCompleteness() 直接读
         // - 不删 scoreLine / admissionLow / admissionHigh / planCount / unifiedExamQuota /
         //   admittedCount / retestCount / sourceUrl / sourceOwner: 都是 UI 展示字段
-        for (String key : List.of("canBeSafe", "quotaRisk", "safeBlockReason", "dataYear")) {
+        for (String key : List.of("canBeSafe", "quotaRisk", "safeBlockReason")) {
             item.remove(key);
+        }
+        // 同时将 dataYear 加入 tags（前端卡片可同时展示标签和年份字段）
+        Object dy = item.get("dataYear");
+        if (dy != null && !"null".equals(String.valueOf(dy)) && !"0".equals(String.valueOf(dy))) {
+            tags.add("数据年份:" + dy);
         }
     }
 
@@ -913,25 +917,5 @@ public class AiReportBuilderImpl implements AiReportBuilder {
         return number > 0 ? "+" + number : String.valueOf(number);
     }
 
-    /**
-     * Recompute data completeness from actual data fields — same logic as
-     * {@code ProgramRecommendationServiceImpl.computedCompleteness()}.
-     * Gives A when scoreLine + range + average + count are all present;
-     * B when scoreLine plus one main extra field is present; C otherwise.
-     */
-    private String computedCompleteness(Map<String, Object> row) {
-        boolean hasScore = integerValue(row.get("scoreLine")) != null;
-        boolean hasRange = integerValue(row.get("admissionLow")) != null
-            && integerValue(row.get("admissionHigh")) != null;
-        boolean hasAverage = integerValue(row.get("avgAdmittedScore")) != null;
-        boolean hasCount = integerValue(row.get("planCount")) != null
-            || integerValue(row.get("admittedCount")) != null;
-        boolean hasMainExtra = hasAverage
-            || integerValue(row.get("admissionLow")) != null
-            || integerValue(row.get("planCount")) != null
-            || integerValue(row.get("unifiedExamQuota")) != null;
-        if (hasScore && hasRange && hasAverage && hasCount) return "A";
-        if (hasScore && hasMainExtra) return "B";
-        return "C";
-    }
 }
+

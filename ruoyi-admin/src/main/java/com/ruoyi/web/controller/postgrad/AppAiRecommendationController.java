@@ -18,8 +18,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
-import com.ruoyi.postgrad.domain.AiBookmark;
-import com.ruoyi.postgrad.domain.AiChatErrorPayload;
+import com.ruoyi.postgrad.domain.ai.AiBookmark;
+import com.ruoyi.postgrad.domain.ai.AiChatErrorPayload;
+import com.ruoyi.postgrad.domain.ai.AiConstants;
 import com.ruoyi.postgrad.service.IAiRecommendationService;
 
 @RestController
@@ -170,8 +171,8 @@ public class AppAiRecommendationController {
         AppLoginUser user = getCurrentAppUser();
         if (user == null) return AjaxResult.error("未登录");
         try {
-            String key = "ai:bookmarks:" + conversationId;
-            String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+            String key = AiConstants.keyBookmarks(conversationId);
+            String owner = redisTemplate.opsForValue().get(AiConstants.keyOwner(conversationId));
             if (owner == null || !owner.equals(user.getUserId().toString())) {
                 return AjaxResult.error(403, "无权访问");
             }
@@ -180,7 +181,7 @@ public class AppAiRecommendationController {
                 List<AiBookmark> bookmarks = com.alibaba.fastjson2.JSON.parseArray(existing, AiBookmark.class);
                 bookmarks.removeIf(b -> b.getProgramId() == programId);
                 redisTemplate.opsForValue().set(key, com.alibaba.fastjson2.JSON.toJSONString(bookmarks),
-                    30, java.util.concurrent.TimeUnit.MINUTES);
+                    AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
             }
             return AjaxResult.success();
         } catch (Exception e) {

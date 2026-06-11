@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.service.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.domain.dto.CandidateProgramDTO;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.service.IAiCandidatePoolService;
 import java.math.BigDecimal;
@@ -37,12 +38,12 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
     private RecommendationMapper recommendationMapper;
 
     @Override
-    public List<RowMap> buildPool(Map<String, Object> request, Map<String, Object> profile, int estimatedScore)
+    public List<CandidateProgramDTO> buildPool(Map<String, Object> request, Map<String, Object> profile, int estimatedScore)
     {
         List<Long> candidateIds = parseCandidateIds(request == null ? null : request.get("candidateIds"));
         if (!candidateIds.isEmpty())
         {
-            return sortAndLimit(recommendationMapper.selectProgramsByIds(candidateIds, estimatedScore), estimatedScore);
+            return toDtoList(sortAndLimit(recommendationMapper.selectProgramsByIds(candidateIds, estimatedScore), estimatedScore), estimatedScore);
         }
 
         List<String> regions = parseTargetRegions(profile == null ? null : profile.get("targetRegions"));
@@ -51,7 +52,7 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
         {
             pool = queryAllExamCombos(Collections.emptyList(), estimatedScore);
         }
-        return sortAndLimit(pool, estimatedScore);
+        return toDtoList(sortAndLimit(pool, estimatedScore), estimatedScore);
     }
 
     /** Build a diverse pool: sort by proximity to estimatedScore, then sample evenly
@@ -139,7 +140,7 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
     private static final int REACH_LIMIT = 15;
 
     @Override
-    public List<RowMap> buildAnalysisPool(int estimatedScore, List<String> regions)
+    public List<CandidateProgramDTO> buildAnalysisPool(int estimatedScore, List<String> regions)
     {
         int minScore = estimatedScore - 20;
         int maxScore = estimatedScore + 20;
@@ -172,33 +173,45 @@ public class AiCandidatePoolServiceImpl implements IAiCandidatePoolService
         result.sort((a, b) -> Integer.compare(
             Math.abs(scoreAvg(a) - estimatedScore),
             Math.abs(scoreAvg(b) - estimatedScore)));
-        return result;
+        return toDtoList(result, estimatedScore);
     }
 
     @Override
-    public List<RowMap> buildAgentPool(int estimatedScore, List<String> regions)
+    public List<CandidateProgramDTO> buildAgentPool(int estimatedScore, List<String> regions)
     {
         List<String> safeRegions = regions == null ? Collections.emptyList() : regions;
         int minScore = Math.max(0, estimatedScore - 80);
         int maxScore = estimatedScore + 40;
         List<RowMap> rows = recommendationMapper.selectForAgentPool(
             estimatedScore, safeRegions, minScore, maxScore, AGENT_MAX_LIMIT);
-        return normalizeAgentPool(rows, estimatedScore, AGENT_INITIAL_LIMIT);
+        return toDtoList(normalizeAgentPool(rows, estimatedScore, AGENT_INITIAL_LIMIT), estimatedScore);
     }
 
     @Override
-    public List<RowMap> expandAgentPool(int estimatedScore, List<String> regions,
+    public List<CandidateProgramDTO> expandAgentPool(int estimatedScore, List<String> regions,
         Map<String, Object> filters, List<RowMap> existing)
     {
-        List<RowMap> expanded = buildAgentPool(estimatedScore, regions);
+        List<CandidateProgramDTO> expanded = buildAgentPool(estimatedScore, regions);
         List<RowMap> merged = new ArrayList<>();
         if (existing != null)
         {
             merged.addAll(existing);
         }
-        merged.addAll(expanded);
+        merged.addAll(expanded.stream().map(d -> {
+            RowMap rm = new RowMap();
+            rm.putAll(d.toMap());
+            return rm;
+        }).toList());
         List<RowMap> deduped = dedupeAgentPool(merged);
-        return new ArrayList<>(deduped.subList(0, Math.min(deduped.size(), AGENT_MAX_LIMIT)));
+        return toDtoList(new ArrayList<>(deduped.subList(0, Math.min(deduped.size(), AGENT_MAX_LIMIT))), estimatedScore);
+    }
+
+    private List<CandidateProgramDTO> toDtoList(List<RowMap> rows, int estimatedScore) {
+        List<CandidateProgramDTO> result = new ArrayList<>(rows.size());
+        for (RowMap row : rows) {
+            result.add(CandidateProgramDTO.fromRowMap(row, estimatedScore));
+        }
+        return result;
     }
 
     private List<RowMap> normalizeAgentPool(List<RowMap> rows, int estimatedScore, int limit)

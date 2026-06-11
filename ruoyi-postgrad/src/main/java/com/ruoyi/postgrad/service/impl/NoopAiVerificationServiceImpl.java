@@ -1,6 +1,6 @@
 package com.ruoyi.postgrad.service.impl;
 
-import com.ruoyi.postgrad.domain.AiReportSupport;
+import com.ruoyi.postgrad.domain.ai.AiReportSupport;
 import com.ruoyi.postgrad.service.IAiVerificationService;
 import java.util.LinkedHashMap;
 import java.util.Map;

@@ -1,4 +1,4 @@
-package com.ruoyi.postgrad.domain;
+package com.ruoyi.postgrad.domain.ai;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -164,5 +164,27 @@ public final class AiRecommendationSafety {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * 从实际数据字段重新计算数据完整度。
+     * <p>A = 有复试线 + 拟录取区间 + 均分 + 人数；B = 有复试线 + 至少一个主要额外字段；C = 其余。</p>
+     * <p>此为唯一权威实现，ProgramRecommendationServiceImpl / AiRecommendationServiceImpl /
+     * AiReportBuilderImpl 均调用此方法。</p>
+     */
+    public static String computedCompleteness(Map<String, Object> row) {
+        boolean hasScore = integerValue(row.get("scoreLine")) != null;
+        boolean hasRange = integerValue(row.get("admissionLow")) != null
+            && integerValue(row.get("admissionHigh")) != null;
+        boolean hasAverage = integerValue(row.get("avgAdmittedScore")) != null;
+        boolean hasCount = integerValue(row.get("planCount")) != null
+            || integerValue(row.get("admittedCount")) != null;
+        boolean hasMainExtra = hasAverage
+            || integerValue(row.get("admissionLow")) != null
+            || integerValue(row.get("planCount")) != null
+            || integerValue(row.get("unifiedExamQuota")) != null;
+        if (hasScore && hasRange && hasAverage && hasCount) return "A";
+        if (hasScore && hasMainExtra) return "B";
+        return "C";
     }
 }

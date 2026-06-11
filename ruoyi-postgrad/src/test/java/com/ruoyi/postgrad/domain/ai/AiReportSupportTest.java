@@ -1,4 +1,4 @@
-package com.ruoyi.postgrad.domain;
+package com.ruoyi.postgrad.domain.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.domain.dto.CandidateProgramDTO;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -49,12 +50,15 @@ class AiCandidatePoolServiceImplTest
         List<RowMap> expected = rows(2);
         when(recommendationMapper.selectProgramsByIds(Arrays.asList(12L, 34L), 315)).thenReturn(expected);
 
-        List<RowMap> pool = service.buildPool(
+        List<CandidateProgramDTO> pool = service.buildPool(
             Map.of("candidateIds", Arrays.asList("12", -1, "abc", 34L, 0)),
             Map.of("targetRegions", "福建"),
             315);
 
-        assertEquals(expected, pool);
+        assertEquals(expected.size(), pool.size());
+        for (int i = 0; i < expected.size(); i++) {
+            assertEquals(expected.get(i).get("programId"), pool.get(i).getProgramId());
+        }
         verify(recommendationMapper).selectProgramsByIds(Arrays.asList(12L, 34L), 315);
         verify(recommendationMapper, never()).selectCandidates(eq(SUBJ_22408), eq(Arrays.asList("福建")), eq(null), eq(315), eq(30), eq("full_time"));
         verify(recommendationMapper, never()).selectCandidates(eq(SUBJ_11408), eq(Arrays.asList("福建")), eq(null), eq(315), eq(30), eq("full_time"));
@@ -69,12 +73,15 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectCandidates(SUBJ_11408, Arrays.asList("福建", "广东"), null, 330, 30, "full_time"))
             .thenReturn(Collections.emptyList());
 
-        List<RowMap> pool = service.buildPool(
+        List<CandidateProgramDTO> pool = service.buildPool(
             Collections.emptyMap(),
             Map.of("targetRegions", "[\"福建\",\"广东\"]"),
             330);
 
-        assertEquals(expected22408, pool);
+        assertEquals(expected22408.size(), pool.size());
+        for (int i = 0; i < expected22408.size(); i++) {
+            assertEquals(expected22408.get(i).get("programId"), pool.get(i).getProgramId());
+        }
         verify(recommendationMapper).selectCandidates(SUBJ_22408, Arrays.asList("福建", "广东"), null, 330, 30, "full_time");
         verify(recommendationMapper).selectCandidates(SUBJ_11408, Arrays.asList("福建", "广东"), null, 330, 30, "full_time");
         verify(recommendationMapper, never()).selectProgramsByIds(eq(List.of()), eq(330));
@@ -90,12 +97,15 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectCandidates(SUBJ_11408, regions, null, 330, 30, "full_time"))
             .thenReturn(Collections.emptyList());
 
-        List<RowMap> pool = service.buildPool(
+        List<CandidateProgramDTO> pool = service.buildPool(
             Collections.emptyMap(),
             Map.of("targetRegions", regions),
             330);
 
-        assertEquals(expected, pool);
+        assertEquals(expected.size(), pool.size());
+        for (int i = 0; i < expected.size(); i++) {
+            assertEquals(expected.get(i).get("programId"), pool.get(i).getProgramId());
+        }
         verify(recommendationMapper).selectCandidates(SUBJ_22408, regions, null, 330, 30, "full_time");
         verify(recommendationMapper).selectCandidates(SUBJ_11408, regions, null, 330, 30, "full_time");
     }
@@ -109,7 +119,7 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectCandidates(SUBJ_11408, Collections.emptyList(), null, 330, 30, "full_time"))
             .thenReturn(rows(1));
 
-        List<RowMap> pool = service.buildPool(
+        List<CandidateProgramDTO> pool = service.buildPool(
             Map.of("candidateIds", List.of(1.9D)),
             Map.of("targetRegions", "不限"),
             330);
@@ -133,12 +143,15 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectCandidates(SUBJ_11408, Collections.emptyList(), null, 300, 30, "full_time"))
             .thenReturn(Collections.emptyList());
 
-        List<RowMap> pool = service.buildPool(
+        List<CandidateProgramDTO> pool = service.buildPool(
             Collections.emptyMap(),
             Map.of("targetRegions", "福建，广东"),
             300);
 
-        assertEquals(expected, pool);
+        assertEquals(expected.size(), pool.size());
+        for (int i = 0; i < expected.size(); i++) {
+            assertEquals(expected.get(i).get("programId"), pool.get(i).getProgramId());
+        }
         verify(recommendationMapper).selectCandidates(SUBJ_22408, Arrays.asList("福建", "广东"), null, 300, 30, "full_time");
         verify(recommendationMapper).selectCandidates(SUBJ_11408, Arrays.asList("福建", "广东"), null, 300, 30, "full_time");
         verify(recommendationMapper).selectCandidates(SUBJ_22408, Collections.emptyList(), null, 300, 30, "full_time");
@@ -154,7 +167,7 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectCandidates(SUBJ_11408, Collections.emptyList(), null, 350, 30, "full_time"))
             .thenReturn(rows(31, 60));
 
-        List<RowMap> pool = service.buildPool(
+        List<CandidateProgramDTO> pool = service.buildPool(
             Collections.emptyMap(),
             Map.of("targetRegions", "不限"),
             350);
@@ -172,7 +185,7 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectCandidates(SUBJ_11408, Collections.emptyList(), null, 350, 30, "full_time"))
             .thenReturn(rows(1)); // same id
 
-        List<RowMap> pool = service.buildPool(
+        List<CandidateProgramDTO> pool = service.buildPool(
             Collections.emptyMap(),
             Map.of("targetRegions", "不限"),
             350);
@@ -192,10 +205,11 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectForAgentPool(330, Collections.emptyList(), 250, 370, 500))
             .thenReturn(rows);
 
-        List<RowMap> pool = service.buildAgentPool(330, Collections.emptyList());
+        List<CandidateProgramDTO> pool = service.buildAgentPool(330, Collections.emptyList());
 
         assertEquals(300, pool.size());
-        assertTrue(pool.stream().anyMatch(row -> "pending".equals(row.get("verificationStatus"))));
+        // Gap is set for rows with avgAdmittedScore, null for rows without
+        assertTrue(pool.stream().anyMatch(row -> row.getAvgAdmittedScore() == null));
     }
 
     private List<RowMap> rows(long... ids)
@@ -242,12 +256,12 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectForAnalysis(300, List.of("福建"), 280, 320))
             .thenReturn(rows);
 
-        List<RowMap> pool = service.buildAnalysisPool(300, List.of("福建"));
+        List<CandidateProgramDTO> pool = service.buildAnalysisPool(300, List.of("福建"));
 
-        assertTrue(pool.stream().anyMatch(r -> r.get("schoolName").equals("保底校A")));
-        assertTrue(pool.stream().anyMatch(r -> r.get("schoolName").equals("稳妥校A")));
-        assertTrue(pool.stream().anyMatch(r -> r.get("schoolName").equals("冲刺校B")));
-        assertFalse(pool.stream().anyMatch(r -> r.get("schoolName").equals("太难校")));
+        assertTrue(pool.stream().anyMatch(r -> r.getSchoolName().equals("保底校A")));
+        assertTrue(pool.stream().anyMatch(r -> r.getSchoolName().equals("稳妥校A")));
+        assertTrue(pool.stream().anyMatch(r -> r.getSchoolName().equals("冲刺校B")));
+        assertFalse(pool.stream().anyMatch(r -> r.getSchoolName().equals("太难校")));
         assertEquals(6, pool.size());
     }
 
@@ -262,12 +276,12 @@ class AiCandidatePoolServiceImplTest
         when(recommendationMapper.selectForAnalysis(300, List.of("福建"), 280, 320))
             .thenReturn(rows);
 
-        List<RowMap> pool = service.buildAnalysisPool(300, List.of("福建"));
+        List<CandidateProgramDTO> pool = service.buildAnalysisPool(300, List.of("福建"));
 
         assertEquals(50, pool.size());
-        long safeCount = pool.stream().filter(r -> r.get("schoolName").toString().startsWith("保底")).count();
-        long steadyCount = pool.stream().filter(r -> r.get("schoolName").toString().startsWith("稳妥")).count();
-        long reachCount = pool.stream().filter(r -> r.get("schoolName").toString().startsWith("冲刺")).count();
+        long safeCount = pool.stream().filter(r -> r.getSchoolName().startsWith("保底")).count();
+        long steadyCount = pool.stream().filter(r -> r.getSchoolName().startsWith("稳妥")).count();
+        long reachCount = pool.stream().filter(r -> r.getSchoolName().startsWith("冲刺")).count();
         assertEquals(15, safeCount);
         assertEquals(20, steadyCount);
         assertEquals(15, reachCount);

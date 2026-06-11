@@ -1,4 +1,4 @@
-package com.ruoyi.postgrad.domain;
+package com.ruoyi.postgrad.domain.ai;
 
 import java.net.SocketTimeoutException;
 import java.util.LinkedHashMap;

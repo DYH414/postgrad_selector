@@ -1,12 +1,14 @@
 package com.ruoyi.postgrad.tool;
 
 import com.alibaba.fastjson2.JSON;
-import com.ruoyi.postgrad.domain.AiBookmark;
-import com.ruoyi.postgrad.domain.AiRecommendationSafety;
-import com.ruoyi.postgrad.domain.AiToolBudget;
-import com.ruoyi.postgrad.domain.AiToolTrace;
+import com.ruoyi.postgrad.domain.ai.AiBookmark;
+import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
+import com.ruoyi.postgrad.domain.ai.AiToolBudget;
+import com.ruoyi.postgrad.domain.ai.AiToolTrace;
+import com.ruoyi.postgrad.domain.ai.AiConstants;
 import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.domain.dto.CandidateProgramDTO;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -17,6 +19,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +43,6 @@ public class AiRecommendationTools {
     private static final ThreadLocal<AiToolTrace> CURRENT_TRACE =
         ThreadLocal.withInitial(AiToolTrace::new);
 
-    private static final String BOOKMARK_KEY_PREFIX = "ai:bookmarks:";
-    private static final int BOOKMARK_TTL_MINUTES = 30;
     private static final Set<String> VALID_JUDGEMENTS = Set.of("reach", "steady", "safe");
     private static final int MAX_REASON_LENGTH = 300;
     private static final int MAX_PRO_CON_LENGTH = 20;
@@ -105,13 +106,9 @@ public class AiRecommendationTools {
         // 候选池校验：pid 不在 pool 中直接拒绝
         String poolJson = loadPoolJson(conversationId);
         if (poolJson == null) return "{}";
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pool = JSON.parseObject(poolJson, List.class);
-        boolean inPool = pool != null && pool.stream().anyMatch(p -> {
-            Object idObj = p.get("programId");
-            long pid = idObj instanceof Number ? ((Number) idObj).longValue() : Long.parseLong(String.valueOf(idObj));
-            return pid == programId;
-        });
+        List<CandidateProgramDTO> pool = loadPoolAsDto(conversationId);
+        if (pool.isEmpty()) return "{}";
+        boolean inPool = pool.stream().anyMatch(p -> p.getProgramId() != null && p.getProgramId() == programId);
         if (!inPool) {
             return "{\"error\":\"program_not_in_pool\",\"message\":\"该学校不在当前候选池中，请使用 searchPrograms 在候选池内筛选。\"}";
         }
@@ -122,10 +119,8 @@ public class AiRecommendationTools {
             return "{\"error\":\"tool_budget_exceeded\",\"explorationLimited\":true,\"message\":\"本轮已获取过详细数据(每轮最多1次)，请基于已有数据继续分析。\"}";
         }
 
-        for (Map<String, Object> p : pool) {
-            Object idObj = p.get("programId");
-            long pid = idObj instanceof Number ? ((Number) idObj).longValue() : Long.parseLong(String.valueOf(idObj));
-            if (pid == programId) {
+        for (CandidateProgramDTO p : pool) {
+            if (p.getProgramId() != null && p.getProgramId() == programId) {
                 CURRENT_TRACE.get().recordDetail(programId);
                 Map<String, Object> args = new LinkedHashMap<>();
                 args.put("programId", programId);
@@ -134,7 +129,7 @@ public class AiRecommendationTools {
                 CURRENT_TRACE.get().record("getProgramDetail", args, summary);
                 String result = JSON.toJSONString(p);
                 DETAIL_CACHE.put(cacheKey, result);
-                log.info("[AI-TRACE] TOOL getProgramDetail RESULT programId={} fields={}", programId, p.keySet());
+                log.info("[AI-TRACE] TOOL getProgramDetail RESULT programId={}", programId);
                 return result;
             }
         }
@@ -159,13 +154,12 @@ public class AiRecommendationTools {
         String poolJson = loadPoolJson(conversationId);
         if (poolJson == null) return "{\"total\":0,\"returned\":0,\"hasMore\":false,\"items\":[]}";
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pool = JSON.parseObject(poolJson, List.class);
+        List<CandidateProgramDTO> pool = loadPoolAsDto(conversationId);
 
         Map<String, Object> filterMap = filters == null || filters.isBlank()
             ? new LinkedHashMap<>()
             : JSON.parseObject(filters);
-        List<Map<String, Object>> result = pool.stream()
+        List<CandidateProgramDTO> result = pool.stream()
             .filter(p -> matchFilter(p, filterMap))
             .collect(Collectors.toList());
         int limit = Math.min(intVal(filterMap, "limit", SEARCH_PROGRAMS_DEFAULT_LIMIT), SEARCH_PROGRAMS_MAX_LIMIT);
@@ -175,7 +169,7 @@ public class AiRecommendationTools {
             .map(this::searchSummaryItem)
             .collect(Collectors.toList());
 
-        // 记录返回的 programId（每批最多 5 个，用于 autoFillBookmarks 兜底）
+        // 记录返回的 programId
         int recordedFromSearch = 0;
         for (Map<String, Object> item : items) {
             if (recordedFromSearch >= 5) break;
@@ -207,28 +201,24 @@ public class AiRecommendationTools {
         return responseJson;
     }
 
-    private boolean matchFilter(Map<String, Object> program, Map<String, Object> filter) {
-        // 地区匹配：统一处理 regions / city / province，支持 String 和 JSON Array
-        // 命中 program 的 province 或 city 任一即算匹配
+    private boolean matchFilter(CandidateProgramDTO p, Map<String, Object> filter) {
         List<String> regionFilters = collectRegions(filter);
         if (!regionFilters.isEmpty()) {
-            String rowProvince = String.valueOf(program.getOrDefault("province", ""));
-            String rowCity = String.valueOf(program.getOrDefault("city", ""));
+            String rowProvince = p.getProvince() != null ? p.getProvince() : "";
+            String rowCity = p.getCity() != null ? p.getCity() : "";
             boolean regionMatch = regionFilters.stream().anyMatch(r ->
                 r.equals(rowProvince) || r.equals(rowCity));
             if (!regionMatch) return false;
         }
-        if (filter.containsKey("tier") && !csvContains(filter.get("tier"), program.get("schoolTier"))) return false;
-        if (filter.containsKey("keyword") && !keywordMatches(program, filter.get("keyword"))) return false;
+        if (filter.containsKey("tier") && !csvContains(filter.get("tier"), p.getSchoolTier())) return false;
+        if (filter.containsKey("keyword") && !keywordMatches(p, filter.get("keyword"))) return false;
         if (filter.containsKey("minScore")) {
-            Object avgObj = program.get("avgAdmittedScore");
-            double avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : 0;
+            double avg = p.getAvgAdmittedScore() != null ? p.getAvgAdmittedScore().doubleValue() : 0;
             double min = ((Number) filter.get("minScore")).doubleValue();
             if (avg < min) return false;
         }
         if (filter.containsKey("maxScore")) {
-            Object avgObj = program.get("avgAdmittedScore");
-            double avg = avgObj instanceof Number ? ((Number) avgObj).doubleValue() : 0;
+            double avg = p.getAvgAdmittedScore() != null ? p.getAvgAdmittedScore().doubleValue() : 0;
             double max = ((Number) filter.get("maxScore")).doubleValue();
             if (avg > max) return false;
         }
@@ -277,43 +267,43 @@ public class AiRecommendationTools {
         return false;
     }
 
-    /** 关键词匹配：在学校名、专业名、学院名中模糊搜索 */
-    private static boolean keywordMatches(Map<String, Object> program, Object keywordObj) {
+    private static boolean keywordMatches(CandidateProgramDTO p, Object keywordObj) {
         if (keywordObj == null) return true;
         String kw = String.valueOf(keywordObj).trim();
         if (kw.isEmpty()) return true;
-        String school = String.valueOf(program.getOrDefault("schoolName", ""));
-        String prog = String.valueOf(program.getOrDefault("programName", ""));
-        String college = String.valueOf(program.getOrDefault("collegeName", ""));
+        String school = p.getSchoolName() != null ? p.getSchoolName() : "";
+        String prog = p.getProgramName() != null ? p.getProgramName() : "";
+        String college = p.getCollegeName() != null ? p.getCollegeName() : "";
         return school.contains(kw) || prog.contains(kw) || college.contains(kw);
     }
 
-    private Map<String, Object> searchSummaryItem(Map<String, Object> program) {
+    private Map<String, Object> searchSummaryItem(CandidateProgramDTO p) {
         Map<String, Object> item = new LinkedHashMap<>();
-        item.put("programId", program.get("programId"));
-        item.put("schoolName", program.get("schoolName"));
-        item.put("schoolTier", program.get("schoolTier"));
-        item.put("province", program.get("province"));
-        item.put("city", program.get("city"));
-        item.put("collegeName", program.get("collegeName"));
-        item.put("programName", program.get("programName"));
-        item.put("avgAdmittedScore", program.get("avgAdmittedScore"));
-        item.put("gap", program.get("gap"));
-        item.put("admissionLow", program.get("admissionLow"));
-        item.put("admissionHigh", program.get("admissionHigh"));
-        item.put("unifiedExamQuota", program.getOrDefault("unifiedExamQuota", program.get("planCount")));
-        item.put("planCount", program.get("planCount"));
-        item.put("dataCompleteness", program.get("dataCompleteness"));
-        Map<String, Object> guard = AiRecommendationSafety.safeEligibility(program, 0);
-        item.put("quotaRisk", guard.get("quotaRisk"));
+        item.put("programId", p.getProgramId());
+        item.put("schoolName", p.getSchoolName());
+        item.put("schoolTier", p.getSchoolTier());
+        item.put("province", p.getProvince());
+        item.put("city", p.getCity());
+        item.put("collegeName", p.getCollegeName());
+        item.put("programName", p.getProgramName());
+        item.put("avgAdmittedScore", p.getAvgAdmittedScore());
+        item.put("gap", p.getGap());
+        item.put("admissionLow", p.getAdmissionLow());
+        item.put("admissionHigh", p.getAdmissionHigh());
+        int quota = p.getUnifiedExamQuota() != null ? p.getUnifiedExamQuota()
+            : (p.getPlanCount() != null ? p.getPlanCount() : 0);
+        item.put("unifiedExamQuota", quota > 0 ? quota : null);
+        item.put("planCount", p.getPlanCount());
+        item.put("dataCompleteness", p.getDataCompleteness());
+        // guard fields — compute from DTO if not already set
+        Map<String, Object> guard = AiRecommendationSafety.safeEligibility(p.toMap(), 0);
+        item.put("quotaRisk", p.getQuotaRisk() != null ? p.getQuotaRisk() : guard.get("quotaRisk"));
         item.put("canBeSafe", guard.get("canBeSafe"));
-        if (guard.get("safeBlockReason") != null) {
-            item.put("safeBlockReason", guard.get("safeBlockReason"));
-        }
+        if (p.getSafeBlockReason() != null) item.put("safeBlockReason", p.getSafeBlockReason());
+        else if (guard.get("safeBlockReason") != null) item.put("safeBlockReason", guard.get("safeBlockReason"));
 
-        // 语义标签（数字离散化）：LLM 更适合消费语义标签而非原始数字
-        int gapVal = toInt(program.get("gap"), 0);
-        int quotaVal = toInt(program.getOrDefault("unifiedExamQuota", program.get("planCount")), 0);
+        int gapVal = p.getGap();
+        int quotaVal = quota;
         boolean canSafe = Boolean.TRUE.equals(guard.get("canBeSafe"));
 
         item.put("gapLabel", gapLabel(gapVal));
@@ -375,26 +365,22 @@ public class AiRecommendationTools {
         };
     }
 
-    private Map<String, Object> buildSearchFacets(List<Map<String, Object>> result) {
+    private Map<String, Object> buildSearchFacets(List<CandidateProgramDTO> result) {
         Map<String, Object> facets = new LinkedHashMap<>();
-        facets.put("provinces", countBy(result, "province"));
-        facets.put("tiers", countBy(result, "schoolTier"));
+        facets.put("provinces", result.stream()
+            .map(CandidateProgramDTO::getProvince)
+            .filter(v -> v != null && !v.isBlank())
+            .collect(Collectors.groupingBy(String::valueOf, LinkedHashMap::new, Collectors.counting())));
+        facets.put("tiers", result.stream()
+            .map(CandidateProgramDTO::getSchoolTier)
+            .filter(v -> v != null && !v.isBlank())
+            .collect(Collectors.groupingBy(String::valueOf, LinkedHashMap::new, Collectors.counting())));
         facets.put("quotaRisk", result.stream()
             .collect(Collectors.groupingBy(
-                row -> AiRecommendationSafety.quotaRisk(integerValue(row.getOrDefault("unifiedExamQuota", row.get("planCount")))),
+                row -> AiRecommendationSafety.quotaRisk(integerValue(row.getUnifiedExamQuota() != null ? row.getUnifiedExamQuota() : row.getPlanCount())),
                 LinkedHashMap::new,
                 Collectors.counting())));
         return facets;
-    }
-
-    private Map<String, Long> countBy(List<Map<String, Object>> rows, String key) {
-        return rows.stream()
-            .map(row -> row.get(key))
-            .filter(value -> value != null && !String.valueOf(value).isBlank())
-            .collect(Collectors.groupingBy(
-                String::valueOf,
-                LinkedHashMap::new,
-                Collectors.counting()));
     }
 
     private Integer integerValue(Object value) {
@@ -420,15 +406,12 @@ public class AiRecommendationTools {
         String poolJson = loadPoolJson(conversationId);
         if (poolJson == null) return "[]";
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pool = JSON.parseObject(poolJson, List.class);
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Map<String, Object> p : pool) {
-            Object idObj = p.get("programId");
-            long pid = idObj instanceof Number ? ((Number) idObj).longValue() : Long.parseLong(String.valueOf(idObj));
-            if (ids.contains(pid)) {
+        List<CandidateProgramDTO> pool = loadPoolAsDto(conversationId);
+        List<CandidateProgramDTO> result = new ArrayList<>();
+        for (CandidateProgramDTO p : pool) {
+            if (p.getProgramId() != null && ids.contains(p.getProgramId())) {
                 result.add(p);
-                CURRENT_TRACE.get().recordDetail(pid);
+                CURRENT_TRACE.get().recordDetail(p.getProgramId());
             }
         }
         Map<String, Object> args = new LinkedHashMap<>();
@@ -461,49 +444,20 @@ public class AiRecommendationTools {
         List<RowMap> newRows = aiDatabaseToolMapper.querySchools(keyword, tier, province, null, null, limit);
 
         // 读取现有候选池
-        String poolJson = loadPoolJson(conversationId);
-        List<Map<String, Object>> pool;
-        if (poolJson != null) {
-            pool = new ArrayList<>(JSON.parseObject(poolJson, List.class));
-        } else {
-            pool = new ArrayList<>();
-        }
+        List<CandidateProgramDTO> pool = loadPoolAsDto(conversationId);
+        if (pool == null) pool = new ArrayList<>();
 
         // 去重合并
         int added = 0;
         int dup = 0;
+        int estimatedScore = estimateScore(conversationId);
         for (RowMap row : newRows) {
-            Object pid = row.get("programId");
-            long newId = pid instanceof Number ? ((Number) pid).longValue() : Long.parseLong(String.valueOf(pid));
-            boolean exists = pool.stream().anyMatch(p -> {
-                Object existingId = p.get("programId");
-                return existingId != null && existingId.equals(newId);
-            });
+            Long newId = toLong(row.get("programId"));
+            if (newId == null) continue;
+            boolean exists = pool.stream().anyMatch(p -> newId.equals(p.getProgramId()));
             if (!exists) {
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("programId", newId);
-                item.put("schoolName", row.get("schoolName"));
-                item.put("schoolTier", row.get("schoolTier"));
-                item.put("city", row.get("city"));
-                item.put("province", row.get("province"));
-                item.put("programName", row.get("programName"));
-                item.put("collegeName", row.get("collegeName"));
-                item.put("degreeType", row.get("degreeType"));
-                Object avgObj = row.get("avgAdmittedScore");
-                int avg = avgObj instanceof Number ? ((Number) avgObj).intValue() : 0;
-                item.put("avgAdmittedScore", avg);
-                item.put("gap", avg > 0 ? (estimateScore(conversationId) - avg) : null);
-                item.put("scoreLine", row.get("scoreLine"));
-                item.put("admissionLow", row.get("admissionLow"));
-                item.put("admissionHigh", row.get("admissionHigh"));
-                item.put("planCount", row.get("planCount"));
-                item.put("admittedCount", row.get("admittedCount"));
-                item.put("retestCount", row.get("retestCount"));
-                item.put("dataYear", row.get("dataYear"));
-                item.put("dataCompleteness", row.get("dataCompleteness"));
-                item.put("sourceUrl", row.get("sourceUrl"));
-                item.put("sourceOwner", row.get("sourceOwner"));
-                pool.add(item);
+                CandidateProgramDTO dto = CandidateProgramDTO.fromRowMap(row, estimatedScore);
+                pool.add(dto);
                 added++;
             } else {
                 dup++;
@@ -511,8 +465,8 @@ public class AiRecommendationTools {
         }
 
         // 写回 Redis
-        redisTemplate.opsForValue().set("ai:pool:" + conversationId, JSON.toJSONString(pool),
-            java.time.Duration.ofMinutes(30));
+        redisTemplate.opsForValue().set(AiConstants.keyPool(conversationId), JSON.toJSONString(pool),
+            java.time.Duration.ofMinutes(AiConstants.TTL_CONVERSATION));
 
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("filters", filters);
@@ -534,7 +488,7 @@ public class AiRecommendationTools {
     /** 从对话 Redis 中提取用户预估分（用于 gap 计算） */
     private int estimateScore(String conversationId) {
         try {
-            String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+            String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
             if (convJson != null && convJson.contains("预估总分:")) {
                 int start = convJson.indexOf("预估总分:") + 6;
                 int end = convJson.indexOf("\n", start);
@@ -565,22 +519,17 @@ public class AiRecommendationTools {
         judgement = judgement.trim();
 
         // 2. 从候选池校验 programId 并注入 schoolName/programName，同时保存完整 fact 行供裁决使用
-        String poolJson = loadPoolJson(conversationId);
+        List<CandidateProgramDTO> pool = loadPoolAsDto(conversationId);
         String schoolName = null, programName = null;
         boolean inPool = false;
-        Map<String, Object> matchedRow = null;
-        if (poolJson != null) {
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> pool = JSON.parseObject(poolJson, List.class);
-            for (Map<String, Object> row : pool) {
-                Long pid = toLong(row.get("programId"));
-                if (pid != null && pid == programId) {
-                    schoolName = String.valueOf(row.getOrDefault("schoolName", ""));
-                    programName = String.valueOf(row.getOrDefault("programName", ""));
-                    matchedRow = row;
-                    inPool = true;
-                    break;
-                }
+        CandidateProgramDTO matchedDto = null;
+        for (CandidateProgramDTO dto : pool) {
+            if (dto.getProgramId() != null && dto.getProgramId() == programId) {
+                schoolName = dto.getSchoolName();
+                programName = dto.getProgramName();
+                matchedDto = dto;
+                inPool = true;
+                break;
             }
         }
         if (!inPool) {
@@ -610,9 +559,9 @@ public class AiRecommendationTools {
 
         // 4a. 后端裁决：AI 的 judgement 必须经过事实层校验
         bookmark.setAiJudgement(judgement);
-        com.ruoyi.postgrad.domain.AiRecommendationSafety.JudgementResult ruling =
-            com.ruoyi.postgrad.domain.AiRecommendationSafety.finalJudgement(
-                matchedRow, judgement);
+        AiRecommendationSafety.JudgementResult ruling =
+            AiRecommendationSafety.finalJudgement(
+                matchedDto.toMap(), judgement);
         bookmark.setFinalJudgement(ruling.finalJudgement());
         bookmark.setJudgement(ruling.finalJudgement()); // 兼容旧代码，judgement = finalJudgement
         bookmark.setAdjusted(ruling.adjusted());
@@ -623,7 +572,7 @@ public class AiRecommendationTools {
         }
 
         // 5. 读取现有书签列表，同 programId 覆盖
-        String key = BOOKMARK_KEY_PREFIX + conversationId;
+        String key = AiConstants.keyBookmarks(conversationId);
         String existing = redisTemplate.opsForValue().get(key);
         List<AiBookmark> bookmarks;
         if (existing != null && !existing.isBlank()) {
@@ -636,7 +585,7 @@ public class AiRecommendationTools {
 
         // 6. 写回 Redis
         redisTemplate.opsForValue().set(key, JSON.toJSONString(bookmarks),
-            BOOKMARK_TTL_MINUTES, TimeUnit.MINUTES);
+            AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
         // 6a. 书签变更后持久化到 DB，防止 Redis 过期丢失
         persistBookmarkState(conversationId);
@@ -656,7 +605,7 @@ public class AiRecommendationTools {
         String conversationId = CURRENT_CONVERSATION.get();
         if (conversationId == null) return "{\"error\":\"no_conversation\"}";
 
-        String key = BOOKMARK_KEY_PREFIX + conversationId;
+        String key = AiConstants.keyBookmarks(conversationId);
         String existing = redisTemplate.opsForValue().get(key);
         if (existing == null || existing.isBlank()) {
             return "{\"total\":0}";
@@ -664,7 +613,7 @@ public class AiRecommendationTools {
         List<AiBookmark> bookmarks = JSON.parseArray(existing, AiBookmark.class);
         bookmarks.removeIf(b -> b.getProgramId() == programId);
         redisTemplate.opsForValue().set(key, JSON.toJSONString(bookmarks),
-            BOOKMARK_TTL_MINUTES, TimeUnit.MINUTES);
+            AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
         log.info("[Tool] removeFromReport — programId={}, remaining={}", programId, bookmarks.size());
         return "{\"ok\":true,\"total\":" + bookmarks.size() + "}";
@@ -673,11 +622,11 @@ public class AiRecommendationTools {
     /** 书签变更后持久化 conv+bookmarks 到 DB */
     private void persistBookmarkState(String conversationId) {
         try {
-            String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+            String owner = redisTemplate.opsForValue().get(AiConstants.keyOwner(conversationId));
             if (owner == null) return;
-            String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+            String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
             if (convJson == null || convJson.isBlank()) return;
-            String bookmarkJson = redisTemplate.opsForValue().get(BOOKMARK_KEY_PREFIX + conversationId);
+            String bookmarkJson = redisTemplate.opsForValue().get(AiConstants.keyBookmarks(conversationId));
 
             RecommendationLog logEntry = new RecommendationLog();
             logEntry.setUserId(Long.parseLong(owner));
@@ -699,11 +648,22 @@ public class AiRecommendationTools {
     }
 
     private String loadPoolJson(String conversationId) {
-        String poolJson = redisTemplate.opsForValue().get("ai:agent:pool:" + conversationId);
+        String poolJson = redisTemplate.opsForValue().get(AiConstants.keyAgentPool(conversationId));
         if (poolJson == null) {
-            poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+            poolJson = redisTemplate.opsForValue().get(AiConstants.keyPool(conversationId));
         }
         return poolJson;
+    }
+
+    private List<CandidateProgramDTO> loadPoolAsDto(String conversationId) {
+        String json = loadPoolJson(conversationId);
+        if (json == null || json.isBlank()) return Collections.emptyList();
+        try {
+            return JSON.parseArray(json, CandidateProgramDTO.class);
+        } catch (Exception e) {
+            log.warn("[Tool] Failed to parse pool as DTO: {}", e.getMessage());
+            return Collections.emptyList();
+        }
     }
 
     private static String stringVal(Map<String, Object> map, String key, String fallback) {

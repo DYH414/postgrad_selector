@@ -23,13 +23,15 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
-import com.ruoyi.postgrad.domain.AiBookmark;
-import com.ruoyi.postgrad.domain.AiRecommendationSafety;
-import com.ruoyi.postgrad.domain.AiReportSupport;
-import com.ruoyi.postgrad.domain.AiToolTrace;
+import com.ruoyi.postgrad.domain.ai.AiBookmark;
+import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
+import com.ruoyi.postgrad.domain.ai.AiReportSupport;
+import com.ruoyi.postgrad.domain.ai.AiToolTrace;
+import com.ruoyi.postgrad.domain.ai.AiConstants;
 import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.domain.UserProfile;
+import com.ruoyi.postgrad.domain.dto.CandidateProgramDTO;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import com.ruoyi.postgrad.mapper.UserProfileMapper;
 import com.ruoyi.postgrad.service.AiReportBuilder;
@@ -96,8 +98,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         + "</constraints>\n";
 
     private static final Logger log = LoggerFactory.getLogger(AiRecommendationServiceImpl.class);
-    private static final long TTL_SECONDS = 1800L;
-    private static final long REPORT_TTL_DAYS = 7L;
 
     @Autowired
     private IAiCandidatePoolService aiCandidatePoolService;
@@ -120,12 +120,15 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     @Autowired
     private AiReportBuilder aiReportBuilder;
 
+    @Autowired
+    private PreselectService preselectService;
+
     @Override
     public Map<String, Object> startConversation(Long userId, Map<String, Object> request) {
         Map<String, Object> profile = loadUserProfile(userId);
         int estimatedScore = getEstimatedScore(request, profile);
 
-        List<RowMap> pool = aiCandidatePoolService.buildPool(request, profile, estimatedScore);
+        List<CandidateProgramDTO> pool = aiCandidatePoolService.buildPool(request, profile, estimatedScore);
 
         List<Map<String, Object>> summaryList = buildSummaryList(pool, estimatedScore);
         String summaryText = buildSummaryText(summaryList);
@@ -181,9 +184,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         String convJson = JSON.toJSONString(messages);
         String poolJson = JSON.toJSONString(summaryList);
 
-        redisTemplate.opsForValue().set("ai:conv:" + conversationId, convJson, TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.opsForValue().set("ai:pool:" + conversationId, poolJson, TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.opsForValue().set("ai:owner:" + conversationId, userId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
+        redisTemplate.opsForValue().set(AiConstants.keyConv(conversationId), convJson, AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+        redisTemplate.opsForValue().set(AiConstants.keyPool(conversationId), poolJson, AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+        redisTemplate.opsForValue().set(AiConstants.keyOwner(conversationId), userId.toString(), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
         // 异步触发 AI 预选（不阻塞首轮 336ms 响应）
         final String finalConvId = conversationId;
@@ -209,246 +212,81 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     // ==================== AI 预选（background_ai）====================
 
-    private static final String PRESELECT_PROMPT = """
-        你是考研择校顾问。根据用户画像和候选学校的事实标签，筛选最适合进入报告候选的学校。
-
-        事实标签说明：
-        - 分数大幅超出：gap ≥ +15，用户分数远超录取均分
-        - 分数适度超出：gap +5~+14，有一定余量
-        - 分数微弱超出：gap 0~+4，微弱优势
-        - 分数微弱不足：gap -5~0，轻微劣势
-        - 分数适度不足：gap -15~-5，明显劣势
-        - 分数大幅不足：gap ≤ -15，差距很大
-        - 招生充裕(≥30人) / 招生正常(10-29人) / 招生偏少(4-9人) / 招生极少(≤3人)
-        - 可以保底 / 不可保底：后端判断
-        - 名额风险=低/中/高/极高
-
-        ## 宁缺毋滥规则（最高优先级）
-        - include 是"值得进入最终报告候选"，不是"看起来还行"。
-        - 有明显硬伤的学校必须 skip：分数大幅不足且不可保底、招生极少且数据低于A。
-        - 有优势但风险明显的学校用 hold。
-
-        ## 选择预算
-        - 本批最多 include 6 所，宁可少不可凑。
-        - safe 最多 2 所，且必须同时满足：①分数大幅超出 ②可以保底 ③招生充裕或正常。
-
-        ## tier 判断
-        - safe：分数大幅超出 + 可以保底 + 招生充裕或正常（三项缺一不可）
-        - steady：分数微弱超出到适度超出，风险可控
-        - reach：分数不足，需要冲刺
-
-        输出严格 JSON 数组：{"programId":X,"decision":"include|skip|hold","tier":"...","reason":"...","risk":"..."}
-        """;
-
-    /** 从候选池分层抽样 + AI 批量判断 + 写入书签（从 Redis 读池，避免类型兼容问题） */
+    /** 委托 PreselectService 执行 AI 预选，本方法只负责 Redis 读写与书签持久化 */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void preselectCandidates(String conversationId) {
-        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+        String poolJson = redisTemplate.opsForValue().get(AiConstants.keyPool(conversationId));
         if (poolJson == null || poolJson.isBlank()) {
             log.warn("[Preselect] No pool found for conv={}", conversationId);
             return;
         }
-        List<Map<String, Object>> pool = (List) JSON.parseArray(poolJson, Map.class);
-        if (pool == null || pool.size() < 10) {
-            log.warn("[Preselect] Pool too small for conv={}, size={}", conversationId, pool == null ? 0 : pool.size());
-            return;
-        }
-        log.info("[Preselect] Loaded pool size={} for conv={}", pool.size(), conversationId);
 
-        // 1. 分层抽样
-        List<Map<String, Object>> reach = new ArrayList<>(), steady = new ArrayList<>(), safe = new ArrayList<>();
-        for (Map<String, Object> p : pool) {
-            int gap = toInt(p.get("gap"), 0);
-            boolean canSafe = Boolean.TRUE.equals(p.get("canBeSafe"));
-            if (gap < 0) reach.add(p);
-            else if (gap > 14 && canSafe) safe.add(p);
-            else steady.add(p);
-        }
-        List<Map<String, Object>> samples = new ArrayList<>();
-        Collections.shuffle(reach); Collections.shuffle(steady); Collections.shuffle(safe);
-        samples.addAll(reach.stream().limit(8).toList());
-        samples.addAll(steady.stream().limit(8).toList());
-        samples.addAll(safe.stream().limit(8).toList());
-        if (samples.isEmpty()) return;
+        List<CandidateProgramDTO> pool = JSON.parseArray(poolJson, CandidateProgramDTO.class);
+        if (pool == null) pool = Collections.emptyList();
+        List<CandidateProgramDTO> includeList = preselectService.preselect(pool, buildChatModel());
+        if (includeList.isEmpty()) return;
 
-        // 2. 构建事实卡
-        List<String> factCards = samples.stream().map(this::buildPreselectFactCard).toList();
-
-        // 3. 分批调用 AI
-        ChatModel chatModel = buildChatModel();
-        List<Map<String, Object>> decisions = new ArrayList<>();
-        int batchSize = 12;
-        for (int i = 0; i < factCards.size(); i += batchSize) {
-            int end = Math.min(i + batchSize, factCards.size());
-            String batchStr = String.join("\n", factCards.subList(i, end));
-            String userMsg = "候选学校：\n" + batchStr + "\n\n请对上述学校逐一判断，输出 JSON 数组。";
-
-            try {
-                String aiResp = chatModel.chat(
-                    dev.langchain4j.data.message.SystemMessage.from(PRESELECT_PROMPT),
-                    dev.langchain4j.data.message.UserMessage.from(userMsg)
-                ).aiMessage().text();
-
-                if (aiResp == null || aiResp.isBlank()) {
-                    log.warn("[Preselect] Batch {}/{} empty response, skip", i/batchSize+1,
-                        (int)Math.ceil(factCards.size()/(double)batchSize));
-                    continue;
-                }
-                log.info("[Preselect] Batch {}/{} raw response (first 200): {}",
-                    i/batchSize+1, (int)Math.ceil(factCards.size()/(double)batchSize),
-                    aiResp.length() > 200 ? aiResp.substring(0, 200) : aiResp);
-
-                // 提取 JSON
-                String json = aiResp;
-                if (json.contains("```json")) json = json.substring(json.indexOf("```json") + 7);
-                if (json.contains("```")) json = json.substring(0, json.lastIndexOf("```")).trim();
-                int braceStart = json.indexOf('[');
-                int braceEnd = json.lastIndexOf(']');
-                if (braceStart >= 0 && braceEnd > braceStart) json = json.substring(braceStart, braceEnd + 1);
-                if (json.isBlank()) {
-                    log.warn("[Preselect] Batch {}/{} no valid JSON found after extraction", i/batchSize+1,
-                        (int)Math.ceil(factCards.size()/(double)batchSize));
-                    continue;
-                }
-
-                @SuppressWarnings({"unchecked", "rawtypes"})
-                List<Map<String, Object>> batch = (List) JSON.parseArray(json, Map.class);
-                if (batch != null) decisions.addAll(batch);
-            } catch (Exception e) {
-                log.warn("[Preselect] Batch {}/{} failed: {}", i/batchSize+1,
-                    (int)Math.ceil(factCards.size()/(double)batchSize), e.getMessage());
-            }
-        }
-        if (decisions.isEmpty()) return;
-
-        // 4. 后端硬校验
-        List<Map<String, Object>> includeList = preselectHardValidate(decisions, samples);
-
-        // 5. 写入书签
-        if (!includeList.isEmpty()) {
-            String bookmarkKey = "ai:bookmarks:" + conversationId;
-            List<AiBookmark> existing = new ArrayList<>();
-            String existingJson = redisTemplate.opsForValue().get(bookmarkKey);
-            if (existingJson != null && !existingJson.isBlank()) {
-                try { existing = JSON.parseArray(existingJson, AiBookmark.class); } catch (Exception ignored) {}
-                if (existing == null) existing = new ArrayList<>();
-            }
-
-            // 建 poolMap 供 finalJudgement 查找 fact
-            Map<Long, Map<String, Object>> poolMap = new LinkedHashMap<>();
-            for (Map<String, Object> p : pool) {
-                Long pid = toLong(p.get("programId"));
-                if (pid != null) poolMap.put(pid, p);
-            }
-
-            for (Map<String, Object> inc : includeList) {
-                Long pid = toLong(inc.get("programId"));
-                if (pid == null) continue;
-                Map<String, Object> fact = poolMap.get(pid);
-                if (fact == null) {
-                    log.warn("[Preselect] Skip pid={}: not in pool", pid);
-                    continue;
-                }
-
-                // P0.5: background_ai 不能覆盖更高优先级的已有 bookmark
-                final long targetPid = pid;
-                AiBookmark existingBm = existing.stream()
-                    .filter(b -> java.util.Objects.equals(b.getProgramId(), targetPid))
-                    .findFirst().orElse(null);
-                if (existingBm != null && sourceRank(existingBm.getSource()) < sourceRank("background_ai")) {
-                    log.info("[Preselect] Skip pid={}: already covered by higher-priority source={}",
-                        pid, existingBm.getSource());
-                    continue;
-                }
-                existing.removeIf(b -> java.util.Objects.equals(b.getProgramId(), targetPid));
-
-                // ★ 后端闸门：AI 的 tier 必须过 finalJudgement
-                String aiTier = String.valueOf(inc.getOrDefault("tier", "steady"));
-                AiRecommendationSafety.JudgementResult jr =
-                    AiRecommendationSafety.finalJudgement(fact, aiTier);
-
-                AiBookmark bm = new AiBookmark();
-                bm.setProgramId(pid);
-                bm.setSchoolName(String.valueOf(fact.getOrDefault("schoolName", "")));
-                bm.setProgramName(String.valueOf(fact.getOrDefault("programName", "")));
-                bm.setSource("background_ai");
-                bm.setStatus("suggested");
-                bm.setUserConfirmed(false);
-                bm.setJudgement(jr.finalJudgement());           // 兼容旧逻辑
-                bm.setFinalJudgement(jr.finalJudgement());
-                bm.setAiJudgement(aiTier);
-                bm.setAdjusted(jr.adjusted());
-                bm.setAdjustReason(jr.adjustReason());
-                bm.setReason(String.valueOf(inc.getOrDefault("reason", "")));
-                // risk 塞进 cons 第一条
-                String risk = String.valueOf(inc.getOrDefault("risk", ""));
-                bm.setCons(risk.isBlank() ? List.of() : List.of(risk));
-                bm.setPros(List.of());
-                bm.setTradeoffs(List.of());
-                bm.setRecommendedAction("");
-                existing.add(bm);
-            }
-            redisTemplate.opsForValue().set(bookmarkKey, JSON.toJSONString(existing), Duration.ofMinutes(60));
-            log.info("[Preselect] Wrote {} bookmarks for conv={}", includeList.size(), conversationId);
-            // 书签变更后立即持久化状态，防止 Redis 过期丢失
-            persistStateFromRedis(conversationId);
-        }
-    }
-
-    private String buildPreselectFactCard(Map<String, Object> p) {
-        int gap = toInt(p.get("gap"), 0);
-        int quota = toInt(p.getOrDefault("unifiedExamQuota", p.get("planCount")), 0);
-        boolean canSafe = Boolean.TRUE.equals(p.get("canBeSafe"));
-        String quotaRisk = String.valueOf(p.getOrDefault("quotaRisk", ""));
-        return String.format("ID=%s | %s | %s | 层次=%s | 城市=%s | %s | %s | %s | %s | 数据=%s",
-            p.get("programId"), p.get("schoolName"), p.get("programName"),
-            p.get("schoolTier"), p.get("city"),
-            AiRecommendationTools.gapLabel(gap),
-            AiRecommendationTools.quotaLabel(quota),
-            canSafe ? "可以保底" : "不可保底",
-            AiRecommendationTools.quotaRiskLabel(quotaRisk),
-            p.getOrDefault("dataCompleteness", "?"));
-    }
-
-    private List<Map<String, Object>> preselectHardValidate(List<Map<String, Object>> decisions,
-                                                             List<Map<String, Object>> samples) {
-        Map<Long, Map<String, Object>> sampleMap = new LinkedHashMap<>();
-        for (Map<String, Object> s : samples) {
-            Long pid = toLong(s.get("programId"));
-            if (pid != null) sampleMap.put(pid, s);
+        // 建 poolMap 供 fact 查找
+        Map<Long, CandidateProgramDTO> poolMap = new LinkedHashMap<>();
+        for (CandidateProgramDTO p : pool) {
+            if (p.getProgramId() != null) poolMap.put(p.getProgramId(), p);
         }
 
-        List<Map<String, Object>> result = new ArrayList<>();
-        int[] counts = new int[3]; // reach, steady, safe
-        for (Map<String, Object> d : decisions) {
-            if (!"include".equals(d.get("decision"))) continue;
-            Long pid = toLong(d.get("programId"));
+        // 读取已有书签，合并写入
+        String bookmarkKey = AiConstants.keyBookmarks(conversationId);
+        List<AiBookmark> existing = new ArrayList<>();
+        String existingJson = redisTemplate.opsForValue().get(bookmarkKey);
+        if (existingJson != null && !existingJson.isBlank()) {
+            try { existing = JSON.parseArray(existingJson, AiBookmark.class); } catch (Exception ignored) {}
+            if (existing == null) existing = new ArrayList<>();
+        }
+
+        for (CandidateProgramDTO inc : includeList) {
+            Long pid = inc.getProgramId();
             if (pid == null) continue;
-            Map<String, Object> p = sampleMap.get(pid);
-            if (p == null) continue;
+            CandidateProgramDTO fact = poolMap.get(pid);
+            if (fact == null) { log.warn("[Preselect] Skip pid={}: not in pool", pid); continue; }
 
-            int gap = toInt(p.get("gap"), 0);
-            int quota = toInt(p.getOrDefault("unifiedExamQuota", p.get("planCount")), 0);
-            boolean canSafe = Boolean.TRUE.equals(p.get("canBeSafe"));
+            // background_ai 不能覆盖更高优先级的已有 bookmark
+            final long targetPid = pid;
+            AiBookmark existingBm = existing.stream()
+                .filter(b -> java.util.Objects.equals(b.getProgramId(), targetPid))
+                .findFirst().orElse(null);
+            if (existingBm != null && sourceRank(existingBm.getSource()) < sourceRank("background_ai")) {
+                log.info("[Preselect] Skip pid={}: already covered by higher-priority source={}",
+                    pid, existingBm.getSource());
+                continue;
+            }
+            existing.removeIf(b -> java.util.Objects.equals(b.getProgramId(), targetPid));
 
-            String tier = String.valueOf(d.getOrDefault("tier", "steady"));
-            // Rule 1: gap<0 cannot be safe
-            if (gap < 0 && "safe".equals(tier)) tier = "reach";
-            // Rule 2: canBeSafe=false cannot be safe
-            if (!canSafe && "safe".equals(tier)) tier = gap >= 5 ? "steady" : "reach";
-            // Rule 3: quota ≤ 3 cannot be safe
-            if (quota <= 3 && "safe".equals(tier)) tier = "steady";
+            // tier 从引用的 fact 对象推断（preselect 已计算）
+            String aiTier = "steady"; // 默认
+            AiRecommendationSafety.JudgementResult jr =
+                AiRecommendationSafety.finalJudgement(fact.toMap(), aiTier);
 
-            // 数量限制
-            int idx = "reach".equals(tier) ? 0 : "steady".equals(tier) ? 1 : 2;
-            int max = idx == 0 ? 2 : idx == 1 ? 3 : 2;
-            if (counts[idx] >= max) continue;
-            counts[idx]++;
-
-            d.put("tier", tier);
-            result.add(d);
+            AiBookmark bm = new AiBookmark();
+            bm.setProgramId(pid);
+            bm.setSchoolName(fact.getSchoolName());
+            bm.setProgramName(fact.getProgramName());
+            bm.setSource("background_ai");
+            bm.setStatus("suggested");
+            bm.setUserConfirmed(false);
+            bm.setJudgement(jr.finalJudgement());
+            bm.setFinalJudgement(jr.finalJudgement());
+            bm.setAiJudgement(aiTier);
+            bm.setAdjusted(jr.adjusted());
+            bm.setAdjustReason(jr.adjustReason());
+            bm.setReason("");
+            bm.setCons(inc.getQuotaRisk() != null ? List.of(inc.getQuotaRisk()) : List.of());
+            bm.setPros(List.of());
+            bm.setTradeoffs(List.of());
+            bm.setRecommendedAction("");
+            existing.add(bm);
         }
-        return result;
+        redisTemplate.opsForValue().set(bookmarkKey, JSON.toJSONString(existing),
+            Duration.ofMinutes(AiConstants.TTL_CONVERSATION));
+        log.info("[Preselect] Wrote {} bookmarks for conv={}", includeList.size(), conversationId);
+        persistStateFromRedis(conversationId);
     }
 
     private static int toInt(Object val, int fallback) {
@@ -520,7 +358,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Override
     public Map<String, Object> chat(Long userId, String conversationId, String message) {
-        String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+        String owner = redisTemplate.opsForValue().get(AiConstants.keyOwner(conversationId));
         if (owner == null) {
             Map<String, Object> err = new LinkedHashMap<>();
             err.put("status", "expired");
@@ -532,7 +370,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             throw new SecurityException("Conversation ownership mismatch");
         }
 
-        String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+        String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
         if (convJson == null) {
             Map<String, Object> err = new LinkedHashMap<>();
             err.put("status", "expired");
@@ -632,9 +470,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
 
         convJson = JSON.toJSONString(messages);
-        redisTemplate.opsForValue().set("ai:conv:" + conversationId, convJson, TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.expire("ai:pool:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.expire("ai:owner:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+        redisTemplate.opsForValue().set(AiConstants.keyConv(conversationId), convJson, AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+        redisTemplate.expire(AiConstants.keyPool(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+        redisTemplate.expire(AiConstants.keyOwner(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
         if (messages.size() % 6 == 0) {
             saveConversationState(userId, conversationId, messages);
@@ -642,7 +480,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
         String messageText = parseMessageText(aiResponse);
         List<String> options = parseOptionsList(aiResponse);
-        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+        String poolJson = redisTemplate.opsForValue().get(AiConstants.keyPool(conversationId));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", messageText);
@@ -655,7 +493,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Override
     public void chatStream(Long userId, String conversationId, String message, StreamCallback callback) {
-        String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+        String owner = redisTemplate.opsForValue().get(AiConstants.keyOwner(conversationId));
         if (owner == null) {
             callback.onError(new IllegalArgumentException("对话已过期，请开始新对话"));
             return;
@@ -664,7 +502,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             throw new SecurityException("Conversation ownership mismatch");
         }
 
-        String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+        String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
         if (convJson == null) {
             callback.onError(new IllegalArgumentException("对话已过期，请开始新对话"));
             return;
@@ -740,7 +578,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     String messageText = parseMessageText(rawText);
                     result.put("message", messageText);
                     result.put("options", parseOptionsList(rawText));
-                    List<Map<String, Object>> cards = hydrateChatCards(messageText, redisTemplate.opsForValue().get("ai:pool:" + conversationId));
+                    List<Map<String, Object>> cards = hydrateChatCards(messageText, redisTemplate.opsForValue().get(AiConstants.keyPool(conversationId)));
                     result.put("cards", cards);
                     persistDiscussedProgramIds(conversationId, cards, messageText);
                     callback.onComplete(result);
@@ -781,7 +619,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Override
     public Map<String, Object> generateReport(Long userId, String conversationId) {
-        String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+        String owner = redisTemplate.opsForValue().get(AiConstants.keyOwner(conversationId));
         if (owner == null) {
             Map<String, Object> err = new LinkedHashMap<>();
             err.put("status", "expired");
@@ -792,7 +630,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             throw new SecurityException("Conversation ownership mismatch");
         }
 
-        String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+        String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
         if (convJson == null) {
             Map<String, Object> err = new LinkedHashMap<>();
             err.put("status", "expired");
@@ -801,7 +639,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
 
         // 读取或自动填充书签
-        String bookmarkJson = redisTemplate.opsForValue().get("ai:bookmarks:" + conversationId);
+        String bookmarkJson = redisTemplate.opsForValue().get(AiConstants.keyBookmarks(conversationId));
         List<AiBookmark> bookmarks;
         try {
             bookmarks = bookmarkJson != null ? JSON.parseArray(bookmarkJson, AiBookmark.class) : new ArrayList<>();
@@ -811,7 +649,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         if (bookmarks == null) bookmarks = new ArrayList<>();
 
         // 合并：保留 addToReport 书签（完整 AI 观点），补充 autoFill 发现的未覆盖学校
-        String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+        String poolJson = redisTemplate.opsForValue().get(AiConstants.keyPool(conversationId));
         List<AiBookmark> autoFilled = autoFillBookmarks(convJson, poolJson, conversationId);
         if (!autoFilled.isEmpty()) {
             Set<Long> bookmarkedIds = new LinkedHashSet<>();
@@ -876,12 +714,12 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         trimReportTiers(reportJson);
 
         // 延长 TTL
-        redisTemplate.expire("ai:conv:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
-        redisTemplate.expire("ai:pool:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
-        redisTemplate.expire("ai:bookmarks:" + conversationId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+        redisTemplate.expire(AiConstants.keyConv(conversationId), AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
+        redisTemplate.expire(AiConstants.keyPool(conversationId), AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
+        redisTemplate.expire(AiConstants.keyBookmarks(conversationId), AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
 
         String resultJson = JSON.toJSONString(reportJson);
-        redisTemplate.opsForValue().set("ai:report:" + reportId, resultJson, REPORT_TTL_DAYS, TimeUnit.DAYS);
+        redisTemplate.opsForValue().set(AiConstants.keyReport(reportId), resultJson, AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
         recLog.setResultJson(resultJson);
         try { logMapper.updateReportResult(reportId, resultJson); } catch (Exception ignored) {}
 
@@ -900,7 +738,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             Set<Long> searchedIds = trace.getSearchedProgramIds();
             if (searchedIds.isEmpty()) return;
 
-            String searchedKey = "ai:searched:" + conversationId;
+            String searchedKey = AiConstants.keySearched(conversationId);
             String existing = redisTemplate.opsForValue().get(searchedKey);
             Set<Long> allIds = new LinkedHashSet<>(searchedIds);
             if (existing != null && !existing.isBlank()) {
@@ -912,7 +750,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
             redisTemplate.opsForValue().set(searchedKey,
                 JSON.toJSONString(new ArrayList<>(allIds)),
-                Duration.ofMinutes(60));
+                Duration.ofMinutes(AiConstants.TTL_TRACE_MINUTES));
         } catch (Exception ignored) {}
     }
 
@@ -921,7 +759,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         if (conversationId == null || conversationId.isBlank()) return;
         if (cards == null || cards.isEmpty()) return;
         try {
-            String key = "ai:discussed:" + conversationId;
+            String key = AiConstants.keyDiscussed(conversationId);
             List<Map<String, Object>> allTraces = new ArrayList<>();
 
             // 读取已有 trace
@@ -963,7 +801,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
             // 上限 20 个
             if (allTraces.size() > 20) allTraces = allTraces.subList(0, 20);
-            redisTemplate.opsForValue().set(key, JSON.toJSONString(allTraces), Duration.ofMinutes(60));
+            redisTemplate.opsForValue().set(key, JSON.toJSONString(allTraces), Duration.ofMinutes(AiConstants.TTL_TRACE_MINUTES));
         } catch (Exception e) {
             log.warn("persistDiscussedProgramIds failed: conversationId={}", conversationId, e);
         }
@@ -1031,7 +869,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         // 来源 1（优先）：AI 实际讨论过的学校 + 分析原文
         if (conversationId != null) {
             try {
-                String discussedJson = redisTemplate.opsForValue().get("ai:discussed:" + conversationId);
+                String discussedJson = redisTemplate.opsForValue().get(AiConstants.keyDiscussed(conversationId));
                 if (discussedJson != null && !discussedJson.isBlank()) {
                     // 尝试新格式 List<{programId, schoolName, assistantSnippet, ...}>
                     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -1062,7 +900,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         // 来源 2（兜底）：仅 ai:discussed 为空时才读 ai:searched
         if (discussedIds.isEmpty() && conversationId != null) {
             try {
-                String searchedJson = redisTemplate.opsForValue().get("ai:searched:" + conversationId);
+                String searchedJson = redisTemplate.opsForValue().get(AiConstants.keySearched(conversationId));
                 if (searchedJson != null && !searchedJson.isBlank()) {
                     @SuppressWarnings("unchecked")
                     List<Long> ids = JSON.parseArray(searchedJson, Long.class);
@@ -1207,37 +1045,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         List<String> regions = parseRegionsForAnalysis(targetRegionsStr);
 
         // 3. Query broad local working pool for AI agent exploration
-        List<RowMap> pool = aiCandidatePoolService.buildAgentPool(estimatedScore, regions);
+        List<CandidateProgramDTO> pool = aiCandidatePoolService.buildAgentPool(estimatedScore, regions);
 
-        // 4. Serialize pool data for Redis (full fields needed for injectFullData)
-        List<Map<String, Object>> poolList = new ArrayList<>();
-        for (RowMap row : pool)
-        {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("programId", row.get("programId"));
-            item.put("schoolName", row.get("schoolName"));
-            item.put("schoolTier", row.get("schoolTier"));
-            item.put("city", row.get("city"));
-            item.put("province", row.get("province"));
-            item.put("collegeName", row.get("collegeName"));
-            item.put("programName", row.get("programName"));
-            item.put("degreeType", row.get("degreeType"));
-            item.put("scoreLine", row.get("scoreLine"));
-            item.put("avgAdmittedScore", row.get("avgAdmittedScore"));
-            item.put("admissionLow", row.get("admissionLow"));
-            item.put("admissionHigh", row.get("admissionHigh"));
-            item.put("planCount", row.get("planCount"));
-            item.put("admittedCount", row.get("admittedCount"));
-            item.put("retestCount", row.get("retestCount"));
-            item.put("dataYear", row.get("dataYear"));
-            item.put("dataCompleteness", row.get("dataCompleteness"));
-            item.put("sourceUrl", row.get("sourceUrl"));
-            item.put("sourceOwner", row.get("sourceOwner"));
-            Object avgObj = row.get("avgAdmittedScore");
-            item.put("gap", avgObj instanceof Number n ? estimatedScore - n.intValue() : 0);
-            poolList.add(item);
-        }
-        String poolJson = JSON.toJSONString(poolList);
+        // 4. Serialize pool data for Redis
+        String poolJson = JSON.toJSONString(pool);
 
         // 5. Insert PENDING recommendation_log
         RecommendationLog log = new RecommendationLog();
@@ -1254,16 +1065,16 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
         // 6. Store pool in Redis (TTL 1 hour). Keep old key during rollout.
         redisTemplate.opsForValue().set(
-            "ai:agent:pool:" + reportId, poolJson, 1, TimeUnit.HOURS);
+            AiConstants.keyAgentPool(reportId), poolJson, AiConstants.TTL_AGENT_POOL_HOURS, TimeUnit.HOURS);
         redisTemplate.opsForValue().set(
-            "ai:analyze:pool:" + reportId, poolJson, 1, TimeUnit.HOURS);
+            AiConstants.keyAnalyzePool(reportId), poolJson, AiConstants.TTL_AGENT_POOL_HOURS, TimeUnit.HOURS);
 
         // 7. Send MQ message (lightweight: no prompt in message)
         if (rabbitTemplate != null)
         {
             // 延长候选池 TTL，防止 MQ 消费时已过期
-            redisTemplate.expire("ai:agent:pool:" + reportId, REPORT_TTL_DAYS, TimeUnit.DAYS);
-            redisTemplate.expire("ai:analyze:pool:" + reportId, REPORT_TTL_DAYS, TimeUnit.DAYS);
+            redisTemplate.expire(AiConstants.keyAgentPool(reportId), AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
+            redisTemplate.expire(AiConstants.keyAnalyzePool(reportId), AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
 
             Map<String, Object> mqMsg = new LinkedHashMap<>();
             mqMsg.put("reportId", reportId);
@@ -1296,7 +1107,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Override
     public Map<String, Object> getReport(Long userId, Long reportId) {
-        String cached = redisTemplate.opsForValue().get("ai:report:" + reportId);
+        String cached = redisTemplate.opsForValue().get(AiConstants.keyReport(reportId));
         if ("PENDING".equals(cached)) {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("reportId", reportId);
@@ -1368,14 +1179,14 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
     @Override
     public Map<String, Object> getBookmarks(Long userId, String conversationId) {
-        String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+        String owner = redisTemplate.opsForValue().get(AiConstants.keyOwner(conversationId));
         if (owner == null || !owner.equals(userId.toString())) {
             Map<String, Object> err = new LinkedHashMap<>();
             err.put("bookmarks", Collections.emptyList());
             err.put("count", 0);
             return err;
         }
-        String json = redisTemplate.opsForValue().get("ai:bookmarks:" + conversationId);
+        String json = redisTemplate.opsForValue().get(AiConstants.keyBookmarks(conversationId));
         List<AiBookmark> bookmarks;
         try {
             bookmarks = json != null ? JSON.parseArray(json, AiBookmark.class) : Collections.emptyList();
@@ -1392,9 +1203,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     @Override
     public Map<String, Object> resumeConversation(Long userId, String conversationId) {
         // ── Redis 路径：数据仍在 ──
-        String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+        String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
         if (convJson != null) {
-            String convOwner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+            String convOwner = redisTemplate.opsForValue().get(AiConstants.keyOwner(conversationId));
             if (convOwner != null && !convOwner.equals(userId.toString())) {
                 throw new SecurityException("Conversation ownership mismatch");
             }
@@ -1413,10 +1224,10 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
 
             // 刷新全部四个 key 的 TTL
-            redisTemplate.expire("ai:conv:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
-            redisTemplate.expire("ai:pool:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
-            redisTemplate.expire("ai:bookmarks:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
-            redisTemplate.expire("ai:owner:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+            redisTemplate.expire(AiConstants.keyConv(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+            redisTemplate.expire(AiConstants.keyPool(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+            redisTemplate.expire(AiConstants.keyBookmarks(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+            redisTemplate.expire(AiConstants.keyOwner(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("conversationId", conversationId);
@@ -1446,42 +1257,40 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                 }
 
                 // 1. 恢复 conv 到 Redis
-                redisTemplate.opsForValue().set("ai:conv:" + conversationId, dbState, TTL_SECONDS, TimeUnit.SECONDS);
+                redisTemplate.opsForValue().set(AiConstants.keyConv(conversationId), dbState, AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
                 // 2. 恢复 bookmarks 到 Redis
                 String savedBookmarksJson = state != null ? (String) state.get("bookmarksJson") : null;
                 if (savedBookmarksJson != null && !savedBookmarksJson.isBlank()) {
-                    redisTemplate.opsForValue().set("ai:bookmarks:" + conversationId,
-                        savedBookmarksJson, TTL_SECONDS, TimeUnit.SECONDS);
+                    redisTemplate.opsForValue().set(AiConstants.keyBookmarks(conversationId),
+                        savedBookmarksJson, AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
                 }
 
                 // 3. 重建 pool（如果 Redis 中不存在）
-                String poolJson = redisTemplate.opsForValue().get("ai:pool:" + conversationId);
+                String poolJson = redisTemplate.opsForValue().get(AiConstants.keyPool(conversationId));
                 if (poolJson == null || poolJson.isBlank()) {
                     try {
                         Map<String, Object> profile = loadUserProfile(userId);
                         int estimatedScore = getEstimatedScore(Collections.emptyMap(), profile);
                         String regionsStr = formatProfileField(profile, "targetRegions", "不限");
                         List<String> regions = parseRegionsForAnalysis(regionsStr);
-                        List<RowMap> pool = aiCandidatePoolService.buildAgentPool(estimatedScore, regions);
-                        List<Map<String, Object>> poolList = new ArrayList<>();
-                        for (RowMap row : pool) poolList.add(row);
-                        redisTemplate.opsForValue().set("ai:pool:" + conversationId,
-                            JSON.toJSONString(poolList), TTL_SECONDS, TimeUnit.SECONDS);
-                        log.info("[Resume] Rebuilt pool for conv={}, size={}", conversationId, poolList.size());
+                        List<CandidateProgramDTO> pool = aiCandidatePoolService.buildAgentPool(estimatedScore, regions);
+                        redisTemplate.opsForValue().set(AiConstants.keyPool(conversationId),
+                            JSON.toJSONString(pool), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+                        log.info("[Resume] Rebuilt pool for conv={}, size={}", conversationId, pool.size());
                     } catch (Exception e) {
                         log.warn("[Resume] Failed to rebuild pool for conv={}: {}", conversationId, e.getMessage());
                     }
                 }
 
                 // 4. 设置 owner
-                redisTemplate.opsForValue().set("ai:owner:" + conversationId, userId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
+                redisTemplate.opsForValue().set(AiConstants.keyOwner(conversationId), userId.toString(), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
                 // 5. 刷新全部 TTL
-                redisTemplate.expire("ai:conv:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
-                redisTemplate.expire("ai:pool:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
-                redisTemplate.expire("ai:bookmarks:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
-                redisTemplate.expire("ai:owner:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+                redisTemplate.expire(AiConstants.keyConv(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+                redisTemplate.expire(AiConstants.keyPool(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+                redisTemplate.expire(AiConstants.keyBookmarks(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+                redisTemplate.expire(AiConstants.keyOwner(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
                 Map<String, Object> result = new LinkedHashMap<>();
                 result.put("conversationId", conversationId);
@@ -1583,46 +1392,20 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         return 300;
     }
 
-    private List<Map<String, Object>> buildSummaryList(List<RowMap> pool, int estimatedScore) {
+    private List<Map<String, Object>> buildSummaryList(List<CandidateProgramDTO> pool, int estimatedScore) {
         List<Map<String, Object>> summary = new ArrayList<>();
-        if (pool == null) {
-            return summary;
-        }
-        for (RowMap p : pool) {
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("programId", p.get("programId"));
-            item.put("schoolName", p.get("schoolName"));
-            item.put("schoolTier", p.get("schoolTier"));
-            item.put("city", p.get("city"));
-            item.put("province", p.get("province"));
-            item.put("programName", p.get("programName"));
-            item.put("collegeName", p.get("collegeName"));
-            item.put("degreeType", p.get("degreeType"));
-            Object avgObj = p.get("avgAdmittedScore");
-            int avg = 0;
-            if (avgObj instanceof Number) {
-                avg = ((Number) avgObj).intValue();
-            }
+        if (pool == null) return summary;
+        for (CandidateProgramDTO p : pool) {
+            Map<String, Object> item = p.toMap();
+            // Override computed fields
+            Integer avg = p.getAvgAdmittedScore();
             item.put("avgAdmittedScore", avg);
-            item.put("gap", avg > 0 ? (estimatedScore - avg) : null);
-            // 以下字段供报告生成时 injectFullData 使用
-            item.put("scoreLine", p.get("scoreLine"));
-            item.put("admissionLow", p.get("admissionLow"));
-            item.put("admissionHigh", p.get("admissionHigh"));
-            item.put("planCount", p.get("planCount"));
-            item.put("admittedCount", p.get("admittedCount"));
-            item.put("retestCount", p.get("retestCount"));
-            item.put("dataYear", p.get("dataYear"));
-            // Recompute from actual fields — DB value is often stale/missing
-            item.put("dataCompleteness", computedCompleteness(item));
-            item.put("sourceUrl", p.get("sourceUrl"));
-            item.put("sourceOwner", p.get("sourceOwner"));
+            item.put("gap", avg != null ? (estimatedScore - avg) : null);
+            item.put("dataCompleteness", AiRecommendationSafety.computedCompleteness(item));
             Map<String, Object> guard = AiRecommendationSafety.safeEligibility(item, estimatedScore);
             item.put("quotaRisk", guard.get("quotaRisk"));
             item.put("canBeSafe", guard.get("canBeSafe"));
-            if (guard.get("safeBlockReason") != null) {
-                item.put("safeBlockReason", guard.get("safeBlockReason"));
-            }
+            if (guard.get("safeBlockReason") != null) item.put("safeBlockReason", guard.get("safeBlockReason"));
             summary.add(item);
         }
         return summary;
@@ -1650,22 +1433,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             sb.append("\n");
         }
         return sb.toString();
-    }
-
-    private String computedCompleteness(Map<String, Object> row) {
-        boolean hasScore = integerValue(row.get("scoreLine")) != null;
-        boolean hasRange = integerValue(row.get("admissionLow")) != null
-            && integerValue(row.get("admissionHigh")) != null;
-        boolean hasAverage = integerValue(row.get("avgAdmittedScore")) != null;
-        boolean hasCount = integerValue(row.get("planCount")) != null
-            || integerValue(row.get("admittedCount")) != null;
-        boolean hasMainExtra = hasAverage
-            || integerValue(row.get("admissionLow")) != null
-            || integerValue(row.get("planCount")) != null
-            || integerValue(row.get("unifiedExamQuota")) != null;
-        if (hasScore && hasRange && hasAverage && hasCount) return "A";
-        if (hasScore && hasMainExtra) return "B";
-        return "C";
     }
 
     private Integer integerValue(Object value) {
@@ -2086,9 +1853,9 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             messages.add(m);
         }
 
-        redisTemplate.opsForValue().set("ai:conv:" + conversationId, JSON.toJSONString(messages), TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.expire("ai:pool:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.expire("ai:owner:" + conversationId, TTL_SECONDS, TimeUnit.SECONDS);
+        redisTemplate.opsForValue().set(AiConstants.keyConv(conversationId), JSON.toJSONString(messages), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+        redisTemplate.expire(AiConstants.keyPool(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
+        redisTemplate.expire(AiConstants.keyOwner(conversationId), AiConstants.TTL_CONVERSATION, AiConstants.TTL_CONVERSATION_UNIT);
 
         if (messages.size() % 6 == 0) {
             saveConversationState(userId, conversationId, messages);
@@ -2105,7 +1872,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             state.put("messages", messages);
             state.put("savedAt", System.currentTimeMillis());
             // 书签一起持久化，避免 Redis 过期后丢失
-            String bookmarkJson = redisTemplate.opsForValue().get("ai:bookmarks:" + conversationId);
+            String bookmarkJson = redisTemplate.opsForValue().get(AiConstants.keyBookmarks(conversationId));
             if (bookmarkJson != null && !bookmarkJson.isBlank()) {
                 state.put("bookmarksJson", bookmarkJson);
             }
@@ -2121,11 +1888,11 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
     /** 从 Redis 读取当前 conv + bookmarks 并持久化到 DB（书签变更时调用） */
     private void persistStateFromRedis(String conversationId) {
         try {
-            String owner = redisTemplate.opsForValue().get("ai:owner:" + conversationId);
+            String owner = redisTemplate.opsForValue().get(AiConstants.keyOwner(conversationId));
             if (owner == null) return;
-            String convJson = redisTemplate.opsForValue().get("ai:conv:" + conversationId);
+            String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
             if (convJson == null || convJson.isBlank()) return;
-            String bookmarkJson = redisTemplate.opsForValue().get("ai:bookmarks:" + conversationId);
+            String bookmarkJson = redisTemplate.opsForValue().get(AiConstants.keyBookmarks(conversationId));
             RecommendationLog log = new RecommendationLog();
             log.setUserId(Long.parseLong(owner));
             log.setProfileSnapshot(JSON.toJSONString(Map.of("userId", owner)));
