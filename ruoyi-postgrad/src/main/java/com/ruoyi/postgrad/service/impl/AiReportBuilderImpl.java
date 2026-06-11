@@ -34,8 +34,19 @@ public class AiReportBuilderImpl implements AiReportBuilder {
     private static final int MAX_MESSAGE_CHARS = 500;
     private static final Logger log = LoggerFactory.getLogger(AiReportBuilderImpl.class);
 
+    @org.springframework.beans.factory.annotation.Value("classpath:prompts/report-build.txt")
+    private org.springframework.core.io.Resource reportBuildPromptResource;
+
     @Autowired
     private RecommendationMapper recommendationMapper;
+
+    private String loadReportPrompt() {
+        try {
+            return new String(reportBuildPromptResource.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to load report build prompt", e);
+        }
+    }
 
     @Override
     public Map<String, Object> buildConversationReport(ChatModel chatModel, String conversationJson,
@@ -196,27 +207,8 @@ public class AiReportBuilderImpl implements AiReportBuilder {
     }
 
     private String basePrompt(String poolSummary, Map<String, Object> preferenceProfile, int estimatedScore) {
-        return """
-            这不是对话。请直接输出推荐报告 JSON，不要回复确认语。
-
-            ## preferenceProfile
-            %s
-
-            ## 候选学校事实摘要
-            %s
-
-            ## 要求
-            1. **强制规则**：对话历史中你明确推荐过的每一所学校（标记了冲刺/稳妥/保底、给出了具体分析），都必须出现在报告中对应的档次里，不得遗漏。这是硬约束。只有在 canBeSafe=false 且原定保底档时，才能降级放入稳妥档并说明原因
-            2. 只能从候选列表中选学校，programId 必须与候选列表一致
-            3. 按冲刺/稳妥/保底三档推荐，每档 2-5 所，宁多勿少
-            4. AI 只输出观点字段，事实字段由后端数据库补全
-            5. 不要输出 schoolName、collegeName、programName、分数、招生人数等事实字段
-            6. 推荐理由必须基于候选事实摘要和 preferenceProfile 的取舍
-            7. canBeSafe=false 是事实硬约束，禁止放入保底档；这类项目即使分数差较大，也只能作为稳妥/待核验/线索
-
-            ## 输出格式（严格 JSON）
-            {"summary":"一句话总结","tiers":[{"level":"reach","label":"冲刺档","schools":[{"programId":1,"judgement":"small_reach","risk":"high","decision":"适合作为冲刺候选","reason":"推荐理由","pros":["优势"],"cons":["风险"],"tradeoffs":["取舍"],"recommendedAction":"行动建议"}]},{"level":"steady","label":"稳妥档","schools":[]},{"level":"safe","label":"保底档","schools":[]}]}
-            """.formatted(JSON.toJSONString(defaultedPreferenceProfile(preferenceProfile)), poolSummary);
+        return loadReportPrompt().formatted(
+            JSON.toJSONString(defaultedPreferenceProfile(preferenceProfile)), poolSummary);
     }
 
     private Map<String, Object> defaultedPreferenceProfile(Map<String, Object> preferenceProfile) {

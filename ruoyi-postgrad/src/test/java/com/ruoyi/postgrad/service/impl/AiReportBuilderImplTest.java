@@ -11,6 +11,7 @@ import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import dev.langchain4j.model.chat.ChatModel;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.io.ByteArrayResource;
 
 @ExtendWith(MockitoExtension.class)
 class AiReportBuilderImplTest {
@@ -26,12 +28,36 @@ class AiReportBuilderImplTest {
     @Mock private RecommendationMapper recommendationMapper;
     @Mock private ChatModel chatModel;
 
+    private static final String TEST_PROMPT = """
+        这不是对话。请直接输出推荐报告 JSON，不要回复确认语。
+
+        ## preferenceProfile
+        %s
+
+        ## 候选学校事实摘要
+        %s
+
+        ## 要求
+        1. **强制规则**：对话历史中你明确推荐过的每一所学校，都必须出现在报告中对应的档次里
+        2. 只能从候选列表中选学校，programId 必须与候选列表一致
+        3. AI 只输出观点字段，事实字段由后端数据库补全
+        4. 不要输出 schoolName、collegeName、programName、分数、招生人数等事实字段
+
+        ## 输出格式（严格 JSON）
+        {"summary":"一句话总结","tiers":[{"level":"reach","label":"冲刺档","schools":[{"programId":1,"judgement":"small_reach","risk":"high","decision":"...","reason":"...","pros":["..."],"cons":["..."],"tradeoffs":["..."],"recommendedAction":"..."}]}]}
+        """;
+
     @BeforeEach
     void setUp() throws Exception {
         builder = new AiReportBuilderImpl();
-        Field field = AiReportBuilderImpl.class.getDeclaredField("recommendationMapper");
+        setField("recommendationMapper", recommendationMapper);
+        setField("reportBuildPromptResource", new ByteArrayResource(TEST_PROMPT.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private void setField(String name, Object value) throws Exception {
+        Field field = AiReportBuilderImpl.class.getDeclaredField(name);
         field.setAccessible(true);
-        field.set(builder, recommendationMapper);
+        field.set(builder, value);
     }
 
     @Test

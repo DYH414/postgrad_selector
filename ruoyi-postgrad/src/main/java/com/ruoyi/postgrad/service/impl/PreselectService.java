@@ -25,36 +25,16 @@ public class PreselectService {
 
     private static final Logger log = LoggerFactory.getLogger(PreselectService.class);
 
-    static final String PROMPT = """
-        你是考研择校顾问。根据用户画像和候选学校的事实标签，筛选最适合进入报告候选的学校。
+    @org.springframework.beans.factory.annotation.Value("classpath:prompts/preselect.txt")
+    private org.springframework.core.io.Resource preselectPromptResource;
 
-        事实标签说明：
-        - 分数大幅超出：gap ≥ +15，用户分数远超录取均分
-        - 分数适度超出：gap +5~+14，有一定余量
-        - 分数微弱超出：gap 0~+4，微弱优势
-        - 分数微弱不足：gap -5~0，轻微劣势
-        - 分数适度不足：gap -15~-5，明显劣势
-        - 分数大幅不足：gap ≤ -15，差距很大
-        - 招生充裕(≥30人) / 招生正常(10-29人) / 招生偏少(4-9人) / 招生极少(≤3人)
-        - 可以保底 / 不可保底：后端判断
-        - 名额风险=低/中/高/极高
-
-        ## 宁缺毋滥规则（最高优先级）
-        - include 是"值得进入最终报告候选"，不是"看起来还行"。
-        - 有明显硬伤的学校必须 skip：分数大幅不足且不可保底、招生极少且数据低于A。
-        - 有优势但风险明显的学校用 hold。
-
-        ## 选择预算
-        - 本批最多 include 6 所，宁可少不可凑。
-        - safe 最多 2 所，且必须同时满足：①分数大幅超出 ②可以保底 ③招生充裕或正常。
-
-        ## tier 判断
-        - safe：分数大幅超出 + 可以保底 + 招生充裕或正常（三项缺一不可）
-        - steady：分数微弱超出到适度超出，风险可控
-        - reach：分数不足，需要冲刺
-
-        输出严格 JSON 数组：{"programId":X,"decision":"include|skip|hold","tier":"...","reason":"...","risk":"..."}
-        """;
+    private String prompt() {
+        try {
+            return new String(preselectPromptResource.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to load preselect prompt", e);
+        }
+    }
 
     /** 从候选池分层抽样 + AI 批量判断，返回应加入书签的 DTO 列表（仅 include 的） */
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -92,7 +72,7 @@ public class PreselectService {
 
             try {
                 String aiResp = chatModel.chat(
-                    SystemMessage.from(PROMPT),
+                    SystemMessage.from(prompt()),
                     UserMessage.from(userMsg)
                 ).aiMessage().text();
 

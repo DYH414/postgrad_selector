@@ -495,7 +495,7 @@ public class AiRecommendationTools {
                 if (end < 0) end = Math.min(start + 4, convJson.length());
                 return Integer.parseInt(convJson.substring(start, end).trim());
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
         return 300;
     }
 

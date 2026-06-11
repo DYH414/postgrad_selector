@@ -1,15 +1,16 @@
 package com.ruoyi.postgrad.service.impl;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.*;
-
-import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
 import java.util.stream.Collectors;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.domain.RecommendationLog;
+import com.ruoyi.postgrad.domain.dto.ProgramSummaryDTO;
+import com.ruoyi.postgrad.domain.vo.RecommendResultVO;
+import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.mapper.SchoolMapper;
@@ -22,17 +23,10 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     private static final String RULE_VERSION = "mvp-2026-05-24";
     private static final String DATA_VERSION = "nnuo-2025";
 
-    @Autowired
-    private RecommendationMapper recommendationMapper;
-
-    @Autowired
-    private RecommendationLogMapper logMapper;
-
-    @Autowired
-    private UserProfileMapper userProfileMapper;
-
-    @Autowired
-    private SchoolMapper schoolMapper;
+    @Autowired private RecommendationMapper recommendationMapper;
+    @Autowired private RecommendationLogMapper logMapper;
+    @Autowired private UserProfileMapper userProfileMapper;
+    @Autowired private SchoolMapper schoolMapper;
 
     @Override
     public Map<String, Object> recommendationOptions(Long userId)
@@ -53,7 +47,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     }
 
     @Override
-    public Map<String, Object> generateRecommendation(Long userId, Map<String, Object> request)
+    public RecommendResultVO generateRecommendation(Long userId, Map<String, Object> request)
     {
         int estimatedScore = intVal(request.get("estimatedScore"), 0);
         if (estimatedScore <= 0) throw new IllegalArgumentException("请输入预计初试总分");
@@ -72,12 +66,9 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         List<String> regions = stringList(request.get("targetRegions"));
         List<String> majorDirections = stringList(request.get("majorDirections"));
 
-        List<Map<String, Object>> candidates = fetchCandidates(examCombo, regions, majorDirections, estimatedScore, scoreRange, studyMode);
-        List<Map<String, Object>> normalized = candidates.stream()
-            .map(row -> normalizeProgram(row, estimatedScore))
-            .collect(Collectors.toList());
+        List<ProgramSummaryDTO> candidates = fetchCandidates(examCombo, regions, majorDirections, estimatedScore, scoreRange, studyMode);
+        List<ProgramSummaryDTO> matchedItems = new ArrayList<>(candidates);
 
-        List<Map<String, Object>> matchedItems = new ArrayList<>(normalized);
         if (scoreRange != null)
         {
             matchedItems = matchedItems.stream()
@@ -90,7 +81,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             if (!includeIncompleteData)
             {
                 matchedItems = matchedItems.stream()
-                    .filter(item -> !"insufficient_data".equals(stringVal(item.get("fitLevel"), "insufficient_data")))
+                    .filter(item -> !"insufficient_data".equals(item.getFitLevel()))
                     .collect(Collectors.toList());
             }
             matchedItems.sort(averageGapComparator());
@@ -105,17 +96,22 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         requestSnapshot.put("riskPreference", riskPreference);
         requestSnapshot.put("scoreRange", scoreRange);
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("ruleVersion", RULE_VERSION);
-        result.put("dataVersion", DATA_VERSION);
-        result.put("request", requestSnapshot);
-        result.put("totalCandidates", matchedItems.size());
-        result.put("globalWarnings", globalWarnings());
-        result.put("items", matchedItems);
-        result.put("groups", recommendationGroups(matchedItems));
+        RecommendResultVO.ResultGroup group = new RecommendResultVO.ResultGroup();
+        group.setGroupKey("matches");
+        group.setGroupName("匹配院校");
+        group.setItems(matchedItems);
+
+        RecommendResultVO result = new RecommendResultVO();
+        result.setRuleVersion(RULE_VERSION);
+        result.setDataVersion(DATA_VERSION);
+        result.setRequest(requestSnapshot);
+        result.setTotalCandidates(matchedItems.size());
+        result.setGlobalWarnings(globalWarnings());
+        result.setItems(matchedItems);
+        result.setGroups(Collections.singletonList(group));
 
         Long recommendationId = saveRecommendationLog(userId, requestSnapshot, result);
-        result.put("recommendationId", recommendationId);
+        result.setRecommendationId(recommendationId);
         return result;
     }
 
@@ -132,10 +128,10 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     @Override
     public Map<String, Object> programDetail(Long programId, Integer estimatedScore)
     {
-        Map<String, Object> row = recommendationMapper.selectProgramForRecommendation(programId);
+        var row = recommendationMapper.selectProgramForRecommendation(programId);
         if (row == null) throw new RuntimeException("专业不存在或已停招");
         int score = estimatedScore == null ? 0 : estimatedScore;
-        Map<String, Object> item = normalizeProgram(row, score);
+        ProgramSummaryDTO item = ProgramSummaryDTO.fromRowMap(row, score);
 
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("basic", basicInfo(item));
@@ -147,7 +143,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             "N诺数据可能遗漏、过时或错误，请以院校官方公告为准。"
         ));
         detail.put("source", sourceInfo(item));
-        detail.put("dataCompleteness", dataCompletenessInfo(stringVal(item.get("dataCompleteness"), "C")));
+        detail.put("dataCompleteness", dataCompletenessInfo(item.getDataCompleteness() != null ? item.getDataCompleteness() : "C"));
         return detail;
     }
 
@@ -160,8 +156,8 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         {
             try
             {
-                Map<String, Object> row = recommendationMapper.selectProgramForRecommendation(programId);
-                if (row != null) items.add(compareProgramItem(normalizeProgram(row, score)));
+                var row = recommendationMapper.selectProgramForRecommendation(programId);
+                if (row != null) items.add(compareProgramItem(ProgramSummaryDTO.fromRowMap(row, score)));
             }
             catch (Exception ignored) {}
         }
@@ -174,23 +170,16 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         return data;
     }
 
-    private Map<String, Object> compareProgramItem(Map<String, Object> item)
-    {
-        Map<String, Object> compareItem = new LinkedHashMap<>(item);
-        compareItem.remove("fitLevel");
-        compareItem.remove("fitLevelLabel");
-        return compareItem;
-    }
+    // ── fetch ──
 
-    // ---- fetch helpers ----
-
-    private List<Map<String, Object>> fetchCandidates(String examCombo, List<String> regions,
+    private List<ProgramSummaryDTO> fetchCandidates(String examCombo, List<String> regions,
         List<String> majorDirections, int estimatedScore, Integer scoreRange, String studyMode)
     {
-        String subjectCodes = subjectCodes(examCombo);
+        String subjectCodes = "22408".equals(examCombo) ? "101,204,302,408" : "101,201,301,408";
         List<String> regionParam = (regions == null || regions.isEmpty()) ? null : regions;
         List<String> codesParam = (majorDirections == null || majorDirections.isEmpty()) ? null : majorDirections;
-        return new ArrayList<>(recommendationMapper.selectCandidates(subjectCodes, regionParam, codesParam, estimatedScore, scoreRange, studyMode));
+        return recommendationMapper.selectCandidates(subjectCodes, regionParam, codesParam, estimatedScore, scoreRange, studyMode)
+            .stream().map(row -> ProgramSummaryDTO.fromRowMap(row, estimatedScore)).collect(Collectors.toList());
     }
 
     private List<Map<String, Object>> computeTrends(Long programId, int estimatedScore)
@@ -201,26 +190,51 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         {
             Integer scoreLine = nullableInt(row.get("scoreLine"));
             BigDecimal avg = decimalVal(row.get("avgAdmittedScore"));
-            row.put("scoreLineGap", scoreLine == null || estimatedScore <= 0 ? null : estimatedScore - scoreLine);
+            int score = estimatedScore <= 0 ? 0 : estimatedScore;
+            row.put("scoreLineGap", scoreLine == null || score <= 0 ? null : score - scoreLine);
             Integer low = nullableInt(row.get("admissionLow"));
-            row.put("admissionLowGap", low == null || estimatedScore <= 0 ? null : estimatedScore - low);
+            row.put("admissionLowGap", low == null || score <= 0 ? null : score - low);
             Integer high = nullableInt(row.get("admissionHigh"));
-            row.put("admissionHighGap", high == null || estimatedScore <= 0 ? null : estimatedScore - high);
-            row.put("avgScoreGap", avg == null || estimatedScore <= 0 ? null : estimatedScore - avg.intValue());
+            row.put("admissionHighGap", high == null || score <= 0 ? null : score - high);
+            row.put("avgScoreGap", avg == null || score <= 0 ? null : score - avg.intValue());
         }
         return rows;
     }
 
-    private List<Map<String, Object>> recommendationGroups(List<Map<String, Object>> items)
+    // ── comparators ──
+
+    private boolean matchesAverageDive(ProgramSummaryDTO item, int scoreRange)
     {
-        Map<String, Object> group = new LinkedHashMap<>();
-        group.put("groupKey", "matches");
-        group.put("groupName", "匹配院校");
-        group.put("items", items);
-        return Collections.singletonList(group);
+        return item.getAvgScoreGap() != null && item.getAvgScoreGap() >= -scoreRange;
     }
 
-    private Long saveRecommendationLog(Long userId, Map<String, Object> requestSnapshot, Map<String, Object> result)
+    private Comparator<ProgramSummaryDTO> averageDiveRiskComparator(int scoreRange)
+    {
+        return (a, b) -> {
+            int gapA = a.getAvgScoreGap() != null ? a.getAvgScoreGap() : 999;
+            int gapB = b.getAvgScoreGap() != null ? b.getAvgScoreGap() : 999;
+            int dA = Math.abs(gapA + scoreRange), dB = Math.abs(gapB + scoreRange);
+            if (dA != dB) return Integer.compare(dA, dB);
+            int avgA = a.getAvgAdmittedScore() != null ? a.getAvgAdmittedScore() : 0;
+            int avgB = b.getAvgAdmittedScore() != null ? b.getAvgAdmittedScore() : 0;
+            if (avgA != avgB) return Integer.compare(avgB, avgA);
+            return Objects.compare(a.getSchoolName(), b.getSchoolName(), String::compareTo);
+        };
+    }
+
+    private Comparator<ProgramSummaryDTO> averageGapComparator()
+    {
+        return (a, b) -> {
+            int gapA = a.getAvgScoreGap() != null ? a.getAvgScoreGap() : 999;
+            int gapB = b.getAvgScoreGap() != null ? b.getAvgScoreGap() : 999;
+            if (gapA != gapB) return Integer.compare(gapA, gapB);
+            return Objects.compare(a.getSchoolName(), b.getSchoolName(), String::compareTo);
+        };
+    }
+
+    // ── persistence ──
+
+    private Long saveRecommendationLog(Long userId, Map<String, Object> requestSnapshot, RecommendResultVO result)
     {
         RecommendationLog log = new RecommendationLog();
         log.setUserId(userId);
@@ -239,8 +253,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         try
         {
             var profile = userProfileMapper.selectUserProfileByUserId(userId);
-            if (profile != null && profile.getAcceptPartTime() != null)
-                return profile.getAcceptPartTime() == 1;
+            if (profile != null && profile.getAcceptPartTime() != null) return profile.getAcceptPartTime() == 1;
         }
         catch (Exception ignored) {}
         return false;
@@ -253,7 +266,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         defaults.put("examCombo", "11408");
         defaults.put("targetRegions", new ArrayList<>());
         defaults.put("riskPreference", "balanced");
-
         if (userId == null) return defaults;
         try
         {
@@ -269,214 +281,90 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         return defaults;
     }
 
-    private List<String> queryRegions()
-    {
-        return schoolMapper.selectDistinctProvinces();
-    }
+    private List<String> queryRegions() { return schoolMapper.selectDistinctProvinces(); }
 
-    // ---- normalization ----
+    // ── response assembly ──
 
-    private Map<String, Object> normalizeProgram(Map<String, Object> row, int estimatedScore)
-    {
-        Map<String, Object> item = new LinkedHashMap<>(row);
-        Integer scoreLine = nullableInt(row.get("scoreLine"));
-        BigDecimal avgScore = decimalVal(row.get("avgAdmittedScore"));
-        Integer low = nullableInt(row.get("admissionLow"));
-        Integer high = nullableInt(row.get("admissionHigh"));
-        Integer admittedCount = nullableInt(row.get("admittedCount"));
-        Integer retestCount = nullableInt(row.get("retestCount"));
-
-        String subjectCodes = stringVal(row.get("subjectCodes"), "");
-        String examCombo = examComboBySubjects(subjectCodes);
-        String completeness = AiRecommendationSafety.computedCompleteness(row);
-
-        Integer scoreLineGap = scoreLine == null || estimatedScore <= 0 ? null : estimatedScore - scoreLine;
-        Integer admissionLowGap = low == null || estimatedScore <= 0 ? null : estimatedScore - low;
-        Integer admissionHighGap = high == null || estimatedScore <= 0 ? null : estimatedScore - high;
-        Integer avgScoreGap = avgScore == null || estimatedScore <= 0 ? null : estimatedScore - avgScore.intValue();
-        String fitLevel = fitLevel(avgScoreGap, completeness);
-
-        item.put("examCombo", examCombo);
-        item.put("examSubjectsLabel", subjectsLabel(examCombo));
-        item.put("degreeTypeLabel", degreeTypeLabel(stringVal(row.get("degreeType"), "")));
-        item.put("scoreLineGap", scoreLineGap);
-        item.put("admissionLowGap", admissionLowGap);
-        item.put("admissionHighGap", admissionHighGap);
-        item.put("avgScoreGap", avgScoreGap);
-        item.put("admissionRangeLabel", rangeLabel(low, high));
-        item.put("retestAdmissionRatio", ratio(retestCount, admittedCount));
-        item.put("dataCompleteness", completeness);
-        item.put("dataCompletenessText", dataCompletenessDescription(completeness));
-        item.put("fitLevel", fitLevel);
-        item.put("fitLevelLabel", fitLevelLabel(fitLevel));
-        item.put("warnings", warnings(item, completeness));
-        item.put("sourceName", "N诺");
-        item.put("sourceType", "third_party");
-        item.put("sourceUrl", row.get("sourceUrl"));
-        item.put("sourceTitle", row.get("sourceTitle"));
-        item.put("sourceOwner", row.get("sourceOwner"));
-        item.put("officialVerified", boolVal(row.get("officialVerified"), false));
-        return item;
-    }
-
-
-
-    // ---- business logic helpers (unchanged from original) ----
-
-    private Map<String, Object> group(String groupKey, List<Map<String, Object>> items)
-    {
-        Map<String, Object> group = new LinkedHashMap<>();
-        group.put("groupKey", groupKey);
-        group.put("groupName", fitLevelLabel(groupKey));
-        group.put("description", groupDescription(groupKey));
-        group.put("items", items);
-        return group;
-    }
-
-    private Comparator<Map<String, Object>> recommendationComparator(String riskPreference)
-    {
-        return (a, b) -> {
-            int gapA = Math.abs(intVal(a.get("admissionLowGap"), 999));
-            int gapB = Math.abs(intVal(b.get("admissionLowGap"), 999));
-            if ("conservative".equals(riskPreference))
-            {
-                gapA = -intVal(a.get("admissionLowGap"), -999);
-                gapB = -intVal(b.get("admissionLowGap"), -999);
-            }
-            return Integer.compare(gapA, gapB);
-        };
-    }
-
-    private boolean matchesAverageDive(Map<String, Object> item, int scoreRange)
-    {
-        Integer avgScoreGap = nullableInt(item.get("avgScoreGap"));
-        return avgScoreGap != null && avgScoreGap >= -scoreRange;
-    }
-
-    private Comparator<Map<String, Object>> averageDiveRiskComparator(int scoreRange)
-    {
-        return (a, b) -> {
-            int gapA = intVal(a.get("avgScoreGap"), 999);
-            int gapB = intVal(b.get("avgScoreGap"), 999);
-            int distanceA = Math.abs(gapA + scoreRange);
-            int distanceB = Math.abs(gapB + scoreRange);
-            if (distanceA != distanceB) return Integer.compare(distanceA, distanceB);
-            int avgA = intVal(a.get("avgAdmittedScore"), 0);
-            int avgB = intVal(b.get("avgAdmittedScore"), 0);
-            if (avgA != avgB) return Integer.compare(avgB, avgA);
-            return stringVal(a.get("schoolName"), "").compareTo(stringVal(b.get("schoolName"), ""));
-        };
-    }
-
-    private Comparator<Map<String, Object>> averageGapComparator()
-    {
-        return (a, b) -> {
-            int gapA = intVal(a.get("avgScoreGap"), 999);
-            int gapB = intVal(b.get("avgScoreGap"), 999);
-            if (gapA != gapB) return Integer.compare(gapA, gapB);
-            return stringVal(a.get("schoolName"), "").compareTo(stringVal(b.get("schoolName"), ""));
-        };
-    }
-
-    private Map<String, Object> summary(Map<String, List<Map<String, Object>>> grouped, int totalCandidates)
-    {
-        Map<String, Object> summary = new LinkedHashMap<>();
-        int insufficient = grouped.getOrDefault("insufficient_data", Collections.emptyList()).size();
-        summary.put("totalCandidates", totalCandidates);
-        summary.put("mainRecommendationCount", totalCandidates - insufficient);
-        summary.put("insufficientDataCount", insufficient);
-        summary.put("sprintCount", grouped.getOrDefault("sprint", Collections.emptyList()).size());
-        summary.put("balancedSprintCount", grouped.getOrDefault("balanced_sprint", Collections.emptyList()).size());
-        summary.put("steadyCount", grouped.getOrDefault("steady", Collections.emptyList()).size());
-        summary.put("safeCount", grouped.getOrDefault("safe", Collections.emptyList()).size());
-        return summary;
-    }
-
-    private List<String> warnings(Map<String, Object> item, String completeness)
-    {
-        List<String> warnings = new ArrayList<>();
-        warnings.add("复试线不是最低录取分。");
-        warnings.add("筛选学校不代表只有这些学校可以报。");
-        if (!"A".equals(completeness)) warnings.add("N诺数据字段不完整，请重点核对院校官方公告。");
-        Integer quota = nullableInt(item.get("unifiedExamQuota"));
-        if (quota != null && quota < 10) warnings.add("统考名额较少，波动风险较高。");
-        if (!boolVal(item.get("protectsFirstChoice"), true))
-            warnings.add("保护一志愿信息不明确或不保护，需单独核实。");
-        return warnings;
-    }
-
-    private String fitLevel(Integer avgScoreGap, String completeness)
-    {
-        if (!"A".equals(completeness) && !"B".equals(completeness)) return "insufficient_data";
-        if (avgScoreGap == null) return "insufficient_data";
-        if (avgScoreGap < -20) return "sprint";
-        if (avgScoreGap < -5) return "balanced_sprint";
-        if (avgScoreGap >= 15) return "safe";
-        return "steady";
-    }
-
-    private Map<String, Object> basicInfo(Map<String, Object> item)
+    private Map<String, Object> basicInfo(ProgramSummaryDTO item)
     {
         Map<String, Object> basic = new LinkedHashMap<>();
         for (String key : Arrays.asList("programId", "schoolId", "schoolName", "province", "city", "collegeName",
             "programCode", "programName", "researchDirection", "degreeType", "degreeTypeLabel", "examCombo", "examSubjectsLabel", "dataYear"))
-            basic.put(key, item.get(key));
+            basic.put(key, getField(item, key));
         return basic;
     }
 
-    private Map<String, Object> recommendationOverview(Map<String, Object> item)
+    private Map<String, Object> recommendationOverview(ProgramSummaryDTO item)
     {
         Map<String, Object> overview = new LinkedHashMap<>();
         for (String key : Arrays.asList("fitLevel", "fitLevelLabel", "scoreLine", "scoreLineGap",
             "admissionLow", "admissionLowGap", "admissionRangeLabel", "avgAdmittedScore", "avgScoreGap",
             "admissionHigh", "admissionHighGap", "planCount", "unifiedExamQuota", "retestCount",
             "admittedCount", "retestAdmissionRatio"))
-            overview.put(key, item.get(key));
+            overview.put(key, getField(item, key));
         return overview;
     }
 
-    private Map<String, Object> sourceInfo(Map<String, Object> item)
+    private Map<String, Object> sourceInfo(ProgramSummaryDTO item)
     {
         Map<String, Object> source = new LinkedHashMap<>();
-        source.put("sourceName", "N诺");
-        source.put("sourceType", "third_party");
-        source.put("dataYear", item.get("dataYear"));
-        source.put("sourceUrl", item.get("sourceUrl"));
-        source.put("sourceTitle", item.get("sourceTitle"));
-        source.put("sourceOwner", item.get("sourceOwner"));
-        source.put("officialVerified", item.get("officialVerified"));
+        source.put("sourceName", item.getSourceName());
+        source.put("sourceType", item.getSourceType());
+        source.put("dataYear", item.getDataYear());
+        source.put("sourceUrl", item.getSourceUrl());
+        source.put("sourceTitle", item.getSourceTitle());
+        source.put("sourceOwner", item.getSourceOwner());
+        source.put("officialVerified", item.getOfficialVerified());
         return source;
     }
 
-    // ---- label / display helpers ----
-
-    private String fitLevelLabel(String key)
+    private Object getField(ProgramSummaryDTO item, String key)
     {
-        switch (key)
-        {
-            case "matches": return "匹配院校";
-            case "sprint": return "冲刺";
-            case "balanced_sprint": return "稳中偏冲";
-            case "steady": return "稳妥候选";
-            case "safe": return "保底候选";
-            default: return "数据不足";
-        }
+        return switch (key) {
+            case "programId" -> item.getProgramId();
+            case "schoolId" -> item.getSchoolId();
+            case "schoolName" -> item.getSchoolName();
+            case "province" -> item.getProvince();
+            case "city" -> item.getCity();
+            case "collegeName" -> item.getCollegeName();
+            case "programCode" -> item.getProgramCode();
+            case "programName" -> item.getProgramName();
+            case "researchDirection" -> item.getResearchDirection();
+            case "degreeType" -> item.getDegreeType();
+            case "degreeTypeLabel" -> item.getDegreeTypeLabel();
+            case "examCombo" -> item.getExamCombo();
+            case "examSubjectsLabel" -> item.getExamSubjectsLabel();
+            case "dataYear" -> item.getDataYear();
+            case "fitLevel" -> item.getFitLevel();
+            case "fitLevelLabel" -> item.getFitLevelLabel();
+            case "scoreLine" -> item.getScoreLine();
+            case "scoreLineGap" -> item.getScoreLineGap();
+            case "admissionLow" -> item.getAdmissionLow();
+            case "admissionLowGap" -> item.getAdmissionLowGap();
+            case "admissionHigh" -> item.getAdmissionHigh();
+            case "admissionHighGap" -> item.getAdmissionHighGap();
+            case "avgAdmittedScore" -> item.getAvgAdmittedScore();
+            case "avgScoreGap" -> item.getAvgScoreGap();
+            case "admissionRangeLabel" -> item.getAdmissionRangeLabel();
+            case "planCount" -> item.getPlanCount();
+            case "unifiedExamQuota" -> item.getUnifiedExamQuota();
+            case "retestCount" -> item.getRetestCount();
+            case "admittedCount" -> item.getAdmittedCount();
+            case "retestAdmissionRatio" -> item.getRetestAdmissionRatio();
+            default -> null;
+        };
     }
 
-    private String groupDescription(String groupKey)
+    private Map<String, Object> compareProgramItem(ProgramSummaryDTO item)
     {
-        switch (groupKey)
-        {
-            case "matches": return "符合筛选范围的院校";
-            case "sprint": return "录取概率较低，但仍有机会";
-            case "balanced_sprint": return "有一定机会，需合理评估";
-            case "steady": return "录取概率较高，适合作为主力候选";
-            case "safe": return "预计分数高于历史最高录取分，但仍需看官方招生变化";
-            default: return "字段不完整，仅作补充线索，不进入主推荐池";
-        }
+        Map<String, Object> compareItem = new LinkedHashMap<>(basicInfo(item));
+        compareItem.putAll(recommendationOverview(item));
+        compareItem.remove("fitLevel");
+        compareItem.remove("fitLevelLabel");
+        return compareItem;
     }
 
-    // ---- static data ----
+    // ── static data ──
 
     private List<Map<String, Object>> examCombos()
     {
@@ -489,10 +377,8 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     private Map<String, Object> examCombo(String code, String label, List<String> subjectCodes)
     {
         Map<String, Object> item = new LinkedHashMap<>();
-        item.put("code", code);
-        item.put("label", code);
-        item.put("subjectsLabel", label);
-        item.put("subjectCodes", subjectCodes);
+        item.put("code", code); item.put("label", code);
+        item.put("subjectsLabel", label); item.put("subjectCodes", subjectCodes);
         return item;
     }
 
@@ -514,18 +400,12 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("level", level);
         item.put("label", "N诺数据完整度 " + level);
-        item.put("description", dataCompletenessDescription(level));
+        item.put("description", switch (level) {
+            case "A" -> "含复试线、拟录取区间、人数等字段";
+            case "B" -> "含主要分数字段，部分字段缺失";
+            default -> "仅有复试线或基础字段";
+        });
         return item;
-    }
-
-    private String dataCompletenessDescription(String level)
-    {
-        switch (level)
-        {
-            case "A": return "含复试线、拟录取区间、人数等字段";
-            case "B": return "含主要分数字段，部分字段缺失";
-            default: return "仅有复试线或基础字段";
-        }
     }
 
     private List<Map<String, Object>> compareRows()
@@ -540,19 +420,8 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             row("sourceUrl", "N诺来源"));
     }
 
-    private Map<String, Object> option(String value, String label)
-    {
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("value", value); item.put("label", label);
-        return item;
-    }
-
-    private Map<String, Object> row(String key, String label)
-    {
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("key", key); item.put("label", label);
-        return item;
-    }
+    private Map<String, Object> option(String value, String label) { Map<String, Object> m = new LinkedHashMap<>(); m.put("value", value); m.put("label", label); return m; }
+    private Map<String, Object> row(String key, String label) { Map<String, Object> m = new LinkedHashMap<>(); m.put("key", key); m.put("label", label); return m; }
 
     private List<String> globalWarnings()
     {
@@ -560,67 +429,45 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             "N诺数据可能遗漏、过时或错误，最终以院校官方公告为准。");
     }
 
-    // ---- simple value converters ----
-
-    private String subjectCodes(String examCombo) { return "22408".equals(examCombo) ? "101,204,302,408" : "101,201,301,408"; }
-    private String examComboBySubjects(String subjectCodes) { return "101,204,302,408".equals(subjectCodes) ? "22408" : "11408"; }
+    // ── value converters (kept for RowMap access in trends / detail) ──
 
     private String subjectsLabel(String examCombo) { return "22408".equals(examCombo) ? "政治 + 英语二 + 数学二 + 408" : "政治 + 英语一 + 数学一 + 408"; }
-    private String degreeTypeLabel(String s) { return "academic".equals(s) ? "学硕" : "专硕"; }
 
-    private String rangeLabel(Integer low, Integer high)
-    {
-        if (low == null && high == null) return null;
-        if (Objects.equals(low, high)) return String.valueOf(low);
-        return (low == null ? "-" : low) + "-" + (high == null ? "-" : high);
-    }
-
-    private BigDecimal ratio(Integer num, Integer den)
-    {
-        if (num == null || den == null || den == 0) return null;
-        return BigDecimal.valueOf(num).divide(BigDecimal.valueOf(den), 2, RoundingMode.HALF_UP);
-    }
-
-    private Integer nullableInt(Object v)
-    {
+    private Integer nullableInt(Object v) {
         if (v == null) return null;
         if (v instanceof Number) return ((Number) v).intValue();
         try { return Integer.parseInt(String.valueOf(v)); } catch (Exception e) { return null; }
     }
 
     private int intVal(Object v, int fb) { Integer p = nullableInt(v); return p == null ? fb : p; }
-    private BigDecimal decimalVal(Object v)
-    {
+
+    private BigDecimal decimalVal(Object v) {
         if (v == null) return null;
-        if (v instanceof BigDecimal) return (BigDecimal) v;
-        if (v instanceof Number) return BigDecimal.valueOf(((Number) v).doubleValue());
+        if (v instanceof BigDecimal bd) return bd;
+        if (v instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
         try { return new BigDecimal(String.valueOf(v)); } catch (Exception e) { return null; }
     }
 
     private String stringVal(Object v, String fb) { if (v == null) return fb; String s = String.valueOf(v); return s.isBlank() ? fb : s; }
 
-    private boolean boolVal(Object v, boolean fb)
-    {
+    private boolean boolVal(Object v, boolean fb) {
         if (v == null) return fb;
-        if (v instanceof Boolean) return (Boolean) v;
-        if (v instanceof Number) return ((Number) v).intValue() != 0;
+        if (v instanceof Boolean b) return b;
+        if (v instanceof Number n) return n.intValue() != 0;
         return "true".equalsIgnoreCase(String.valueOf(v)) || "1".equals(String.valueOf(v));
     }
 
     @SuppressWarnings("unchecked")
-    private List<String> stringList(Object value)
-    {
+    private List<String> stringList(Object value) {
         if (value == null) return new ArrayList<>();
-        if (value instanceof List)
-            return ((List<Object>) value).stream().filter(Objects::nonNull)
-                .map(String::valueOf).filter(s -> !s.isBlank()).collect(Collectors.toList());
+        if (value instanceof List) return ((List<Object>) value).stream().filter(Objects::nonNull)
+            .map(String::valueOf).filter(s -> !s.isBlank()).collect(Collectors.toList());
         String text = String.valueOf(value);
         if (text.isBlank()) return new ArrayList<>();
         return Arrays.stream(text.split(",")).map(String::trim).filter(s -> !s.isBlank()).collect(Collectors.toList());
     }
 
-    private List<String> parseJsonList(Object value)
-    {
+    private List<String> parseJsonList(Object value) {
         if (value == null) return new ArrayList<>();
         try { return JSON.parseArray(String.valueOf(value), String.class); }
         catch (Exception e) { return new ArrayList<>(); }

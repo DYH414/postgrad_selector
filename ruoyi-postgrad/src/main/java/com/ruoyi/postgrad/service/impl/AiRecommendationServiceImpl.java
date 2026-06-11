@@ -54,53 +54,27 @@ import dev.langchain4j.service.TokenStream;
 @Service
 public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
-    private static final String SYSTEM_PROMPT = ""
-        // ── 角色 ──
-        + "<role>\n"
-        + "你是考研择校顾问。基于候选池事实数据诚实推荐，不迎合不凑数。\n"
-        + "回复简洁(2-4句)，不自我介绍不客套。不对用户说内部字段名(programId/canBeSafe/quotaRisk/dataCompleteness)。\n"
-        + "</role>\n\n"
-        // ── 画像 ──
-        + "<profile>\n"
-        + "预估%d分 | 本科%s | 跨考%s | 目标地区%s | 策略%s | 层次偏好%s | 地区偏好%s\n"
-        + "</profile>\n\n"
-        // ── 候选池 ──
-        + "<pool>\n"
-        + "%s\n"
-        + "</pool>\n\n"
-        // ── 工作流（核心：强制工具调用顺序） ──
-        + "<workflow>\n"
-        + "每轮回复严格按以下步骤：\n"
-        + "S1 需要新数据时调用 searchPrograms（已有数据则跳过）\n"
-        + "S2 基于数据给出1-2所学校的分析，包含：录取均分、gap、招生名额、主要风险\n"
-        + "S3 ★每分析完一所学校，立即调用 addToReport 写入书签★（本步骤不可跳过）\n"
-        + "S4 输出2-3个快捷选项，用\"---OPTIONS---\"分隔\n"
-        + "用户说\"出报告\"时只回复\"好的，正在为你生成报告...\"，不附带选项。\n"
-        + "</workflow>\n\n"
-        // ── 档位标签 ──
-        + "<tier_labels>\n"
-        + "严格保底: gap≥15, canBeSafe=true, 招生≥10, 数据完整度≥B — 四个条件全满足\n"
-        + "保底线索: gap 0~14 即使 canBeSafe=true 也只能称为「保底线索」或「稳妥线索」，不得称为严格保底\n"
-        + "稳妥线索: gap≈0或小幅为负，风险可控 — 可考虑但需进一步核实\n"
-        + "高层次主攻: 学校层次高于本科，分数风险可控 — 用稳定性换层次\n"
-        + "高风险冲刺: gap明显为负，竞争风险高\n"
-        + "不符合更高级别时自动降级，比如只满足2个条件就是「保底线索」而非「严格保底」。\n"
-        + "</tier_labels>\n\n"
-        // ── 硬约束 ──
-        + "<constraints>\n"
-        + "C1 严格保底硬条件: gap≥15、canBeSafe=true、招生≥10、数据完整度≥B。任一条件不满足时必须降级，不得称为「严格保底」\n"
-        + "C2 地区硬约束: 优先用户指定地区；超出地区需明确告知「扩展候选」\n"
-        + "C3 候选不足时不凑数：找不到严格匹配就说没有，给出放宽建议\n"
-        + "C4 不显示programId，不说canBeSafe/quotaRisk/dataCompleteness等内部术语\n"
-        + "C5 禁止凭空推荐：没有工具数据支撑时别编造学校\n"
-        + "C6 快捷选项禁止放工具调用（如\"查看XX详情\"）或emoji图标\n"
-        + "C7 不要对每所学校都调用 getProgramDetail。searchPrograms 返回的 gapLabel/quotaLabel/safeLabel 已足够判断档位。只有用户明确说\"详细信息\"\"复试线\"\"录取区间\"\"小分\"时才调用 getProgramDetail。每轮最多调 1 次。\n"
-        + "</constraints>\n";
-
     private static final Logger log = LoggerFactory.getLogger(AiRecommendationServiceImpl.class);
+
+    @org.springframework.beans.factory.annotation.Value("classpath:prompts/chat-system.txt")
+    private org.springframework.core.io.Resource chatSystemPromptResource;
+
+    @Autowired
+    private dev.langchain4j.model.chat.ChatModel chatModel;
+
+    @Autowired
+    private dev.langchain4j.model.openai.OpenAiStreamingChatModel streamingChatModel;
 
     @Autowired
     private IAiCandidatePoolService aiCandidatePoolService;
+
+    private String loadPrompt() {
+        try {
+            return new String(chatSystemPromptResource.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to load chat system prompt", e);
+        }
+    }
 
     @Autowired
     private RecommendationLogMapper logMapper;
@@ -133,7 +107,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         List<Map<String, Object>> summaryList = buildSummaryList(pool, estimatedScore);
         String summaryText = buildSummaryText(summaryList);
 
-        String systemPrompt = String.format(SYSTEM_PROMPT,
+        String systemPrompt = String.format(loadPrompt(),
             estimatedScore,
             tierDisplayLabel(profile.get("undergradTier")),
             formatProfileField(profile, "isCrossMajor", "否"),
@@ -223,7 +197,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
 
         List<CandidateProgramDTO> pool = JSON.parseArray(poolJson, CandidateProgramDTO.class);
         if (pool == null) pool = Collections.emptyList();
-        List<CandidateProgramDTO> includeList = preselectService.preselect(pool, buildChatModel());
+        List<CandidateProgramDTO> includeList = preselectService.preselect(pool, chatModel);
         if (includeList.isEmpty()) return;
 
         // 建 poolMap 供 fact 查找
@@ -237,7 +211,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         List<AiBookmark> existing = new ArrayList<>();
         String existingJson = redisTemplate.opsForValue().get(bookmarkKey);
         if (existingJson != null && !existingJson.isBlank()) {
-            try { existing = JSON.parseArray(existingJson, AiBookmark.class); } catch (Exception ignored) {}
+            try { existing = JSON.parseArray(existingJson, AiBookmark.class); } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
             if (existing == null) existing = new ArrayList<>();
         }
 
@@ -406,7 +380,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             }
         }
 
-        ChatModel chatModel = buildChatModel();
         RecommendationAssistant assistant = AiServices.builder(RecommendationAssistant.class)
             .chatModel(chatModel)
             .tools(aiRecommendationTools)
@@ -534,7 +507,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
 
         StreamRecommendationAssistant assistant = AiServices.builder(StreamRecommendationAssistant.class)
-            .streamingChatModel(buildStreamingChatModel())
+            .streamingChatModel(streamingChatModel)
             .tools(aiRecommendationTools)
             .chatMemory(chatMemory)
             .systemMessageProvider(ignored -> finalSystemPrompt)
@@ -613,7 +586,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     return Integer.parseInt(content.substring(s, e).trim());
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
         return 300;
     }
 
@@ -721,7 +694,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         String resultJson = JSON.toJSONString(reportJson);
         redisTemplate.opsForValue().set(AiConstants.keyReport(reportId), resultJson, AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
         recLog.setResultJson(resultJson);
-        try { logMapper.updateReportResult(reportId, resultJson); } catch (Exception ignored) {}
+        try { logMapper.updateReportResult(reportId, resultJson); } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("reportId", reportId);
@@ -746,12 +719,12 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     @SuppressWarnings("unchecked")
                     List<Long> existingList = JSON.parseArray(existing, Long.class);
                     if (existingList != null) allIds.addAll(existingList);
-                } catch (Exception ignored) {}
+                } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
             }
             redisTemplate.opsForValue().set(searchedKey,
                 JSON.toJSONString(new ArrayList<>(allIds)),
                 Duration.ofMinutes(AiConstants.TTL_TRACE_MINUTES));
-        } catch (Exception ignored) {}
+        } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
     }
 
     /** 持久化 AI 讨论过的学校及分析文本（用于 autoFillBookmarks 填充 opinion） */
@@ -769,7 +742,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     @SuppressWarnings({"unchecked", "rawtypes"})
                     List<Map<String, Object>> parsed = (List) JSON.parseArray(existing, Map.class);
                     if (parsed != null) allTraces.addAll(parsed);
-                } catch (Exception ignored) {}
+                } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
             }
 
             // 合并本轮新 trace（最新在前，覆盖同 programId）
@@ -894,7 +867,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                         }
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
         }
 
         // 来源 2（兜底）：仅 ai:discussed 为空时才读 ai:searched
@@ -909,7 +882,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                         fillSource = "auto_fill_search";
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
         }
 
         // 来源 3（最后兜底）：从对话文本正则提取 getProgramDetail 引用
@@ -925,7 +898,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                         .matcher(content);
                     while (m.find()) { try { discussedIds.add(Long.parseLong(m.group(1))); } catch (NumberFormatException ignored) {} }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
         }
         if (discussedIds.isEmpty()) return Collections.emptyList();
 
@@ -943,7 +916,7 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     Long pid = row.get("programId") instanceof Number n ? n.longValue() : null;
                     if (pid != null) poolMap.put(pid, row);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ex) { log.warn("[ai] Non-critical operation failed", ex); }
         }
 
         final String finalSource = fillSource != null ? fillSource : "auto_fill_search";
@@ -1160,7 +1133,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
                     if (parsed != null) {
                         result.putAll(parsed);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception ex) {
+                    log.warn("[ai] buildFromBookmarks parse failed, using raw JSON", ex);
                     result.put("resultJson", resultJson);
                 }
             }
@@ -1810,25 +1784,6 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
         }
     }
 
-    private ChatModel buildChatModel() {
-        String apiKey = System.getenv("DEEPSEEK_API_KEY");
-        return OpenAiChatModel.builder()
-            .baseUrl("https://api.deepseek.com/v1")
-            .apiKey(apiKey)
-            .modelName("deepseek-v4-pro")
-            .maxTokens(4096)
-            .build();
-    }
-
-    private OpenAiStreamingChatModel buildStreamingChatModel() {
-        String apiKey = System.getenv("DEEPSEEK_API_KEY");
-        return OpenAiStreamingChatModel.builder()
-            .baseUrl("https://api.deepseek.com/v1")
-            .apiKey(apiKey)
-            .modelName("deepseek-v4-pro")
-            .build();
-    }
-
     private void persistStreamConversation(Long userId, String conversationId, String systemPrompt, ChatMemory chatMemory) {
         List<Map<String, Object>> messages = new ArrayList<>();
         Map<String, Object> sysMsg = new LinkedHashMap<>();
@@ -1881,7 +1836,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             log.setDataVersion("1.0");
             log.setIsPaid(0);
             logMapper.insertRecommendationLog(log);
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.warn("[ai] persistStreamConversation failed", ex);
         }
     }
 
@@ -1908,7 +1864,8 @@ public class AiRecommendationServiceImpl implements IAiRecommendationService {
             log.setDataVersion("1.0");
             log.setIsPaid(0);
             logMapper.insertRecommendationLog(log);
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.warn("[ai] persistStreamConversation failed", ex);
         }
     }
 

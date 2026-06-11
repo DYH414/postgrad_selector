@@ -104,6 +104,15 @@ spring:
 app:
   rabbitmq:
     enabled: true
+  # AI 模型配置（DeepSeek，兼容 OpenAI 协议）
+  ai:
+    deepseek:
+      base-url: https://api.deepseek.com/v1
+      api-key: ${DEEPSEEK_API_KEY:}
+      model-name: deepseek-v4-pro
+      max-tokens: 4096
+      temperature: 0.7
+      timeout-seconds: 120
 
 # token配置
 token:
@@ -159,10 +168,4 @@ xss:
   # 匹配链接
   urlPatterns: /system/*,/monitor/*,/tool/*
 
-# langchain4j DashScope (千问) 配置
-langchain4j:
-  community:
-    dashscope:
-      chat-model:
-        api-key: ${DASHSCOPE_API_KEY:}
-        model-name: qwen-plus
+

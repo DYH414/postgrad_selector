@@ -32,20 +32,31 @@ public class AiReportConsumer {
     @Autowired private RecommendationLogMapper logMapper;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private AiReportBuilder aiReportBuilder;
+    @Autowired private dev.langchain4j.model.chat.ChatModel chatModel;
 
     @RabbitListener(queues = RabbitMQConfig.AI_REPORT_QUEUE, concurrency = "1")
     public void onMessage(Map<String, Object> msg) {
-        Long reportId = ((Number) msg.get("reportId")).longValue();
-        int estimatedScore = ((Number) msg.get("estimatedScore")).intValue();
+        Object reportIdObj = msg.get("reportId");
+        Object scoreObj = msg.get("estimatedScore");
+        if (!(reportIdObj instanceof Number) || !(scoreObj instanceof Number)) {
+            log.error("[mq] Invalid message format, missing reportId or estimatedScore: {}", msg.keySet());
+            return;
+        }
+        Long reportId = ((Number) reportIdObj).longValue();
+        int estimatedScore = ((Number) scoreObj).intValue();
 
         try {
             handleConversationMessage(reportId, estimatedScore, msg);
         } catch (Exception e) {
-            String errorJson = "{\"status\":\"FAILED\",\"error\":\"" + safeJsonMessage(e.getMessage()) + "\"}";
+            log.error("[mq] Report generation failed for reportId={}", reportId, e);
+            Map<String, Object> errorResult = new LinkedHashMap<>();
+            errorResult.put("status", "FAILED");
+            errorResult.put("error", e.getMessage() != null ? e.getMessage() : "报告生成失败");
+            String errorJson = JSON.toJSONString(errorResult);
             redisTemplate.opsForValue().set(AiConstants.keyReport(reportId), errorJson, AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
             try {
                 logMapper.updateReportResult(reportId, errorJson);
-            } catch (Exception dbEx) { /* best-effort */ }
+            } catch (Exception dbEx) { log.warn("[mq] DB update failed (best-effort)", dbEx); }
         }
     }
 
@@ -53,18 +64,13 @@ public class AiReportConsumer {
         String conversationId = (String) msg.get("conversationId");
         String convJson = redisTemplate.opsForValue().get(AiConstants.keyConv(conversationId));
         if (convJson == null) {
-            redisTemplate.opsForValue().set(AiConstants.keyReport(reportId),
-                "{\"error\": \"对话已过期\"}", AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("error", "对话已过期");
+            redisTemplate.opsForValue().set(AiConstants.keyReport(reportId), JSON.toJSONString(err),
+                AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
             return;
         }
         String poolJson = redisTemplate.opsForValue().get(AiConstants.keyPool(conversationId));
-
-        ChatModel chatModel = OpenAiChatModel.builder()
-            .baseUrl("https://api.deepseek.com/v1")
-            .apiKey(System.getenv("DEEPSEEK_API_KEY"))
-            .modelName("deepseek-v4-pro")
-            .maxTokens(4096)
-            .build();
 
         String cleanedConvJson = stripTailExchange(convJson);
         Map<String, Object> preferences = msg.get("userId") instanceof Number userId
@@ -85,7 +91,7 @@ public class AiReportConsumer {
         redisTemplate.opsForValue().set(AiConstants.keyReport(reportId), resultJsonStr, AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
         try {
             logMapper.updateReportResult(reportId, resultJsonStr);
-        } catch (Exception dbEx) { /* best-effort */ }
+        } catch (Exception dbEx) { log.warn("[mq] DB update failed (best-effort)", dbEx); }
     }
 
 
@@ -156,11 +162,6 @@ public class AiReportConsumer {
     private void updateProgress(Long reportId, String progress) {
         try {
             redisTemplate.opsForValue().set(AiConstants.keyReportProgress(reportId), progress, AiConstants.TTL_REPORT, AiConstants.TTL_REPORT_UNIT);
-        } catch (Exception ignored) { /* non-critical */ }
-    }
-
-    private String safeJsonMessage(String message) {
-        if (message == null || message.isBlank()) return "报告生成失败";
-        return message.replace("\\", "\\\\").replace("\"", "\\\"");
+        } catch (Exception ex) { log.warn("[mq] Progress update failed (non-critical)", ex); }
     }
 }

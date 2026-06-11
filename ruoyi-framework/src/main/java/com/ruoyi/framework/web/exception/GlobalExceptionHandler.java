@@ -1,8 +1,11 @@
 package com.ruoyi.framework.web.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.validation.BindException;
@@ -151,5 +154,42 @@ public class GlobalExceptionHandler
     public AjaxResult handleDemoModeException(DemoModeException e)
     {
         return AjaxResult.error("演示模式，不允许操作");
+    }
+
+    /**
+     * 请求参数校验失败（业务层抛出的参数异常）
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public AjaxResult handleIllegalArgumentException(IllegalArgumentException e, HttpServletRequest request)
+    {
+        String requestURI = request.getRequestURI();
+        log.warn("请求地址'{}',参数校验失败: {}", requestURI, e.getMessage());
+        return AjaxResult.error(HttpStatus.BAD_REQUEST, "参数错误：" + e.getMessage());
+    }
+
+    /**
+     * 请求体格式错误 / JSON 解析失败
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public AjaxResult handleHttpMessageNotReadableException(HttpMessageNotReadableException e, HttpServletRequest request)
+    {
+        String requestURI = request.getRequestURI();
+        log.warn("请求地址'{}',请求体解析失败: {}", requestURI, e.getMessage());
+        return AjaxResult.error(HttpStatus.BAD_REQUEST, "请求体格式错误，请检查 JSON 结构");
+    }
+
+    /**
+     * Bean Validation 校验失败（@Valid / @Validated）
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public AjaxResult handleConstraintViolationException(ConstraintViolationException e, HttpServletRequest request)
+    {
+        String requestURI = request.getRequestURI();
+        String message = e.getConstraintViolations().stream()
+            .map(ConstraintViolation::getMessage)
+            .findFirst()
+            .orElse("参数校验失败");
+        log.warn("请求地址'{}',参数校验失败: {}", requestURI, message);
+        return AjaxResult.error(HttpStatus.BAD_REQUEST, message);
     }
 }
