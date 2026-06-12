@@ -4,6 +4,25 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.postgrad.mapper.AiDatabaseToolMapper">
 
+    <sql id="DynamicDataCompleteness">
+        case
+            when q.completeness_level is not null then q.completeness_level
+            when sc.score_line is not null
+                and ar.min_admitted_score is not null
+                and ar.max_admitted_score is not null
+                and ar.avg_admitted_score is not null
+                and (ap.total_plan is not null or ap.unified_exam_quota is not null or ar.admitted_count is not null)
+                then 'A'
+            when sc.score_line is not null
+                and (ar.avg_admitted_score is not null
+                    or ar.min_admitted_score is not null
+                    or ap.total_plan is not null
+                    or ap.unified_exam_quota is not null)
+                then 'B'
+            else 'C'
+        end
+    </sql>
+
     <!-- AI 工具专用：灵活查询学校数据 -->
     <select id="querySchools" resultType="com.ruoyi.postgrad.domain.RowMap">
         select
@@ -22,7 +41,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.min_admitted_score as admissionLow,
             ar.avg_admitted_score as avgAdmittedScore,
             ar.max_admitted_score as admissionHigh,
-            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            <include refid="DynamicDataCompleteness"/> as dataCompleteness,
             coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
             coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
         from program p

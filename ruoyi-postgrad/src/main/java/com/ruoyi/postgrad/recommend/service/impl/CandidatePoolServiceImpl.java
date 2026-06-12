@@ -67,13 +67,21 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
         }
 
         // 3. 规则分档
+        //    reach:  -15 ≤ gap ≤ 5  （差距在合理冲刺范围内）
+        //    steady:  6 ≤ gap ≤ 14  （分数有余量）
+        //    safe:   gap ≥ 15 且 canBeSafe=true
+        //    gap < -15 → 丢弃（差距过大，冲刺也没有意义）
         List<SchoolFact> reach = new ArrayList<>();
         List<SchoolFact> steady = new ArrayList<>();
         List<SchoolFact> safe = new ArrayList<>();
 
         for (SchoolFact f : facts) {
             int gap = f.getScoreGap() != null ? f.getScoreGap() : 0;
-            if (gap <= 5) {
+            if (gap < -15) {
+                // 差距过大，不进入任何档位
+                continue;
+            }
+            if (gap >= -15 && gap <= 5) {
                 reach.add(f);
             } else if (gap <= 14) {
                 steady.add(f);

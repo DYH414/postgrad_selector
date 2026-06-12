@@ -4,6 +4,25 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.postgrad.mapper.RecommendationMapper">
 
+    <sql id="DynamicDataCompleteness">
+        case
+            when q.completeness_level is not null then q.completeness_level
+            when sc.score_line is not null
+                and ar.min_admitted_score is not null
+                and ar.max_admitted_score is not null
+                and ar.avg_admitted_score is not null
+                and (ap.total_plan is not null or ap.unified_exam_quota is not null or ar.admitted_count is not null)
+                then 'A'
+            when sc.score_line is not null
+                and (ar.avg_admitted_score is not null
+                    or ar.min_admitted_score is not null
+                    or ap.total_plan is not null
+                    or ap.unified_exam_quota is not null)
+                then 'B'
+            else 'C'
+        end
+    </sql>
+
     <select id="selectCandidates" resultType="com.ruoyi.postgrad.domain.RowMap">
         select
             p.id as programId, s.id as schoolId, s.name as schoolName,
@@ -25,7 +44,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.min_admitted_score as admissionLow,
             ar.avg_admitted_score as avgAdmittedScore,
             ar.max_admitted_score as admissionHigh,
-            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            <include refid="DynamicDataCompleteness"/> as dataCompleteness,
             q.has_official_source as officialVerified,
             coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
             coalesce(ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
@@ -81,10 +100,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by
             case when sc.score_line is null then 1 else 0 end asc,
             case when ar.min_admitted_score is null then 1 else 0 end asc,
-            coalesce(q.completeness_level, 'C') asc,
+            case <include refid="DynamicDataCompleteness"/> when 'A' then 0 when 'B' then 1 else 2 end asc,
             case
                 when #{scoreRange} is not null and ar.avg_admitted_score is not null
-                    then abs((cast(ar.avg_admitted_score as signed) - #{scoreRange}) - #{estimatedScore})
+                    then abs(cast(ar.avg_admitted_score as signed) - #{estimatedScore})
                 when ar.min_admitted_score is not null
                     then abs(cast(ar.min_admitted_score as signed) - #{estimatedScore})
                 else 999
@@ -114,7 +133,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.min_admitted_score as admissionLow,
             ar.avg_admitted_score as avgAdmittedScore,
             ar.max_admitted_score as admissionHigh,
-            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            <include refid="DynamicDataCompleteness"/> as dataCompleteness,
             q.has_official_source as officialVerified,
             coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
             coalesce(ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
@@ -178,7 +197,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.min_admitted_score as admissionLow,
             ar.avg_admitted_score as avgAdmittedScore,
             ar.max_admitted_score as admissionHigh,
-            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            <include refid="DynamicDataCompleteness"/> as dataCompleteness,
             q.has_official_source as officialVerified,
             coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
             coalesce(ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
@@ -226,7 +245,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.max_admitted_score as admissionHigh,
             ap.total_plan as planCount,
             ap.retest_count as retestCount,
-            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            <include refid="DynamicDataCompleteness"/> as dataCompleteness,
             coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
             coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
         from program p
@@ -274,7 +293,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.min_admitted_score as admissionLow,
             ar.avg_admitted_score as avgAdmittedScore,
             ar.max_admitted_score as admissionHigh,
-            coalesce(q.completeness_level, 'C') as dataCompleteness,
+            <include refid="DynamicDataCompleteness"/> as dataCompleteness,
             coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
             coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
         from program p
@@ -303,7 +322,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             </foreach>
         </if>
         order by
-            case coalesce(q.completeness_level, 'C') when 'A' then 0 when 'B' then 1 else 2 end,
+            case <include refid="DynamicDataCompleteness"/> when 'A' then 0 when 'B' then 1 else 2 end,
             case when ar.avg_admitted_score is null then 1 else 0 end,
             abs(coalesce(cast(ar.avg_admitted_score as signed), #{estimatedScore}) - #{estimatedScore}),
             sc.year desc

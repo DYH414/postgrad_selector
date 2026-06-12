@@ -6,22 +6,22 @@
       <!-- Hero -->
       <section class="hero">
         <div class="hero-copy">
-          <span class="hero-kicker">AI 推荐</span>
+          <span class="hero-kicker">AI 推荐工作流</span>
           <h1>AI 择校工作台</h1>
-          <p>基于画像一键生成冲刺、稳妥、保底草稿，调整确认后生成最终报告。</p>
+          <p>从画像出发生成候选池，在对话中确认冲刺、稳妥、保底学校，最后沉淀成可交付报告。</p>
         </div>
-        <div class="hero-metrics">
-          <div class="metric-card">
+        <div class="hero-status-strip">
+          <div class="status-item primary">
             <span>候选池</span>
             <strong>{{ poolCount }}</strong>
             <em>所</em>
           </div>
-          <div class="metric-card">
+          <div class="status-item">
             <span>草稿中</span>
             <strong>{{ draftCount }}</strong>
-            <em>所</em>
+            <em>/ 10 所</em>
           </div>
-          <div class="metric-card">
+          <div class="status-item strategy">
             <span>当前策略</span>
             <strong>{{ strategyLabel }}</strong>
             <em>冲稳保均衡</em>
@@ -48,13 +48,24 @@
 
         <!-- 中栏 -->
         <section class="center-col">
-          <AiChatMiniPanel
-            :visible="chatVisible"
-            :messages="chatMessages"
-            :streaming="chatStreaming"
-            @send="handleChatSend"
-            @toggle="chatVisible = !chatVisible"
-          />
+          <div class="chat-panel-frame">
+            <div class="chat-frame-head">
+              <div>
+                <h2>候选分析与追问</h2>
+                <p>AI 会解释候选来源、风险和纳入草稿的理由。</p>
+              </div>
+              <span :class="['chat-state', chatVisible || chatMessages.length ? 'active' : 'idle']">
+                {{ chatVisible || chatMessages.length ? '可追问' : '未开始' }}
+              </span>
+            </div>
+            <AiChatMiniPanel
+              :visible="chatVisible"
+              :messages="chatMessages"
+              :streaming="chatStreaming"
+              @send="handleChatSend"
+              @toggle="chatVisible = !chatVisible"
+            />
+          </div>
         </section>
 
         <!-- 右栏 -->
@@ -76,14 +87,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, shallowRef } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getDraft, generateDraft, removeCandidate, replaceCandidate,
+  getDraft, startGenerateDraft, openDraftGenerationStream, removeCandidate, replaceCandidate,
   addBackCandidate, generateReport, sendChatMessage, startChat
 } from '@/api/recommend-v2'
 import { getProfile } from '@/api/profile'
+import { closeEventSource } from '@/utils/event-source'
 import AppHeader from '@/components/AppHeader.vue'
 import ProfileSidebar from './components/ProfileSidebar.vue'
 import GenerateDraftButton from './components/GenerateDraftButton.vue'
@@ -101,6 +113,7 @@ const missingFields = ref([])
 const draft = shallowRef(null)
 const generating = ref(false)
 const progressState = ref({ phase: '', message: '' })
+const draftEventSource = ref(null)
 
 // ── 对话 ──
 const chatVisible = ref(false)
@@ -145,49 +158,68 @@ async function loadDraftData() {
 
 async function handleGenerate() {
   generating.value = true
-  progressState.value = { phase: '', message: '正在准备...' }
+  progressState.value = { phase: 'queued', message: '正在准备生成草稿...' }
   draft.value = null
+  closeEventSource(draftEventSource)
 
   try {
-    const response = await generateDraft()
-    if (!response.ok) throw new Error('请求失败')
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let currentEvent = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.startsWith('event:')) {
-          currentEvent = line.slice(6).trim()
-        } else if (line.startsWith('data:')) {
-          try {
-            const data = JSON.parse(line.slice(5))
-            if (currentEvent === 'progress') {
-              progressState.value = { phase: data.phase, message: data.message }
-            } else if (currentEvent === 'done') {
-              draft.value = data.draft
-              progressState.value = { phase: 'done', message: '草稿生成完成' }
-              ElMessage.success('草稿生成完成')
-            } else if (currentEvent === 'error') {
-              ElMessage.error(data.message || '生成失败')
-            }
-          } catch (e) { /* skip malformed lines */ }
-        }
-      }
+    const res = await startGenerateDraft()
+    const task = res.data || {}
+    if (task.status === 'busy') {
+      generating.value = false
+      progressState.value = { phase: 'busy', message: task.message || '已有草稿正在生成' }
+      ElMessage.warning(task.message || '已有草稿正在生成，请稍候')
+      return
     }
+    if (!task.taskId || !task.streamToken) {
+      throw new Error('生成任务创建失败')
+    }
+
+    const source = openDraftGenerationStream({
+      taskId: task.taskId,
+      streamToken: task.streamToken
+    })
+    draftEventSource.value = source
+
+    source.addEventListener('progress', event => {
+      const data = JSON.parse(event.data)
+      progressState.value = {
+        phase: data.phase || 'running',
+        message: data.message || '正在生成草稿...'
+      }
+    })
+
+    source.addEventListener('done', event => {
+      const data = JSON.parse(event.data)
+      draft.value = data.draft
+      progressState.value = { phase: 'done', message: '草稿生成完成' }
+      generating.value = false
+      closeEventSource(draftEventSource)
+      ElMessage.success('草稿生成完成')
+    })
+
+    source.addEventListener('error', event => {
+      let message = '生成草稿连接中断'
+      if (event?.data) {
+        try {
+          message = JSON.parse(event.data).message || message
+        } catch (_) {}
+      }
+      progressState.value = { phase: 'error', message }
+      generating.value = false
+      closeEventSource(draftEventSource)
+      ElMessage.error(message)
+    })
   } catch (e) {
-    ElMessage.error('生成草稿失败：' + (e.message || '网络错误'))
-  } finally {
+    const msg = e.message || '网络错误'
+    if (msg.includes('正在生成')) {
+      ElMessage.warning('已有草稿正在生成，请稍候')
+    } else {
+      ElMessage.error('生成草稿失败：' + msg)
+    }
+    progressState.value = { phase: 'error', message: msg }
     generating.value = false
+    closeEventSource(draftEventSource)
   }
 }
 
@@ -324,73 +356,144 @@ onMounted(() => {
   loadProfileData()
   loadDraftData()
 })
+
+onBeforeUnmount(() => {
+  closeEventSource(draftEventSource)
+})
 </script>
 
 <style scoped>
 .prototype-page {
   min-height: 100vh;
-  background: #f4f7fc;
+  background:
+    linear-gradient(180deg, #f7faff 0%, #f3f6fb 42%, #f6f8fc 100%);
+  color: #10213f;
 }
 
 .v2-wrap {
-  max-width: 1440px;
+  max-width: 1520px;
   margin: 0 auto;
-  padding: 0 24px 40px;
+  padding: 0 24px 24px;
 }
 
 /* ── Hero ── */
 .hero {
+  min-height: 128px;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 24px;
-  padding: 28px 0 20px;
+  padding: 22px 0 16px;
 }
 .hero-copy { flex: 1; }
 .hero-kicker {
-  display: inline-block;
-  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
-  background: rgba(64, 158, 255, .12);
-  color: #409eff;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .5px;
+  background: #eaf2ff;
+  color: #1769f6;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
   margin-bottom: 8px;
 }
-.hero-copy h1 { margin: 0 0 6px; font-size: 24px; font-weight: 600; line-height: 32px; }
-.hero-copy p { margin: 0; color: #71829a; font-size: 14px; }
+.hero-copy h1 { margin: 0 0 8px; font-size: 30px; font-weight: 800; line-height: 36px; letter-spacing: 0; }
+.hero-copy p { max-width: 640px; margin: 0; color: #5d6f89; font-size: 15px; line-height: 1.65; }
 
-.hero-metrics { display: flex; gap: 12px; flex-shrink: 0; }
-.metric-card {
-  padding: 14px 20px;
-  border: 1px solid rgba(215,227,245,.9);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 10px 24px rgba(42,84,153,.06);
-  text-align: center;
-  min-width: 100px;
+.hero-status-strip {
+  display: grid;
+  grid-template-columns: 130px 130px minmax(180px, 1fr);
+  align-items: center;
+  flex-shrink: 0;
+  width: min(560px, 44vw);
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
+  background: rgba(255,255,255,.9);
+  box-shadow: 0 12px 28px rgba(39,86,166,.08);
 }
-.metric-card span { display: block; font-size: 12px; color: #71829a; }
-.metric-card strong { display: block; font-size: 22px; font-weight: 700; color: #303133; margin: 2px 0; }
-.metric-card em { display: block; font-size: 11px; color: #a8b2c1; font-style: normal; }
+.status-item {
+  min-width: 0;
+  min-height: 52px;
+  padding: 6px 16px;
+  border-right: 1px solid #edf2f9;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.status-item:last-child { border-right: 0; }
+.status-item span { display: block; color: #6d7f99; font-size: 12px; font-weight: 800; line-height: 16px; }
+.status-item strong { display: block; margin-top: 4px; color: #10213f; font-size: 22px; line-height: 26px; font-weight: 900; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.status-item em { display: block; margin-top: 1px; color: #8a9ab2; font-size: 12px; line-height: 16px; font-style: normal; font-weight: 800; }
+.status-item.primary strong { color: #1769f6; }
+.status-item.strategy strong { font-size: 17px; }
 
 /* ── 三栏 ── */
 .main-grid {
   display: grid;
-  grid-template-columns: 260px 1fr 440px;
-  gap: 16px;
-  align-items: start;
+  grid-template-columns: 300px minmax(560px, 1fr) 420px;
+  gap: 20px;
+  height: calc(100vh - 206px);
+  min-height: 620px;
+  align-items: stretch;
+  overflow: hidden;
 }
 .left-col { display: flex; flex-direction: column; gap: 12px; }
-.center-col { min-height: 400px; }
-.right-col { position: sticky; top: 16px; }
+.center-col,
+.right-col {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.right-col { position: static; }
+
+.chat-panel-frame {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(39,86,166,.07);
+  overflow: hidden;
+}
+
+.chat-frame-head {
+  min-height: 62px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #edf2f9;
+  background: #fbfdff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.chat-frame-head h2 { margin: 0; color: #10213f; font-size: 17px; line-height: 23px; }
+.chat-frame-head p { margin: 3px 0 0; color: #6d7f99; font-size: 13px; line-height: 18px; }
+.chat-state {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 800;
+}
+.chat-state.active { color: #0b6b43; background: #e8f8f0; }
+.chat-state.idle { color: #607592; background: #eef4fb; }
 
 @media (max-width: 1200px) {
-  .main-grid { grid-template-columns: 240px 1fr 380px; }
+  .main-grid { grid-template-columns: 280px minmax(520px, 1fr) 380px; gap: 16px; }
+  .hero-status-strip { width: min(520px, 44vw); grid-template-columns: 112px 112px minmax(160px, 1fr); }
 }
 @media (max-width: 960px) {
-  .main-grid { grid-template-columns: 1fr; }
+  .hero { align-items: flex-start; flex-direction: column; }
+  .hero-status-strip { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .main-grid { grid-template-columns: 1fr; height: auto; overflow: visible; }
   .left-col { order: 1; }
   .right-col { order: 2; position: static; }
   .center-col { order: 3; }

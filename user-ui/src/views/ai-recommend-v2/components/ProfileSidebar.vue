@@ -2,8 +2,9 @@
   <section class="profile-card">
     <div class="card-head">
       <div>
+        <p class="card-eyebrow">决策输入</p>
         <h2>当前画像</h2>
-        <p v-if="missingFields.length === 0">画像完整，可生成推荐。</p>
+        <p v-if="missingFields.length === 0">画像完整，可生成推荐草稿。</p>
         <p v-else>还缺少 {{ missingFields.length }} 项关键信息。</p>
       </div>
       <span :class="['profile-status', missingFields.length ? 'warn' : 'good']">
@@ -12,29 +13,38 @@
     </div>
 
     <div v-loading="loading" class="profile-list">
-      <div class="profile-row strong">
+      <div class="score-panel">
         <span>预计初试总分</span>
         <strong>{{ profile.estimatedScore || '-' }}</strong>
+        <em>用于判断复试线区间与冲稳保档位</em>
       </div>
-      <div class="profile-row">
-        <span>本科层次</span>
-        <strong>{{ tierLabel(profile.undergradTier) }}</strong>
+
+      <div class="profile-section">
+        <h3>基础条件</h3>
+        <div class="profile-row">
+          <span>本科层次</span>
+          <strong>{{ tierLabel(profile.undergradTier) }}</strong>
+        </div>
+        <div class="profile-row">
+          <span>跨考情况</span>
+          <strong>{{ profile.isCrossMajor ? '跨考' : '非跨考' }}</strong>
+        </div>
       </div>
-      <div class="profile-row">
-        <span>跨考情况</span>
-        <strong>{{ profile.isCrossMajor ? '跨考' : '非跨考' }}</strong>
-      </div>
-      <div class="profile-row">
-        <span>目标地区</span>
-        <strong>{{ targetRegionsLabel }}</strong>
-      </div>
-      <div class="profile-row">
-        <span>整体策略</span>
-        <strong>{{ riskLabel(profile.riskPreference) }}</strong>
-      </div>
-      <div class="profile-row">
-        <span>层次偏好</span>
-        <strong>{{ schoolTierLabel(profile.schoolTierPreference) }}</strong>
+
+      <div class="profile-section">
+        <h3>偏好策略</h3>
+        <div class="profile-row">
+          <span>目标地区</span>
+          <strong>{{ targetRegionsLabel }}</strong>
+        </div>
+        <div class="profile-row">
+          <span>整体策略</span>
+          <strong>{{ riskLabel(profile.riskPreference) }}</strong>
+        </div>
+        <div class="profile-row">
+          <span>层次偏好</span>
+          <strong>{{ schoolTierLabel(profile.schoolTierPreference) }}</strong>
+        </div>
       </div>
     </div>
 
@@ -87,18 +97,19 @@ function schoolTierLabel(v) {
 
 <style scoped>
 .profile-card {
-  padding: 20px;
-  border: 1px solid rgba(215,227,245,.9);
-  border-radius: 8px;
+  padding: 18px;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
   background: #fff;
-  box-shadow: 0 14px 34px rgba(42,84,153,.08);
+  box-shadow: 0 12px 28px rgba(39,86,166,.07);
 }
 .card-head {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
+.card-eyebrow { margin: 0 0 4px; color: #1769f6; font-size: 12px; line-height: 16px; font-weight: 900; }
 .card-head h2 { margin: 0; font-size: 18px; line-height: 24px; }
 .card-head p { margin: 5px 0 0; color: #71829a; font-size: 13px; }
 .profile-status {
@@ -109,20 +120,53 @@ function schoolTierLabel(v) {
   font-size: 12px;
   font-weight: 800;
 }
-.profile-status.good { background: rgba(103,194,58,.12); color: #67c23a; }
+.profile-status.good { background: #edfdf5; color: #087443; }
 .profile-status.warn { background: rgba(230,162,60,.12); color: #e6a23c; }
-.profile-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+.profile-list { margin-bottom: 16px; }
+.score-panel {
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid #d7e6fb;
+  border-radius: 8px;
+  background: #f6f9ff;
+}
+.score-panel span,
+.score-panel em {
+  display: block;
+  color: #6d7f99;
+  font-size: 12px;
+  line-height: 16px;
+  font-style: normal;
+}
+.score-panel strong {
+  display: block;
+  margin: 5px 0 3px;
+  color: #1769f6;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 900;
+}
+.profile-section {
+  padding-top: 12px;
+  border-top: 1px solid #edf2f9;
+}
+.profile-section + .profile-section { margin-top: 12px; }
+.profile-section h3 {
+  margin: 0 0 6px;
+  color: #10213f;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 900;
+}
 .profile-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 12px;
   padding: 7px 0;
-  border-bottom: 1px solid #f0f4fa;
   font-size: 13px;
 }
-.profile-row:last-child { border-bottom: none; }
 .profile-row span { color: #71829a; }
-.profile-row strong { font-weight: 600; color: #303133; }
-.profile-row.strong strong { color: #409eff; font-size: 15px; }
+.profile-row strong { min-width: 0; font-weight: 700; color: #10213f; text-align: right; word-break: break-word; }
 .profile-actions { text-align: right; }
+.profile-actions :deep(.el-button) { border-radius: 7px; font-weight: 700; }
 </style>

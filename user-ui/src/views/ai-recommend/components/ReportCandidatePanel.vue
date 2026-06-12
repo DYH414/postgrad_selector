@@ -2,8 +2,9 @@
   <section class="candidate-card">
     <div class="candidate-head">
       <div>
-        <h2>报告候选</h2>
-        <p>已确认 {{ summary.confirmed }} · 对话加入 {{ summary.conversation }} · 后台推荐 {{ summary.background }}</p>
+        <p class="candidate-eyebrow">输出草稿</p>
+        <h2>报告草稿</h2>
+        <p>{{ bookmarks.length }} / 10 所 · 已确认 {{ summary.confirmed }}</p>
       </div>
       <span v-if="analyzing" class="candidate-badge">分析中</span>
     </div>
@@ -71,12 +72,20 @@
     </div>
 
     <div v-else class="candidate-placeholder">
-      <strong>{{ active ? '正在等待报告候选' : '尚未开始 AI 对话' }}</strong>
-      <p>{{ active ? 'AI 完成画像分析后，冲刺、稳妥、保底候选会在这里汇总。' : '点击左侧"按我的画像开始筛选"后开始生成候选。' }}</p>
+      <div class="placeholder-icon">
+        <i class="el-icon-document" />
+      </div>
+      <strong>{{ active ? '正在等待报告候选' : '草稿尚未生成' }}</strong>
+      <p>{{ active ? 'AI 完成画像分析后，冲刺、稳妥、保底候选会在这里汇总。' : '先生成 AI 推荐草稿，再确认要写入报告的学校。' }}</p>
+      <div class="draft-steps">
+        <span>生成候选</span>
+        <span>确认学校</span>
+        <span>生成报告</span>
+      </div>
     </div>
 
-    <el-button type="primary" class="candidate-action" @click="$emit('generate')">
-      生成推荐报告
+    <el-button type="primary" :plain="!displayGroups.length" class="candidate-action" @click="$emit('generate')">
+      生成最终报告
     </el-button>
   </section>
 </template>
@@ -114,11 +123,11 @@ defineEmits(['generate', 'remove', 'ask-about'])
 .candidate-card {
   height: 100%;
   min-height: 0;
-  padding: 20px;
-  border: 1px solid #e5edf8;
-  border-radius: 16px;
+  padding: 18px;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
   background: #fff;
-  box-shadow: 0 8px 24px rgba(15, 35, 75, 0.06);
+  box-shadow: 0 12px 28px rgba(39, 86, 166, .07);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -128,7 +137,15 @@ defineEmits(['generate', 'remove', 'ask-about'])
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
+}
+
+.candidate-eyebrow {
+  margin: 0 0 4px !important;
+  color: #1769f6 !important;
+  font-size: 12px !important;
+  line-height: 16px !important;
+  font-weight: 900;
 }
 
 .candidate-head h2 {
@@ -161,22 +178,23 @@ defineEmits(['generate', 'remove', 'ask-about'])
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .candidate-summary div {
-  min-height: 64px;
-  padding: 10px 8px;
+  min-height: 56px;
+  padding: 8px;
   border-radius: 8px;
-  background: #f8fbff;
+  border: 1px solid #edf2f9;
+  background: #fbfdff;
   text-align: center;
 }
 
 .candidate-summary strong {
   display: block;
   color: #1769f6;
-  font-size: 20px;
-  line-height: 24px;
+  font-size: 19px;
+  line-height: 23px;
 }
 
 .candidate-summary span {
@@ -254,7 +272,7 @@ defineEmits(['generate', 'remove', 'ask-about'])
   gap: 10px;
   padding: 14px;
   border: 1px solid #e7eef8;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #fbfdff;
 }
 
@@ -404,10 +422,29 @@ defineEmits(['generate', 'remove', 'ask-about'])
 /* ── 空状态 ── */
 .candidate-placeholder {
   flex: 1;
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 16px;
   border: 1px dashed #cfe0f6;
   border-radius: 8px;
   background: #fbfdff;
+  text-align: center;
+}
+
+.placeholder-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+  border: 1px solid #dce7f6;
+  border-radius: 8px;
+  background: #fff;
+  color: #8ba0bd;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
 }
 
 .candidate-placeholder strong {
@@ -424,12 +461,32 @@ defineEmits(['generate', 'remove', 'ask-about'])
   line-height: 1.7;
 }
 
+.draft-steps {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.draft-steps span {
+  min-width: 0;
+  min-height: 30px;
+  padding: 6px;
+  border-radius: 7px;
+  background: #eef4fb;
+  color: #607592;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 800;
+}
+
 /* ── 生成报告按钮 ── */
 .candidate-action {
   flex-shrink: 0;
   width: 100%;
-  min-height: 40px;
-  margin-top: 18px;
+  min-height: 42px;
+  margin-top: 16px;
   border-radius: 7px;
   font-weight: 800;
 }

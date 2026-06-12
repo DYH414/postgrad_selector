@@ -1,6 +1,9 @@
 <template>
   <section class="logic-card">
-    <h2>推荐逻辑</h2>
+    <div class="logic-head">
+      <span>流程</span>
+      <h2>推荐逻辑</h2>
+    </div>
     <div class="logic-steps">
       <div class="logic-step">
         <span>1</span>
@@ -29,17 +32,29 @@
 
 <style scoped>
 .logic-card {
-  padding: 20px;
-  border: 1px solid rgba(215, 227, 245, .9);
-  border-radius: 8px;
+  padding: 18px;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
   background: #fff;
-  box-shadow: 0 14px 34px rgba(42, 84, 153, .08);
+  box-shadow: 0 12px 28px rgba(39, 86, 166, .07);
+}
+
+.logic-head {
+  margin-bottom: 14px;
+}
+
+.logic-head span {
+  display: block;
+  color: #1769f6;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 900;
 }
 
 .logic-card h2 {
-  margin: 0 0 16px;
-  font-size: 18px;
-  line-height: 24px;
+  margin: 4px 0 0;
+  font-size: 17px;
+  line-height: 23px;
 }
 
 .logic-steps {
@@ -52,19 +67,19 @@
   display: flex;
   gap: 12px;
   padding: 12px;
-  border: 1px solid #edf3fb;
+  border: 1px solid #e5edf8;
   border-radius: 8px;
-  background: #f8fbff;
+  background: #fbfdff;
 }
 
 .logic-step span {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 7px;
   background: #1769f6;
   color: #fff;
   font-weight: 800;
@@ -74,7 +89,7 @@
 .logic-step strong {
   display: block;
   color: #10213f;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 20px;
 }
 

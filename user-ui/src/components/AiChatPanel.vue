@@ -603,12 +603,12 @@ onMounted(restoreConversation)
   width: 100%;
   height: 100%;
   min-height: 0;
-  background: #f6f9ff;
+  background: #f7faff;
   box-shadow: 0 8px 24px rgba(15, 35, 75, 0.06);
   display: flex;
   flex-direction: column;
   border: 1px solid #e5edf8;
-  border-radius: 16px;
+  border-radius: 10px;
   overflow: hidden;
   color: #10213f;
 }
@@ -622,7 +622,7 @@ onMounted(restoreConversation)
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: linear-gradient(180deg, rgba(246, 249, 255, .94), rgba(255, 255, 255, .96));
+  background: rgba(247, 250, 255, .96);
   text-align: center;
 }
 .chat-start-overlay i {
@@ -643,8 +643,8 @@ onMounted(restoreConversation)
   line-height: 1.7;
 }
 .panel-header {
-  min-height: 70px;
-  padding: 14px 16px;
+  min-height: 66px;
+  padding: 12px 16px;
   border-bottom: 1px solid #dce8f7;
   background: #ffffff;
   display: flex;
@@ -658,17 +658,17 @@ onMounted(restoreConversation)
   min-width: 0;
 }
 .advisor-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: #1f6fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #1769f6;
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 13px;
   font-weight: 800;
-  box-shadow: 0 8px 18px rgba(31, 111, 255, .22);
+  box-shadow: 0 8px 18px rgba(23, 105, 246, .18);
 }
 .advisor-title strong {
   display: block;
@@ -708,7 +708,7 @@ onMounted(restoreConversation)
   font-size: 44px;
   display: block;
   margin-bottom: 12px;
-  color: #5b8dff;
+  color: #1769f6;
 }
 /* ── 过期提示蒙层 ── */
 .expired-overlay {
@@ -770,9 +770,9 @@ onMounted(restoreConversation)
   color: #1f6fff;
 }
 .msg.assistant .msg-avatar {
-  background: #1f6fff;
+  background: #1769f6;
   color: #fff;
-  border-color: #1f6fff;
+  border-color: #1769f6;
 }
 .advisor-card {
   width: min(100%, 720px);
@@ -919,11 +919,11 @@ onMounted(restoreConversation)
   min-height: 34px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: #1f6fff;
+  background: #1769f6;
   color: #fff;
   font-size: 14px;
   line-height: 1.5;
-  box-shadow: 0 8px 18px rgba(31, 111, 255, .2);
+  box-shadow: 0 8px 18px rgba(23, 105, 246, .18);
   word-break: break-word;
 }
 .thinking-card {
@@ -973,7 +973,7 @@ onMounted(restoreConversation)
 }
 .decision-option:hover,
 .decision-option:focus {
-  border-color: #1f6fff;
+  border-color: #1769f6;
   background: #eaf2ff;
   color: #0d54ca;
 }

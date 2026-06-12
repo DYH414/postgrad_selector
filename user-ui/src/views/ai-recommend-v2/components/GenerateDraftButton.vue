@@ -31,12 +31,20 @@ defineEmits(['generate'])
 </script>
 
 <style scoped>
-.generate-section { text-align: center; }
+.generate-section {
+  padding: 14px;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(39,86,166,.07);
+  text-align: center;
+}
 .generate-btn {
   width: 100%;
   font-size: 15px;
   font-weight: 600;
   height: 44px;
+  border-radius: 7px;
 }
 .progress-hint {
   margin-top: 10px;

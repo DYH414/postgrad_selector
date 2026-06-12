@@ -203,7 +203,9 @@ public class DraftAdjustServiceImpl {
 
     private String inferTier(SchoolFact f) {
         int gap = f.getScoreGap() != null ? f.getScoreGap() : 0;
-        if (gap <= 5) return "reach";
+        // reach: -15 ≤ gap ≤ 5, steady: 6~14, safe: ≥15 + canBeSafe
+        if (gap < -15) return "reach"; // 差距过大，兜底放reach（理论上不应出现，pool已过滤）
+        if (gap >= -15 && gap <= 5) return "reach";
         if (gap <= 14) return "steady";
         if (gap >= 15 && Boolean.TRUE.equals(f.getCanBeSafe())) return "safe";
         return "steady";

@@ -1,10 +1,12 @@
 /**
  * AI 推荐 v2 API 调用封装。
  *
- * SSE 端点使用 fetch + ReadableStream 手动解析。
+ * 草稿生成使用 POST 创建任务，再用 EventSource 订阅任务流。
+ * 对话流保留 POST + ReadableStream，便于携带消息体和鉴权头。
  * 非 SSE 端点使用项目统一的 axios request 实例。
  */
 import request, { getToken } from './request'
+import { buildEventSourceUrl } from '@/utils/event-source'
 
 // ── 草稿 ──
 
@@ -13,15 +15,20 @@ export function getDraft() {
   return request({ url: '/app/ai-recommend-v2/draft', method: 'get' })
 }
 
-/** SSE 生成草稿（返回 fetch Response，由组件自行解析 SSE 流） */
-export function generateDraft() {
-  return fetch('/dev-api/app/ai-recommend-v2/draft/generate', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + (getToken() || ''),
-      'Accept': 'text/event-stream'
-    }
+/** 创建草稿生成任务 */
+export function startGenerateDraft() {
+  return request({
+    url: '/app/ai-recommend-v2/draft/generate/start',
+    method: 'post'
   })
+}
+
+/** 订阅草稿生成任务流 */
+export function openDraftGenerationStream({ taskId, streamToken }) {
+  return new EventSource(buildEventSourceUrl('/app/ai-recommend-v2/draft/generate/stream', {
+    taskId,
+    streamToken
+  }))
 }
 
 /** 从草稿中移除候选 */

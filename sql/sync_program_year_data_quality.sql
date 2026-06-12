@@ -22,9 +22,19 @@ SELECT
   0 AS has_official_source,
   0 AS has_conflict,
   CASE
-    WHEN ascore.program_id IS NOT NULL AND ap.program_id IS NOT NULL AND ar.program_id IS NOT NULL THEN 'B'
-    WHEN ascore.program_id IS NOT NULL AND ap.program_id IS NOT NULL THEN 'B'
-    WHEN ascore.program_id IS NOT NULL THEN 'C'
+    WHEN ascore.score_line IS NOT NULL
+      AND ar.min_admitted_score IS NOT NULL
+      AND ar.max_admitted_score IS NOT NULL
+      AND ar.avg_admitted_score IS NOT NULL
+      AND (ap.total_plan IS NOT NULL OR ap.unified_exam_quota IS NOT NULL OR ar.admitted_count IS NOT NULL)
+      THEN 'A'
+    WHEN ascore.score_line IS NOT NULL
+      AND (ar.avg_admitted_score IS NOT NULL
+        OR ar.min_admitted_score IS NOT NULL
+        OR ap.total_plan IS NOT NULL
+        OR ap.unified_exam_quota IS NOT NULL)
+      THEN 'B'
+    WHEN ascore.score_line IS NOT NULL THEN 'C'
     ELSE 'D'
   END AS completeness_level,
   JSON_ARRAYAGG(missing.field_name) AS missing_fields,

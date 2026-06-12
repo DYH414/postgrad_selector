@@ -2,7 +2,7 @@
   <div class="chat-mini">
     <!-- 收起态 -->
     <div v-if="!visible" class="chat-collapsed" @click="$emit('toggle')">
-      <span>💬 问 AI 关于草稿的问题</span>
+      <span>问 AI 关于草稿的问题</span>
       <i class="el-icon-arrow-up"></i>
     </div>
 
@@ -70,23 +70,36 @@ function handleSend() {
 
 <style scoped>
 .chat-mini {
-  border: 1px solid rgba(215,227,245,.9);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 14px 34px rgba(42,84,153,.08);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f7faff;
 }
 .chat-collapsed {
-  padding: 14px 16px;
+  flex: 1;
+  min-height: 0;
+  padding: 18px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   cursor: pointer;
-  color: #409eff;
+  color: #1769f6;
   font-size: 13px;
   transition: background .2s;
 }
-.chat-collapsed:hover { background: #f8fafd; }
-.chat-expanded { display: flex; flex-direction: column; height: 480px; }
+.chat-collapsed:hover { background: #f3f7ff; }
+.chat-collapsed span {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid #d7e6fb;
+  border-radius: 999px;
+  background: #fff;
+  font-weight: 800;
+}
+.chat-expanded { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat-top {
   display: flex;
   justify-content: space-between;
@@ -98,6 +111,7 @@ function handleSend() {
 }
 .chat-msgs {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px 16px;
   font-size: 13px;

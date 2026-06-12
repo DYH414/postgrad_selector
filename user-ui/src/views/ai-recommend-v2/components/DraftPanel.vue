@@ -1,7 +1,10 @@
 <template>
   <section class="draft-panel">
     <div class="panel-head">
-      <h3>报告草稿</h3>
+      <div>
+        <p class="panel-eyebrow">输出草稿</p>
+        <h3>报告草稿</h3>
+      </div>
       <span class="draft-total">{{ totalCount }} / 10 所</span>
     </div>
 
@@ -23,8 +26,13 @@
           <line x1="20" y1="38" x2="34" y2="38" stroke="#c0c8d4" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </div>
-      <p>点击左侧"生成 AI 推荐草稿"开始</p>
-      <span>系统将基于画像自动筛选候选池，AI 在每档内挑选。</span>
+      <p>草稿尚未生成</p>
+      <span>先生成 AI 推荐草稿，再确认要写入报告的学校。</span>
+      <div class="draft-steps">
+        <span>生成候选</span>
+        <span>确认学校</span>
+        <span>生成报告</span>
+      </div>
     </div>
 
     <!-- 三档内容 -->
@@ -109,34 +117,79 @@ const allEmpty = computed(() => totalCount.value === 0)
 
 <style scoped>
 .draft-panel {
-  padding: 20px;
-  border: 1px solid rgba(215,227,245,.9);
-  border-radius: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 18px;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
   background: #fff;
-  box-shadow: 0 14px 34px rgba(42,84,153,.08);
-  min-height: 500px;
+  box-shadow: 0 12px 28px rgba(39,86,166,.07);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .panel-head {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
 }
+.panel-eyebrow { margin: 0 0 4px; color: #1769f6; font-size: 12px; line-height: 16px; font-weight: 900; }
 .panel-head h3 { margin: 0; font-size: 18px; }
 .draft-total { font-size: 13px; color: #71829a; font-weight: 600; }
 
 /* 加载 */
-.panel-loading { text-align: center; padding: 60px 0; }
+.panel-loading { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 60px 0; }
 .loading-phase { display: flex; align-items: center; justify-content: center; gap: 8px; color: #71829a; font-size: 14px; }
 
 /* 空态 */
-.panel-empty { text-align: center; padding: 60px 20px; }
+.panel-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 36px 20px;
+  border: 1px dashed #cfe0f6;
+  border-radius: 8px;
+  background: #fbfdff;
+}
 .empty-icon { margin-bottom: 16px; }
 .panel-empty p { margin: 0 0 4px; font-size: 15px; color: #303133; }
 .panel-empty span { font-size: 13px; color: #a8b2c1; }
+.draft-steps {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 18px;
+}
+.draft-steps span {
+  min-width: 0;
+  min-height: 30px;
+  padding: 6px;
+  border-radius: 7px;
+  background: #eef4fb;
+  color: #607592;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 800;
+}
 
 /* 档位 */
-.tier-list { display: flex; flex-direction: column; gap: 4px; }
+.tier-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
 .tier-group { margin-bottom: 16px; }
 .tier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .tier-label { font-size: 15px; font-weight: 600; }
@@ -166,6 +219,7 @@ const allEmpty = computed(() => totalCount.value === 0)
 
 /* 已移除 */
 .removed-list {
+  flex-shrink: 0;
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid #f0f4fa;
@@ -180,6 +234,6 @@ const allEmpty = computed(() => totalCount.value === 0)
   color: #a8b2c1;
 }
 
-.panel-footer { margin-top: 16px; text-align: center; }
+.panel-footer { flex-shrink: 0; margin-top: 16px; text-align: center; }
 .panel-footer .el-button { width: 100%; font-size: 15px; font-weight: 600; height: 44px; }
 </style>

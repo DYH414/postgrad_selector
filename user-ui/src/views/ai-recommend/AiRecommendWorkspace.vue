@@ -5,24 +5,24 @@
     <main class="workspace-shell">
       <section class="workspace-hero">
         <div class="hero-copy">
-          <p class="hero-kicker">AI 推荐</p>
+          <p class="hero-kicker">AI 推荐工作流</p>
           <h1>AI 择校工作台</h1>
-          <p>基于你的画像、候选池与对话分析，逐步完成冲刺、稳妥、保底推荐。</p>
+          <p>从画像出发生成候选池，在对话中确认冲刺、稳妥、保底学校，最后沉淀成可交付报告。</p>
         </div>
-        <div class="hero-stats">
-          <div class="stat-card">
-            <small>候选池</small>
-            <strong>{{ candidateCount }} 所</strong>
+        <div class="hero-status-strip">
+          <div class="status-item primary">
+            <span>候选池</span>
+            <strong>{{ candidateCount }}<small>所</small></strong>
           </div>
-          <div class="stat-card">
-            <small>已加入报告</small>
-            <strong>{{ reportCount }} 所</strong>
+          <div class="status-item">
+            <span>草稿中</span>
+            <strong>{{ reportCount }}<small>/ 10 所</small></strong>
           </div>
-          <div class="stat-card">
-            <small>当前策略</small>
+          <div class="status-item strategy">
+            <span>当前策略</span>
             <strong>{{ currentStrategy }}</strong>
           </div>
-          <div class="stat-card new-conv-card">
+          <div class="status-action">
             <el-button type="primary" size="small" plain @click="handleNewConversation">新对话</el-button>
           </div>
         </div>
@@ -51,15 +51,26 @@
 
         <section class="workspace-main chat-column">
           <div class="chat-scroll">
-            <AiChatPanel
-              ref="chatPanelRef"
-              :visible="panelOpen"
-              :candidateIds="[]"
-              @close="panelOpen = false"
-              @fallback="handleFallback"
-              @conversation-started="handleConversationStarted"
-              @bookmarks-updated="refreshBookmarks"
-            />
+            <div class="chat-panel-frame">
+              <div class="chat-frame-head">
+                <div>
+                  <h2>候选分析与追问</h2>
+                  <p>AI 会解释候选来源、风险和纳入草稿的理由。</p>
+                </div>
+                <span :class="['chat-state', panelOpen ? 'active' : 'idle']">
+                  {{ panelOpen ? '分析中' : '未开始' }}
+                </span>
+              </div>
+              <AiChatPanel
+                ref="chatPanelRef"
+                :visible="panelOpen"
+                :candidateIds="[]"
+                @close="panelOpen = false"
+                @fallback="handleFallback"
+                @conversation-started="handleConversationStarted"
+                @bookmarks-updated="refreshBookmarks"
+              />
+            </div>
           </div>
         </section>
 
@@ -391,7 +402,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .ai-workspace-page {
   min-height: calc(100vh - 64px);
-  background: #f3f7ff;
+  background:
+    linear-gradient(180deg, #f7faff 0%, #f3f6fb 42%, #f6f8fc 100%);
   color: #10213f;
   overflow: hidden;
 }
@@ -399,17 +411,17 @@ onBeforeUnmount(() => {
 .workspace-shell {
   width: 100%;
   margin: 0;
-  padding: 18px 0 0;
+  padding: 16px 0 0;
   overflow: hidden;
 }
 
 .workspace-hero {
-  min-height: 96px;
+  min-height: 116px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 28px;
-  max-width: 1500px;
+  gap: 24px;
+  max-width: 1520px;
   margin: 0 auto 16px;
   padding: 0 24px;
 }
@@ -419,71 +431,116 @@ onBeforeUnmount(() => {
 }
 
 .hero-kicker {
-  margin: 0 0 6px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin: 0 0 8px;
+  padding: 0 10px;
+  border-radius: 999px;
   color: #1769f6;
+  background: #eaf2ff;
   font-weight: 800;
+  font-size: 13px;
   letter-spacing: 0;
 }
 
 .hero-copy h1 {
   margin: 0;
   font-size: 30px;
-  line-height: 1.18;
+  line-height: 1.2;
   letter-spacing: 0;
 }
 
 .hero-copy p:last-child {
-  margin: 10px 0 0;
+  max-width: 640px;
+  margin: 8px 0 0;
   color: #5d6f89;
   font-size: 15px;
-  line-height: 1.7;
+  line-height: 1.65;
 }
 
-.hero-stats {
+.hero-status-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(130px, 1fr));
-  gap: 14px;
-  width: min(720px, 52vw);
-}
-
-.stat-card {
-  min-height: 78px;
-  padding: 16px 18px;
-  border: 1px solid rgba(211, 224, 243, .8);
-  border-radius: 8px;
+  grid-template-columns: 130px 130px minmax(180px, 1fr) 92px;
+  align-items: center;
+  gap: 0;
+  width: min(680px, 50vw);
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
   background: rgba(255, 255, 255, .9);
-  box-shadow: 0 14px 34px rgba(42, 84, 153, .09);
+  box-shadow: 0 12px 28px rgba(39, 86, 166, .08);
 }
 
-.stat-card small {
+.status-item {
+  min-width: 0;
+  min-height: 52px;
+  padding: 6px 16px;
+  border-right: 1px solid #edf2f9;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.status-item span {
   display: block;
   color: #6d7f99;
-  font-weight: 700;
-  line-height: 18px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 16px;
 }
 
-.stat-card strong {
-  display: block;
+.status-item strong {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   margin-top: 4px;
   color: #10213f;
-  font-size: 20px;
+  font-size: 22px;
   line-height: 26px;
+  font-weight: 900;
+  min-width: 0;
 }
 
-.new-conv-card {
+.status-item strong small {
+  color: #8a9ab2;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 800;
+}
+
+.status-item.primary strong {
+  color: #1769f6;
+}
+
+.status-item.strategy strong {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 17px;
+}
+
+.status-action {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f8fbff;
-  border-style: dashed;
+  padding-left: 12px;
+}
+
+.status-action :deep(.el-button) {
+  min-width: 72px;
+  border-radius: 7px;
+  font-weight: 800;
 }
 
 .workspace-grid {
-  height: calc(100vh - 180px);
+  height: calc(100vh - 202px);
   display: grid;
-  grid-template-columns: 300px minmax(560px, 1fr) 360px;
+  grid-template-columns: 300px minmax(560px, 1fr) 380px;
   gap: 20px;
-  max-width: 1500px;
+  max-width: 1520px;
   margin: 0 auto;
   padding: 0 24px 24px;
   overflow: hidden;
@@ -521,14 +578,80 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.chat-panel-frame {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(39, 86, 166, .07);
+  overflow: hidden;
+}
+
+.chat-frame-head {
+  min-height: 62px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #edf2f9;
+  background: #fbfdff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-frame-head h2 {
+  margin: 0;
+  color: #10213f;
+  font-size: 17px;
+  line-height: 23px;
+}
+
+.chat-frame-head p {
+  margin: 3px 0 0;
+  color: #6d7f99;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.chat-state {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 800;
+}
+
+.chat-state.active {
+  color: #0b6b43;
+  background: #e8f8f0;
+}
+
+.chat-state.idle {
+  color: #607592;
+  background: #eef4fb;
+}
+
+.chat-panel-frame :deep(.ai-chat-panel) {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #f7faff;
+}
+
 @media (max-width: 1280px) {
   .workspace-grid {
-    grid-template-columns: 280px minmax(520px, 1fr) 340px;
+    grid-template-columns: 280px minmax(520px, 1fr) 350px;
     gap: 16px;
   }
 
-  .hero-stats {
-    width: min(680px, 50vw);
+  .hero-status-strip {
+    width: min(620px, 50vw);
+    grid-template-columns: 112px 112px minmax(160px, 1fr) 86px;
   }
 }
 
@@ -542,13 +665,14 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
-  .hero-stats,
+  .hero-status-strip,
   .workspace-grid {
     grid-template-columns: 1fr;
   }
 
-  .hero-stats {
+  .hero-status-strip {
     width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .workspace-grid {
@@ -565,6 +689,16 @@ onBeforeUnmount(() => {
 
   .hero-copy h1 {
     font-size: 28px;
+  }
+
+  .status-item {
+    border-right: 0;
+    border-bottom: 1px solid #edf2f9;
+  }
+
+  .status-action {
+    justify-content: flex-start;
+    padding: 10px 16px 6px;
   }
 }
 </style>

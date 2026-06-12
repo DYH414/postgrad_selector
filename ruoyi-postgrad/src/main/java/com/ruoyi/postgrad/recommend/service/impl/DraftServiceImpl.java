@@ -42,7 +42,10 @@ public class DraftServiceImpl implements IDraftService {
 
     static final String DRAFT_KEY_PREFIX = "ai:v2:draft:";
     static final String DRAFT_POOL_KEY_PREFIX = "ai:v2:draft:pool:";
+    private static final String LOCK_KEY_PREFIX = "ai:v2:draft:lock:";
     private static final long TTL_DAYS = 7;
+    /** 生成锁 TTL：5 分钟，防止重复点击 */
+    private static final java.time.Duration LOCK_TTL = java.time.Duration.ofMinutes(5);
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -63,6 +66,13 @@ public class DraftServiceImpl implements IDraftService {
 
     @Override
     public void generateDraft(Long userId, DraftGenerationCallback callback) {
+        // 生成锁：防止重复点击导致多个 LLM 调用并行
+        String lockKey = LOCK_KEY_PREFIX + userId;
+        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", LOCK_TTL);
+        if (Boolean.FALSE.equals(locked)) {
+            callback.onError(new IllegalStateException("已有草稿正在生成，请稍候"));
+            return;
+        }
         try {
             // 1. 加载用户画像
             callback.onProgress("loading_profile", "正在加载用户画像...", null, null);
@@ -126,6 +136,8 @@ public class DraftServiceImpl implements IDraftService {
         } catch (Exception e) {
             log.error("[Draft] generateDraft failed for userId={}: {}", userId, e.getMessage(), e);
             callback.onError(e);
+        } finally {
+            redisTemplate.delete(lockKey);
         }
     }
 

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,15 +17,19 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.common.annotation.Anonymous;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskState;
+import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskVO;
 import com.ruoyi.postgrad.recommend.domain.dto.AddBackCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ChatSendRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.RemoveCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ReplaceCandidateRequest;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.DraftGenerationCallback;
+import com.ruoyi.postgrad.recommend.service.IDraftGenerationTaskService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 import com.ruoyi.postgrad.recommend.service.IReportService;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
@@ -40,6 +45,9 @@ public class AppV2RecommendController {
 
     @Autowired
     private IDraftService draftService;
+
+    @Autowired
+    private IDraftGenerationTaskService draftGenerationTaskService;
 
     @Autowired
     private IReportService reportService;
@@ -61,12 +69,102 @@ public class AppV2RecommendController {
     }
 
     /**
+     * 创建草稿生成任务。
+     *
+     * @return taskId + streamToken，前端随后用 EventSource 订阅进度
+     */
+    @PostMapping("/draft/generate/start")
+    public AjaxResult startGenerateDraft() {
+        AppLoginUser user = requireLogin();
+        DraftGenerationTaskVO task = draftGenerationTaskService.start(user.getUserId());
+        return AjaxResult.success(task);
+    }
+
+    /**
+     * 订阅草稿生成任务进度。
+     * <p>EventSource 不能附带 Authorization header，因此此端点匿名放行，
+     * 实际授权依赖 start 接口发放的短期 streamToken。</p>
+     */
+    @Anonymous
+    @GetMapping(value = "/draft/generate/stream", produces = "text/event-stream;charset=UTF-8")
+    public SseEmitter streamGenerateDraft(@RequestParam String taskId,
+                                          @RequestParam String streamToken) {
+        if (!draftGenerationTaskService.validateStreamToken(taskId, streamToken)) {
+            SseEmitter err = new SseEmitter(5_000L);
+            AtomicBoolean closed = new AtomicBoolean(false);
+            safeSend(err, "error", Map.of("message", "无效的任务或订阅令牌"), closed);
+            closed.set(true);
+            err.complete();
+            return err;
+        }
+
+        SseEmitter emitter = new SseEmitter(300_000L);
+        AtomicBoolean closed = new AtomicBoolean(false);
+        emitter.onCompletion(() -> closed.set(true));
+        emitter.onTimeout(() -> {
+            closed.set(true);
+            emitter.complete();
+        });
+        emitter.onError(error -> closed.set(true));
+
+        CompletableFuture.runAsync(() -> {
+            long deadline = System.currentTimeMillis() + 300_000L;
+            String lastSignature = "";
+            while (!closed.get() && System.currentTimeMillis() < deadline) {
+                DraftGenerationTaskState state = draftGenerationTaskService.getState(taskId);
+                if (state == null) {
+                    safeSend(emitter, "error", Map.of("message", "任务不存在或已过期"), closed);
+                    break;
+                }
+
+                String signature = state.getStatus() + "|" + state.getPhase() + "|" + state.getMessage()
+                    + "|" + state.getUpdatedAt();
+                if (!signature.equals(lastSignature)) {
+                    lastSignature = signature;
+                    if (DraftGenerationTaskState.STATUS_DONE.equals(state.getStatus())) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("draft", JSON.parseObject(state.getDraftJson()));
+                        if (state.getProfileBasisJson() != null) {
+                            payload.put("profileBasis", JSON.parseObject(state.getProfileBasisJson()));
+                        }
+                        payload.put("removedCount", state.getRemovedCount());
+                        safeSend(emitter, "done", payload, closed);
+                        break;
+                    } else if (DraftGenerationTaskState.STATUS_ERROR.equals(state.getStatus())) {
+                        safeSend(emitter, "error", Map.of(
+                            "message", state.getErrorMessage() != null ? state.getErrorMessage() : "生成失败"), closed);
+                        break;
+                    } else {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("phase", state.getPhase());
+                        payload.put("message", state.getMessage());
+                        if (state.getFound() != null) payload.put("found", state.getFound());
+                        if (state.getTier() != null) payload.put("tier", state.getTier());
+                        safeSend(emitter, "progress", payload, closed);
+                    }
+                }
+
+                try {
+                    Thread.sleep(1000L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            closed.set(true);
+            emitter.complete();
+        });
+
+        return emitter;
+    }
+
+    /**
      * SSE 生成草稿（带进度推送）。
      * <p>异步执行生成流程，通过 SseEmitter 推送进度事件。</p>
      *
      * @return SseEmitter，推送 progress → done | error 事件序列
      */
-    @PostMapping(value = "/draft/generate", produces = "text/event-stream")
+    @PostMapping(value = "/draft/generate", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter generateDraft() {
         AppLoginUser user = requireLogin();
         SseEmitter emitter = new SseEmitter(120_000L);
@@ -233,7 +331,7 @@ public class AppV2RecommendController {
      * @param request 包含用户消息文本
      * @return SseEmitter，推送 token → done(message, draftAction) | error
      */
-    @PostMapping(value = "/chat/send", produces = "text/event-stream")
+    @PostMapping(value = "/chat/send", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter chat(@RequestBody ChatSendRequest request) {
         AppLoginUser user = requireLogin();
         if (request.getMessage() == null || request.getMessage().isBlank()) {
@@ -328,7 +426,20 @@ public class AppV2RecommendController {
         try {
             emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(new LinkedHashMap<>(payload))));
             return true;
-        } catch (IOException e) {
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean safeSend(SseEmitter emitter, String eventName, Map<String, Object> payload, AtomicBoolean closed) {
+        if (closed.get()) {
+            return false;
+        }
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(new LinkedHashMap<>(payload))));
+            return true;
+        } catch (Exception e) {
+            closed.set(true);
             return false;
         }
     }
