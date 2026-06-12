@@ -1,65 +1,90 @@
 <template>
-  <div class="draft-panel">
-    <div class="panel-header">
+  <section class="draft-panel">
+    <div class="panel-head">
       <h3>报告草稿</h3>
-      <span class="draft-count">{{ totalCount }} / 10 所</span>
+      <span class="draft-total">{{ totalCount }} / 10 所</span>
     </div>
 
-    <!-- 加载中 -->
-    <div v-if="loading" class="panel-loading">
-      <el-skeleton :rows="5" animated />
+    <!-- 加载态 -->
+    <div v-if="loading && !draft" class="panel-loading">
+      <div class="loading-phase">
+        <i class="el-icon-loading"></i>
+        <span>{{ progress.message || '正在准备...' }}</span>
+      </div>
     </div>
 
-    <!-- 空草稿 -->
-    <div v-else-if="!draft || totalCount === 0" class="panel-empty">
+    <!-- 空态 -->
+    <div v-else-if="!draft || allEmpty" class="panel-empty">
+      <div class="empty-icon">
+        <svg viewBox="0 0 64 64" width="64" height="64">
+          <rect x="8" y="12" width="48" height="40" rx="4" fill="none" stroke="#c0c8d4" stroke-width="2"/>
+          <line x1="20" y1="26" x2="44" y2="26" stroke="#c0c8d4" stroke-width="2" stroke-linecap="round"/>
+          <line x1="20" y1="32" x2="38" y2="32" stroke="#c0c8d4" stroke-width="2" stroke-linecap="round"/>
+          <line x1="20" y1="38" x2="34" y2="38" stroke="#c0c8d4" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
       <p>点击左侧"生成 AI 推荐草稿"开始</p>
+      <span>系统将基于画像自动筛选候选池，AI 在每档内挑选。</span>
     </div>
 
-    <!-- 三档候选 -->
+    <!-- 三档内容 -->
     <div v-else class="tier-list">
       <div v-for="tier in draft.tiers" :key="tier.level" class="tier-group">
-        <div class="tier-header">
+        <div class="tier-head">
           <span class="tier-label">{{ tier.label }}</span>
           <span class="tier-progress">
             {{ tier.candidates?.length || 0 }} / {{ tier.targetCount }}
           </span>
-          <el-tag v-if="tier.insufficient" type="warning" size="small">不足</el-tag>
+          <el-tag v-if="tier.insufficient" type="warning" size="small" effect="plain">不足</el-tag>
         </div>
 
-        <p v-if="tier.insufficient" class="tier-insufficient-notice">
+        <p v-if="tier.insufficient && tier.insufficientReason" class="tier-notice">
           {{ tier.insufficientReason }}
         </p>
 
-        <DraftCandidateCard
-          v-for="candidate in tier.candidates"
-          :key="candidate.programId"
-          :candidate="candidate"
-          @remove="$emit('remove', candidate.programId)"
-          @ask-about="$emit('ask-about', candidate.programId)"
-        />
+        <!-- 候选卡片列表 -->
+        <TransitionGroup name="card-list" tag="div">
+          <DraftCandidateCard
+            v-for="candidate in tier.candidates"
+            :key="candidate.fact.programId"
+            :candidate="candidate"
+            @remove="$emit('remove', candidate.fact.programId)"
+            @ask-about="$emit('ask-about', candidate.fact.programId)"
+          />
+        </TransitionGroup>
+
+        <!-- 替换占位（该档不足时） -->
+        <button
+          v-if="tier.insufficient && tier.candidates?.length < tier.targetCount"
+          class="add-slot"
+          @click="$emit('replace', { tier: tier.level, preference: 'safer' })"
+        >
+          + 为{{ tier.label }}补充一所
+        </button>
       </div>
     </div>
 
-    <!-- 已移除列表 -->
-    <div v-if="draft?.removedCandidates?.length" class="removed-section">
+    <!-- 已移除候选 -->
+    <div v-if="draft?.removedCandidates?.length" class="removed-list">
       <h4>已移出草稿</h4>
-      <div v-for="c in draft.removedCandidates" :key="c.programId" class="removed-item">
-        <span>{{ c.schoolName }} — {{ c.programName }}</span>
-        <el-button type="text" size="small" @click="$emit('add-back', c.programId)">加回</el-button>
+      <div v-for="c in draft.removedCandidates" :key="c.fact.programId" class="removed-item">
+        <span>{{ c.fact.schoolName }} — {{ c.fact.programName }}</span>
+        <el-button type="text" size="small" @click="$emit('add-back', c.fact.programId)">加回</el-button>
       </div>
     </div>
 
-    <!-- 底部操作 -->
+    <!-- 底部生成按钮 -->
     <div class="panel-footer">
       <el-button
         type="primary"
+        size="large"
         :disabled="!draft || totalCount === 0"
         @click="$emit('generate-report')"
       >
         生成最终报告
       </el-button>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup>
@@ -68,48 +93,93 @@ import DraftCandidateCard from './DraftCandidateCard.vue'
 
 const props = defineProps({
   draft: { type: Object, default: null },
-  loading: { type: Boolean, default: false }
+  loading: { type: Boolean, default: false },
+  progress: { type: Object, default: () => ({ phase: '', message: '' }) }
 })
 
 defineEmits(['remove', 'replace', 'add-back', 'ask-about', 'generate-report'])
 
 const totalCount = computed(() => {
   if (!props.draft?.tiers) return 0
-  return props.draft.tiers.reduce((sum, t) => sum + (t.candidates?.length || 0), 0)
+  return props.draft.tiers.reduce((s, t) => s + (t.candidates?.length || 0), 0)
 })
+
+const allEmpty = computed(() => totalCount.value === 0)
 </script>
 
 <style scoped>
 .draft-panel {
-  background: #fff;
+  padding: 20px;
+  border: 1px solid rgba(215,227,245,.9);
   border-radius: 8px;
-  padding: 16px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(42,84,153,.08);
+  min-height: 500px;
 }
-.panel-header {
+.panel-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
-.panel-header h3 { margin: 0; }
-.tier-list { flex: 1; overflow-y: auto; }
+.panel-head h3 { margin: 0; font-size: 18px; }
+.draft-total { font-size: 13px; color: #71829a; font-weight: 600; }
+
+/* 加载 */
+.panel-loading { text-align: center; padding: 60px 0; }
+.loading-phase { display: flex; align-items: center; justify-content: center; gap: 8px; color: #71829a; font-size: 14px; }
+
+/* 空态 */
+.panel-empty { text-align: center; padding: 60px 20px; }
+.empty-icon { margin-bottom: 16px; }
+.panel-empty p { margin: 0 0 4px; font-size: 15px; color: #303133; }
+.panel-empty span { font-size: 13px; color: #a8b2c1; }
+
+/* 档位 */
+.tier-list { display: flex; flex-direction: column; gap: 4px; }
 .tier-group { margin-bottom: 16px; }
-.tier-header {
+.tier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tier-label { font-size: 15px; font-weight: 600; }
+.tier-progress { font-size: 12px; color: #71829a; }
+.tier-notice { color: #e6a23c; font-size: 12px; margin: 0 0 8px; line-height: 18px; }
+
+/* 卡片过渡 */
+.card-list-enter-active { transition: all .3s ease; }
+.card-list-leave-active { transition: all .25s ease; }
+.card-list-enter-from { opacity: 0; transform: translateY(10px); }
+.card-list-leave-to { opacity: 0; transform: translateX(20px); }
+
+/* 补充按钮 */
+.add-slot {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed #c0c8d4;
+  border-radius: 6px;
+  background: transparent;
+  color: #71829a;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+.add-slot:hover { border-color: #409eff; color: #409eff; }
+
+/* 已移除 */
+.removed-list {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f4fa;
+}
+.removed-list h4 { margin: 0 0 8px; font-size: 13px; color: #71829a; }
+.removed-item {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: #a8b2c1;
 }
-.tier-label { font-weight: 600; }
-.tier-insufficient-notice {
-  color: #e6a23c;
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-.removed-section { margin-top: 12px; border-top: 1px solid #eee; padding-top: 12px; }
-.removed-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
-.panel-footer { margin-top: 12px; text-align: center; }
+
+.panel-footer { margin-top: 16px; text-align: center; }
+.panel-footer .el-button { width: 100%; font-size: 15px; font-weight: 600; height: 44px; }
 </style>

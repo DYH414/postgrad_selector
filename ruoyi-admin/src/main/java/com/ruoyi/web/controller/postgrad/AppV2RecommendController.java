@@ -1,5 +1,10 @@
 package com.ruoyi.web.controller.postgrad;
 
+import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
@@ -17,6 +23,8 @@ import com.ruoyi.postgrad.recommend.domain.dto.AddBackCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ChatSendRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.RemoveCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ReplaceCandidateRequest;
+import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
+import com.ruoyi.postgrad.recommend.service.DraftGenerationCallback;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 import com.ruoyi.postgrad.recommend.service.IReportService;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
@@ -24,7 +32,7 @@ import com.ruoyi.postgrad.recommend.service.IAiChatService;
 /**
  * AI 推荐 v2 Controller —— 新 AI 推荐报告流程。
  * <p>只做参数校验、调用 Service、返回 AjaxResult / SseEmitter。
- * 所有请求体使用强类型 DTO，不出现裸 Map。</p>
+ * SSE 端点在此处将 SseEmitter 桥接到 Service 层的回调接口。</p>
  */
 @RestController
 @RequestMapping("/app/ai-recommend-v2")
@@ -54,14 +62,57 @@ public class AppV2RecommendController {
 
     /**
      * SSE 生成草稿（带进度推送）。
+     * <p>异步执行生成流程，通过 SseEmitter 推送进度事件。</p>
      *
      * @return SseEmitter，推送 progress → done | error 事件序列
      */
     @PostMapping(value = "/draft/generate", produces = "text/event-stream")
     public SseEmitter generateDraft() {
         AppLoginUser user = requireLogin();
-        // TODO: 校验用户画像是否有预计分数，缺失时在 SSE error 事件中提示
-        return draftService.generateDraft(user.getUserId());
+        SseEmitter emitter = new SseEmitter(120_000L);
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                draftService.generateDraft(user.getUserId(), new DraftGenerationCallback() {
+                    @Override
+                    public void onProgress(String phase, String message, Integer found, String tier) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("phase", phase);
+                        payload.put("message", message);
+                        if (found != null) payload.put("found", found);
+                        if (tier != null) payload.put("tier", tier);
+                        sendSseEvent(emitter, "progress", payload);
+                    }
+
+                    @Override
+                    public void onDone(com.ruoyi.postgrad.recommend.domain.DraftVO draft,
+                                       com.ruoyi.postgrad.recommend.domain.ProfileBasisVO profileBasis,
+                                       int removedCount) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("draft", draft);
+                        payload.put("profileBasis", profileBasis);
+                        payload.put("removedCount", removedCount);
+                        sendSseEvent(emitter, "done", payload);
+                        emitter.complete();
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("message", error.getMessage());
+                        sendSseEvent(emitter, "error", payload);
+                        emitter.complete();
+                    }
+                });
+            } catch (Exception e) {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("message", e.getMessage());
+                sendSseEvent(emitter, "error", payload);
+                emitter.complete();
+            }
+        });
+
+        return emitter;
     }
 
     /**
@@ -177,6 +228,7 @@ public class AppV2RecommendController {
 
     /**
      * SSE 流式对话。
+     * <p>异步执行对话流程，通过 SseEmitter 推送 token 流。</p>
      *
      * @param request 包含用户消息文本
      * @return SseEmitter，推送 token → done(message, draftAction) | error
@@ -189,7 +241,44 @@ public class AppV2RecommendController {
             err.completeWithError(new IllegalArgumentException("消息不能为空"));
             return err;
         }
-        return aiChatService.chat(user.getUserId(), request.getMessage());
+
+        SseEmitter emitter = new SseEmitter(300_000L);
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                aiChatService.chat(user.getUserId(), request.getMessage(), new ChatStreamCallback() {
+                    @Override
+                    public void onToken(String token) {
+                        sendSseEvent(emitter, "token", Map.of("text", token));
+                    }
+
+                    @Override
+                    public void onDone(String fullMessage,
+                                       com.ruoyi.postgrad.recommend.domain.DraftAction draftAction) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("message", fullMessage);
+                        payload.put("draftAction", draftAction);
+                        sendSseEvent(emitter, "done", payload);
+                        emitter.complete();
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("message", error.getMessage());
+                        sendSseEvent(emitter, "error", payload);
+                        emitter.complete();
+                    }
+                });
+            } catch (Exception e) {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("message", e.getMessage());
+                sendSseEvent(emitter, "error", payload);
+                emitter.complete();
+            }
+        });
+
+        return emitter;
     }
 
     /**
@@ -224,5 +313,23 @@ public class AppV2RecommendController {
             throw new SecurityException("未登录");
         }
         return user;
+    }
+
+    /**
+     * 向 SseEmitter 发送一条命名事件。
+     * <p>发送失败（如客户端已断开）时静默忽略。</p>
+     *
+     * @param emitter   SSE 发射器
+     * @param eventName 事件名称（progress / token / done / error）
+     * @param payload   事件数据
+     * @return true 发送成功，false 客户端已断开
+     */
+    private boolean sendSseEvent(SseEmitter emitter, String eventName, Map<String, Object> payload) {
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(new LinkedHashMap<>(payload))));
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
     }
 }

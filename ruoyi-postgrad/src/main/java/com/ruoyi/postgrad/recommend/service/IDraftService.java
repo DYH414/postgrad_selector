@@ -2,8 +2,6 @@ package com.ruoyi.postgrad.recommend.service;
 
 import java.util.List;
 
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.ReplaceResultVO;
@@ -15,15 +13,15 @@ import com.ruoyi.postgrad.recommend.domain.ReplaceResultVO;
 public interface IDraftService {
 
     /**
-     * 生成草稿（SSE 流式进度）。
-     * <p>SSE 事件序列：progress(loading_profile) → progress(building_pool) →
-     * progress(ai_selecting:reach) → progress(ai_selecting:steady) → progress(ai_selecting:safe) →
-     * progress(validating) → done(draft, profileBasis) | error(message)。</p>
+     * 生成草稿（通过回调推送进度，不依赖 web 层）。
+     * <p>回调事件序列：onProgress(loading_profile) → onProgress(building_pool) →
+     * onProgress(ai_selecting:reach) → onProgress(ai_selecting:steady) → onProgress(ai_selecting:safe) →
+     * onProgress(validating) → onDone(draft, profileBasis) | onError(throwable)。</p>
      *
-     * @param userId 当前用户 ID
-     * @return SseEmitter（由 Controller 返回给前端）
+     * @param userId   当前用户 ID
+     * @param callback 进度回调（由 Controller 层实现，桥接到 SSE）
      */
-    SseEmitter generateDraft(Long userId);
+    void generateDraft(Long userId, DraftGenerationCallback callback);
 
     /**
      * 获取当前草稿。

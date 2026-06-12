@@ -1,9 +1,10 @@
 /**
  * AI 推荐 v2 API 调用封装。
  *
- * SSE 端点使用 fetch + ReadableStream 手动解析，非 SSE 端点使用项目统一的 request 实例。
+ * SSE 端点使用 fetch + ReadableStream 手动解析。
+ * 非 SSE 端点使用项目统一的 axios request 实例。
  */
-import request from './request'
+import request, { getToken } from './request'
 
 // ── 草稿 ──
 
@@ -14,11 +15,10 @@ export function getDraft() {
 
 /** SSE 生成草稿（返回 fetch Response，由组件自行解析 SSE 流） */
 export function generateDraft() {
-  const token = request.defaults.headers['Authorization']
   return fetch('/dev-api/app/ai-recommend-v2/draft/generate', {
     method: 'POST',
     headers: {
-      'Authorization': token || '',
+      'Authorization': 'Bearer ' + (getToken() || ''),
       'Accept': 'text/event-stream'
     }
   })
@@ -98,11 +98,10 @@ export function startChat() {
 
 /** SSE 流式对话（返回 fetch Response） */
 export function sendChatMessage(message) {
-  const token = request.defaults.headers['Authorization']
   return fetch('/dev-api/app/ai-recommend-v2/chat/send', {
     method: 'POST',
     headers: {
-      'Authorization': token || '',
+      'Authorization': 'Bearer ' + (getToken() || ''),
       'Accept': 'text/event-stream',
       'Content-Type': 'application/json'
     },

@@ -1,7 +1,5 @@
 package com.ruoyi.postgrad.recommend.service;
 
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
 import com.ruoyi.postgrad.recommend.domain.ChatStartResultVO;
 
 /**
@@ -19,14 +17,14 @@ public interface IAiChatService {
     ChatStartResultVO startChat(Long userId);
 
     /**
-     * SSE 流式对话。
-     * <p>事件序列：token(...) → token(...) → done(message, draftAction)。</p>
+     * 流式对话（通过回调推送 token，不依赖 web 层）。
+     * <p>回调事件序列：onToken(...) → ... → onDone(message, draftAction) | onError(throwable)。</p>
      *
-     * @param userId  当前用户 ID
-     * @param message 用户消息文本
-     * @return SseEmitter（由 Controller 返回给前端）
+     * @param userId   当前用户 ID
+     * @param message  用户消息文本
+     * @param callback 流式回调（由 Controller 层实现，桥接到 SSE）
      */
-    SseEmitter chat(Long userId, String message);
+    void chat(Long userId, String message, ChatStreamCallback callback);
 
     /**
      * 恢复对话（Redis 未过期时）。

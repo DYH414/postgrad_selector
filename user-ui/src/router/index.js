@@ -35,7 +35,7 @@ const routes = [
   {
     path: '/ai-recommend',
     name: 'AiRecommend',
-    component: () => import('@/views/AiRecommend.vue'),
+    component: () => import('@/views/ai-recommend-v2/AiRecommendV2Workspace.vue'),
     meta: { title: 'AI 推荐' }
   },
   {
