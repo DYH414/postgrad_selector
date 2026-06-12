@@ -84,7 +84,7 @@ public class DraftAdjustServiceImpl {
         draftIds.add(removeProgramId);
 
         List<CandidateCardVO> sameTier = poolSnapshot.stream()
-            .filter(c -> tier.equals(inferTier(c.getFact())) && !draftIds.contains(c.getFact().getProgramId()))
+            .filter(c -> tier.equals(c.getFact().inferTier()) && !draftIds.contains(c.getFact().getProgramId()))
             .collect(Collectors.toList());
 
         if (sameTier.isEmpty()) {
@@ -129,7 +129,7 @@ public class DraftAdjustServiceImpl {
         if (toRestore == null) return draft;
 
         toRestore.setStatus("selected");
-        String targetTier = inferTier(toRestore.getFact());
+        String targetTier = toRestore.getFact().inferTier();
         for (TierCandidates t : draft.getTiers()) {
             if (t.getLevel().equals(targetTier)) {
                 t.getCandidates().add(toRestore);
@@ -152,7 +152,7 @@ public class DraftAdjustServiceImpl {
         if (excludeId != null) draftIds.add(excludeId);
 
         return poolSnapshot.stream()
-            .filter(c -> tier.equals(inferTier(c.getFact())) && !draftIds.contains(c.getFact().getProgramId()))
+            .filter(c -> tier.equals(c.getFact().inferTier()) && !draftIds.contains(c.getFact().getProgramId()))
             .sorted((a, b) -> Integer.compare(
                 Math.abs(a.getFact().getScoreGap() != null ? a.getFact().getScoreGap() : 0),
                 Math.abs(b.getFact().getScoreGap() != null ? b.getFact().getScoreGap() : 0)))
@@ -199,16 +199,6 @@ public class DraftAdjustServiceImpl {
             }
         }
         return ids;
-    }
-
-    private String inferTier(SchoolFact f) {
-        int gap = f.getScoreGap() != null ? f.getScoreGap() : 0;
-        // reach: -15 ≤ gap ≤ 5, steady: 6~14, safe: ≥15 + canBeSafe
-        if (gap < -15) return "reach"; // 差距过大，兜底放reach（理论上不应出现，pool已过滤）
-        if (gap >= -15 && gap <= 5) return "reach";
-        if (gap <= 14) return "steady";
-        if (gap >= 15 && Boolean.TRUE.equals(f.getCanBeSafe())) return "safe";
-        return "steady";
     }
 
     private CandidateCardVO pickReplacement(List<CandidateCardVO> candidates, String preference) {

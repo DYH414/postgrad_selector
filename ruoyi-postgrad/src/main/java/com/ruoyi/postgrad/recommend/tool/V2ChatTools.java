@@ -1,9 +1,7 @@
 package com.ruoyi.postgrad.recommend.tool;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,146 +12,226 @@ import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
+import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 
 import dev.langchain4j.agent.tool.Tool;
 
 /**
  * AI 对话工具集 —— 供对话 AI 在分析学校时调用。
- * <p>所有工具只做数据查询，不修改草稿状态。草稿变更由前端通过 DraftService API 执行。</p>
- * <p>不依赖旧 AiRecommendationTools，工具上下文通过 V2ChatToolContext 管理。</p>
- *
- * <p>TODO: 实现四个工具的查询逻辑</p>
+ * <p>所有工具只做数据查询，不修改草稿状态。</p>
  */
 @Component
 public class V2ChatTools {
 
     private static final Logger log = LoggerFactory.getLogger(V2ChatTools.class);
 
-    /** Redis key 前缀：当前草稿 */
     private static final String DRAFT_KEY_PREFIX = "ai:v2:draft:";
-
-    /** Redis key 前缀：候选池快照 */
     private static final String DRAFT_POOL_KEY_PREFIX = "ai:v2:draft:pool:";
 
-    /**
-     * 获取指定学校的完整数据。
-     * <p>返回格式化的事实卡文本，包含所有 DB 字段。AI 只能基于返回的数据进行分析。</p>
-     *
-     * @param programId 专业项目 ID
-     * @return 格式化的事实卡文本；学校不在候选池中时返回提示信息
-     */
     @Tool("查询指定 programId 对应学校的完整详细数据，包括学校层次、录取均分、招生人数、复试线等")
     public String getProgramDetail(long programId) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
-        if (ctx == null) {
-            log.warn("[V2ChatTools] getProgramDetail called without context");
-            return "工具上下文未初始化，无法查询。";
+        if (ctx == null) return "工具上下文未初始化，无法查询。";
+
+        // 先查候选池快照
+        List<CandidateCardVO> pool = loadPoolSnapshot(ctx.userId());
+        for (CandidateCardVO c : pool) {
+            if (c.getFact() != null && programId == c.getFact().getProgramId()) {
+                return formatFactCard(c.getFact());
+            }
         }
 
-        // TODO: 实现查询逻辑
-        // 1. 从 Redis ai:v2:draft:pool:{userId} 读取候选池快照
-        // 2. 在池中查找 programId 对应的候选
-        // 3. 如果池中无，从 DB 查询（调用 RecommendationMapper.selectProgramForRecommendation）
-        // 4. 格式化为结构化事实卡文本返回
-        // 5. 如果学校和 programId 都不存在，返回"未找到该学校数据"
-        throw new UnsupportedOperationException("TODO: implement getProgramDetail");
+        // 池中无 → 查 DB
+        RowMap row = ctx.mapper().selectProgramForRecommendation(programId);
+        if (row == null) return "未找到 programId=" + programId + " 的学校数据。";
+
+        return formatRowMap(row);
     }
 
-    /**
-     * 在候选池中搜索符合条件的学校。
-     * <p>支持按学校名、专业名模糊匹配，按档位（reach/steady/safe）过滤。</p>
-     *
-     * @param keyword 搜索关键词（匹配学校名或专业名，可为空）
-     * @param tier    档位过滤（reach/steady/safe，为空则不限制）
-     * @param region  地区过滤（省份或城市名，可为空）
-     * @return JSON 数组字符串，每项包含 programId / schoolName / programName / tier / city / gap / quota
-     */
     @Tool("在候选池中搜索学校，支持按关键词、档位(tier)、地区(region)过滤。" +
           "tier 可选值: reach/steady/safe，region 为省份或城市名。")
     public String searchPrograms(String keyword, String tier, String region) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
-        if (ctx == null) {
-            log.warn("[V2ChatTools] searchPrograms called without context");
-            return "[]";
+        if (ctx == null) return "[]";
+
+        List<CandidateCardVO> pool = loadPoolSnapshot(ctx.userId());
+        List<java.util.Map<String, Object>> results = new ArrayList<>();
+
+        String kw = keyword != null ? keyword.toLowerCase() : "";
+        String t = tier != null && !tier.isBlank() ? tier : null;
+        String r = region != null && !region.isBlank() ? region : null;
+
+        for (CandidateCardVO c : pool) {
+            var f = c.getFact();
+            if (f == null) continue;
+
+            // 关键词过滤
+            if (!kw.isEmpty()) {
+                String school = f.getSchoolName() != null ? f.getSchoolName().toLowerCase() : "";
+                String program = f.getProgramName() != null ? f.getProgramName().toLowerCase() : "";
+                if (!school.contains(kw) && !program.contains(kw)) continue;
+            }
+
+            // 档位过滤
+            if (t != null && !t.equals(f.inferTier())) continue;
+
+            // 地区过滤
+            if (r != null) {
+                String prov = f.getProvince() != null ? f.getProvince() : "";
+                String city = f.getCity() != null ? f.getCity() : "";
+                if (!prov.contains(r) && !city.contains(r)) continue;
+            }
+
+            java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("programId", f.getProgramId());
+            item.put("schoolName", f.getSchoolName());
+            item.put("programName", f.getProgramName());
+            item.put("tier", f.inferTier());
+            item.put("city", f.getCity());
+            item.put("gap", f.getScoreGap());
+            item.put("quota", f.getUnifiedExamQuota() != null ? f.getUnifiedExamQuota() : f.getPlanCount());
+            results.add(item);
+
+            if (results.size() >= 10) break;
         }
 
-        // TODO: 实现搜索逻辑
-        // 1. 从 Redis 读取候选池快照
-        // 2. 关键词匹配：schoolName 或 programName 包含 keyword（忽略大小写）
-        // 3. 档位过滤：tier 非空时只返回对应档位的候选
-        // 4. 地区过滤：region 非空时匹配 province 或 city
-        // 5. 最多返回 10 条
-        // 6. 返回精简 JSON 数组：[{programId, schoolName, programName, tier, city, gap, quota}]
-        throw new UnsupportedOperationException("TODO: implement searchPrograms");
+        return JSON.toJSONString(results);
     }
 
-    /**
-     * 对比两所候选学校的核心指标。
-     *
-     * @param programId1 第一所学校 ID
-     * @param programId2 第二所学校 ID
-     * @return 并排对比文本，含学校层次、均分、差距、名额、城市
-     */
     @Tool("并排对比两所候选学校的核心指标，包括学校层次、录取均分、分数差距、招生名额、城市")
     public String comparePrograms(long programId1, long programId2) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
-        if (ctx == null) {
-            log.warn("[V2ChatTools] comparePrograms called without context");
-            return "工具上下文未初始化，无法对比。";
-        }
+        if (ctx == null) return "工具上下文未初始化，无法对比。";
 
-        // TODO: 实现对比逻辑
-        // 1. 从候选池快照中获取两所学校的数据
-        // 2. 逐项对比：学校层次、均分、差距、名额、城市、数据完整度
-        // 3. 格式化为并排文本返回
-        throw new UnsupportedOperationException("TODO: implement comparePrograms");
+        List<CandidateCardVO> pool = loadPoolSnapshot(ctx.userId());
+        CandidateCardVO c1 = findByProgramId(pool, programId1);
+        CandidateCardVO c2 = findByProgramId(pool, programId2);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== 学校对比 ===\n\n");
+
+        sb.append(String.format("%-20s %-30s %-30s\n", "指标", schoolLabel(c1, programId1), schoolLabel(c2, programId2)));
+        sb.append(String.format("%-20s %-30s %-30s\n", "学校层次", val(c1, f -> f.getSchoolTier()), val(c2, f -> f.getSchoolTier())));
+        sb.append(String.format("%-20s %-30s %-30s\n", "录取均分", val(c1, f -> f.getAvgAdmittedScore()), val(c2, f -> f.getAvgAdmittedScore())));
+        sb.append(String.format("%-20s %-30s %-30s\n", "分数差距", val(c1, f -> f.getScoreGap()), val(c2, f -> f.getScoreGap())));
+        sb.append(String.format("%-20s %-30s %-30s\n", "招生名额", quotaVal(c1), quotaVal(c2)));
+        sb.append(String.format("%-20s %-30s %-30s\n", "城市", val(c1, f -> f.getCity()), val(c2, f -> f.getCity())));
+        sb.append(String.format("%-20s %-30s %-30s\n", "数据完整度", val(c1, f -> f.getDataCompleteness()), val(c2, f -> f.getDataCompleteness())));
+
+        return sb.toString();
     }
 
-    /**
-     * 查看当前草稿状态，供 AI 在对话中引用。
-     * <p>返回草稿中每档已选候选的简要信息。</p>
-     *
-     * @return 格式化的草稿摘要文本
-     */
-    @Tool("查看当前报告草稿的状态——已选了几所、分别在哪些档位、每所学校的关键信息。" +
-          "AI 在推荐替换候选或分析草稿时，应先调用此工具了解当前草稿的内容。")
+    @Tool("查看当前报告草稿的状态——已选了几所、分别在哪些档位、每所学校的关键信息。")
     public String getDraftContext() {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
-        if (ctx == null) {
-            log.warn("[V2ChatTools] getDraftContext called without context");
-            return "草稿上下文未初始化，无法获取。";
+        if (ctx == null) return "草稿上下文未初始化，无法获取。";
+
+        String json = ctx.redis().opsForValue().get(DRAFT_KEY_PREFIX + ctx.userId());
+        if (json == null || json.isBlank()) return "尚未生成草稿。";
+
+        try {
+            DraftVO draft = JSON.parseObject(json, DraftVO.class);
+            return formatDraftSummary(draft);
+        } catch (Exception e) {
+            return "草稿数据解析失败。";
         }
-
-        // TODO: 实现草稿上下文读取
-        // 1. 从 Redis ai:v2:draft:{userId} 读取 DraftVO
-        // 2. 提取每档候选的摘要信息
-        // 3. 格式化为可读文本返回
-        // 格式示例:
-        // "当前草稿：冲刺档 3 所(清华-计算机、北大-软工、...)，稳妥档 4 所(...)，保底档 2 所(...)"
-        throw new UnsupportedOperationException("TODO: implement getDraftContext");
     }
 
-    // ── private helpers (to be added) ──
+    // ── helpers ──
 
-    /**
-     * 从 Redis 读取候选池快照。
-     *
-     * @param userId 用户 ID
-     * @return 候选列表；不存在时返回空列表
-     */
     private List<CandidateCardVO> loadPoolSnapshot(Long userId) {
-        // TODO: 读取并反序列化 ai:v2:draft:pool:{userId}
-        return new ArrayList<>();
+        String json = V2ChatToolContext.current().redis()
+            .opsForValue().get(DRAFT_POOL_KEY_PREFIX + userId);
+        if (json == null || json.isBlank()) return new ArrayList<>();
+        try {
+            return JSON.parseArray(json, CandidateCardVO.class);
+        } catch (Exception e) { return new ArrayList<>(); }
     }
 
-    /**
-     * 从 Redis 读取当前草稿。
-     *
-     * @param userId 用户 ID
-     * @return 草稿；不存在时返回 null
-     */
-    private DraftVO loadDraft(Long userId) {
-        // TODO: 读取并反序列化 ai:v2:draft:{userId}
-        return null;
+    private CandidateCardVO findByProgramId(List<CandidateCardVO> pool, long pid) {
+        return pool.stream()
+            .filter(c -> c.getFact() != null && c.getFact().getProgramId() != null
+                && c.getFact().getProgramId() == pid)
+            .findFirst().orElse(null);
+    }
+
+    private String formatFactCard(com.ruoyi.postgrad.recommend.domain.SchoolFact f) {
+        if (f == null) return "无数据";
+        return String.format(
+            "ID:%d | %s | %s | 层次:%s | 城市:%s | 均分:%s | 差距:%s | 招生:%s | %s | 可保底:%s | 数据:%s",
+            f.getProgramId(),
+            f.getSchoolName(), f.getProgramName(), f.getSchoolTier(), f.getCity(),
+            f.getAvgAdmittedScore() != null ? String.valueOf(f.getAvgAdmittedScore()) : "-",
+            f.getGapLabel() != null ? f.getGapLabel() : "-",
+            f.getUnifiedExamQuota() != null ? String.valueOf(f.getUnifiedExamQuota())
+                : (f.getPlanCount() != null ? String.valueOf(f.getPlanCount()) : "-"),
+            f.getQuotaLabel() != null ? f.getQuotaLabel() : "",
+            Boolean.TRUE.equals(f.getCanBeSafe()) ? "是" : "否",
+            f.getDataCompleteness() != null ? f.getDataCompleteness() : "?"
+        );
+    }
+
+    private String formatRowMap(RowMap row) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("ID:").append(row.get("programId")).append(" | ");
+        sb.append(row.get("schoolName")).append(" | ");
+        sb.append(row.get("programName")).append(" | ");
+        sb.append("层次:").append(row.get("schoolTier")).append(" | ");
+        sb.append("城市:").append(row.get("city")).append(" | ");
+        sb.append("均分:").append(row.get("avgAdmittedScore") != null ? row.get("avgAdmittedScore") : "-").append(" | ");
+        sb.append("招生:").append(row.get("unifiedExamQuota") != null ? row.get("unifiedExamQuota")
+            : (row.get("planCount") != null ? row.get("planCount") : "-")).append(" | ");
+        sb.append("数据:").append(row.get("dataCompleteness") != null ? row.get("dataCompleteness") : "?");
+        return sb.toString();
+    }
+
+    private String formatDraftSummary(DraftVO draft) {
+        if (draft == null || draft.getTiers() == null) return "尚未生成草稿。";
+
+        StringBuilder sb = new StringBuilder("当前草稿状态：\n");
+        int total = 0;
+        for (TierCandidates t : draft.getTiers()) {
+            int count = t.getCandidates() != null ? t.getCandidates().size() : 0;
+            total += count;
+            sb.append(t.getLabel()).append(" ").append(count).append("/").append(t.getTargetCount());
+            if (t.isInsufficient()) sb.append(" (不足)");
+            sb.append("：");
+            if (t.getCandidates() != null && !t.getCandidates().isEmpty()) {
+                List<String> names = new ArrayList<>();
+                for (var c : t.getCandidates()) {
+                    var f = c.getFact();
+                    names.add(f.getSchoolName() + "-" + f.getProgramName());
+                }
+                sb.append(String.join("、", names));
+            } else {
+                sb.append("暂无");
+            }
+            sb.append("\n");
+        }
+        sb.append("共 ").append(total).append(" 所学校。");
+        return sb.toString();
+    }
+
+    private String schoolLabel(CandidateCardVO c, long fallbackId) {
+        if (c == null || c.getFact() == null) return "ID:" + fallbackId;
+        return c.getFact().getSchoolName();
+    }
+
+    @FunctionalInterface
+    private interface FactGetter {
+        Object get(com.ruoyi.postgrad.recommend.domain.SchoolFact f);
+    }
+
+    private String val(CandidateCardVO c, FactGetter getter) {
+        if (c == null || c.getFact() == null) return "-";
+        Object v = getter.get(c.getFact());
+        return v != null ? v.toString() : "-";
+    }
+
+    private String quotaVal(CandidateCardVO c) {
+        if (c == null || c.getFact() == null) return "-";
+        Integer q = c.getFact().getUnifiedExamQuota();
+        if (q == null) q = c.getFact().getPlanCount();
+        return q != null ? q.toString() : "-";
     }
 }

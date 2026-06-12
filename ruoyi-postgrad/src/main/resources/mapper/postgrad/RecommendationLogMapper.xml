@@ -63,6 +63,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by created_at desc limit 20
     </select>
 
+    <select id="selectReportListByRuleVersion" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select id, profile_snapshot, result_json, created_at
+        from recommendation_log
+        where user_id = #{userId} and rule_version = #{ruleVersion}
+        order by created_at desc limit 20
+    </select>
+
     <update id="updateReportResult">
         update recommendation_log set result_json = #{resultJson} where id = #{id}
     </update>

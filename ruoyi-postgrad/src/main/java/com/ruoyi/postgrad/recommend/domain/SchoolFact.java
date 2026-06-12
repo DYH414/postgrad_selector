@@ -206,4 +206,22 @@ public class SchoolFact implements Serializable {
 
     public String getSafeBlockReason() { return safeBlockReason; }
     public void setSafeBlockReason(String safeBlockReason) { this.safeBlockReason = safeBlockReason; }
+
+    // ── 派生方法 ──
+
+    /**
+     * 根据 gap + canBeSafe 推断该候选的档位。
+     * <p>统一规则：reach: -15~5, steady: 6~14, safe: ≥15 + canBeSafe。
+     * gap < -15 兜底归为 reach（理论上 pool 已过滤，仅展示层调用）。</p>
+     *
+     * @return reach / steady / safe
+     */
+    public String inferTier() {
+        int gap = this.scoreGap != null ? this.scoreGap : 0;
+        if (gap >= -15 && gap <= 5) return "reach";
+        if (gap <= 14) return "steady";
+        if (gap >= 15 && Boolean.TRUE.equals(this.canBeSafe)) return "safe";
+        if (gap < -15) return "reach"; // 差距过大，兜底
+        return "steady";
+    }
 }
