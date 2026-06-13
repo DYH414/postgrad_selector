@@ -223,12 +223,11 @@
                 <el-button type="primary" @click="router.push('/ai-recommend')">去生成推荐</el-button>
               </div>
 
-              <button v-for="report in reports" :key="report.id" type="button" class="report-card" @click="router.push('/ai-report/' + report.id)">
+              <button v-for="report in reports" :key="report.id" type="button" class="report-card" @click="router.push(report.route)">
                 <span>
                   <strong>{{ report.summary || 'AI 择校推荐报告' }}</strong>
                   <em>{{ report.createdAt || '-' }}</em>
                 </span>
-                <small v-if="report.tierSummary">{{ report.tierSummary }}</small>
                 <i class="el-icon-arrow-right"></i>
               </button>
             </div>
@@ -269,7 +268,7 @@ import { useUserStore } from '@/stores/user'
 import { getProfile, saveProfile } from '@/api/profile'
 import { listFavorites, removeFavorite } from '@/api/favorites'
 import { getProgramDetail } from '@/api/programs'
-import { getAiReports } from '@/api/ai'
+import { listReports } from '@/api/recommend-v2'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 
 const router = useRouter()
@@ -518,27 +517,20 @@ function openDetail(row) {
   }).finally(() => { detailLoading.value = false })
 }
 
-function parseReport(raw) {
-  const report = { id: raw.id, createdAt: raw.created_at || raw.createdAt || '' }
-  try {
-    let resultJson = raw.result_json || raw.resultJson || '{}'
-    if (typeof resultJson === 'string') resultJson = JSON.parse(resultJson)
-    report.summary = resultJson.summary || ''
-    if (resultJson.tiers && Array.isArray(resultJson.tiers)) {
-      report.tierSummary = resultJson.tiers.map(t => `${t.label} ${t.schools ? t.schools.length : 0}所`).join(' · ')
-    }
-  } catch (e) {
-    report.summary = 'AI 择校推荐报告'
+function parseV2Report(raw) {
+  return {
+    id: raw.reportId,
+    createdAt: raw.createdAt || '',
+    summary: raw.summary || 'AI 择校推荐报告',
+    route: '/ai-report-v2/' + raw.reportId
   }
-  return report
 }
 
 async function fetchReports() {
   reportsLoading.value = true
   try {
-    const res = await getAiReports()
-    const raw = res.data && res.data.reports ? res.data.reports : (res.data || [])
-    reports.value = raw.map(r => parseReport(r))
+    const res = await listReports()
+    reports.value = (res.data || []).map(r => parseV2Report(r))
     reportsLoaded.value = true
   } catch (e) {
     ElMessage.error('加载报告列表失败')

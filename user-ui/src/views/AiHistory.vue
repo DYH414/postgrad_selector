@@ -5,7 +5,7 @@
     <div class="page-body">
       <div class="page-title">
         <h2>AI 推荐报告记录</h2>
-        <el-button type="primary" size="small" icon="el-icon-plus" @click="$router.push('/recommend')">
+        <el-button type="primary" size="small" icon="el-icon-plus" @click="$router.push('/ai-recommend')">
           新建推荐
         </el-button>
       </div>
@@ -14,20 +14,17 @@
         <div v-if="!loading && reports.length === 0" class="empty-state">
           <i class="el-icon-document"></i>
           <p>暂无 AI 推荐报告</p>
-          <el-button type="primary" @click="$router.push('/recommend')">去生成推荐</el-button>
+          <el-button type="primary" @click="$router.push('/ai-recommend')">去生成推荐</el-button>
         </div>
 
         <div v-for="report in reports" :key="report.id" class="report-card"
-          @click="$router.push('/ai-report/' + report.id)">
+          @click="$router.push(report.route)">
           <div class="card-main">
             <div class="card-summary">{{ report.summary || 'AI 择校推荐报告' }}</div>
             <div class="card-meta">
               <span class="meta-item">
                 <i class="el-icon-date"></i>
                 {{ report.createdAt || '-' }}
-              </span>
-              <span v-if="report.tierSummary" class="meta-item tier-summary">
-                {{ report.tierSummary }}
               </span>
             </div>
           </div>
@@ -44,38 +41,25 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
-import { getAiReports } from '@/api/ai'
+import { listReports } from '@/api/recommend-v2'
 
 const reports = ref([])
 const loading = ref(false)
 
 function parseReport(raw) {
-  const report = { id: raw.id, createdAt: raw.created_at || raw.createdAt || '' }
-  try {
-    let resultJson = raw.result_json || raw.resultJson || '{}'
-    if (typeof resultJson === 'string') {
-      resultJson = JSON.parse(resultJson)
-    }
-    report.summary = resultJson.summary || ''
-    if (resultJson.tiers && Array.isArray(resultJson.tiers)) {
-      const parts = resultJson.tiers.map(t => {
-        const count = t.schools ? t.schools.length : 0
-        return t.label + ' ' + count + '所'
-      })
-      report.tierSummary = parts.join(' · ')
-    }
-  } catch (e) {
-    report.summary = 'AI 择校推荐报告'
+  return {
+    id: raw.reportId,
+    createdAt: raw.createdAt || '',
+    route: '/ai-report-v2/' + raw.reportId,
+    summary: raw.summary || 'AI 择校推荐报告'
   }
-  return report
 }
 
 async function fetchReports() {
   loading.value = true
   try {
-    const res = await getAiReports()
-    const raw = res.data && res.data.reports ? res.data.reports : (res.data || [])
-    reports.value = raw.map(r => parseReport(r))
+    const res = await listReports()
+    reports.value = (res.data || []).map(r => parseReport(r))
   } catch (e) {
     ElMessage.error('加载报告列表失败')
   } finally {
