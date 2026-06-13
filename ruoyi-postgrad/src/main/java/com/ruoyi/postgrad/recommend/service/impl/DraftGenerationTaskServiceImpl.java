@@ -71,6 +71,16 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
     private void runTask(Long userId, String taskId) {
         draftService.generateDraft(userId, new DraftGenerationCallback() {
             @Override
+            public void onTierComplete(String tier, String tierJson) {
+                DraftGenerationTaskState state = getState(taskId);
+                if (state == null) return;
+                state.setTier(tier);
+                state.setTierJson(tierJson);
+                state.setUpdatedAt(System.currentTimeMillis());
+                save(state);
+            }
+
+            @Override
             public void onProgress(String phase, String message, Integer found, String tier) {
                 DraftGenerationTaskState state = getState(taskId);
                 if (state == null) {

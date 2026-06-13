@@ -189,6 +189,18 @@ async function handleGenerate() {
         phase: data.phase || 'running',
         message: data.message || '正在生成草稿...'
       }
+      // 逐档实时渲染：后端推送某档完整数据后立即展示，不等全部完成
+      if (data.tierData) {
+        if (!draft.value) {
+          draft.value = { tiers: [], removedCandidates: [], blockedCandidates: [] }
+        }
+        const existingIdx = draft.value.tiers.findIndex(t => t.level === data.tierData.level)
+        if (existingIdx >= 0) {
+          draft.value.tiers[existingIdx] = data.tierData
+        } else {
+          draft.value.tiers.push(data.tierData)
+        }
+      }
     })
 
     source.addEventListener('done', event => {

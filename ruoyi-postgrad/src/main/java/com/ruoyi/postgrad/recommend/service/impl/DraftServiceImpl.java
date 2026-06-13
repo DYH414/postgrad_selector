@@ -108,6 +108,9 @@ public class DraftServiceImpl implements IDraftService {
                 TierCandidates resultTier = mergeSelection(tier, sel);
                 resultTiers.add(resultTier);
 
+                // 逐档实时推送：不等全部完成，前端即可渲染当前档位的候选卡片
+                callback.onTierComplete(tier.getLevel(), JSON.toJSONString(resultTier));
+
                 if (sel.getBlocked() != null) {
                     for (AiSelectionResult.BlockedItem bi : sel.getBlocked()) {
                         BlockedCandidateVO bvo = new BlockedCandidateVO();

@@ -29,6 +29,14 @@ public interface DraftGenerationCallback {
     void onDone(DraftVO draft, ProfileBasisVO profileBasis, int removedCount);
 
     /**
+     * 单档 AI 选校完成（逐档实时推送，不等全部完成）。
+     *
+     * @param tier     档位标识：reach / steady / safe
+     * @param tierJson 该档完整 TierCandidates JSON（含已选的候选+理由+风险）
+     */
+    default void onTierComplete(String tier, String tierJson) {}
+
+    /**
      * 草稿生成失败。
      *
      * @param error 异常

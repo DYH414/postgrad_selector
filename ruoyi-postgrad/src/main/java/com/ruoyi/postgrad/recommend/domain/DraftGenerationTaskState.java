@@ -12,6 +12,7 @@ public class DraftGenerationTaskState {
     private String message;
     private Integer found;
     private String tier;
+    private String tierJson;
     private String draftJson;
     private String profileBasisJson;
     private Integer removedCount;
@@ -73,6 +74,14 @@ public class DraftGenerationTaskState {
 
     public void setTier(String tier) {
         this.tier = tier;
+    }
+
+    public String getTierJson() {
+        return tierJson;
+    }
+
+    public void setTierJson(String tierJson) {
+        this.tierJson = tierJson;
     }
 
     public String getDraftJson() {

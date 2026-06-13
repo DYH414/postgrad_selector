@@ -118,7 +118,7 @@ public class AppV2RecommendController {
                 }
 
                 String signature = state.getStatus() + "|" + state.getPhase() + "|" + state.getMessage()
-                    + "|" + state.getUpdatedAt();
+                    + "|" + state.getUpdatedAt() + "|" + state.getTierJson();
                 if (!signature.equals(lastSignature)) {
                     lastSignature = signature;
                     if (DraftGenerationTaskState.STATUS_DONE.equals(state.getStatus())) {
@@ -140,6 +140,10 @@ public class AppV2RecommendController {
                         payload.put("message", state.getMessage());
                         if (state.getFound() != null) payload.put("found", state.getFound());
                         if (state.getTier() != null) payload.put("tier", state.getTier());
+                        // 逐档实时数据：某档 AI 选完后立即推送候选卡片
+                        if (state.getTierJson() != null) {
+                            payload.put("tierData", JSON.parseObject(state.getTierJson()));
+                        }
                         safeSend(emitter, "progress", payload, closed);
                     }
                 }
