@@ -42,15 +42,15 @@
             </div>
             <div>
               <span>复试线</span>
-              <strong>{{ selectedProgram.scoreLine || '-' }}</strong>
+              <strong>{{ currentYearSummary.scoreLine || '-' }}</strong>
             </div>
             <div>
               <span>招生计划</span>
-              <strong>{{ selectedProgram.totalPlan || selectedProgram.unifiedExamQuota || '-' }}</strong>
+              <strong>{{ currentYearSummary.totalPlan || currentYearSummary.unifiedExamQuota || '-' }}</strong>
             </div>
             <div>
               <span>拟录取最低</span>
-              <strong>{{ selectedProgram.minAdmittedScore || '-' }}</strong>
+              <strong>{{ currentYearSummary.minAdmittedScore || '-' }}</strong>
             </div>
           </div>
 
@@ -227,7 +227,23 @@ export default {
       savingMap: {},
       remoteOptions: {},
       remoteSearchOptions: {},
-      rulesMap: {}
+      rulesMap: {},
+      moduleRequestSeq: {}
+    }
+  },
+  computed: {
+    currentYearSummary() {
+      const targetYear = Number(this.year)
+      const yearRow = (this.programYears || []).find(item => Number(item.year) === targetYear) || {}
+      const scoreForm = this.currentYearForm('admissionScore')
+      const planForm = this.currentYearForm('admissionPlan')
+      const resultForm = this.currentYearForm('admissionResult')
+      return {
+        scoreLine: this.pickValue(scoreForm.scoreLine, yearRow.scoreLine),
+        totalPlan: this.pickValue(planForm.totalPlan, yearRow.totalPlan),
+        unifiedExamQuota: this.pickValue(planForm.unifiedExamQuota, yearRow.unifiedExamQuota),
+        minAdmittedScore: this.pickValue(resultForm.minAdmittedScore, yearRow.minAdmittedScore)
+      }
     }
   },
   watch: {
@@ -253,6 +269,8 @@ export default {
       this.$emit('year-change', year)
     },
     loadModule(module) {
+      const requestSeq = (this.moduleRequestSeq[module] || 0) + 1
+      this.$set(this.moduleRequestSeq, module, requestSeq)
       this.$set(this.loadingMap, module, true)
       this.ensureRules(module)
       const query = this.recordQuery()
@@ -260,15 +278,19 @@ export default {
         ? getCrud(module, this.selectedProgram.id)
         : listCrud(module, query)
       request.then(response => {
+        if (this.moduleRequestSeq[module] !== requestSeq) return
         const row = module === 'program'
           ? response.data || {}
           : ((response.rows || [])[0] || this.defaultForm(module))
         this.setForm(module, row)
         this.loadRemoteOptions(module)
       }).catch(() => {
+        if (this.moduleRequestSeq[module] !== requestSeq) return
         this.setForm(module, this.defaultForm(module))
       }).finally(() => {
-        this.$set(this.loadingMap, module, false)
+        if (this.moduleRequestSeq[module] === requestSeq) {
+          this.$set(this.loadingMap, module, false)
+        }
       })
     },
     setForm(module, row) {
@@ -283,6 +305,13 @@ export default {
         programId: this.selectedProgram ? this.selectedProgram.id : undefined,
         year: this.year
       }
+    },
+    currentYearForm(module) {
+      const form = this.forms[module] || {}
+      return Number(form.year) === Number(this.year) ? form : {}
+    },
+    pickValue(primary, fallback) {
+      return primary !== undefined && primary !== null && primary !== '' ? primary : fallback
     },
     defaultForm(module) {
       const form = {}

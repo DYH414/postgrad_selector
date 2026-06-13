@@ -231,7 +231,7 @@
         <workspace-editor-panel
           :selected-school="selectedSchool"
           :selected-program="selectedProgram"
-          :year="filters.year"
+          :year="editorYear"
           :year-options="yearOptions"
           :program-years="selectedProgramYears"
           @saved="handleEditorSaved"
@@ -288,6 +288,8 @@ export default {
       workspace: null,
       selectedProgram: null,
       activeCollegeId: '',
+      editorYear: 2025,
+      schoolWorkspaceRequestSeq: 0,
       charts: {
         quality: null,
         coverage: null,
@@ -369,9 +371,9 @@ export default {
     }
   },
   methods: {
-    loadWorkspace() {
+    loadWorkspace(options = {}) {
       this.loadStats()
-      this.loadSchools()
+      this.loadSchools(options)
     },
     loadStats() {
       this.statsLoading = true
@@ -386,11 +388,12 @@ export default {
         this.statsLoading = false
       })
     },
-    loadSchools() {
+    loadSchools(options = {}) {
+      const reloadSelected = options.reloadSelected !== false
       this.schoolsLoading = true
       listWorkspaceSchools(this.requestParams()).then(response => {
         this.schoolList = this.normalizeSchoolRows(response.data || response.rows || [])
-        this.ensureSelectedSchool()
+        this.ensureSelectedSchool(reloadSelected)
       }).catch(() => {
         listSchool({
           pageNum: 1,
@@ -401,7 +404,7 @@ export default {
           status: 'active'
         }).then(response => {
           this.schoolList = this.normalizeSchoolRows(response.rows || [])
-          this.ensureSelectedSchool()
+          this.ensureSelectedSchool(reloadSelected)
         }).catch(() => {
           this.schoolList = []
           this.selectedSchool = null
@@ -413,21 +416,29 @@ export default {
     },
     loadSelectedSchool() {
       if (!this.selectedSchool) return
+      const requestSeq = ++this.schoolWorkspaceRequestSeq
+      const selectedProgramId = this.selectedProgram ? this.selectedProgram.id : null
       this.workspaceLoading = true
-      this.selectedProgram = null
       getSchoolWorkspace(this.selectedSchool.id, this.requestParams()).then(response => {
+        if (requestSeq !== this.schoolWorkspaceRequestSeq) return
         this.workspace = response.data || {}
         if (this.activeCollegeId && !this.collegeOptions.some(item => String(item.id) === String(this.activeCollegeId))) {
           this.activeCollegeId = ''
         }
         if (this.filteredProgramRows.length) {
-          this.selectedProgram = this.filteredProgramRows[0]
+          this.selectedProgram = this.filteredProgramRows.find(item => String(item.id) === String(selectedProgramId)) || this.filteredProgramRows[0]
+        } else {
+          this.selectedProgram = null
         }
         this.$nextTick(this.renderCharts)
       }).catch(() => {
+        if (requestSeq !== this.schoolWorkspaceRequestSeq) return
         this.workspace = null
+        this.selectedProgram = null
       }).finally(() => {
-        this.workspaceLoading = false
+        if (requestSeq === this.schoolWorkspaceRequestSeq) {
+          this.workspaceLoading = false
+        }
       })
     },
     selectSchool(school) {
@@ -444,23 +455,26 @@ export default {
       this.loadStats()
     },
     handleEditorYearChange(year) {
-      if (!year || Number(year) === Number(this.filters.year)) return
-      this.filters.year = Number(year)
-      this.loadWorkspace()
+      if (!year || Number(year) === Number(this.editorYear)) return
+      this.editorYear = Number(year)
     },
-    ensureSelectedSchool() {
+    ensureSelectedSchool(reloadSelected = true) {
       if (!this.schoolList.length) {
         this.selectedSchool = null
         this.workspace = null
+        this.selectedProgram = null
         return
       }
       const stillExists = this.selectedSchool && this.schoolList.some(item => item.id === this.selectedSchool.id)
       if (!stillExists) {
         this.selectedSchool = this.schoolList[0]
       }
-      this.loadSelectedSchool()
+      if (reloadSelected) {
+        this.loadSelectedSchool()
+      }
     },
     handleSearch() {
+      this.editorYear = Number(this.filters.year)
       this.loadWorkspace()
     },
     resetFilters() {
@@ -472,6 +486,7 @@ export default {
         is408: '1',
         completeness: ''
       }
+      this.editorYear = Number(this.filters.year)
       this.loadWorkspace()
     },
     requestParams() {

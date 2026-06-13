@@ -40,9 +40,30 @@ const expectations = [
   [view.includes('WorkspaceEditorPanel'), 'workspace view should render the inline editor panel component'],
   [view.includes('@saved="handleEditorSaved"'), 'workspace view should refresh after inline editor saves'],
   [view.includes('@year-change="handleEditorYearChange"'), 'workspace view should let the editor change the active maintenance year'],
+  [
+    view.includes('handleEditorYearChange(year)') &&
+      view.includes('this.editorYear = Number(year)') &&
+      !view.includes('handleEditorYearChange(year) {\n      if (!year || Number(year) === Number(this.filters.year)) return\n      this.filters.year = Number(year)\n      this.loadWorkspace()'),
+    'editor year changes should stay inside the editor year state'
+  ],
+  [view.includes('editorYear: 2025'), 'workspace should keep editor maintenance year separate from workspace filters'],
+  [view.includes(':year="editorYear"'), 'workspace should pass editorYear to the inline editor panel'],
+  [
+    view.includes('this.editorYear = Number(year)') &&
+      !view.includes('handleEditorYearChange(year) {\n      if (!year || Number(year) === Number(this.filters.year)) return\n      this.filters.year = Number(year)'),
+    'editor year changes should update editorYear without changing workspace filter year'
+  ],
   [view.includes('grid-template-columns: 300px minmax(560px, 1fr) 520px'), 'workspace grid should reserve enough width for the editor panel'],
   [editorPanel.includes('name: \'WorkspaceEditorPanel\''), 'editor panel should define a stable component name'],
   [editorPanel.includes('维护年份'), 'editor panel should expose an editable maintenance year control'],
+  [
+    editorPanel.includes('currentYearSummary') &&
+      editorPanel.includes('currentYearSummary.scoreLine') &&
+      editorPanel.includes('currentYearSummary.totalPlan') &&
+      editorPanel.includes('currentYearSummary.minAdmittedScore'),
+    'editor overview should render the currently selected year instead of stale selectedProgram fields'
+  ],
+  [editorPanel.includes('moduleRequestSeq'), 'editor panel should ignore stale module responses when year changes quickly'],
   [editorPanel.includes('$emit(\'year-change\''), 'editor panel should emit year changes to the workspace'],
   [editorPanel.includes('editableModules'), 'editor panel should declare editable modules'],
   [editorPanel.includes('listCrud(module, query)'), 'editor panel should load existing module records by program and year'],
