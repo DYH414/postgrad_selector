@@ -42,6 +42,12 @@ const routes = [
     path: '/ai-report/:id',
     name: 'AiReport',
     component: () => import('@/views/AiReport.vue'),
+    meta: { title: 'AI 推荐报告(旧)' }
+  },
+  {
+    path: '/ai-report-v2/:id',
+    name: 'AiReportV2',
+    component: () => import('@/views/ai-recommend-v2/components/ReportView.vue'),
     meta: { title: 'AI 推荐报告' }
   },
   {

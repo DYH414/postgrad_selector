@@ -57,7 +57,7 @@
             :key="candidate.fact.programId"
             :candidate="candidate"
             @remove="$emit('remove', candidate.fact.programId)"
-            @ask-about="$emit('ask-about', candidate.fact.programId)"
+            @ask-about="$emit('ask-about', candidate.fact.programId, candidate.fact.schoolName, candidate.fact.programName)"
           />
         </TransitionGroup>
 

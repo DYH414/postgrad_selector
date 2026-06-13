@@ -62,6 +62,7 @@
               :visible="chatVisible"
               :messages="chatMessages"
               :streaming="chatStreaming"
+              :streaming-text="chatStreamingText"
               @send="handleChatSend"
               @toggle="chatVisible = !chatVisible"
             />
@@ -119,6 +120,7 @@ const draftEventSource = ref(null)
 const chatVisible = ref(false)
 const chatMessages = ref([])
 const chatStreaming = ref(false)
+const chatStreamingText = ref('')
 
 // ── 计算属性 ──
 const poolCount = computed(() => {
@@ -253,17 +255,18 @@ async function handleAddBack(programId) {
   }
 }
 
-function handleAskAbout(programId) {
+function handleAskAbout(programId, schoolName, programName) {
   chatVisible.value = true
-  // 预填充对话消息
-  chatMessages.value.push({ role: 'user', content: `分析一下 ${programId}` })
-  handleChatSend(`帮我分析一下这所学校为什么被推荐`)
+  const label = programName ? `${schoolName}-${programName}` : (schoolName || '这所学校')
+  // 用户只看到自然语言问题。AI 通过 getDraftContext 定位学校，按名调用 getProgramDetail。
+  handleChatSend(`帮我分析一下 ${label} 为什么被推荐，有什么风险`)
 }
 
 async function handleChatSend(message) {
   chatVisible.value = true
   chatMessages.value.push({ role: 'user', content: message })
   chatStreaming.value = true
+  chatStreamingText.value = ''
 
   try {
     const response = await sendChatMessage(message)
@@ -291,12 +294,15 @@ async function handleChatSend(message) {
             const data = JSON.parse(line.slice(5))
             if (currentEvent === 'token') {
               assistantText += data.text
+              chatStreamingText.value = assistantText
             } else if (currentEvent === 'done') {
+              chatStreamingText.value = ''
               chatMessages.value.push({ role: 'assistant', content: data.message })
               if (data.draftAction && data.draftAction.type !== 'none') {
                 executeDraftAction(data.draftAction)
               }
             } else if (currentEvent === 'error') {
+              chatStreamingText.value = ''
               ElMessage.error(data.message || '对话失败')
             }
           } catch (e) { /* skip */ }
@@ -304,6 +310,7 @@ async function handleChatSend(message) {
       }
     }
   } catch (e) {
+    chatStreamingText.value = ''
     ElMessage.error('对话失败：' + (e.message || '网络错误'))
   } finally {
     chatStreaming.value = false
@@ -343,7 +350,7 @@ async function handleGenerateReport() {
     const res = await generateReport()
     const reportId = res.data?.reportId
     if (reportId) {
-      router.push(`/ai-report/${reportId}`)
+      router.push(`/ai-report-v2/${reportId}`)
       ElMessage.success('报告已生成')
     }
   } catch (e) {

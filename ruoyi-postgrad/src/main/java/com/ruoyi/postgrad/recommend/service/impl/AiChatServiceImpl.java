@@ -232,17 +232,36 @@ public class AiChatServiceImpl implements IAiChatService {
     }
 
     /**
-     * 构建系统提示词：加载模板 + 注入用户草稿上下文。
+     * 构建系统提示词：加载模板 + 注入用户画像 + 草稿上下文。
      */
     private String buildSystemPrompt(Long userId) {
         String template = loadPromptTemplate();
         DraftVO draft = draftService.getDraft(userId);
         String draftCtx = buildDraftContextText(draft);
+        String profileCtx = buildProfileContextText(draft);
 
-        // 简单替换占位符
         return template
-            .replace("{draftContext}", draftCtx)
-            .replace("{draftSummary}", draftCtx.isEmpty() ? "尚未生成草稿" : draftCtx);
+            .replace("{profileContext}", profileCtx)
+            .replace("{draftContext}", draftCtx);
+    }
+
+    /**
+     * 从草稿的 ProfileBasisVO 中提取用户画像上下文。
+     */
+    private String buildProfileContextText(DraftVO draft) {
+        if (draft == null || draft.getProfileBasis() == null) {
+            return "用户画像未设置。";
+        }
+        var p = draft.getProfileBasis();
+        StringBuilder sb = new StringBuilder();
+        sb.append("预估分数：").append(p.getEstimatedScore() != null ? p.getEstimatedScore() : "未知").append(" 分\n");
+        sb.append("本科层次：").append(p.getUndergradTier() != null ? p.getUndergradTier() : "未知").append("\n");
+        sb.append("目标地区：").append(p.getTargetRegions() != null ? p.getTargetRegions() : "不限").append("\n");
+        sb.append("跨专业：").append(p.getIsCrossMajor() != null ? p.getIsCrossMajor() : "否").append("\n");
+        sb.append("风险偏好：").append(p.getRiskPreference() != null ? p.getRiskPreference() : "均衡").append("\n");
+        sb.append("层次偏好：").append(p.getSchoolTierPreference() != null ? p.getSchoolTierPreference() : "不限").append("\n");
+        sb.append("地区策略：").append(p.getRegionStrategy() != null ? p.getRegionStrategy() : "不限").append("\n");
+        return sb.toString();
     }
 
     private String loadPromptTemplate() {

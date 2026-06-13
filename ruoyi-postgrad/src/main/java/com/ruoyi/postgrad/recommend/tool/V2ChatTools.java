@@ -33,19 +33,40 @@ public class V2ChatTools {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return "工具上下文未初始化，无法查询。";
 
+        StringBuilder sb = new StringBuilder();
+
         // 先查候选池快照
         List<CandidateCardVO> pool = loadPoolSnapshot(ctx.userId());
         for (CandidateCardVO c : pool) {
             if (c.getFact() != null && programId == c.getFact().getProgramId()) {
-                return formatFactCard(c.getFact());
+                sb.append(formatFactCard(c.getFact()));
+                break;
             }
         }
 
         // 池中无 → 查 DB
-        RowMap row = ctx.mapper().selectProgramForRecommendation(programId);
-        if (row == null) return "未找到 programId=" + programId + " 的学校数据。";
+        if (sb.isEmpty()) {
+            RowMap row = ctx.mapper().selectProgramForRecommendation(programId);
+            if (row == null) return "未找到 programId=" + programId + " 的学校数据。";
+            sb.append(formatRowMap(row));
+        }
 
-        return formatRowMap(row);
+        // 附加历年趋势（近 3 年复试线+录取均分）
+        List<RowMap> trends = ctx.mapper().selectTrends(programId);
+        if (trends != null && !trends.isEmpty()) {
+            sb.append("\n\n【近 3 年趋势】\n");
+            for (RowMap t : trends) {
+                sb.append(String.format("%s年 | 复试线:%s | 录取均分:%s | 最低:%s | 最高:%s | 录取:%s人\n",
+                    t.get("year"),
+                    t.get("scoreLine") != null ? t.get("scoreLine") : "-",
+                    t.get("avgAdmittedScore") != null ? t.get("avgAdmittedScore") : "-",
+                    t.get("admissionLow") != null ? t.get("admissionLow") : "-",
+                    t.get("admissionHigh") != null ? t.get("admissionHigh") : "-",
+                    t.get("admittedCount") != null ? t.get("admittedCount") : "-"));
+            }
+        }
+
+        return sb.toString();
     }
 
     @Tool("在候选池中搜索学校，支持按关键词、档位(tier)、地区(region)过滤。" +
