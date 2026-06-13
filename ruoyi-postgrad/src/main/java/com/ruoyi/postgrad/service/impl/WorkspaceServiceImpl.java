@@ -1,6 +1,5 @@
 package com.ruoyi.postgrad.service.impl;
 
-import java.time.Year;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,6 +15,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class WorkspaceServiceImpl implements IWorkspaceService
 {
+    private static final int DEFAULT_NNUO_YEAR = 2025;
+
     @Autowired
     private WorkspaceMapper workspaceMapper;
 
@@ -55,8 +56,13 @@ public class WorkspaceServiceImpl implements IWorkspaceService
         List<Integer> years = workspaceYears(year);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("school", schoolMapper.selectSchoolById(schoolId));
-        result.put("stats", workspaceMapper.selectSchoolWorkspaceStats(schoolId, year));
-        result.put("colleges", workspaceMapper.selectSchoolColleges(schoolId));
+        result.put("stats", workspaceMapper.selectSchoolWorkspaceStats(
+            schoolId,
+            year,
+            clean(params.get("is408")),
+            clean(params.get("completeness"))
+        ));
+        result.put("colleges", workspaceMapper.selectSchoolColleges(schoolId, year));
         result.put("programs", workspaceMapper.selectSchoolPrograms(
             schoolId,
             year,
@@ -77,7 +83,7 @@ public class WorkspaceServiceImpl implements IWorkspaceService
     {
         if (StringUtils.isBlank(value))
         {
-            return Year.now().getValue();
+            return DEFAULT_NNUO_YEAR;
         }
         try
         {
@@ -85,13 +91,13 @@ public class WorkspaceServiceImpl implements IWorkspaceService
         }
         catch (NumberFormatException ignored)
         {
-            return Year.now().getValue();
+            return DEFAULT_NNUO_YEAR;
         }
     }
 
     private static List<Integer> workspaceYears(Integer year)
     {
-        int current = year == null ? Year.now().getValue() : year;
+        int current = year == null ? DEFAULT_NNUO_YEAR : year;
         return Arrays.asList(current - 2, current - 1, current);
     }
 }

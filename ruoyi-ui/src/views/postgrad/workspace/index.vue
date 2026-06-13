@@ -3,9 +3,9 @@
     <div class="workspace-shell">
       <div class="workspace-header">
         <div>
-          <div class="workspace-eyebrow">Postgrad Data Ops</div>
+          <div class="workspace-eyebrow">N诺 Data Ops</div>
           <h2>学校数据工作台</h2>
-          <p>按学校统一查看学院、专业方向、年份数据完整度和待审核状态。</p>
+          <p>按学校统一查看 N诺来源的学院、专业方向、年份数据完整度和待审核状态。</p>
         </div>
         <div class="workspace-header__actions">
           <el-button size="mini" icon="el-icon-refresh" @click="loadWorkspace">刷新</el-button>
@@ -69,6 +69,27 @@
         show-icon
         :closable="false"
       />
+
+      <div class="viz-grid">
+        <section class="workspace-panel viz-panel">
+          <div class="panel-heading">
+            <div>
+              <h3>N诺完整度分布</h3>
+              <span>A/B/C/D 专业方向占比</span>
+            </div>
+          </div>
+          <div ref="qualityChart" class="viz-chart"></div>
+        </section>
+        <section class="workspace-panel viz-panel">
+          <div class="panel-heading">
+            <div>
+              <h3>N诺覆盖率</h3>
+              <span>复试线 / 招生计划 / 拟录取</span>
+            </div>
+          </div>
+          <div ref="coverageChart" class="viz-chart"></div>
+        </section>
+      </div>
 
       <div v-if="selectedSchool" class="school-summary">
         <div class="school-summary__main">
@@ -207,113 +228,41 @@
           </div>
         </section>
 
-        <section class="workspace-panel detail-panel">
-          <div class="panel-heading">
-            <div>
-              <h3>专业方向详情</h3>
-              <span>{{ selectedProgram ? selectedProgram.programCode : '等待选择' }}</span>
-            </div>
-            <el-button size="mini" type="text" icon="el-icon-view" @click="jumpReview">待审核</el-button>
-          </div>
-
-          <div v-if="selectedProgram" class="detail-body">
-            <div class="detail-title">
-              <strong>{{ selectedProgram.programName }}</strong>
-              <span>{{ selectedProgram.collegeName }}</span>
-            </div>
-            <div class="detail-tags">
-              <el-tag size="mini">{{ selectedProgram.programCode }}</el-tag>
-              <el-tag v-if="Number(selectedProgram.is408) === 1" size="mini" type="success">408</el-tag>
-              <el-tag size="mini" :type="qualityType(selectedProgram.completenessLevel)">
-                {{ selectedProgram.completenessLevel || '完整度待接入' }}
-              </el-tag>
-            </div>
-
-            <div class="detail-section">
-              <h4>当前年份数据</h4>
-              <div class="data-state-grid">
-                <div>
-                  <span>复试线</span>
-                  <strong>{{ selectedProgram.scoreLine || '-' }}</strong>
-                </div>
-                <div>
-                  <span>招生计划</span>
-                  <strong>{{ selectedProgram.totalPlan || selectedProgram.unifiedExamQuota || '-' }}</strong>
-                </div>
-                <div>
-                  <span>拟录取最低</span>
-                  <strong>{{ selectedProgram.minAdmittedScore || '-' }}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div class="detail-section">
-              <h4>待处理状态</h4>
-              <div class="issue-list">
-                <span :class="{ 'is-warning': selectedProgram.pendingReviewCount }">
-                  待审核 {{ formatStat(selectedProgram.pendingReviewCount, 0) }}
-                </span>
-                <span :class="{ 'is-danger': selectedProgram.missingTaskCount }">
-                  缺失任务 {{ formatStat(selectedProgram.missingTaskCount, 0) }}
-                </span>
-                <span :class="{ 'is-danger': selectedProgram.missingFields }">
-                  缺失字段 {{ missingFieldsText(selectedProgram.missingFields) }}
-                </span>
-              </div>
-            </div>
-
-            <div class="detail-section">
-              <h4>数据维护入口</h4>
-              <div class="action-list">
-                <el-button size="mini" icon="el-icon-edit" @click="jumpToCrud('program')">专业基础信息</el-button>
-                <el-button size="mini" icon="el-icon-s-order" @click="jumpToCrud('admissionScore')">复试线</el-button>
-                <el-button size="mini" icon="el-icon-document" @click="jumpToCrud('admissionPlan')">招生计划</el-button>
-                <el-button size="mini" icon="el-icon-data-analysis" @click="jumpToCrud('admissionResult')">拟录取</el-button>
-              </div>
-            </div>
-
-            <div class="detail-section">
-              <h4>可视化占位</h4>
-              <div class="chart-placeholder">
-                <div class="chart-bars">
-                  <span style="height: 42%"></span>
-                  <span style="height: 58%"></span>
-                  <span style="height: 72%"></span>
-                  <span style="height: 66%"></span>
-                </div>
-                <p>Phase 6 接入复试线趋势和覆盖率图表</p>
-              </div>
-            </div>
-          </div>
-
-          <div v-else class="empty-block empty-block--large">
-            <i class="el-icon-document-checked"></i>
-            <p>请选择一个专业方向</p>
-            <span>右侧将展示基础信息、数据状态和维护入口。</span>
-          </div>
-        </section>
+        <workspace-editor-panel
+          :selected-school="selectedSchool"
+          :selected-program="selectedProgram"
+          :year="filters.year"
+          :year-options="yearOptions"
+          :program-years="selectedProgramYears"
+          @saved="handleEditorSaved"
+          @year-change="handleEditorYearChange"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import * as echarts from 'echarts'
+require('echarts/theme/macarons')
 import { listSchool } from '@/api/postgrad/school'
 import { listWorkspaceStats, listWorkspaceSchools, getSchoolWorkspace } from '@/api/postgrad/workspace'
+import WorkspaceEditorPanel from './components/WorkspaceEditorPanel'
 
 export default {
   name: 'PostgradWorkspace',
+  components: { WorkspaceEditorPanel },
   data() {
     return {
       filters: {
         keyword: '',
         province: '',
         tier: '',
-        year: 2026,
-        is408: '',
+        year: 2025,
+        is408: '1',
         completeness: ''
       },
-      yearOptions: [2024, 2025, 2026],
+      yearOptions: [2023, 2024, 2025],
       tierOptions: [
         { label: '985', value: '985' },
         { label: '211', value: '211' },
@@ -338,17 +287,22 @@ export default {
       selectedSchool: null,
       workspace: null,
       selectedProgram: null,
-      activeCollegeId: ''
+      activeCollegeId: '',
+      charts: {
+        quality: null,
+        coverage: null,
+        trend: null
+      }
     }
   },
   computed: {
     kpiItems() {
       const stats = this.stats || {}
       return [
-        { key: 'school', label: '学校数', value: this.formatStat(stats.schoolCount, this.schoolList.length), hint: '当前筛选范围', tone: 'blue' },
+        { key: 'school', label: 'N诺学校数', value: this.formatStat(stats.schoolCount, this.schoolList.length), hint: '当前筛选范围', tone: 'blue' },
         { key: 'college', label: '学院数', value: this.formatStat(stats.collegeCount), hint: '按学校聚合', tone: 'slate' },
         { key: 'program', label: '专业方向', value: this.formatStat(stats.programCount), hint: '按学院汇总', tone: 'slate' },
-        { key: 'quality', label: 'A 级完整度', value: this.formatPercent(stats.aLevelRate), hint: '完整度分布', tone: 'green' },
+        { key: 'quality', label: 'N诺 A 级完整度', value: this.formatPercent(stats.aLevelRate), hint: 'N诺完整度分布', tone: 'green' },
         { key: 'review', label: '待审核', value: this.formatStat(stats.pendingReviewCount), hint: '审核中心联动', tone: 'amber' },
         { key: 'task', label: '缺失任务', value: this.formatStat(stats.missingTaskCount), hint: '采集任务联动', tone: 'red' }
       ]
@@ -376,6 +330,13 @@ export default {
       })
       return result
     },
+    selectedProgramYears() {
+      if (!this.selectedProgram) return []
+      return this.yearOptions.map(year => {
+        const item = this.programYearMap[this.selectedProgram.id + '-' + year] || {}
+        return Object.assign({ year }, item)
+      })
+    },
     matrixEmptyTitle() {
       if (!this.selectedSchool) return '请选择学校'
       return '暂无专业方向数据'
@@ -388,9 +349,23 @@ export default {
   created() {
     this.loadWorkspace()
   },
+  mounted() {
+    window.addEventListener('resize', this.resizeCharts)
+    this.$nextTick(this.renderCharts)
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.resizeCharts)
+    Object.keys(this.charts).forEach(key => {
+      if (this.charts[key]) {
+        this.charts[key].dispose()
+        this.charts[key] = null
+      }
+    })
+  },
   watch: {
     activeCollegeId() {
       this.selectedProgram = this.filteredProgramRows.length ? this.filteredProgramRows[0] : null
+      this.$nextTick(this.renderCharts)
     }
   },
   methods: {
@@ -403,6 +378,7 @@ export default {
       this.statsNotice = ''
       listWorkspaceStats(this.requestParams()).then(response => {
         this.stats = response.data || {}
+        this.$nextTick(this.renderCharts)
       }).catch(() => {
         this.stats = null
         this.statsNotice = '工作台聚合统计请求失败，当前页面使用学校列表兜底展示。'
@@ -439,17 +415,15 @@ export default {
       if (!this.selectedSchool) return
       this.workspaceLoading = true
       this.selectedProgram = null
-      getSchoolWorkspace(this.selectedSchool.id, { year: this.filters.year }).then(response => {
+      getSchoolWorkspace(this.selectedSchool.id, this.requestParams()).then(response => {
         this.workspace = response.data || {}
-        if (this.workspace.stats) {
-          this.stats = Object.assign({}, this.stats || {}, this.workspace.stats)
-        }
         if (this.activeCollegeId && !this.collegeOptions.some(item => String(item.id) === String(this.activeCollegeId))) {
           this.activeCollegeId = ''
         }
         if (this.filteredProgramRows.length) {
           this.selectedProgram = this.filteredProgramRows[0]
         }
+        this.$nextTick(this.renderCharts)
       }).catch(() => {
         this.workspace = null
       }).finally(() => {
@@ -463,6 +437,16 @@ export default {
     },
     selectProgram(row) {
       this.selectedProgram = row
+      this.$nextTick(this.renderCharts)
+    },
+    handleEditorSaved() {
+      this.loadSelectedSchool()
+      this.loadStats()
+    },
+    handleEditorYearChange(year) {
+      if (!year || Number(year) === Number(this.filters.year)) return
+      this.filters.year = Number(year)
+      this.loadWorkspace()
     },
     ensureSelectedSchool() {
       if (!this.schoolList.length) {
@@ -484,8 +468,8 @@ export default {
         keyword: '',
         province: '',
         tier: '',
-        year: 2026,
-        is408: '',
+        year: 2025,
+        is408: '1',
         completeness: ''
       }
       this.loadWorkspace()
@@ -561,6 +545,127 @@ export default {
         }
       }
       return String(value)
+    },
+    chartPercent(value, total) {
+      const number = Number(value || 0)
+      const base = Number(total || 0)
+      if (!base) return 0
+      return Math.max(0, Math.min(100, Math.round(number * 100 / base)))
+    },
+    ensureChart(key, refName) {
+      const el = this.$refs[refName]
+      if (!el) return null
+      if (!this.charts[key]) {
+        this.charts[key] = echarts.init(el, 'macarons')
+      }
+      return this.charts[key]
+    },
+    renderCharts() {
+      this.renderQualityChart()
+      this.renderCoverageChart()
+      this.renderTrendChart()
+    },
+    renderQualityChart() {
+      const chart = this.ensureChart('quality', 'qualityChart')
+      if (!chart) return
+      const stats = this.stats || {}
+      chart.setOption({
+        color: ['#16a34a', '#3b82f6', '#f59e0b', '#dc2626'],
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        legend: { bottom: 0, itemWidth: 10, itemHeight: 10 },
+        series: [{
+          name: '完整度',
+          type: 'pie',
+          radius: ['48%', '72%'],
+          center: ['50%', '44%'],
+          avoidLabelOverlap: true,
+          label: { formatter: '{b}\\n{d}%' },
+          data: [
+            { name: 'A 完整', value: Number(stats.aLevelCount || 0) },
+            { name: 'B 基本完整', value: Number(stats.bLevelCount || 0) },
+            { name: 'C 缺关键项', value: Number(stats.cLevelCount || 0) },
+            { name: 'D 严重缺失', value: Number(stats.dLevelCount || 0) }
+          ]
+        }]
+      })
+    },
+    renderCoverageChart() {
+      const chart = this.ensureChart('coverage', 'coverageChart')
+      if (!chart) return
+      const stats = this.stats || {}
+      const total = Number(stats.programCount || 0)
+      chart.setOption({
+        color: ['#1e40af'],
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: params => {
+            const item = params && params[0]
+            return item ? item.name + ': ' + item.value + '%' : ''
+          }
+        },
+        grid: { top: 22, left: 28, right: 16, bottom: 28, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: ['复试线', '招生计划', '拟录取'],
+          axisTick: { show: false }
+        },
+        yAxis: {
+          type: 'value',
+          min: 0,
+          max: 100,
+          axisLabel: { formatter: '{value}%' }
+        },
+        series: [{
+          type: 'bar',
+          barWidth: 28,
+          data: [
+            this.chartPercent(stats.scoreReadyCount, total),
+            this.chartPercent(stats.planReadyCount, total),
+            this.chartPercent(stats.resultReadyCount, total)
+          ],
+          label: { show: true, position: 'top', formatter: '{c}%' }
+        }]
+      })
+    },
+    renderTrendChart() {
+      const chart = this.ensureChart('trend', 'trendChart')
+      if (!chart) return
+      const rows = this.selectedProgramYears
+      chart.setOption({
+        color: ['#1e40af', '#16a34a'],
+        tooltip: { trigger: 'axis' },
+        grid: { top: 24, left: 8, right: 8, bottom: 24, containLabel: true },
+        xAxis: {
+          type: 'category',
+          boundaryGap: false,
+          data: rows.map(item => item.year)
+        },
+        yAxis: {
+          type: 'value',
+          min: value => Math.max(0, value.min - 10)
+        },
+        series: [{
+          name: '复试线',
+          type: 'line',
+          smooth: true,
+          data: rows.map(item => item.scoreLine || null),
+          connectNulls: false,
+          symbolSize: 7
+        }, {
+          name: '拟录取最低',
+          type: 'line',
+          smooth: true,
+          data: rows.map(item => item.minAdmittedScore || null),
+          connectNulls: false,
+          symbolSize: 7
+        }]
+      })
+    },
+    resizeCharts() {
+      Object.keys(this.charts).forEach(key => {
+        if (this.charts[key]) this.charts[key].resize()
+      })
     },
     jumpToCrud(module) {
       this.$router.push({
@@ -702,6 +807,22 @@ export default {
   margin-bottom: 12px;
 }
 
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.viz-panel {
+  min-height: 260px;
+}
+
+.viz-chart {
+  height: 198px;
+  padding: 8px 10px 12px;
+}
+
 .school-summary {
   display: flex;
   align-items: center;
@@ -755,7 +876,7 @@ export default {
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: 280px minmax(480px, 1fr) 320px;
+  grid-template-columns: 300px minmax(560px, 1fr) 520px;
   gap: 12px;
   align-items: stretch;
 }
@@ -1045,31 +1166,11 @@ export default {
   gap: 8px;
 }
 
-.chart-placeholder {
-  border: 1px dashed #cbd5e1;
+.trend-chart {
+  height: 180px;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 14px;
   background: #f8fafc;
-}
-
-.chart-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  height: 112px;
-  padding: 8px 4px;
-}
-
-.chart-bars span {
-  flex: 1;
-  border-radius: 6px 6px 0 0;
-  background: linear-gradient(180deg, #3b82f6 0%, #1e40af 100%);
-}
-
-.chart-placeholder p {
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 12px;
 }
 
 .empty-block {
@@ -1142,6 +1243,7 @@ export default {
   }
 
   .kpi-grid,
+  .viz-grid,
   .workspace-grid {
     grid-template-columns: 1fr;
   }

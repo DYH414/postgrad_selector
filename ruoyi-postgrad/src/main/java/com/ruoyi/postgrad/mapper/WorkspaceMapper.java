@@ -21,9 +21,12 @@ public interface WorkspaceMapper
                                         @Param("completeness") String completeness);
 
     RowMap selectSchoolWorkspaceStats(@Param("schoolId") Long schoolId,
-                                      @Param("year") Integer year);
+                                      @Param("year") Integer year,
+                                      @Param("is408") String is408,
+                                      @Param("completeness") String completeness);
 
-    List<RowMap> selectSchoolColleges(@Param("schoolId") Long schoolId);
+    List<RowMap> selectSchoolColleges(@Param("schoolId") Long schoolId,
+                                      @Param("year") Integer year);
 
     List<RowMap> selectSchoolPrograms(@Param("schoolId") Long schoolId,
                                       @Param("year") Integer year,

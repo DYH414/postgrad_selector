@@ -25,6 +25,58 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         end
     </sql>
 
+    <sql id="NnuoCompletenessLevel">
+        case
+            when sc.score_line is not null
+                and ar.min_admitted_score is not null
+                and ar.max_admitted_score is not null
+                and ar.avg_admitted_score is not null
+                and (ap.total_plan is not null or ap.unified_exam_quota is not null or ar.admitted_count is not null)
+                then 'A'
+            when sc.score_line is not null
+                and (ar.avg_admitted_score is not null
+                    or ar.min_admitted_score is not null
+                    or ap.total_plan is not null
+                    or ap.unified_exam_quota is not null)
+                then 'B'
+            when sc.score_line is not null then 'C'
+            when sc.score_line is null then 'D'
+            else 'D'
+        end
+    </sql>
+
+    <sql id="NnuoScoreSource">
+        and exists (
+            select 1 from data_source ds
+            where ds.id = sc.source_id
+              and ds.source_owner like 'N诺%'
+        )
+    </sql>
+
+    <sql id="NnuoPlanSource">
+        and exists (
+            select 1 from data_source ds
+            where ds.id = ap.source_id
+              and ds.source_owner like 'N诺%'
+        )
+    </sql>
+
+    <sql id="NnuoResultSource">
+        and exists (
+            select 1 from data_source ds
+            where ds.id = ar.source_id
+              and ds.source_owner like 'N诺%'
+        )
+    </sql>
+
+    <sql id="NnuoProgramYearOnly">
+        and (
+            sc.program_id is not null
+            or ap.program_id is not null
+            or ar.program_id is not null
+        )
+    </sql>
+
     <sql id="WorkspaceSchoolFilters">
         <if test="keyword != null and keyword != ''">
             and (
@@ -67,22 +119,23 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from school s
             left join college c on c.school_id = s.id
             left join program p on p.college_id = c.id and p.status = 'active'
-            left join admission_score sc on sc.program_id = p.id and sc.year = #{year}
-            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year}
-            left join admission_result ar on ar.program_id = p.id and ar.year = #{year}
+            left join admission_score sc on sc.program_id = p.id and sc.year = #{year} <include refid="NnuoScoreSource"/>
+            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year} <include refid="NnuoPlanSource"/>
+            left join admission_result ar on ar.program_id = p.id and ar.year = #{year} <include refid="NnuoResultSource"/>
             left join program_year_data_quality q on q.program_id = p.id and q.year = #{year}
             left join (
                 select p2.id programId,
-                       <include refid="DynamicCompletenessLevel"/> dataCompleteness
+                       <include refid="NnuoCompletenessLevel"/> dataCompleteness
                 from program p2
-                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year}
-                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year}
-                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year}
+                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year} <include refid="NnuoScoreSource"/>
+                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year} <include refid="NnuoPlanSource"/>
+                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year} <include refid="NnuoResultSource"/>
                     left join program_year_data_quality q on q.program_id = p2.id and q.year = #{year}
             ) data on data.programId = p.id
             left join staging st on st.matched_program_id = p.id and st.status = 'pending'
             left join data_collection_task task on task.program_id = p.id and task.status in ('PENDING', 'FAILED', 'STAGING')
         where s.status = 'active'
+        <include refid="NnuoProgramYearOnly"/>
         <include refid="WorkspaceSchoolFilters"/>
         <if test="completeness != null and completeness != ''">
             and data.dataCompleteness = #{completeness}
@@ -110,22 +163,23 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from school s
             left join college c on c.school_id = s.id
             left join program p on p.college_id = c.id and p.status = 'active'
-            left join admission_score sc on sc.program_id = p.id and sc.year = #{year}
-            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year}
-            left join admission_result ar on ar.program_id = p.id and ar.year = #{year}
+            left join admission_score sc on sc.program_id = p.id and sc.year = #{year} <include refid="NnuoScoreSource"/>
+            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year} <include refid="NnuoPlanSource"/>
+            left join admission_result ar on ar.program_id = p.id and ar.year = #{year} <include refid="NnuoResultSource"/>
             left join program_year_data_quality q on q.program_id = p.id and q.year = #{year}
             left join (
                 select p2.id programId,
-                       <include refid="DynamicCompletenessLevel"/> dataCompleteness
+                       <include refid="NnuoCompletenessLevel"/> dataCompleteness
                 from program p2
-                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year}
-                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year}
-                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year}
+                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year} <include refid="NnuoScoreSource"/>
+                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year} <include refid="NnuoPlanSource"/>
+                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year} <include refid="NnuoResultSource"/>
                     left join program_year_data_quality q on q.program_id = p2.id and q.year = #{year}
             ) data on data.programId = p.id
             left join staging st on st.matched_program_id = p.id and st.status = 'pending'
             left join data_collection_task task on task.program_id = p.id and task.status in ('PENDING', 'FAILED', 'STAGING')
         where s.status = 'active'
+        <include refid="NnuoProgramYearOnly"/>
         <include refid="WorkspaceSchoolFilters"/>
         <if test="completeness != null and completeness != ''">
             and data.dataCompleteness = #{completeness}
@@ -151,16 +205,26 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             left join program p on p.college_id = c.id and p.status = 'active'
             left join (
                 select p2.id programId,
-                       <include refid="DynamicCompletenessLevel"/> dataCompleteness
+                       <include refid="NnuoCompletenessLevel"/> dataCompleteness
                 from program p2
-                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year}
-                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year}
-                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year}
+                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year} <include refid="NnuoScoreSource"/>
+                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year} <include refid="NnuoPlanSource"/>
+                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year} <include refid="NnuoResultSource"/>
                     left join program_year_data_quality q on q.program_id = p2.id and q.year = #{year}
             ) data on data.programId = p.id
+            left join admission_score sc on sc.program_id = p.id and sc.year = #{year} <include refid="NnuoScoreSource"/>
+            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year} <include refid="NnuoPlanSource"/>
+            left join admission_result ar on ar.program_id = p.id and ar.year = #{year} <include refid="NnuoResultSource"/>
             left join staging st on st.matched_program_id = p.id and st.status = 'pending'
             left join data_collection_task task on task.program_id = p.id and task.status in ('PENDING', 'FAILED', 'STAGING')
         where s.id = #{schoolId}
+        <include refid="NnuoProgramYearOnly"/>
+        <if test="is408 != null and is408 != ''">
+            and p.is_408 = #{is408}
+        </if>
+        <if test="completeness != null and completeness != ''">
+            and data.dataCompleteness = #{completeness}
+        </if>
     </select>
 
     <select id="selectSchoolColleges" resultType="com.ruoyi.postgrad.domain.RowMap">
@@ -173,7 +237,11 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             count(distinct case when p.is_408 = 1 then p.id end) program408Count
         from college c
             left join program p on p.college_id = c.id and p.status = 'active'
+            left join admission_score sc on sc.program_id = p.id and sc.year = #{year} <include refid="NnuoScoreSource"/>
+            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year} <include refid="NnuoPlanSource"/>
+            left join admission_result ar on ar.program_id = p.id and ar.year = #{year} <include refid="NnuoResultSource"/>
         where c.school_id = #{schoolId}
+        <include refid="NnuoProgramYearOnly"/>
         group by c.id, c.name, c.website, c.graduate_url
         order by c.name
     </select>
@@ -204,10 +272,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 ar.min_admitted_score minAdmittedScore,
                 ar.avg_admitted_score avgAdmittedScore,
                 ar.max_admitted_score maxAdmittedScore,
-                exists(select 1 from admission_score a where a.program_id = p.id and a.year = #{year}) hasScore,
-                exists(select 1 from admission_plan pl where pl.program_id = p.id and pl.year = #{year}) hasPlan,
-                exists(select 1 from admission_result r where r.program_id = p.id and r.year = #{year}) hasResult,
-                <include refid="DynamicCompletenessLevel"/> completenessLevel,
+                exists(select 1 from admission_score a join data_source ds on ds.id = a.source_id where a.program_id = p.id and a.year = #{year} and ds.source_owner like 'N诺%') hasScore,
+                exists(select 1 from admission_plan pl join data_source ds on ds.id = pl.source_id where pl.program_id = p.id and pl.year = #{year} and ds.source_owner like 'N诺%') hasPlan,
+                exists(select 1 from admission_result r join data_source ds on ds.id = r.source_id where r.program_id = p.id and r.year = #{year} and ds.source_owner like 'N诺%') hasResult,
+                <include refid="NnuoCompletenessLevel"/> completenessLevel,
                 q.missing_fields missingFields,
                 q.has_official_source hasOfficialSource,
                 q.has_conflict hasConflict,
@@ -215,14 +283,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                 coalesce(count(distinct task.id), 0) missingTaskCount
             from program p
                 join college c on c.id = p.college_id
-                left join admission_score sc on sc.program_id = p.id and sc.year = #{year}
-                left join admission_plan ap on ap.program_id = p.id and ap.year = #{year}
-                left join admission_result ar on ar.program_id = p.id and ar.year = #{year}
+                left join admission_score sc on sc.program_id = p.id and sc.year = #{year} <include refid="NnuoScoreSource"/>
+                left join admission_plan ap on ap.program_id = p.id and ap.year = #{year} <include refid="NnuoPlanSource"/>
+                left join admission_result ar on ar.program_id = p.id and ar.year = #{year} <include refid="NnuoResultSource"/>
                 left join program_year_data_quality q on q.program_id = p.id and q.year = #{year}
                 left join staging st on st.matched_program_id = p.id and st.status = 'pending'
                 left join data_collection_task task on task.program_id = p.id and task.status in ('PENDING', 'FAILED', 'STAGING')
             where c.school_id = #{schoolId}
               and p.status = 'active'
+            <include refid="NnuoProgramYearOnly"/>
             <if test="is408 != null and is408 != ''">
               and p.is_408 = #{is408}
             </if>
@@ -244,10 +313,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select
             p.id programId,
             y.year,
-            exists(select 1 from admission_score sc2 where sc2.program_id = p.id and sc2.year = y.year) hasScore,
-            exists(select 1 from admission_plan ap2 where ap2.program_id = p.id and ap2.year = y.year) hasPlan,
-            exists(select 1 from admission_result ar2 where ar2.program_id = p.id and ar2.year = y.year) hasResult,
-            <include refid="DynamicCompletenessLevel"/> completenessLevel,
+            sc.score_line scoreLine,
+            ap.total_plan totalPlan,
+            ap.unified_exam_quota unifiedExamQuota,
+            ar.min_admitted_score minAdmittedScore,
+            exists(select 1 from admission_score sc2 join data_source ds on ds.id = sc2.source_id where sc2.program_id = p.id and sc2.year = y.year and ds.source_owner like 'N诺%') hasScore,
+            exists(select 1 from admission_plan ap2 join data_source ds on ds.id = ap2.source_id where ap2.program_id = p.id and ap2.year = y.year and ds.source_owner like 'N诺%') hasPlan,
+            exists(select 1 from admission_result ar2 join data_source ds on ds.id = ar2.source_id where ar2.program_id = p.id and ar2.year = y.year and ds.source_owner like 'N诺%') hasResult,
+            <include refid="NnuoCompletenessLevel"/> completenessLevel,
             q.missing_fields missingFields
         from program p
             join college c on c.id = p.college_id
@@ -256,12 +329,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                     select #{item} year
                 </foreach>
             ) y
-            left join admission_score sc on sc.program_id = p.id and sc.year = y.year
-            left join admission_plan ap on ap.program_id = p.id and ap.year = y.year
-            left join admission_result ar on ar.program_id = p.id and ar.year = y.year
+            left join admission_score sc on sc.program_id = p.id and sc.year = y.year <include refid="NnuoScoreSource"/>
+            left join admission_plan ap on ap.program_id = p.id and ap.year = y.year <include refid="NnuoPlanSource"/>
+            left join admission_result ar on ar.program_id = p.id and ar.year = y.year <include refid="NnuoResultSource"/>
             left join program_year_data_quality q on q.program_id = p.id and q.year = y.year
         where c.school_id = #{schoolId}
           and p.status = 'active'
+        <include refid="NnuoProgramYearOnly"/>
         order by p.id, y.year
     </select>
 </mapper>
