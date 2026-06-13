@@ -178,7 +178,8 @@ public final class AiRecommendationSafety {
             && integerValue(row.get("admissionHigh")) != null;
         boolean hasAverage = integerValue(row.get("avgAdmittedScore")) != null;
         boolean hasCount = integerValue(row.get("planCount")) != null
-            || integerValue(row.get("admittedCount")) != null;
+            || integerValue(row.get("admittedCount")) != null
+            || integerValue(row.get("unifiedExamQuota")) != null;
         boolean hasMainExtra = hasAverage
             || integerValue(row.get("admissionLow")) != null
             || integerValue(row.get("planCount")) != null

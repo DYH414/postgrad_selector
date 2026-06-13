@@ -361,6 +361,11 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         compareItem.putAll(recommendationOverview(item));
         compareItem.remove("fitLevel");
         compareItem.remove("fitLevelLabel");
+        compareItem.put("dataCompleteness",
+            item.getDataCompleteness() != null ? item.getDataCompleteness() : "C");
+        compareItem.put("sourceUrl", item.getSourceUrl());
+        compareItem.put("sourceOwner", item.getSourceOwner());
+        compareItem.put("sourceTitle", item.getSourceTitle());
         return compareItem;
     }
 

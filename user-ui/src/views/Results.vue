@@ -907,9 +907,10 @@ function loadCompare() {
     compareSchools.value = []
     return
   }
-  const estimatedScore = route.query.score
+  const rawScore = route.query.score
     || localStorage.getItem(COMPARE_SCORE_KEY)
     || result.value.score
+  const estimatedScore = (rawScore && rawScore !== '-' && !isNaN(Number(rawScore))) ? Number(rawScore) : 300
   comparePrograms({ programIds: ids.join(','), estimatedScore }).then(res => {
     const items = (res.data && res.data.items) || []
     compareSchools.value = items.map(item => {
@@ -1110,8 +1111,12 @@ function openDetail(programId) {
   detailVisible.value = true
   detailLoading.value = true
   detail.value = null
-  getProgramDetail(programId, { estimatedScore: result.value.score }).then(res => {
+  const rawScore = result.value.score
+  const score = (rawScore && rawScore !== '-' && !isNaN(Number(rawScore))) ? Number(rawScore) : undefined
+  getProgramDetail(programId, score ? { estimatedScore: score } : {}).then(res => {
     detail.value = res.data
+  }).catch(() => {
+    detail.value = null
   }).finally(() => { detailLoading.value = false })
 }
 

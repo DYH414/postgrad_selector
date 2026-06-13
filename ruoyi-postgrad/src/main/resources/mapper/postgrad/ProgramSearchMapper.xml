@@ -6,7 +6,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <sql id="DynamicDataCompleteness">
         case
-            when q.completeness_level is not null then q.completeness_level
             when sc.score_line is not null
                 and ar.min_admitted_score is not null
                 and ar.max_admitted_score is not null
@@ -19,6 +18,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                     or ap.total_plan is not null
                     or ap.unified_exam_quota is not null)
                 then 'B'
+            when q.completeness_level is not null then q.completeness_level
             else 'C'
         end
     </sql>
