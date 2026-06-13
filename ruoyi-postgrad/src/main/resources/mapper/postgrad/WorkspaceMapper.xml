@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.WorkspaceMapper">
+
+    <sql id="DynamicCompletenessLevel">
+        case
+            when q.completeness_level is not null then q.completeness_level
+            when sc.score_line is not null
+                and ar.min_admitted_score is not null
+                and ar.max_admitted_score is not null
+                and ar.avg_admitted_score is not null
+                and (ap.total_plan is not null or ap.unified_exam_quota is not null or ar.admitted_count is not null)
+                then 'A'
+            when sc.score_line is not null
+                and (ar.avg_admitted_score is not null
+                    or ar.min_admitted_score is not null
+                    or ap.total_plan is not null
+                    or ap.unified_exam_quota is not null)
+                then 'B'
+            when sc.score_line is not null then 'C'
+            when sc.score_line is null then 'D'
+            else 'D'
+        end
+    </sql>
+
+    <sql id="WorkspaceSchoolFilters">
+        <if test="keyword != null and keyword != ''">
+            and (
+                s.name like concat('%', #{keyword}, '%')
+                or c.name like concat('%', #{keyword}, '%')
+                or p.program_name like concat('%', #{keyword}, '%')
+                or p.program_code like concat('%', #{keyword}, '%')
+                or p.research_direction like concat('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="province != null and province != ''">
+            and s.province = #{province}
+        </if>
+        <if test="tier != null and tier != ''">
+            and s.tier = #{tier}
+        </if>
+        <if test="is408 != null and is408 != ''">
+            and p.is_408 = #{is408}
+        </if>
+    </sql>
+
+    <select id="selectWorkspaceStats" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            count(distinct s.id) schoolCount,
+            count(distinct c.id) collegeCount,
+            count(distinct p.id) programCount,
+            count(distinct case when p.is_408 = 1 then p.id end) program408Count,
+            count(distinct case when data.dataCompleteness = 'A' then p.id end) aLevelCount,
+            count(distinct case when data.dataCompleteness = 'B' then p.id end) bLevelCount,
+            count(distinct case when data.dataCompleteness = 'C' then p.id end) cLevelCount,
+            count(distinct case when data.dataCompleteness = 'D' then p.id end) dLevelCount,
+            case when count(distinct p.id) = 0 then 0
+                else round(count(distinct case when data.dataCompleteness = 'A' then p.id end) / count(distinct p.id), 4)
+            end aLevelRate,
+            count(distinct case when sc.program_id is not null then p.id end) scoreReadyCount,
+            count(distinct case when ap.program_id is not null then p.id end) planReadyCount,
+            count(distinct case when ar.program_id is not null then p.id end) resultReadyCount,
+            coalesce(count(distinct st.id), 0) pendingReviewCount,
+            coalesce(count(distinct task.id), 0) missingTaskCount
+        from school s
+            left join college c on c.school_id = s.id
+            left join program p on p.college_id = c.id and p.status = 'active'
+            left join admission_score sc on sc.program_id = p.id and sc.year = #{year}
+            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year}
+            left join admission_result ar on ar.program_id = p.id and ar.year = #{year}
+            left join program_year_data_quality q on q.program_id = p.id and q.year = #{year}
+            left join (
+                select p2.id programId,
+                       <include refid="DynamicCompletenessLevel"/> dataCompleteness
+                from program p2
+                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year}
+                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year}
+                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year}
+                    left join program_year_data_quality q on q.program_id = p2.id and q.year = #{year}
+            ) data on data.programId = p.id
+            left join staging st on st.matched_program_id = p.id and st.status = 'pending'
+            left join data_collection_task task on task.program_id = p.id and task.status in ('PENDING', 'FAILED', 'STAGING')
+        where s.status = 'active'
+        <include refid="WorkspaceSchoolFilters"/>
+        <if test="completeness != null and completeness != ''">
+            and data.dataCompleteness = #{completeness}
+        </if>
+    </select>
+
+    <select id="selectWorkspaceSchools" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            s.id,
+            s.name,
+            s.short_name shortName,
+            s.province,
+            s.city,
+            s.tier,
+            s.is_985 is985,
+            s.is_211 is211,
+            s.is_double_first isDoubleFirst,
+            count(distinct c.id) collegeCount,
+            count(distinct p.id) programCount,
+            count(distinct case when p.is_408 = 1 then p.id end) program408Count,
+            count(distinct case when data.dataCompleteness = 'A' then p.id end) aLevelCount,
+            count(distinct case when data.dataCompleteness in ('C', 'D') then p.id end) weakDataCount,
+            coalesce(count(distinct st.id), 0) pendingReviewCount,
+            coalesce(count(distinct task.id), 0) missingTaskCount
+        from school s
+            left join college c on c.school_id = s.id
+            left join program p on p.college_id = c.id and p.status = 'active'
+            left join admission_score sc on sc.program_id = p.id and sc.year = #{year}
+            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year}
+            left join admission_result ar on ar.program_id = p.id and ar.year = #{year}
+            left join program_year_data_quality q on q.program_id = p.id and q.year = #{year}
+            left join (
+                select p2.id programId,
+                       <include refid="DynamicCompletenessLevel"/> dataCompleteness
+                from program p2
+                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year}
+                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year}
+                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year}
+                    left join program_year_data_quality q on q.program_id = p2.id and q.year = #{year}
+            ) data on data.programId = p.id
+            left join staging st on st.matched_program_id = p.id and st.status = 'pending'
+            left join data_collection_task task on task.program_id = p.id and task.status in ('PENDING', 'FAILED', 'STAGING')
+        where s.status = 'active'
+        <include refid="WorkspaceSchoolFilters"/>
+        <if test="completeness != null and completeness != ''">
+            and data.dataCompleteness = #{completeness}
+        </if>
+        group by s.id, s.name, s.short_name, s.province, s.city, s.tier, s.is_985, s.is_211, s.is_double_first
+        order by pendingReviewCount desc, weakDataCount desc, s.province, s.city, s.name
+        limit 80
+    </select>
+
+    <select id="selectSchoolWorkspaceStats" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            count(distinct c.id) collegeCount,
+            count(distinct p.id) programCount,
+            count(distinct case when p.is_408 = 1 then p.id end) program408Count,
+            count(distinct case when data.dataCompleteness = 'A' then p.id end) aLevelCount,
+            count(distinct case when data.dataCompleteness = 'B' then p.id end) bLevelCount,
+            count(distinct case when data.dataCompleteness = 'C' then p.id end) cLevelCount,
+            count(distinct case when data.dataCompleteness = 'D' then p.id end) dLevelCount,
+            coalesce(count(distinct st.id), 0) pendingReviewCount,
+            coalesce(count(distinct task.id), 0) missingTaskCount
+        from school s
+            left join college c on c.school_id = s.id
+            left join program p on p.college_id = c.id and p.status = 'active'
+            left join (
+                select p2.id programId,
+                       <include refid="DynamicCompletenessLevel"/> dataCompleteness
+                from program p2
+                    left join admission_score sc on sc.program_id = p2.id and sc.year = #{year}
+                    left join admission_plan ap on ap.program_id = p2.id and ap.year = #{year}
+                    left join admission_result ar on ar.program_id = p2.id and ar.year = #{year}
+                    left join program_year_data_quality q on q.program_id = p2.id and q.year = #{year}
+            ) data on data.programId = p.id
+            left join staging st on st.matched_program_id = p.id and st.status = 'pending'
+            left join data_collection_task task on task.program_id = p.id and task.status in ('PENDING', 'FAILED', 'STAGING')
+        where s.id = #{schoolId}
+    </select>
+
+    <select id="selectSchoolColleges" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            c.id,
+            c.name,
+            c.website,
+            c.graduate_url graduateUrl,
+            count(p.id) programCount,
+            count(distinct case when p.is_408 = 1 then p.id end) program408Count
+        from college c
+            left join program p on p.college_id = c.id and p.status = 'active'
+        where c.school_id = #{schoolId}
+        group by c.id, c.name, c.website, c.graduate_url
+        order by c.name
+    </select>
+
+    <select id="selectSchoolPrograms" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select *
+        from (
+            select
+                p.id,
+                c.id collegeId,
+                c.name collegeName,
+                p.program_code programCode,
+                p.program_name programName,
+                p.research_direction researchDirection,
+                p.study_mode studyMode,
+                p.degree_type degreeType,
+                p.exam_type examType,
+                p.score_scale scoreScale,
+                p.is_408 is408,
+                (select group_concat(concat(sub.code, ' ', sub.name) order by ps.subject_order separator ' / ')
+                 from program_subject ps
+                    left join subject sub on sub.id = ps.subject_id
+                 where ps.program_id = p.id) examSubjects,
+                sc.score_line scoreLine,
+                ap.total_plan totalPlan,
+                ap.unified_exam_quota unifiedExamQuota,
+                ar.admitted_count admittedCount,
+                ar.min_admitted_score minAdmittedScore,
+                ar.avg_admitted_score avgAdmittedScore,
+                ar.max_admitted_score maxAdmittedScore,
+                exists(select 1 from admission_score a where a.program_id = p.id and a.year = #{year}) hasScore,
+                exists(select 1 from admission_plan pl where pl.program_id = p.id and pl.year = #{year}) hasPlan,
+                exists(select 1 from admission_result r where r.program_id = p.id and r.year = #{year}) hasResult,
+                <include refid="DynamicCompletenessLevel"/> completenessLevel,
+                q.missing_fields missingFields,
+                q.has_official_source hasOfficialSource,
+                q.has_conflict hasConflict,
+                coalesce(count(distinct st.id), 0) pendingReviewCount,
+                coalesce(count(distinct task.id), 0) missingTaskCount
+            from program p
+                join college c on c.id = p.college_id
+                left join admission_score sc on sc.program_id = p.id and sc.year = #{year}
+                left join admission_plan ap on ap.program_id = p.id and ap.year = #{year}
+                left join admission_result ar on ar.program_id = p.id and ar.year = #{year}
+                left join program_year_data_quality q on q.program_id = p.id and q.year = #{year}
+                left join staging st on st.matched_program_id = p.id and st.status = 'pending'
+                left join data_collection_task task on task.program_id = p.id and task.status in ('PENDING', 'FAILED', 'STAGING')
+            where c.school_id = #{schoolId}
+              and p.status = 'active'
+            <if test="is408 != null and is408 != ''">
+              and p.is_408 = #{is408}
+            </if>
+            group by p.id, c.id, c.name, p.program_code, p.program_name, p.research_direction,
+                     p.study_mode, p.degree_type, p.exam_type, p.score_scale, p.is_408,
+                     sc.score_line, ap.total_plan, ap.unified_exam_quota, ar.admitted_count,
+                     ar.min_admitted_score, ar.avg_admitted_score, ar.max_admitted_score,
+                     q.completeness_level, q.missing_fields, q.has_official_source, q.has_conflict
+        ) x
+        where 1 = 1
+        <if test="completeness != null and completeness != ''">
+            and x.completenessLevel = #{completeness}
+        </if>
+        order by x.is408 desc, x.collegeName, x.programCode, x.programName
+        limit 300
+    </select>
+
+    <select id="selectSchoolProgramYears" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            p.id programId,
+            y.year,
+            exists(select 1 from admission_score sc2 where sc2.program_id = p.id and sc2.year = y.year) hasScore,
+            exists(select 1 from admission_plan ap2 where ap2.program_id = p.id and ap2.year = y.year) hasPlan,
+            exists(select 1 from admission_result ar2 where ar2.program_id = p.id and ar2.year = y.year) hasResult,
+            <include refid="DynamicCompletenessLevel"/> completenessLevel,
+            q.missing_fields missingFields
+        from program p
+            join college c on c.id = p.college_id
+            join (
+                <foreach collection="years" item="item" separator=" union all ">
+                    select #{item} year
+                </foreach>
+            ) y
+            left join admission_score sc on sc.program_id = p.id and sc.year = y.year
+            left join admission_plan ap on ap.program_id = p.id and ap.year = y.year
+            left join admission_result ar on ar.program_id = p.id and ar.year = y.year
+            left join program_year_data_quality q on q.program_id = p.id and q.year = y.year
+        where c.school_id = #{schoolId}
+          and p.status = 'active'
+        order by p.id, y.year
+    </select>
+</mapper>

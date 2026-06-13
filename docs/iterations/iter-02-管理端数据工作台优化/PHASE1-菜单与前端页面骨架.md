@@ -48,7 +48,7 @@ getSchoolWorkspace(id, params)
 ```text
 GET /postgrad/workspace/stats
 GET /postgrad/workspace/schools
-GET /postgrad/school/{id}/workspace
+GET /postgrad/workspace/school/{id}
 ```
 
 ### 新增菜单 SQL
@@ -87,12 +87,12 @@ ruoyi-ui/test/workspace.phase1.test.mjs
 
 ## 3. 当前页面行为
 
-由于 Phase 2 聚合接口还未实现，页面当前采用以下策略：
+Phase 1 完成时页面采用以下策略：
 
 - 优先请求未来的工作台聚合接口。
 - 如果 `/postgrad/workspace/stats` 不存在，显示“聚合统计接口待接入”提示。
 - 如果 `/postgrad/workspace/schools` 不存在，兜底请求已有 `GET /postgrad/school/list`。
-- 如果 `/postgrad/school/{id}/workspace` 不存在，中间矩阵显示“学校工作台聚合接口待接入”空状态。
+- 如果 `/postgrad/workspace/school/{id}` 不存在，中间矩阵显示可读空状态。
 
 这样做的目标是：
 
@@ -144,7 +144,7 @@ Phase 2 重点不再继续堆前端静态结构，而是实现后端聚合接口
 ```text
 GET /postgrad/workspace/stats
 GET /postgrad/workspace/schools
-GET /postgrad/school/{id}/workspace
+GET /postgrad/workspace/school/{id}
 ```
 
 其中完整度计算必须继续遵守 Phase 0 冻结口径：
@@ -152,4 +152,3 @@ GET /postgrad/school/{id}/workspace
 - 有 `program_year_data_quality` 记录时优先使用记录值。
 - 无记录时按 score / plan / result 动态计算。
 - 不允许退回 `coalesce(q.completeness_level, 'C')`。
-

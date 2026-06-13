@@ -117,7 +117,7 @@ function handleLogin() {
     if (!valid) return
     loading.value = true
     userStore.loginAction(loginForm).then(() => {
-      router.push(route.query.redirect || '/profile')
+      router.push(route.query.redirect || '/')
     }).catch(() => {
       ElMessage.error('登录失败，请检查账号密码')
     }).finally(() => { loading.value = false })

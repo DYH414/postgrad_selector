@@ -188,6 +188,18 @@
 
 ### Phase 2：工作台聚合接口
 
+**状态：已完成，待浏览器联调确认**
+
+**阶段产物**
+
+- `docs/iterations/iter-02-管理端数据工作台优化/PHASE2-工作台聚合接口.md`
+- `ruoyi-admin/src/main/java/com/ruoyi/web/controller/postgrad/WorkspaceController.java`
+- `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/IWorkspaceService.java`
+- `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/service/impl/WorkspaceServiceImpl.java`
+- `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/mapper/WorkspaceMapper.java`
+- `ruoyi-postgrad/src/main/resources/mapper/postgrad/WorkspaceMapper.xml`
+- `ruoyi-postgrad/test/workspace.phase2.test.mjs`
+
 **目标**
 
 后端提供前端工作台直接可用的数据结构，避免前端拼接大量 CRUD 响应。
@@ -205,7 +217,7 @@
 ```text
 GET /postgrad/workspace/stats
 GET /postgrad/workspace/schools
-GET /postgrad/school/{id}/workspace
+GET /postgrad/workspace/school/{id}
 ```
 
 **`/postgrad/workspace/stats` 返回内容**
@@ -233,7 +245,7 @@ GET /postgrad/school/{id}/workspace
 - 待审核数
 - 缺失任务数
 
-**`/postgrad/school/{id}/workspace` 返回内容**
+**`/postgrad/workspace/school/{id}` 返回内容**
 
 - 学校基础信息
 - 学院列表
@@ -247,7 +259,7 @@ GET /postgrad/school/{id}/workspace
 **验收方式**
 
 - 登录后台后，请求三个接口返回 `code=200`。
-- 任意选择一个有专业数据的学校，`/postgrad/school/{id}/workspace` 能返回学院和专业方向。
+- 任意选择一个有专业数据的学校，`/postgrad/workspace/school/{id}` 能返回学院和专业方向。
 - 每个专业方向至少能判断：
   - 是否有复试线
   - 是否有招生计划
@@ -262,6 +274,14 @@ GET /postgrad/school/{id}/workspace
 ---
 
 ### Phase 3：真实数据接入与学校选择体验
+
+**状态：已完成**
+
+当前前端已经接入 Phase 2 接口：全局统计、学校列表、选中学校后的专业方向矩阵和年份完整度均走 `/postgrad/workspace/*`。已补充学校摘要、失败态提示和上下文跳转参数。
+
+**阶段产物**
+
+- `docs/iterations/iter-02-管理端数据工作台优化/PHASE3-4-真实数据接入与矩阵体验.md`
 
 **目标**
 
@@ -291,6 +311,10 @@ GET /postgrad/school/{id}/workspace
 ---
 
 ### Phase 4：学院/专业方向矩阵
+
+**状态：已完成基础版**
+
+当前已具备按学校查看专业方向、按学院过滤、近三年 A/B/C/D 年份状态、score/plan/result 三件套标识和右侧专业详情联动。后续可在 Phase 6 接入图表，把矩阵里的状态进一步可视化。
 
 **目标**
 

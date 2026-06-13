@@ -140,7 +140,7 @@ icon: dashboard
 ```text
 GET /postgrad/workspace/stats
 GET /postgrad/workspace/schools
-GET /postgrad/school/{id}/workspace
+GET /postgrad/workspace/school/{id}
 ```
 
 ## 6. 完整度口径冻结
@@ -231,4 +231,3 @@ Phase 1 可以开始，前提是遵守以下约束：
 - 菜单 SQL 独立新增，避免覆盖旧菜单。
 - 不在 Phase 1 做复杂聚合 SQL。
 - 不在 Phase 1 做审核中心重构。
-

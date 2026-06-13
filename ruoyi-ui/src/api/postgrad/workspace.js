@@ -18,7 +18,7 @@ export function listWorkspaceSchools(params) {
 
 export function getSchoolWorkspace(id, params) {
   return request({
-    url: '/postgrad/school/' + id + '/workspace',
+    url: '/postgrad/workspace/school/' + id,
     method: 'get',
     params
   })
