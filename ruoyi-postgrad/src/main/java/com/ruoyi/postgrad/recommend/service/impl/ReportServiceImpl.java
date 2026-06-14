@@ -36,7 +36,6 @@ public class ReportServiceImpl implements IReportService {
 
     private static final Logger log = LoggerFactory.getLogger(ReportServiceImpl.class);
 
-    private static final String DRAFT_KEY_PREFIX = "ai:v2:draft:";
     private static final String REPORT_KEY_PREFIX = "ai:v2:report:";
     private static final String RULE_VERSION = "ai-v2";
     private static final long TTL_DAYS = 7;
@@ -53,7 +52,7 @@ public class ReportServiceImpl implements IReportService {
     @Override
     public ReportVO generateReport(Long userId) {
         // 1. 从 Redis 读取当前草稿
-        String draftJson = redisTemplate.opsForValue().get(DRAFT_KEY_PREFIX + userId);
+        String draftJson = redisTemplate.opsForValue().get(DraftServiceImpl.DRAFT_KEY_PREFIX + userId);
         if (draftJson == null || draftJson.isBlank()) {
             throw new IllegalArgumentException("草稿不存在，请先生成 AI 推荐草稿");
         }
@@ -236,7 +235,7 @@ public class ReportServiceImpl implements IReportService {
             for (RowMap row : rows) {
                 Object pidObj = row.get("programId");
                 if (pidObj instanceof Number n) {
-                    SchoolFact fact = rowToSchoolFact(row);
+                    SchoolFact fact = SchoolFact.fromRow(row);
                     // 保留原草稿中的 gap/canBeSafe 等计算字段
                     hydratedMap.put(n.longValue(), fact);
                 }
@@ -312,49 +311,4 @@ public class ReportServiceImpl implements IReportService {
         return sb.toString();
     }
 
-    /**
-     * RowMap → SchoolFact（仅填充 DB 字段，不含计算字段）。
-     */
-    private SchoolFact rowToSchoolFact(RowMap row) {
-        SchoolFact f = new SchoolFact();
-        f.setProgramId(longVal(row.get("programId")));
-        f.setSchoolId(longVal(row.get("schoolId")));
-        f.setSchoolName(strVal(row.get("schoolName")));
-        f.setSchoolTier(strVal(row.get("schoolTier")));
-        f.setCity(strVal(row.get("city")));
-        f.setProvince(strVal(row.get("province")));
-        f.setCollegeName(strVal(row.get("collegeName")));
-        f.setProgramName(strVal(row.get("programName")));
-        f.setProgramCode(strVal(row.get("programCode")));
-        f.setDegreeType(strVal(row.get("degreeType")));
-        f.setScoreLine(intVal(row.get("scoreLine")));
-        f.setAvgAdmittedScore(intVal(row.get("avgAdmittedScore")));
-        f.setAdmissionLow(intVal(row.get("admissionLow")));
-        f.setAdmissionHigh(intVal(row.get("admissionHigh")));
-        Integer low = f.getAdmissionLow();
-        Integer high = f.getAdmissionHigh();
-        f.setAdmissionRange(low != null && high != null ? low + "-" + high
-            : low != null ? String.valueOf(low) : high != null ? String.valueOf(high) : null);
-        f.setPlanCount(intVal(row.get("planCount")));
-        f.setUnifiedExamQuota(intVal(row.get("unifiedExamQuota")));
-        f.setAdmittedCount(intVal(row.get("admittedCount")));
-        f.setRetestCount(intVal(row.get("retestCount")));
-        f.setDataYear(intVal(row.get("dataYear")));
-        f.setDataCompleteness(strVal(row.get("dataCompleteness")));
-        f.setSourceUrl(strVal(row.get("sourceUrl")));
-        f.setSourceOwner(strVal(row.get("sourceOwner")));
-        return f;
-    }
-
-    private static String strVal(Object v) { return v == null ? null : v.toString(); }
-    private static Integer intVal(Object v) {
-        if (v instanceof Number n) return n.intValue();
-        if (v == null) return null;
-        try { return Integer.parseInt(v.toString()); } catch (NumberFormatException e) { return null; }
-    }
-    private static Long longVal(Object v) {
-        if (v instanceof Number n) return n.longValue();
-        if (v == null) return null;
-        try { return Long.parseLong(v.toString()); } catch (NumberFormatException e) { return null; }
-    }
 }

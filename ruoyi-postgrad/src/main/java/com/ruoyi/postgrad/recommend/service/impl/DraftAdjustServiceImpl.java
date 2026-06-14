@@ -30,8 +30,6 @@ public class DraftAdjustServiceImpl {
 
     private static final Logger log = LoggerFactory.getLogger(DraftAdjustServiceImpl.class);
 
-    private static final String DRAFT_KEY_PREFIX = "ai:v2:draft:";
-    private static final String DRAFT_POOL_KEY_PREFIX = "ai:v2:draft:pool:";
     private static final long TTL_DAYS = 7;
 
     @Autowired
@@ -163,7 +161,7 @@ public class DraftAdjustServiceImpl {
     // ── Redis 读写 ──
 
     DraftVO readDraft(Long userId) {
-        String json = redisTemplate.opsForValue().get(DRAFT_KEY_PREFIX + userId);
+        String json = redisTemplate.opsForValue().get(DraftServiceImpl.DRAFT_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) {
             return emptyDraft();
         }
@@ -176,11 +174,11 @@ public class DraftAdjustServiceImpl {
     }
 
     void writeDraft(Long userId, DraftVO draft) {
-        redisTemplate.opsForValue().set(DRAFT_KEY_PREFIX + userId, JSON.toJSONString(draft), Duration.ofDays(TTL_DAYS));
+        redisTemplate.opsForValue().set(DraftServiceImpl.DRAFT_KEY_PREFIX + userId, JSON.toJSONString(draft), Duration.ofDays(TTL_DAYS));
     }
 
     List<CandidateCardVO> readPoolSnapshot(Long userId) {
-        String json = redisTemplate.opsForValue().get(DRAFT_POOL_KEY_PREFIX + userId);
+        String json = redisTemplate.opsForValue().get(DraftServiceImpl.DRAFT_POOL_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return Collections.emptyList();
         try {
             return JSON.parseArray(json, CandidateCardVO.class);

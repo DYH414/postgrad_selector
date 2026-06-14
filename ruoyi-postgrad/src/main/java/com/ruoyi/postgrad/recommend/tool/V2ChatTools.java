@@ -13,6 +13,7 @@ import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
+import com.ruoyi.postgrad.recommend.service.impl.DraftServiceImpl;
 
 import dev.langchain4j.agent.tool.Tool;
 
@@ -24,9 +25,6 @@ import dev.langchain4j.agent.tool.Tool;
 public class V2ChatTools {
 
     private static final Logger log = LoggerFactory.getLogger(V2ChatTools.class);
-
-    private static final String DRAFT_KEY_PREFIX = "ai:v2:draft:";
-    private static final String DRAFT_POOL_KEY_PREFIX = "ai:v2:draft:pool:";
 
     @Tool("查询指定 programId 对应学校的完整详细数据，包括学校层次、录取均分、招生人数、复试线等")
     public String getProgramDetail(long programId) {
@@ -147,7 +145,7 @@ public class V2ChatTools {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return "草稿上下文未初始化，无法获取。";
 
-        String json = ctx.redis().opsForValue().get(DRAFT_KEY_PREFIX + ctx.userId());
+        String json = ctx.redis().opsForValue().get(DraftServiceImpl.DRAFT_KEY_PREFIX + ctx.userId());
         if (json == null || json.isBlank()) return "尚未生成草稿。";
 
         try {
@@ -162,7 +160,7 @@ public class V2ChatTools {
 
     private List<CandidateCardVO> loadPoolSnapshot(Long userId) {
         String json = V2ChatToolContext.current().redis()
-            .opsForValue().get(DRAFT_POOL_KEY_PREFIX + userId);
+            .opsForValue().get(DraftServiceImpl.DRAFT_POOL_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return new ArrayList<>();
         try {
             return JSON.parseArray(json, CandidateCardVO.class);

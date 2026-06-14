@@ -2,6 +2,8 @@ package com.ruoyi.postgrad.recommend.domain;
 
 import java.io.Serializable;
 
+import com.ruoyi.postgrad.domain.RowMap;
+
 /**
  * 学校事实数据 —— 来自 DB 或后端计算，AI 不得编造。
  * <p>包含三部分：DB 原始字段、DB 派生字段（admissionRange）、后端计算字段（gap/quotaRisk/canBeSafe）。</p>
@@ -210,18 +212,97 @@ public class SchoolFact implements Serializable {
     // ── 派生方法 ──
 
     /**
-     * 根据 gap + canBeSafe 推断该候选的档位。
-     * <p>统一规则：reach: -15~5, steady: 6~14, safe: ≥15 + canBeSafe。
-     * gap < -15 兜底归为 reach（理论上 pool 已过滤，仅展示层调用）。</p>
+     * 档位分类规则 —— 系统唯一真相来源。
+     * <p>reach: -15 ≤ gap ≤ 5, steady: 6 ≤ gap ≤ 14, safe: gap ≥ 15 且 canBeSafe。
+     * gap < -15 返回 null（不入档），gap ≥ 15 但不满足保底条件降级为 steady。</p>
+     *
+     * @param gap       分数差距（estimatedScore - avgAdmittedScore）
+     * @param canBeSafe 是否满足保底条件
+     * @return reach / steady / safe / null（null 表示不入档）
+     */
+    public static String classifyTier(int gap, Boolean canBeSafe) {
+        if (gap < -15) return null;                       // 差距过大，不入档
+        if (gap >= -15 && gap <= 5) return "reach";       // 冲刺档
+        if (gap <= 14) return "steady";                   // 稳妥档
+        if (gap >= 15 && Boolean.TRUE.equals(canBeSafe)) return "safe"; // 保底档
+        return "steady";                                  // gap≥15 不满足保底条件 → 降级
+    }
+
+    /**
+     * 根据当前实例的 gap + canBeSafe 推断档位。
+     * <p>委托给 {@link #classifyTier(int, Boolean)}，gap < -15 兜底返回 "reach"。</p>
      *
      * @return reach / steady / safe
      */
     public String inferTier() {
         int gap = this.scoreGap != null ? this.scoreGap : 0;
-        if (gap >= -15 && gap <= 5) return "reach";
-        if (gap <= 14) return "steady";
-        if (gap >= 15 && Boolean.TRUE.equals(this.canBeSafe)) return "safe";
-        if (gap < -15) return "reach"; // 差距过大，兜底
-        return "steady";
+        String tier = classifyTier(gap, this.canBeSafe);
+        return tier != null ? tier : "reach"; // gap < -15 兜底
+    }
+
+    // ── 静态工厂 / 类型转换工具（系统唯一副本） ──
+
+    /**
+     * 从 MyBatis RowMap 构建 SchoolFact（仅填充 DB 字段，不含计算字段）。
+     * <p>计算字段（gap/canBeSafe/quotaRisk 等）由调用方按需填充。</p>
+     */
+    public static SchoolFact fromRow(RowMap row) {
+        SchoolFact f = new SchoolFact();
+        f.setProgramId(longVal(row.get("programId")));
+        f.setSchoolId(longVal(row.get("schoolId")));
+        f.setSchoolName(strVal(row.get("schoolName")));
+        f.setSchoolTier(tierLabel(strVal(row.get("schoolTier"))));
+        f.setCity(strVal(row.get("city")));
+        f.setProvince(strVal(row.get("province")));
+        f.setCollegeName(strVal(row.get("collegeName")));
+        f.setProgramName(strVal(row.get("programName")));
+        f.setProgramCode(strVal(row.get("programCode")));
+        f.setDegreeType(strVal(row.get("degreeType")));
+        f.setExamCombo(strVal(row.get("examCombo")));
+        f.setScoreLine(intVal(row.get("scoreLine")));
+        f.setAvgAdmittedScore(intVal(row.get("avgAdmittedScore")));
+        f.setAdmissionLow(intVal(row.get("admissionLow")));
+        f.setAdmissionHigh(intVal(row.get("admissionHigh")));
+        Integer low = f.getAdmissionLow();
+        Integer high = f.getAdmissionHigh();
+        f.setAdmissionRange(low != null && high != null ? low + "-" + high
+            : low != null ? String.valueOf(low) : high != null ? String.valueOf(high) : null);
+        f.setPlanCount(intVal(row.get("planCount")));
+        f.setUnifiedExamQuota(intVal(row.get("unifiedExamQuota")));
+        f.setAdmittedCount(intVal(row.get("admittedCount")));
+        f.setRetestCount(intVal(row.get("retestCount")));
+        f.setDataYear(intVal(row.get("dataYear")));
+        f.setDataCompleteness(strVal(row.get("dataCompleteness")));
+        f.setSourceUrl(strVal(row.get("sourceUrl")));
+        f.setSourceOwner(strVal(row.get("sourceOwner")));
+        return f;
+    }
+
+    /** 学校层次原始值 → 中文标签 */
+    public static String tierLabel(String raw) {
+        if (raw == null) return "其他";
+        return switch (raw) {
+            case "985" -> "985";
+            case "211" -> "211";
+            case "DOUBLE_FIRST" -> "双一流";
+            default -> "其他";
+        };
+    }
+
+    /** RowMap 安全取值 → String */
+    public static String strVal(Object v) { return v == null ? null : v.toString(); }
+
+    /** RowMap 安全取值 → Integer */
+    public static Integer intVal(Object v) {
+        if (v instanceof Number n) return n.intValue();
+        if (v == null) return null;
+        try { return Integer.parseInt(v.toString()); } catch (NumberFormatException e) { return null; }
+    }
+
+    /** RowMap 安全取值 → Long */
+    public static Long longVal(Object v) {
+        if (v instanceof Number n) return n.longValue();
+        if (v == null) return null;
+        try { return Long.parseLong(v.toString()); } catch (NumberFormatException e) { return null; }
     }
 }

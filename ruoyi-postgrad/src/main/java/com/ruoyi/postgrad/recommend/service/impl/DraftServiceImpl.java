@@ -7,11 +7,13 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
@@ -40,12 +42,28 @@ public class DraftServiceImpl implements IDraftService {
 
     private static final Logger log = LoggerFactory.getLogger(DraftServiceImpl.class);
 
-    static final String DRAFT_KEY_PREFIX = "ai:v2:draft:";
-    static final String DRAFT_POOL_KEY_PREFIX = "ai:v2:draft:pool:";
+    public static final String DRAFT_KEY_PREFIX = "ai:v2:draft:";
+    public static final String DRAFT_POOL_KEY_PREFIX = "ai:v2:draft:pool:";
     private static final String LOCK_KEY_PREFIX = "ai:v2:draft:lock:";
     private static final long TTL_DAYS = 7;
     /** 生成锁 TTL：5 分钟，防止重复点击 */
     private static final java.time.Duration LOCK_TTL = java.time.Duration.ofMinutes(5);
+    /**
+     * 安全释放锁的 Lua 脚本：仅当 value 匹配时才删除。
+     * <p>防止锁过期后被其他请求获取，当前请求误删他人锁。</p>
+     */
+    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT;
+
+    static {
+        UNLOCK_SCRIPT = new DefaultRedisScript<>();
+        UNLOCK_SCRIPT.setScriptText(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then " +
+            "  return redis.call('del', KEYS[1]) " +
+            "else " +
+            "  return 0 " +
+            "end");
+        UNLOCK_SCRIPT.setResultType(Long.class);
+    }
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -67,8 +85,10 @@ public class DraftServiceImpl implements IDraftService {
     @Override
     public void generateDraft(Long userId, DraftGenerationCallback callback) {
         // 生成锁：防止重复点击导致多个 LLM 调用并行
+        // 使用 UUID 作为锁持有者标识，释放时 Lua 原子校验，防止误删他人锁
         String lockKey = LOCK_KEY_PREFIX + userId;
-        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", LOCK_TTL);
+        String lockValue = UUID.randomUUID().toString();
+        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, LOCK_TTL);
         if (Boolean.FALSE.equals(locked)) {
             callback.onError(new IllegalStateException("已有草稿正在生成，请稍候"));
             return;
@@ -140,7 +160,8 @@ public class DraftServiceImpl implements IDraftService {
             log.error("[Draft] generateDraft failed for userId={}: {}", userId, e.getMessage(), e);
             callback.onError(e);
         } finally {
-            redisTemplate.delete(lockKey);
+            // 仅当锁仍属于当前持有者时才释放（Lua 原子操作）
+            redisTemplate.execute(UNLOCK_SCRIPT, Collections.singletonList(lockKey), lockValue);
         }
     }
 

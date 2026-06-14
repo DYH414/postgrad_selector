@@ -4,8 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.regex.Pattern;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,9 +36,6 @@ public class AiSelectorServiceImpl implements IAiSelectorService {
     private static final int REACH_LIMIT = 3;
     private static final int STEADY_LIMIT = 4;
     private static final int SAFE_LIMIT = 3;
-
-    /** 从 AI 响应中提取 JSON 数组的正则 */
-    private static final Pattern JSON_ARRAY_PATTERN = Pattern.compile("\\[[\\s\\S]*?\\]");
 
     @Value("classpath:prompts/v2/select-reach.txt")
     private org.springframework.core.io.Resource reachPromptResource;

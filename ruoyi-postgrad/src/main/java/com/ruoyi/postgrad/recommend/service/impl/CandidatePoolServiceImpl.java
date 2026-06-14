@@ -66,30 +66,22 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
             }
         }
 
-        // 3. 规则分档
-        //    reach:  -15 ≤ gap ≤ 5  （差距在合理冲刺范围内）
-        //    steady:  6 ≤ gap ≤ 14  （分数有余量）
-        //    safe:   gap ≥ 15 且 canBeSafe=true
-        //    gap < -15 → 丢弃（差距过大，冲刺也没有意义）
+        // 3. 规则分档（统一使用 SchoolFact.classifyTier，系统唯一真相来源）
         List<SchoolFact> reach = new ArrayList<>();
         List<SchoolFact> steady = new ArrayList<>();
         List<SchoolFact> safe = new ArrayList<>();
 
         for (SchoolFact f : facts) {
             int gap = f.getScoreGap() != null ? f.getScoreGap() : 0;
-            if (gap < -15) {
-                // 差距过大，不进入任何档位
+            String tier = SchoolFact.classifyTier(gap, f.getCanBeSafe());
+            if (tier == null) {
+                // gap < -15，不入档
                 continue;
             }
-            if (gap >= -15 && gap <= 5) {
-                reach.add(f);
-            } else if (gap <= 14) {
-                steady.add(f);
-            } else if (gap >= 15 && Boolean.TRUE.equals(f.getCanBeSafe())) {
-                safe.add(f);
-            } else {
-                // gap ≥ 15 但不满足保底条件 → 降级为稳妥
-                steady.add(f);
+            switch (tier) {
+                case "reach" -> reach.add(f);
+                case "steady" -> steady.add(f);
+                case "safe" -> safe.add(f);
             }
         }
 
@@ -127,46 +119,10 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
     }
 
     /**
-     * 将 MyBatis RowMap 转为 SchoolFact。
+     * 将 MyBatis RowMap 转为 SchoolFact（DB 字段 + 计算字段）。
      */
     private SchoolFact toSchoolFact(RowMap row, int estimatedScore) {
-        SchoolFact f = new SchoolFact();
-
-        // ── 标识 ──
-        f.setProgramId(longVal(row.get("programId")));
-        f.setSchoolId(longVal(row.get("schoolId")));
-
-        // ── 学校信息 ──
-        f.setSchoolName(strVal(row.get("schoolName")));
-        f.setSchoolTier(tierLabel(row.get("schoolTier")));
-        f.setCity(strVal(row.get("city")));
-        f.setProvince(strVal(row.get("province")));
-
-        // ── 学院/专业 ──
-        f.setCollegeName(strVal(row.get("collegeName")));
-        f.setProgramName(strVal(row.get("programName")));
-        f.setProgramCode(strVal(row.get("programCode")));
-        f.setDegreeType(strVal(row.get("degreeType")));
-        f.setExamCombo(strVal(row.get("examCombo")));
-
-        // ── 分数 ──
-        f.setScoreLine(intVal(row.get("scoreLine")));
-        f.setAvgAdmittedScore(intVal(row.get("avgAdmittedScore")));
-        f.setAdmissionLow(intVal(row.get("admissionLow")));
-        f.setAdmissionHigh(intVal(row.get("admissionHigh")));
-        f.setAdmissionRange(buildAdmissionRange(f.getAdmissionLow(), f.getAdmissionHigh()));
-
-        // ── 招生 ──
-        f.setPlanCount(intVal(row.get("planCount")));
-        f.setUnifiedExamQuota(intVal(row.get("unifiedExamQuota")));
-        f.setAdmittedCount(intVal(row.get("admittedCount")));
-        f.setRetestCount(intVal(row.get("retestCount")));
-
-        // ── 数据质量 ──
-        f.setDataYear(intVal(row.get("dataYear")));
-        f.setDataCompleteness(strVal(row.get("dataCompleteness")));
-        f.setSourceUrl(strVal(row.get("sourceUrl")));
-        f.setSourceOwner(strVal(row.get("sourceOwner")));
+        SchoolFact f = SchoolFact.fromRow(row);
 
         // ── 后端计算字段 ──
         Integer avg = f.getAvgAdmittedScore();
@@ -269,16 +225,6 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
     }
 
     /**
-     * 录取区间。
-     */
-    private String buildAdmissionRange(Integer low, Integer high) {
-        if (low == null && high == null) return null;
-        if (low == null) return String.valueOf(high);
-        if (high == null) return String.valueOf(low);
-        return low + "-" + high;
-    }
-
-    /**
      * 保底阻止原因。
      */
     private String buildSafeBlockReason(int quota, int gap, String completeness) {
@@ -286,20 +232,6 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
         if (quota < 10) return "统考名额仅" + quota + "人，数据不足以支撑保底判断";
         if ("C".equalsIgnoreCase(completeness)) return "数据完整度较低，不能作为保底";
         return "不满足保底条件";
-    }
-
-    /**
-     * 学校层次中文标签。
-     */
-    private String tierLabel(Object raw) {
-        if (raw == null) return "其他";
-        String s = raw.toString();
-        return switch (s) {
-            case "985" -> "985";
-            case "211" -> "211";
-            case "DOUBLE_FIRST" -> "双一流";
-            default -> "其他";
-        };
     }
 
     /**
@@ -361,23 +293,4 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
         return t;
     }
 
-    // ── 安全类型转换 ──
-
-    private static String strVal(Object v) {
-        return v == null ? null : v.toString();
-    }
-
-    private static Integer intVal(Object v) {
-        if (v instanceof Number n) return n.intValue();
-        if (v == null) return null;
-        try { return Integer.parseInt(v.toString()); }
-        catch (NumberFormatException e) { return null; }
-    }
-
-    private static Long longVal(Object v) {
-        if (v instanceof Number n) return n.longValue();
-        if (v == null) return null;
-        try { return Long.parseLong(v.toString()); }
-        catch (NumberFormatException e) { return null; }
-    }
 }
