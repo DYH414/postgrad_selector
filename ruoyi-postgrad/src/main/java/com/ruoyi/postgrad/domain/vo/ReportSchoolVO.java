@@ -6,8 +6,7 @@ import java.util.List;
 /**
  * 报告页学校视图对象 —— 定义报告 API 返回的单个学校数据结构。
  *
- * <p>替代 AiReportBuilderImpl 中 hydratedReportSchool() 返回的裸 Map。
- * 前端 results.vue 的 normalizeSchool() 直接消费此结构。</p>
+ * <p>定义报告页可直接消费的结构化学校数据，避免返回裸 Map。</p>
  *
  * <p><b>关键修复：</b>dataYear 作为独立字段保留，不再被 sanitize 逻辑删除。
  * 前端可直接展示年份，不再依赖 schoolDataYear() 兜底。</p>

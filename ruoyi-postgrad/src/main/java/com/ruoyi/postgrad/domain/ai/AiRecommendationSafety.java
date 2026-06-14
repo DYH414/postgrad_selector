@@ -169,8 +169,7 @@ public final class AiRecommendationSafety {
     /**
      * 从实际数据字段重新计算数据完整度。
      * <p>A = 有复试线 + 拟录取区间 + 均分 + 人数；B = 有复试线 + 至少一个主要额外字段；C = 其余。</p>
-     * <p>此为唯一权威实现，ProgramRecommendationServiceImpl / AiRecommendationServiceImpl /
-     * AiReportBuilderImpl 均调用此方法。</p>
+     * <p>此为唯一权威实现，规则筛选与 v2 AI 推荐链路均调用此方法。</p>
      */
     public static String computedCompleteness(Map<String, Object> row) {
         boolean hasScore = integerValue(row.get("scoreLine")) != null;

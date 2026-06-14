@@ -15,8 +15,8 @@ import java.util.Objects;
  * <p>职责：从 MyBatis RowMap 转换而来，携带 DB 原始字段 + 后端计算字段（gap / fitLevel / warnings 等），
  * 在规则筛选链路中流转，最终序列化到 API 响应。</p>
  *
- * <p>与 {@link CandidateProgramDTO} 的区别：本类面向规则筛选结果页，包含 fitLevel / warnings /
- * retestAdmissionRatio 等规则筛选特有计算字段；CandidateProgramDTO 面向 AI 推荐候选池。</p>
+ * <p>本类面向规则筛选结果页，包含 fitLevel / warnings /
+ * retestAdmissionRatio 等规则筛选特有计算字段。</p>
  */
 public class ProgramSummaryDTO implements Serializable {
 

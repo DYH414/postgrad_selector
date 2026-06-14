@@ -6,25 +6,25 @@ public class AiToolBudget {
     private final int maxExpandCalls;
     private final int maxResultTokens;
     private final int maxSearchCalls;
-    private final int maxBookmarkCalls;
+    private final int maxWriteCalls;
 
     private int totalCalls;
     private int detailCalls;
     private int expandCalls;
     private int searchCalls;
-    private int bookmarkCalls;
+    private int writeCalls;
     private int resultTokens;
     private boolean explorationLimited;
 
     public AiToolBudget(int maxTotalCalls, int maxDetailCalls, int maxExpandCalls,
         int maxResultTokens,
-        int maxSearchCalls, int maxBookmarkCalls) {
+        int maxSearchCalls, int maxWriteCalls) {
         this.maxTotalCalls = maxTotalCalls;
         this.maxDetailCalls = maxDetailCalls;
         this.maxExpandCalls = maxExpandCalls;
         this.maxResultTokens = maxResultTokens;
         this.maxSearchCalls = maxSearchCalls;
-        this.maxBookmarkCalls = maxBookmarkCalls;
+        this.maxWriteCalls = maxWriteCalls;
     }
 
     public static AiToolBudget reportDefaults() {
@@ -32,15 +32,15 @@ public class AiToolBudget {
     }
 
     public static AiToolBudget chatTurnDefaults() {
-        // totalCalls=6 (only counts query tools), detailCalls=1, searchCalls=3, bookmarkCalls=10
+        // totalCalls=6 (only counts query tools), detailCalls=1, searchCalls=3, writeCalls=10
         return new AiToolBudget(6, 1, 2, 3000, 3, 10);
     }
 
     public boolean tryUse(String toolName, int estimatedResultTokens) {
-        boolean isBookmarkTool = "addToReport".equals(toolName) || "removeFromReport".equals(toolName);
+        boolean isWriteTool = isWriteTool(toolName);
 
-        // 查询工具受总预算限制；写入工具（书签）不占查询配额
-        if (!isBookmarkTool) {
+        // 查询工具受总预算限制；写入工具不占查询配额
+        if (!isWriteTool) {
             if (totalCalls + 1 > maxTotalCalls || resultTokens + estimatedResultTokens > maxResultTokens) {
                 explorationLimited = true;
                 return false;
@@ -54,7 +54,7 @@ public class AiToolBudget {
             explorationLimited = true;
             return false;
         }
-        if ("addToReport".equals(toolName) && bookmarkCalls + 1 > maxBookmarkCalls) {
+        if (isWriteTool && writeCalls + 1 > maxWriteCalls) {
             explorationLimited = true;
             return false;
         }
@@ -62,18 +62,24 @@ public class AiToolBudget {
             explorationLimited = true;
             return false;
         }
-        if (!isBookmarkTool) {
+        if (!isWriteTool) {
             totalCalls++;
             resultTokens += Math.max(0, estimatedResultTokens);
         }
         if ("getProgramDetail".equals(toolName)) detailCalls++;
         if ("searchPrograms".equals(toolName)) searchCalls++;
-        if ("addToReport".equals(toolName)) bookmarkCalls++;
+        if (isWriteTool) writeCalls++;
         if ("expandCandidatePool".equals(toolName)) expandCalls++;
         return true;
     }
 
     public boolean isExplorationLimited() {
         return explorationLimited;
+    }
+
+    private boolean isWriteTool(String toolName) {
+        return "removeDraftCandidate".equals(toolName)
+            || "replaceDraftCandidate".equals(toolName)
+            || "addBackDraftCandidate".equals(toolName);
     }
 }

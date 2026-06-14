@@ -47,13 +47,12 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { getToken } from '@/api/request'
 import { removeToken } from '@/api/request'
-import { getAiReport } from '@/api/ai'
 
 const router = useRouter()
 const route = useRoute()
@@ -107,49 +106,6 @@ function logout() {
   }
 }
 
-// ---- 全局报告完成通知（跨页面） ----
-const reportPollTimer = ref(null)
-const notifiedIds = new Set()
-
-function pollPendingReports() {
-  try {
-    const pending = JSON.parse(sessionStorage.getItem('pending_reports') || '[]')
-    if (!pending.length) return
-    const stillPending = []
-    Promise.allSettled(pending.map(p => getAiReport(p.id))).then(results => {
-      results.forEach((r, i) => {
-        const info = pending[i]
-        if (r.status === 'fulfilled' && r.value?.data) {
-          const d = r.value.data
-          if (d.status !== 'PENDING' && !notifiedIds.has(info.id)) {
-            notifiedIds.add(info.id)
-            ElNotification({
-              title: 'AI 推荐报告已生成',
-              message: '点击查看你的择校推荐报告',
-              type: 'success',
-              duration: 8000,
-              onClick: () => router.push({ name: 'AiReport', params: { id: info.id } })
-            })
-            return // 已完成，不保留
-          }
-          if (d.status === 'PENDING' && Date.now() - info.ts < 10 * 60_000) {
-            stillPending.push(info) // 10分钟内的继续等
-          }
-        }
-      })
-      sessionStorage.setItem('pending_reports', JSON.stringify(stillPending))
-    })
-  } catch (_) {}
-}
-
-onMounted(() => {
-  pollPendingReports()
-  reportPollTimer.value = setInterval(pollPendingReports, 10_000)
-})
-
-onBeforeUnmount(() => {
-  if (reportPollTimer.value) clearInterval(reportPollTimer.value)
-})
 </script>
 
 <style scoped>

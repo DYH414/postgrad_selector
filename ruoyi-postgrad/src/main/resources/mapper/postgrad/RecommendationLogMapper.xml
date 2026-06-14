@@ -55,14 +55,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                     and rule_version = 'ai-conversation-state')
     </select>
 
-    <select id="selectAiReportListByUserId" resultType="com.ruoyi.postgrad.domain.RowMap">
-        select id, profile_snapshot, result_json, created_at
-        from recommendation_log
-        where user_id = #{userId} and rule_version = 'ai-conversation'
-          and result_json like '%"summary"%'
-        order by created_at desc limit 20
-    </select>
-
     <select id="selectReportListByRuleVersion" resultType="com.ruoyi.postgrad.domain.RowMap">
         select id, profile_snapshot, result_json, created_at
         from recommendation_log

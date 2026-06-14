@@ -40,9 +40,7 @@ const routes = [
   },
   {
     path: '/ai-report/:id',
-    name: 'AiReport',
-    component: () => import('@/views/AiReport.vue'),
-    meta: { title: 'AI 推荐报告(旧)' }
+    redirect: to => ({ name: 'AiReportV2', params: { id: to.params.id } })
   },
   {
     path: '/ai-report-v2/:id',
