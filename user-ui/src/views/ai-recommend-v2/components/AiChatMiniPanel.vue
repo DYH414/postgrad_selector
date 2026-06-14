@@ -1,22 +1,20 @@
 <template>
   <div class="chat-mini">
-    <!-- 收起态 -->
-    <div v-if="!visible" class="chat-collapsed" @click="$emit('toggle')">
-      <span>问 AI 关于草稿的问题</span>
-      <i class="el-icon-arrow-up"></i>
-    </div>
-
-    <!-- 展开态 -->
-    <div v-else class="chat-expanded">
+    <div class="chat-expanded">
       <div class="chat-top">
         <span>AI 择校助手</span>
-        <el-button type="text" size="small" @click="$emit('toggle')">收起</el-button>
+        <span class="chat-mode">对话调整</span>
       </div>
 
       <div ref="msgBox" class="chat-msgs">
         <div v-if="messages.length === 0 && !props.streamingText" class="chat-empty">
-          问我关于候选学校的问题，或让我帮你调整草稿。例如：<br>
-          "换掉 XX 大学"、"分析一下这个学校"、"加一个北京的保底"
+          <strong>可以直接追问候选理由，或让 AI 调整草稿</strong>
+          <p>我会结合当前草稿、分数画像和冲稳保档位解释推荐依据。</p>
+          <div class="prompt-chips">
+            <button type="button" @click="sendPreset('帮我解释当前稳妥档为什么这样排序')">解释稳妥档</button>
+            <button type="button" @click="sendPreset('帮我检查草稿里风险最高的学校')">检查高风险</button>
+            <button type="button" @click="sendPreset('帮我补一个更稳的保底选择')">补保底</button>
+          </div>
         </div>
         <!-- 历史消息 -->
         <div v-for="(msg, i) in messages" :key="i" :class="['msg', 'msg--' + msg.role]">
@@ -45,6 +43,7 @@
         <el-button
           type="primary"
           size="small"
+          class="send-btn"
           :disabled="!inputText.trim() || streaming"
           @click="handleSend"
         >发送</el-button>
@@ -75,6 +74,11 @@ function handleSend() {
   inputText.value = ''
   emit('send', text)
 }
+
+function sendPreset(text) {
+  if (props.streaming) return
+  emit('send', text)
+}
 </script>
 
 <style scoped>
@@ -83,60 +87,104 @@ function handleSend() {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #f7faff;
-}
-.chat-collapsed {
-  flex: 1;
-  min-height: 0;
-  padding: 18px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  cursor: pointer;
-  color: #1769f6;
-  font-size: 13px;
-  transition: background .2s;
-}
-.chat-collapsed:hover { background: #f3f7ff; }
-.chat-collapsed span {
-  min-height: 32px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 11px;
-  border: 1px solid #d7e6fb;
-  border-radius: 999px;
-  background: #fff;
-  font-weight: 800;
+  background: linear-gradient(180deg, #f7faff 0%, #f3f7ff 100%);
 }
 .chat-expanded { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat-top {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 16px;
+  padding: 8px 14px;
   border-bottom: 1px solid #f0f4fa;
   font-size: 14px;
   font-weight: 600;
+}
+.chat-mode {
+  flex-shrink: 0;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #eef4fb;
+  color: #607592;
+  font-size: 12px;
+  font-weight: 800;
 }
 .chat-msgs {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: 10px 14px;
   font-size: 13px;
   line-height: 20px;
 }
-.chat-empty { color: #a8b2c1; text-align: center; padding: 32px 0; font-size: 13px; line-height: 22px; }
-.msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 6px; max-width: 90%; }
-.msg--user { background: rgba(64,158,255,.08); color: #303133; margin-left: auto; }
-.msg--assistant { background: #f5f7fa; color: #303133; }
+.chat-empty {
+  margin: 14px auto 0;
+  max-width: 520px;
+  padding: 16px;
+  border: 1px dashed #cfe0f6;
+  border-radius: 10px;
+  background: rgba(255,255,255,.74);
+  color: #71829a;
+  text-align: center;
+  font-size: 13px;
+  line-height: 22px;
+}
+.chat-empty strong {
+  display: block;
+  color: #10213f;
+  font-size: 15px;
+  line-height: 22px;
+}
+.chat-empty p {
+  margin: 6px 0 0;
+}
+.prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.prompt-chips button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d7e6fb;
+  border-radius: 999px;
+  background: #fff;
+  color: #1769f6;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+.prompt-chips button:hover {
+  border-color: #9dc4ff;
+  background: #f4f8ff;
+}
+.msg {
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  max-width: 90%;
+}
+.msg--user { background: #1769f6; color: #fff; margin-left: auto; }
+.msg--assistant { border: 1px solid #e4edf8; background: #fff; color: #303133; }
 .cursor-blink { animation: blink .8s infinite; font-weight: 700; color: #409eff; }
 @keyframes blink { 50% { opacity: 0; } }
 .chat-input-row {
+  flex-shrink: 0;
   display: flex;
   gap: 6px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-top: 1px solid #f0f4fa;
+  background: rgba(255,255,255,.9);
+}
+.send-btn {
+  flex: none;
+  width: 72px;
+  font-weight: 800;
 }
 
 /* markdown 渲染样式 */

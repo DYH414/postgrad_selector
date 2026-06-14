@@ -13,5 +13,9 @@ assert.doesNotMatch(api, /fetch\('\/dev-api\/app\/ai-recommend-v2\/draft\/genera
 assert.match(workspace, /openDraftGenerationStream/)
 assert.match(workspace, /draftEventSource/)
 assert.match(workspace, /onBeforeUnmount/)
+assert.match(workspace, /resumeChat/)
+assert.match(workspace, /function normalizeChatMessage/)
+assert.match(workspace, /async function loadChatHistory/)
+assert.match(workspace, /loadChatHistory\(\)/)
 
 console.log('AiRecommend v2 streaming checks passed')

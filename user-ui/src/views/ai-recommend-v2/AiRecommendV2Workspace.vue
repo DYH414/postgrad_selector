@@ -48,6 +48,20 @@
 
         <!-- 中栏 -->
         <section class="center-col">
+          <div class="ai-workflow-strip">
+            <div
+              v-for="step in workflowSteps"
+              :key="step.key"
+              class="workflow-step"
+              :class="{ active: step.active, done: step.done }"
+            >
+              <span class="workflow-index">{{ step.index }}</span>
+              <div>
+                <strong>{{ step.title }}</strong>
+                <em>{{ step.desc }}</em>
+              </div>
+            </div>
+          </div>
           <div class="chat-panel-frame">
             <div class="chat-frame-head">
               <div>
@@ -93,7 +107,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getDraft, startGenerateDraft, openDraftGenerationStream, removeCandidate, replaceCandidate,
-  addBackCandidate, generateReport, sendChatMessage, startChat
+  addBackCandidate, generateReport, sendChatMessage, startChat, resumeChat
 } from '@/api/recommend-v2'
 import { getProfile } from '@/api/profile'
 import { closeEventSource } from '@/utils/event-source'
@@ -117,7 +131,7 @@ const progressState = ref({ phase: '', message: '' })
 const draftEventSource = ref(null)
 
 // ── 对话 ──
-const chatVisible = ref(false)
+const chatVisible = ref(true)
 const chatMessages = ref([])
 const chatStreaming = ref(false)
 const chatStreamingText = ref('')
@@ -137,7 +151,63 @@ const strategyLabel = computed(() => {
   return '均衡策略'
 })
 
+const workflowSteps = computed(() => [
+  {
+    key: 'profile',
+    index: '01',
+    title: '画像读取',
+    desc: missingFields.value.length ? `缺 ${missingFields.value.length} 项信息` : '画像可用',
+    active: !draft.value && !generating.value,
+    done: missingFields.value.length === 0
+  },
+  {
+    key: 'pool',
+    index: '02',
+    title: '候选生成',
+    desc: progressState.value.message || '按冲稳保形成候选池',
+    active: generating.value,
+    done: poolCount.value > 0
+  },
+  {
+    key: 'chat',
+    index: '03',
+    title: '对话调整',
+    desc: chatMessages.value.length ? '已进入追问调整' : '可解释和替换学校',
+    active: chatVisible.value || chatMessages.value.length > 0,
+    done: chatMessages.value.length > 0
+  },
+  {
+    key: 'report',
+    index: '04',
+    title: '报告确认',
+    desc: draftCount.value ? `${draftCount.value}/10 所待确认` : '等待草稿',
+    active: draftCount.value > 0,
+    done: draftCount.value >= 10
+  }
+])
+
 // ── 方法 ──
+
+function sanitizeAssistantText(text) {
+  if (!text) return ''
+  return String(text)
+    .replace(/\s*[（(]\s*(?:ID|Id|id|programId|schoolId|院校ID|专业ID)\s*[:：#]?\s*\d+\s*[)）]/g, '')
+    .replace(/\b(?:ID|Id|id|programId|schoolId)\s*[:：#]\s*\d+\b/g, '')
+    .replace(/(?:院校ID|专业ID|学校ID|内部编号)\s*[:：#]?\s*\d+/g, '')
+}
+
+function normalizeChatMessage(msg) {
+  if (!msg || !msg.role) return null
+  if (msg.role === 'system') return null
+  const content = msg.content || msg.displayContent || ''
+  return {
+    role: msg.role,
+    content: msg.role === 'assistant' ? sanitizeAssistantText(content) : content,
+    messageType: msg.messageType || 'text',
+    status: msg.status || 'completed',
+    metadataJson: msg.metadataJson || null
+  }
+}
 
 async function loadProfileData() {
   loadingProfile.value = true
@@ -156,6 +226,18 @@ async function loadDraftData() {
       draft.value = res.data
     }
   } catch (e) { /* 草稿不存在 */ }
+}
+
+async function loadChatHistory() {
+  try {
+    const res = await resumeChat()
+    const messages = Array.isArray(res.data?.messages) ? res.data.messages : []
+    chatMessages.value = messages
+      .map(normalizeChatMessage)
+      .filter(Boolean)
+  } catch (e) {
+    chatMessages.value = []
+  }
 }
 
 async function handleGenerate() {
@@ -306,10 +388,10 @@ async function handleChatSend(message) {
             const data = JSON.parse(line.slice(5))
             if (currentEvent === 'token') {
               assistantText += data.text
-              chatStreamingText.value = assistantText
+              chatStreamingText.value = sanitizeAssistantText(assistantText)
             } else if (currentEvent === 'done') {
               chatStreamingText.value = ''
-              chatMessages.value.push({ role: 'assistant', content: data.message })
+              chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message) })
               if (data.draftAction && data.draftAction.type !== 'none') {
                 executeDraftAction(data.draftAction)
               }
@@ -374,6 +456,7 @@ async function handleGenerateReport() {
 onMounted(() => {
   loadProfileData()
   loadDraftData()
+  loadChatHistory()
 })
 
 onBeforeUnmount(() => {
@@ -383,26 +466,41 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .prototype-page {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background:
     linear-gradient(180deg, #f7faff 0%, #f3f6fb 42%, #f6f8fc 100%);
   color: #10213f;
 }
 
+:deep(.app-header) {
+  flex-shrink: 0;
+}
+
 .v2-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   max-width: 1520px;
+  width: 100%;
   margin: 0 auto;
-  padding: 0 24px 24px;
+  padding: 0 24px 16px;
+  overflow: hidden;
 }
 
 /* ── Hero ── */
 .hero {
-  min-height: 128px;
+  flex-shrink: 0;
+  min-height: 118px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 24px;
-  padding: 22px 0 16px;
+  padding: 18px 0 14px;
 }
 .hero-copy { flex: 1; }
 .hero-kicker {
@@ -452,25 +550,112 @@ onBeforeUnmount(() => {
 
 /* ── 三栏 ── */
 .main-grid {
+  flex: 1;
   display: grid;
-  grid-template-columns: 300px minmax(560px, 1fr) 420px;
+  grid-template-columns: 300px minmax(560px, 1fr) 480px;
   gap: 20px;
-  height: calc(100vh - 206px);
-  min-height: 620px;
+  height: auto;
+  min-height: 0;
   align-items: stretch;
   overflow: hidden;
 }
-.left-col { display: flex; flex-direction: column; gap: 12px; }
+.left-col {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+.left-col :deep(.profile-card) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.left-col :deep(.generate-section) {
+  flex-shrink: 0;
+}
 .center-col,
 .right-col {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
+.center-col {
+  display: flex;
+  flex-direction: column;
+}
 .right-col { position: static; }
 
+.ai-workflow-strip {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.workflow-step {
+  min-width: 0;
+  min-height: 64px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid #dce7f6;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .86);
+  transition: border-color .18s ease, background .18s ease;
+}
+
+.workflow-step.active {
+  border-color: #9dc4ff;
+  background: #f4f8ff;
+}
+
+.workflow-step.done .workflow-index {
+  border-color: #9ee3c0;
+  background: #ecfdf5;
+  color: #087443;
+}
+
+.workflow-index {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d7e6fb;
+  border-radius: 50%;
+  color: #1769f6;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workflow-step strong,
+.workflow-step em {
+  display: block;
+  min-width: 0;
+}
+
+.workflow-step strong {
+  color: #10213f;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.workflow-step em {
+  margin-top: 3px;
+  color: #71829a;
+  font-size: 12px;
+  line-height: 17px;
+  font-style: normal;
+}
+
 .chat-panel-frame {
-  height: 100%;
+  flex: 1;
+  height: auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -506,10 +691,13 @@ onBeforeUnmount(() => {
 .chat-state.idle { color: #607592; background: #eef4fb; }
 
 @media (max-width: 1200px) {
-  .main-grid { grid-template-columns: 280px minmax(520px, 1fr) 380px; gap: 16px; }
+  .main-grid { grid-template-columns: 280px minmax(520px, 1fr) 430px; gap: 16px; }
   .hero-status-strip { width: min(520px, 44vw); grid-template-columns: 112px 112px minmax(160px, 1fr); }
+  .ai-workflow-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 960px) {
+  .prototype-page { height: auto; min-height: 100vh; overflow: visible; }
+  .v2-wrap { overflow: visible; }
   .hero { align-items: flex-start; flex-direction: column; }
   .hero-status-strip { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .main-grid { grid-template-columns: 1fr; height: auto; overflow: visible; }

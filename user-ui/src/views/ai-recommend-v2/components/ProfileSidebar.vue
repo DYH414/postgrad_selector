@@ -76,7 +76,18 @@ const targetRegionsLabel = computed(() => {
 
 function tierLabel(v) {
   if (!v) return '双非'
-  const map = { '985': '985', '211': '211', 'DOUBLE_FIRST': '双一流' }
+  const map = {
+    '985': '985',
+    '211': '211',
+    'DOUBLE_FIRST': '双一流',
+    'PUBLIC_REGULAR': '普通本科',
+    'PUBLIC_FIRST': '普通一本',
+    'PUBLIC_SECOND': '普通二本',
+    'PRIVATE': '民办本科',
+    'PRIVATE_REGULAR': '民办本科',
+    'JUNIOR_COLLEGE': '专科',
+    'OTHER': '其他'
+  }
   return map[v] || v
 }
 

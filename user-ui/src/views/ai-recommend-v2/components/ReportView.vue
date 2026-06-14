@@ -1,107 +1,127 @@
 <template>
-  <div class="prototype-page">
+  <div class="report-page">
     <AppHeader current-page="ai" />
 
-    <main class="report-wrap">
-      <div class="report-top">
-        <el-button text @click="$router.back()">← 返回工作台</el-button>
-        <h2>AI 择校推荐报告</h2>
-        <p class="report-meta" v-if="report?.createdAt">生成时间：{{ report.createdAt }}</p>
+    <main class="report-shell">
+      <div class="report-toolbar">
+        <el-button text class="back-btn" @click="goBack">← 返回工作台</el-button>
       </div>
 
-      <!-- 摘要 -->
-      <section v-if="report?.summary" class="report-section summary">
-        <p>{{ report.summary }}</p>
+      <section v-if="loading" class="report-state">
+        <i class="el-icon-loading"></i>
+        <span>报告加载中...</span>
       </section>
 
-      <!-- 画像依据 -->
-      <section v-if="report?.profileBasis" class="report-section basis">
-        <h3>推荐依据</h3>
-        <div class="basis-grid">
-          <div class="basis-item" v-if="report.profileBasis.estimatedScore">
-            <span>预估分数</span>
-            <strong>{{ report.profileBasis.estimatedScore }}</strong>
-          </div>
-          <div class="basis-item" v-if="report.profileBasis.targetRegions">
-            <span>目标地区</span>
-            <strong>{{ report.profileBasis.targetRegions }}</strong>
-          </div>
-          <div class="basis-item" v-if="report.profileBasis.undergradTier">
-            <span>本科层次</span>
-            <strong>{{ report.profileBasis.undergradTier }}</strong>
-          </div>
-          <div class="basis-item" v-if="report.profileBasis.riskPreference">
-            <span>风险偏好</span>
-            <strong>{{ report.profileBasis.riskPreference }}</strong>
-          </div>
-        </div>
+      <section v-else-if="error" class="report-state error">
+        <strong>报告加载失败</strong>
+        <p>请返回工作台后重试。</p>
+        <el-button type="primary" @click="goBack">返回工作台</el-button>
       </section>
 
-      <!-- 三档 -->
-      <section v-for="tier in (report?.tiers || [])" :key="tier.level" class="report-section tier-section">
-        <h3>
-          {{ tier.label }}
-          <span class="tier-count-badge">{{ tier.candidates?.length || 0 }} 所</span>
-        </h3>
-        <p v-if="tier.insufficient" class="insufficient-notice">{{ tier.insufficientReason }}</p>
-
-        <DraftCandidateCard
-          v-for="c in tier.candidates"
-          :key="c.fact.programId"
-          :candidate="c"
-          :show-actions="false"
-        />
+      <section v-else-if="!report" class="report-state">
+        <strong>报告暂不可用</strong>
+        <p>请返回工作台重新生成报告。</p>
+        <el-button type="primary" @click="goBack">返回工作台</el-button>
       </section>
+
+      <ReportDocument v-else :report="report" />
     </main>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getReport } from '@/api/recommend-v2'
 import AppHeader from '@/components/AppHeader.vue'
-import DraftCandidateCard from './DraftCandidateCard.vue'
+import ReportDocument from './report/ReportDocument.vue'
 
 const route = useRoute()
+const router = useRouter()
 const report = ref(null)
+const loading = ref(false)
+const error = ref(false)
+
+function goBack() {
+  router.push('/ai-recommend')
+}
 
 onMounted(async () => {
+  window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+
   const id = route.params.id
-  if (!id) return
+  if (!id) {
+    error.value = true
+    return
+  }
+
+  loading.value = true
+  error.value = false
   try {
     const res = await getReport(id)
-    report.value = res.data
+    report.value = res.data || null
   } catch (e) {
     console.error('Failed to load report', e)
+    error.value = true
+  } finally {
+    loading.value = false
   }
 })
 </script>
 
 <style scoped>
-.prototype-page { min-height: 100vh; background: #f4f7fc; }
-.report-wrap { max-width: 780px; margin: 0 auto; padding: 24px 16px 60px; }
-.report-top { margin-bottom: 24px; }
-.report-top h2 { margin: 8px 0 4px; font-size: 22px; }
-.report-meta { margin: 0; color: #71829a; font-size: 13px; }
-
-.report-section {
-  margin-bottom: 24px;
-  padding: 20px;
-  border: 1px solid rgba(215,227,245,.9);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 14px 34px rgba(42,84,153,.08);
+.report-page {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, #f6f9fe 0%, #eef4fb 100%);
+  color: #10213f;
 }
-.report-section h3 { margin: 0 0 12px; font-size: 16px; }
 
-.summary p { margin: 0; font-size: 14px; line-height: 22px; color: #303133; }
+.report-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 24px 56px;
+}
 
-.basis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.basis-item { padding: 8px 12px; border: 1px solid #f0f4fa; border-radius: 6px; }
-.basis-item span { display: block; font-size: 12px; color: #71829a; }
-.basis-item strong { display: block; font-size: 14px; color: #303133; margin-top: 2px; }
+.report-toolbar {
+  margin-bottom: 14px;
+}
 
-.tier-count-badge { font-weight: 400; font-size: 13px; color: #71829a; margin-left: 8px; }
-.insufficient-notice { color: #e6a23c; font-size: 12px; margin-bottom: 12px; }
+.back-btn {
+  color: #425b7c;
+  font-weight: 700;
+}
+
+.report-state {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #dce7f6;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(39, 86, 166, .08);
+  color: #607592;
+}
+
+.report-state strong {
+  color: #10213f;
+  font-size: 18px;
+}
+
+.report-state p {
+  margin: 0;
+}
+
+.report-state.error {
+  color: #b55c00;
+}
+
+@media (max-width: 768px) {
+  .report-shell {
+    padding: 16px 12px 36px;
+  }
+}
 </style>

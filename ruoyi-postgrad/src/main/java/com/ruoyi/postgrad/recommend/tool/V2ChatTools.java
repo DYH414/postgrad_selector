@@ -179,8 +179,7 @@ public class V2ChatTools {
     private String formatFactCard(com.ruoyi.postgrad.recommend.domain.SchoolFact f) {
         if (f == null) return "无数据";
         return String.format(
-            "ID:%d | %s | %s | 层次:%s | 城市:%s | 均分:%s | 差距:%s | 招生:%s | %s | 可保底:%s | 数据:%s",
-            f.getProgramId(),
+            "%s | %s | 层次:%s | 城市:%s | 均分:%s | 差距:%s | 招生:%s | %s | 可保底:%s | 数据:%s",
             f.getSchoolName(), f.getProgramName(), f.getSchoolTier(), f.getCity(),
             f.getAvgAdmittedScore() != null ? String.valueOf(f.getAvgAdmittedScore()) : "-",
             f.getGapLabel() != null ? f.getGapLabel() : "-",
@@ -194,7 +193,6 @@ public class V2ChatTools {
 
     private String formatRowMap(RowMap row) {
         StringBuilder sb = new StringBuilder();
-        sb.append("ID:").append(row.get("programId")).append(" | ");
         sb.append(row.get("schoolName")).append(" | ");
         sb.append(row.get("programName")).append(" | ");
         sb.append("层次:").append(row.get("schoolTier")).append(" | ");
@@ -234,7 +232,7 @@ public class V2ChatTools {
     }
 
     private String schoolLabel(CandidateCardVO c, long fallbackId) {
-        if (c == null || c.getFact() == null) return "ID:" + fallbackId;
+        if (c == null || c.getFact() == null) return "候选学校";
         return c.getFact().getSchoolName();
     }
 

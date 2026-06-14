@@ -15,7 +15,10 @@ import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.ruoyi.postgrad.mapper.AiChatMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
+import com.ruoyi.postgrad.recommend.domain.AiChatMessage;
 import com.ruoyi.postgrad.recommend.domain.ChatMessageVO;
 import com.ruoyi.postgrad.recommend.domain.ChatStartResultVO;
 import com.ruoyi.postgrad.recommend.domain.DraftAction;
@@ -70,12 +73,17 @@ public class AiChatServiceImpl implements IAiChatService {
     @Autowired
     private IDraftService draftService;
 
+    @Autowired
+    private AiChatMapper aiChatMapper;
+
     private interface StreamAssistant {
         dev.langchain4j.service.TokenStream chat(String message);
     }
 
     @Override
     public ChatStartResultVO startChat(Long userId) {
+        AiChatConversation conversation = getOrCreateActiveConversation(userId);
+
         // 清除旧对话历史
         redisTemplate.delete(chatMsgKey(userId));
 
@@ -91,17 +99,24 @@ public class AiChatServiceImpl implements IAiChatService {
         redisTemplate.opsForValue().set(chatMsgKey(userId), JSON.toJSONString(messages), CHAT_TTL);
 
         ChatStartResultVO result = new ChatStartResultVO();
-        result.setConversationId(userId.toString());
+        result.setConversationId(String.valueOf(conversation.getId()));
         result.setMessage("你好！我已了解你的画像和当前草稿。你可以问我：为什么推荐某所学校、某校的风险是什么、或者让我帮忙对比两所学校。");
         result.setOptions(List.of("分析草稿中的学校", "对比两所学校", "解释推荐理由", "推荐替代选择"));
+        result.setMessages(loadPersistedDisplayMessages(conversation.getId()));
         result.setSource("new");
         return result;
     }
 
     @Override
     public void chat(Long userId, String message, ChatStreamCallback callback) {
+        AiChatConversation conversation = getOrCreateActiveConversation(userId);
+
         // 1. 加载/初始化对话历史
-        List<ChatMessageVO> history = loadHistory(userId);
+        List<ChatMessageVO> loadedHistory = loadHistory(userId);
+        if (loadedHistory.isEmpty()) {
+            loadedHistory = loadPersistedMemoryMessages(conversation.getId());
+        }
+        final List<ChatMessageVO> history = loadedHistory;
 
         // 2. 提取系统提示词
         String systemPrompt = "";
@@ -128,6 +143,7 @@ public class AiChatServiceImpl implements IAiChatService {
         }
 
         // 4. 保存用户消息
+        persistMessage(userId, conversation.getId(), "user", message, message);
         history.add(new ChatMessageVO("user", message));
         saveHistory(userId, history);
 
@@ -162,17 +178,17 @@ public class AiChatServiceImpl implements IAiChatService {
                     int actionIdx = aiText.indexOf(ACTION_DELIMITER);
                     if (actionIdx >= 0) {
                         displayText = aiText.substring(0, actionIdx).trim();
-                        String actionJson = aiText.substring(actionIdx + ACTION_DELIMITER.length()).trim();
-                        try {
-                            action = JSON.parseObject(actionJson, DraftAction.class);
-                        } catch (Exception e) {
-                            log.warn("[AiChat] Failed to parse DraftAction: {}", actionJson);
+                        String actionText = aiText.substring(actionIdx + ACTION_DELIMITER.length()).trim();
+                        action = parseDraftAction(actionText);
+                        if (action == null) {
+                            log.warn("[AiChat] Failed to parse DraftAction: {}", actionText);
                         }
                     }
 
                     // 保存 AI 回复
                     history.add(new ChatMessageVO("assistant", displayText));
                     saveHistory(userId, history);
+                    persistMessage(userId, conversation.getId(), "assistant", aiText, displayText);
 
                     callback.onDone(displayText, action);
                 })
@@ -191,23 +207,21 @@ public class AiChatServiceImpl implements IAiChatService {
 
     @Override
     public ChatStartResultVO resumeChat(Long userId) {
-        String systemPrompt = redisTemplate.opsForValue().get(chatKey(userId));
-        if (systemPrompt == null) {
-            ChatStartResultVO expired = new ChatStartResultVO();
-            expired.setConversationId(userId.toString());
-            expired.setMessage("对话已过期，请开始新对话");
-            expired.setSource("expired");
-            return expired;
-        }
+        AiChatConversation conversation = getOrCreateActiveConversation(userId);
 
         // 刷新 TTL
+        String systemPrompt = redisTemplate.opsForValue().get(chatKey(userId));
+        if (systemPrompt == null) {
+            redisTemplate.opsForValue().set(chatKey(userId), buildSystemPrompt(userId), CHAT_TTL);
+        }
         redisTemplate.expire(chatKey(userId), CHAT_TTL);
         redisTemplate.expire(chatMsgKey(userId), CHAT_TTL);
 
         ChatStartResultVO result = new ChatStartResultVO();
-        result.setConversationId(userId.toString());
+        result.setConversationId(String.valueOf(conversation.getId()));
         result.setMessage("对话已恢复");
-        result.setSource("redis");
+        result.setSource("db");
+        result.setMessages(loadPersistedDisplayMessages(conversation.getId()));
         return result;
     }
 
@@ -215,6 +229,118 @@ public class AiChatServiceImpl implements IAiChatService {
 
     private String chatKey(Long userId) { return CHAT_KEY_PREFIX + userId; }
     private String chatMsgKey(Long userId) { return CHAT_MSG_KEY_PREFIX + userId; }
+
+    private AiChatConversation getOrCreateActiveConversation(Long userId) {
+        AiChatConversation conversation = aiChatMapper.selectActiveConversation(userId);
+        if (conversation != null) return conversation;
+
+        conversation = new AiChatConversation();
+        conversation.setUserId(userId);
+        conversation.setDraftKey("active:" + userId);
+        conversation.setTitle("AI 择校对话");
+        conversation.setStatus("active");
+        aiChatMapper.insertConversation(conversation);
+        return conversation;
+    }
+
+    private void persistMessage(Long userId, Long conversationId, String role, String content, String displayContent) {
+        AiChatMessage message = new AiChatMessage();
+        message.setConversationId(conversationId);
+        message.setUserId(userId);
+        message.setRole(role);
+        message.setContent(content);
+        message.setDisplayContent(displayContent != null ? displayContent : content);
+        message.setMessageType("text");
+        message.setStatus("completed");
+        Integer seq = aiChatMapper.selectNextSeq(conversationId);
+        message.setSeq(seq != null ? seq : 1);
+        message.setMetadataJson(null);
+        aiChatMapper.insertMessage(message);
+        aiChatMapper.touchConversation(conversationId);
+    }
+
+    private List<ChatMessageVO> loadPersistedDisplayMessages(Long conversationId) {
+        List<AiChatMessage> rows = aiChatMapper.selectMessages(conversationId, 200);
+        List<ChatMessageVO> result = new ArrayList<>();
+        for (AiChatMessage row : rows) {
+            if ("system".equals(row.getRole())) continue;
+            ChatMessageVO vo = new ChatMessageVO(row.getRole(),
+                row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent());
+            vo.setMessageType(row.getMessageType());
+            vo.setStatus(row.getStatus());
+            vo.setSeq(row.getSeq());
+            vo.setMetadataJson(row.getMetadataJson());
+            result.add(vo);
+        }
+        return result;
+    }
+
+    private List<ChatMessageVO> loadPersistedMemoryMessages(Long conversationId) {
+        List<AiChatMessage> rows = aiChatMapper.selectMessages(conversationId, MAX_MESSAGES);
+        List<ChatMessageVO> result = new ArrayList<>();
+        for (AiChatMessage row : rows) {
+            if ("system".equals(row.getRole())) continue;
+            if (!"user".equals(row.getRole()) && !"assistant".equals(row.getRole())) continue;
+            String content = row.getContent() != null ? row.getContent() : row.getDisplayContent();
+            if (content == null || content.isBlank()) continue;
+            result.add(new ChatMessageVO(row.getRole(), content));
+        }
+        return result;
+    }
+
+    static DraftAction parseDraftAction(String actionText) {
+        String actionJson = firstJsonObject(actionText);
+        if (actionJson == null) return null;
+        try {
+            return JSON.parseObject(actionJson, DraftAction.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String firstJsonObject(String text) {
+        if (text == null || text.isBlank()) return null;
+
+        String normalized = text.trim();
+        if (normalized.startsWith("```")) {
+            normalized = normalized
+                .replaceFirst("^```(?:json)?\\s*", "")
+                .replaceFirst("\\s*```$", "")
+                .trim();
+        }
+
+        int start = normalized.indexOf('{');
+        if (start < 0) return null;
+
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (ch == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) continue;
+            if (ch == '{') {
+                depth++;
+            } else if (ch == '}') {
+                depth--;
+                if (depth == 0) {
+                    return normalized.substring(start, i + 1);
+                }
+            }
+        }
+        return null;
+    }
 
     @SuppressWarnings("unchecked")
     private List<ChatMessageVO> loadHistory(Long userId) {
@@ -286,8 +412,7 @@ public class AiChatServiceImpl implements IAiChatService {
                 .append("/").append(t.getTargetCount()).append("）：\n");
             for (var c : t.getCandidates()) {
                 var f = c.getFact();
-                sb.append("  - ID:").append(f.getProgramId())
-                    .append(" ").append(f.getSchoolName())
+                sb.append("  - ").append(f.getSchoolName())
                     .append(" ").append(f.getProgramName());
                 if (f.getAvgAdmittedScore() != null) {
                     sb.append(" 均分").append(f.getAvgAdmittedScore());

@@ -19,6 +19,8 @@ public class ChatStartResultVO implements Serializable {
     /** 快捷操作选项 */
     private List<String> options;
 
+    private List<ChatMessageVO> messages;
+
     /** 数据来源：redis / db */
     private String source;
 
@@ -32,6 +34,9 @@ public class ChatStartResultVO implements Serializable {
 
     public List<String> getOptions() { return options; }
     public void setOptions(List<String> options) { this.options = options; }
+
+    public List<ChatMessageVO> getMessages() { return messages; }
+    public void setMessages(List<ChatMessageVO> messages) { this.messages = messages; }
 
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }

@@ -24,6 +24,8 @@
 4. 操作类型：remove（移除）、replace（替换，需指定tier和preference）、analyze（仅分析，不改草稿）、none（无操作）。
 5. preference 可选值：safer（更稳妥）、higher_tier（更高层次）、closer_region（更近地区）。
 6. 回复前先调用 getDraftContext 了解当前草稿状态。
+7. 不要在给用户看的正文里展示内部字段或编号，例如 programId、schoolId、ID、canBeSafe、dataCompleteness。programId 只允许出现在 ---ACTION--- 后的 JSON 指令中。
+8. 每次回复最多只能附带 1 个 ---ACTION--- JSON。若需要连续移除/替换多所学校，先执行最优先的第 1 个动作，并在正文里说明“已先执行第一步，继续后可处理下一步”。
 
 ## 回复格式
 

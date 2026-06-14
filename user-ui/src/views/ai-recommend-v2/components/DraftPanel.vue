@@ -2,7 +2,7 @@
   <section class="draft-panel">
     <div class="panel-head">
       <div>
-        <p class="panel-eyebrow">输出草稿</p>
+        <p class="panel-eyebrow">候选池确认</p>
         <h3>报告草稿</h3>
       </div>
       <span class="draft-total">{{ totalCount }} / 10 所</span>
@@ -36,39 +36,68 @@
     </div>
 
     <!-- 三档内容 -->
-    <div v-else class="tier-list">
-      <div v-for="tier in draft.tiers" :key="tier.level" class="tier-group">
-        <div class="tier-head">
-          <span class="tier-label">{{ tier.label }}</span>
-          <span class="tier-progress">
-            {{ tier.candidates?.length || 0 }} / {{ tier.targetCount }}
-          </span>
-          <el-tag v-if="tier.insufficient" type="warning" size="small" effect="plain">不足</el-tag>
-        </div>
-
-        <p v-if="tier.insufficient && tier.insufficientReason" class="tier-notice">
-          {{ tier.insufficientReason }}
-        </p>
-
-        <!-- 候选卡片列表 -->
-        <TransitionGroup name="card-list" tag="div">
-          <DraftCandidateCard
-            v-for="candidate in tier.candidates"
-            :key="candidate.fact.programId"
-            :candidate="candidate"
-            @remove="$emit('remove', candidate.fact.programId)"
-            @ask-about="$emit('ask-about', candidate.fact.programId, candidate.fact.schoolName, candidate.fact.programName)"
-          />
-        </TransitionGroup>
-
-        <!-- 替换占位（该档不足时） -->
+    <div v-else class="tier-workspace">
+      <div class="tier-tabs">
         <button
-          v-if="tier.insufficient && tier.candidates?.length < tier.targetCount"
-          class="add-slot"
-          @click="$emit('replace', { tier: tier.level, preference: 'safer' })"
+          type="button"
+          class="tier-tab"
+          :class="{ active: activeTier === 'all' }"
+          @click="activeTier = 'all'"
         >
-          + 为{{ tier.label }}补充一所
+          <span>全部</span>
+          <strong>{{ totalCount }}/10</strong>
         </button>
+        <button
+          v-for="tier in draft.tiers"
+          :key="tier.level"
+          type="button"
+          class="tier-tab"
+          :class="{ active: tier.level === activeTier }"
+          @click="activeTier = tier.level"
+        >
+          <span>{{ tier.label }}</span>
+          <strong>{{ tier.candidates?.length || 0 }}/{{ tier.targetCount }}</strong>
+        </button>
+      </div>
+
+      <div class="tier-list-shell">
+        <div v-for="tier in visibleTiers" :key="tier.level" class="tier-group">
+          <div class="tier-head">
+            <div>
+              <span class="tier-label">{{ tier.label }}</span>
+              <small>{{ tierHint(tier.level) }}</small>
+            </div>
+            <div class="tier-meta">
+              <span class="tier-progress">{{ tier.candidates?.length || 0 }} / {{ tier.targetCount }}</span>
+              <el-tag v-if="tier.insufficient" type="warning" size="small" effect="plain">不足</el-tag>
+            </div>
+          </div>
+
+          <p v-if="tier.insufficient && tier.insufficientReason" class="tier-notice">
+            {{ tier.insufficientReason }}
+          </p>
+
+          <!-- 候选卡片列表 -->
+          <TransitionGroup name="card-list" tag="div">
+            <DraftCandidateCard
+              v-for="candidate in tier.candidates"
+              :key="candidate.fact.programId"
+              :candidate="candidate"
+              @remove="$emit('remove', candidate.fact.programId)"
+              @ask-about="$emit('ask-about', candidate.fact.programId, candidate.fact.schoolName, candidate.fact.programName)"
+            />
+          </TransitionGroup>
+
+          <!-- 替换占位（该档不足时） -->
+          <button
+            v-if="tier.insufficient && tier.candidates?.length < tier.targetCount"
+            class="add-slot"
+            @click="$emit('replace', { tier: tier.level, preference: 'safer' })"
+          >
+            <span>补充{{ tier.label }}候选</span>
+            <i class="el-icon-plus"></i>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -82,7 +111,11 @@
     </div>
 
     <!-- 底部生成按钮 -->
-    <div class="panel-footer">
+    <div class="report-action-bar">
+      <div>
+        <span>最终报告</span>
+        <strong>{{ totalCount ? '已整理候选草稿' : '等待候选草稿' }}</strong>
+      </div>
       <el-button
         type="primary"
         size="large"
@@ -96,7 +129,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import DraftCandidateCard from './DraftCandidateCard.vue'
 
 const props = defineProps({
@@ -107,19 +140,51 @@ const props = defineProps({
 
 defineEmits(['remove', 'replace', 'add-back', 'ask-about', 'generate-report'])
 
+const activeTier = ref('all')
+
 const totalCount = computed(() => {
   if (!props.draft?.tiers) return 0
   return props.draft.tiers.reduce((s, t) => s + (t.candidates?.length || 0), 0)
 })
 
 const allEmpty = computed(() => totalCount.value === 0)
+
+const visibleTiers = computed(() => {
+  const tiers = props.draft?.tiers || []
+  if (activeTier.value === 'all') return tiers
+  return tiers.filter(tier => tier.level === activeTier.value)
+})
+
+watch(
+  () => props.draft?.tiers?.map(t => t.level).join(','),
+  value => {
+    if (!value) {
+      activeTier.value = 'all'
+      return
+    }
+    const levels = value.split(',')
+    if (activeTier.value !== 'all' && !levels.includes(activeTier.value)) {
+      activeTier.value = 'all'
+    }
+  }
+)
+
+function tierHint(level) {
+  const map = {
+    reach: '冲刺档：保留上限机会',
+    steady: '稳妥档：优先匹配主目标',
+    safe: '保底档：控制落空风险',
+    conservative: '保底档：控制落空风险'
+  }
+  return map[level] || '按画像和数据质量排序'
+}
 </script>
 
 <style scoped>
 .draft-panel {
   height: 100%;
   min-height: 0;
-  padding: 18px;
+  padding: 16px 16px 0;
   border: 1px solid #dce7f6;
   border-radius: 10px;
   background: #fff;
@@ -127,6 +192,7 @@ const allEmpty = computed(() => totalCount.value === 0)
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: hidden;
 }
 .panel-head {
   flex-shrink: 0;
@@ -181,18 +247,68 @@ const allEmpty = computed(() => totalCount.value === 0)
 }
 
 /* 档位 */
-.tier-list {
+.tier-workspace {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  overflow: hidden;
+}
+.tier-tabs {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 6px;
+  border: 1px solid #edf2f9;
+  border-radius: 8px;
+  background: #f7faff;
+}
+.tier-tab {
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #607592;
+  cursor: pointer;
+  text-align: left;
+  transition: background .18s ease, border-color .18s ease, color .18s ease;
+}
+.tier-tab:hover,
+.tier-tab.active {
+  border-color: #b8d3fb;
+  background: #fff;
+  color: #1769f6;
+}
+.tier-tab span,
+.tier-tab strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tier-tab span { font-size: 12px; line-height: 16px; font-weight: 800; }
+.tier-tab strong { margin-top: 2px; color: #10213f; font-size: 14px; line-height: 18px; }
+.tier-list-shell {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
-.tier-group { margin-bottom: 16px; }
-.tier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.tier-label { font-size: 15px; font-weight: 600; }
+.tier-group { margin-bottom: 18px; }
+.tier-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.tier-label { display: block; color: #10213f; font-size: 15px; font-weight: 800; }
+.tier-head small { display: block; margin-top: 2px; color: #71829a; font-size: 12px; line-height: 17px; }
+.tier-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .tier-progress { font-size: 12px; color: #71829a; }
 .tier-notice { color: #e6a23c; font-size: 12px; margin: 0 0 8px; line-height: 18px; }
 
@@ -204,7 +320,10 @@ const allEmpty = computed(() => totalCount.value === 0)
 
 /* 补充按钮 */
 .add-slot {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   width: 100%;
   padding: 10px;
   border: 1px dashed #c0c8d4;
@@ -234,6 +353,32 @@ const allEmpty = computed(() => totalCount.value === 0)
   color: #a8b2c1;
 }
 
-.panel-footer { flex-shrink: 0; margin-top: 16px; text-align: center; }
-.panel-footer .el-button { width: 100%; font-size: 15px; font-weight: 600; height: 44px; }
+.report-action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  align-items: center;
+  gap: 12px;
+  margin: 12px -16px 0;
+  padding: 12px 16px;
+  border-top: 1px solid #edf2f9;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 -10px 24px rgba(39,86,166,.08);
+}
+.report-action-bar span,
+.report-action-bar strong {
+  display: block;
+  min-width: 0;
+}
+.report-action-bar span { color: #71829a; font-size: 12px; line-height: 16px; }
+.report-action-bar strong { overflow: hidden; color: #10213f; font-size: 13px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.report-action-bar .el-button { width: 100%; min-width: 0; font-size: 14px; font-weight: 800; height: 42px; border-radius: 8px; }
+
+@media (max-width: 960px) {
+  .tier-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-action-bar { grid-template-columns: 1fr; }
+}
 </style>
