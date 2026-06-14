@@ -19,18 +19,18 @@ import com.ruoyi.postgrad.mapper.AiChatMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
 import com.ruoyi.postgrad.recommend.domain.AiChatMessage;
-import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.ChatMessageVO;
 import com.ruoyi.postgrad.recommend.domain.ChatStartResultVO;
-import com.ruoyi.postgrad.recommend.domain.DraftAction;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
-import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
+import com.ruoyi.postgrad.recommend.tool.V2BoundChatTools;
+import com.ruoyi.postgrad.recommend.tool.V2BoundDraftActionTools;
 import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
 import com.ruoyi.postgrad.recommend.tool.V2ChatTools;
+import com.ruoyi.postgrad.recommend.tool.V2DraftActionTools;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -41,7 +41,8 @@ import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.service.AiServices;
 
 /**
- * AI 对话服务实现 —— SSE 流式对话 + 草稿调整意图解析。
+ * AI 对话服务实现：编排会话、流式输出和 LangChain4j tool calling。
+ * <p>草稿写操作只通过后端 tool 执行，不从模型正文解析动作。</p>
  */
 @Service
 public class AiChatServiceImpl implements IAiChatService {
@@ -52,7 +53,6 @@ public class AiChatServiceImpl implements IAiChatService {
     private static final String CHAT_MSG_KEY_PREFIX = "ai:v2:chat:msg:";
     private static final int MAX_MESSAGES = 20;
     private static final Duration CHAT_TTL = Duration.ofMinutes(30);
-    private static final String ACTION_DELIMITER = "---ACTION---";
 
     @Value("classpath:prompts/v2/chat-system.txt")
     private org.springframework.core.io.Resource chatSystemPromptResource;
@@ -68,6 +68,9 @@ public class AiChatServiceImpl implements IAiChatService {
 
     @Autowired
     private V2ChatTools v2ChatTools;
+
+    @Autowired
+    private V2DraftActionTools v2DraftActionTools;
 
     @Autowired
     private RecommendationMapper recommendationMapper;
@@ -145,53 +148,60 @@ public class AiChatServiceImpl implements IAiChatService {
 
         // 5. 初始化工具上下文 + 创建流式 assistant
         try {
-            V2ChatToolContext.init(userId, redisTemplate, recommendationMapper);
+            V2ChatToolContext.Context toolContext = V2ChatToolContext.init(userId, redisTemplate, recommendationMapper);
             StreamAssistant assistant = AiServices.builder(StreamAssistant.class)
                 .streamingChatModel(streamingChatModel)
-                .tools(v2ChatTools)
+                .tools(
+                    new V2BoundChatTools(v2ChatTools, toolContext),
+                    new V2BoundDraftActionTools(v2DraftActionTools, toolContext))
                 .chatMemory(chatMemory)
                 .systemMessageProvider(ignored -> finalSystemPrompt)
                 .build();
 
             StringBuilder fullResponse = new StringBuilder();
             assistant.chat("<user_input>" + message + "</user_input>")
+                .onPartialToolCall(toolCall -> {
+                    log.info("[AiChat-Tool] partial userId={} name={} args={}",
+                        userId, toolCall.name(), toolCall.partialArguments());
+                })
+                .beforeToolExecution(toolRequest -> {
+                    String toolName = toolRequest != null && toolRequest.request() != null
+                        ? toolRequest.request().name() : "";
+                    String arguments = toolRequest != null && toolRequest.request() != null
+                        ? toolRequest.request().arguments() : "";
+                    log.info("[AiChat-Tool] before userId={} tool={} args={}", userId, toolName, arguments);
+                })
+                .onToolExecuted(toolExecution -> {
+                    String toolName = toolExecution != null && toolExecution.request() != null
+                        ? toolExecution.request().name() : "";
+                    String result = toolExecution != null ? toolExecution.result() : "";
+                    log.info("[AiChat-Tool] executed userId={} tool={} failed={} result={}",
+                        userId, toolName, toolExecution != null && toolExecution.hasFailed(), result);
+                })
                 .onPartialResponse(token -> {
                     fullResponse.append(token);
                     callback.onToken(token);
                 })
                 .onCompleteResponse(response -> {
-                    V2ChatToolContext.clear();
-                    String aiText = response.aiMessage().text();
-                    if (aiText == null || aiText.isBlank()) {
-                        aiText = fullResponse.toString();
-                    }
-
-                    // 6. 解析 ---ACTION--- 分隔的 DraftAction
-                    String displayText = aiText;
-                    DraftAction action = null;
-                    int actionIdx = aiText.indexOf(ACTION_DELIMITER);
-                    if (actionIdx >= 0) {
-                        displayText = aiText.substring(0, actionIdx).trim();
-                        String actionText = aiText.substring(actionIdx + ACTION_DELIMITER.length()).trim();
-                        action = parseDraftAction(actionText);
-                        if (action == null) {
-                            log.warn("[AiChat] Failed to parse DraftAction: {}", actionText);
+                    try {
+                        String aiText = response.aiMessage().text();
+                        if (aiText == null || aiText.isBlank()) {
+                            aiText = fullResponse.toString();
                         }
-                    }
-                    if (action == null) {
-                        action = inferDraftActionFromDisplayText(displayText, draftService.getDraft(userId));
-                        if (action != null) {
-                            log.info("[AiChat] Inferred DraftAction from assistant text: type={}, programId={}",
-                                action.getType(), action.getProgramId());
-                        }
-                    }
 
-                    // 保存 AI 回复
-                    history.add(new ChatMessageVO("assistant", displayText));
-                    saveHistory(userId, history);
-                    persistMessage(userId, conversation.getId(), "assistant", aiText, displayText);
+                        history.add(new ChatMessageVO("assistant", aiText));
+                        saveHistory(userId, history);
+                        persistMessage(userId, conversation.getId(), "assistant", aiText, aiText);
 
-                    callback.onDone(displayText, action);
+                        boolean draftChanged = V2ChatToolContext.draftChanged();
+                        String toolActionResultJson = V2ChatToolContext.lastActionResultJson();
+                        callback.onDone(aiText, draftChanged, toolActionResultJson);
+                    } catch (Exception e) {
+                        log.error("[AiChat] Failed to complete stream for userId={}: {}", userId, e.getMessage());
+                        callback.onError(e);
+                    } finally {
+                        V2ChatToolContext.clear();
+                    }
                 })
                 .onError(error -> {
                     V2ChatToolContext.clear();
@@ -287,143 +297,6 @@ public class AiChatServiceImpl implements IAiChatService {
             result.add(new ChatMessageVO(row.getRole(), content));
         }
         return result;
-    }
-
-    static DraftAction parseDraftAction(String actionText) {
-        String actionJson = firstJsonObject(actionText);
-        if (actionJson == null) return null;
-        try {
-            return JSON.parseObject(actionJson, DraftAction.class);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    static DraftAction inferDraftActionFromDisplayText(String displayText, DraftVO draft) {
-        if (!hasRemoveIntent(displayText) || draft == null || draft.getTiers() == null) {
-            return null;
-        }
-
-        CandidateCardVO lastMentioned = null;
-        String[] lines = displayText.split("\\R");
-        for (String line : lines) {
-            if (line == null || line.isBlank() || isAlreadyAbsentLine(line)) {
-                continue;
-            }
-            for (TierCandidates tier : draft.getTiers()) {
-                if (tier.getCandidates() == null) continue;
-                for (CandidateCardVO candidate : tier.getCandidates()) {
-                    if (!mentionsCandidate(line, candidate)) continue;
-                    if (hasRemoveIntent(line)) {
-                        return removeAction(candidate);
-                    }
-                    lastMentioned = candidate;
-                }
-            }
-        }
-
-        return lastMentioned != null ? removeAction(lastMentioned) : null;
-    }
-
-    private static boolean hasRemoveIntent(String text) {
-        if (text == null || text.isBlank()) return false;
-        String[] terms = {"移除", "移出", "删除", "删掉", "去掉", "剔除", "拿掉", "移走"};
-        for (String term : terms) {
-            int idx = text.indexOf(term);
-            while (idx >= 0) {
-                if (!isNegatedAction(text, idx)) {
-                    return true;
-                }
-                idx = text.indexOf(term, idx + term.length());
-            }
-        }
-        return false;
-    }
-
-    private static boolean isNegatedAction(String text, int actionIndex) {
-        int start = Math.max(0, actionIndex - 8);
-        String prefix = text.substring(start, actionIndex);
-        String[] negations = {"不要", "不用", "无需", "不必", "不能", "无法", "暂不", "先不", "别", "勿"};
-        for (String negation : negations) {
-            if (prefix.contains(negation)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isAlreadyAbsentLine(String line) {
-        return line.contains("已不在草稿")
-            || line.contains("不在草稿中")
-            || line.contains("已经不在草稿")
-            || line.contains("不用管")
-            || line.contains("无需处理");
-    }
-
-    private static boolean mentionsCandidate(String text, CandidateCardVO candidate) {
-        if (candidate == null || candidate.getFact() == null) return false;
-        SchoolFact fact = candidate.getFact();
-        return containsNonBlank(text, fact.getSchoolName())
-            || containsNonBlank(text, fact.getProgramName())
-            || containsNonBlank(text, fact.getCollegeName());
-    }
-
-    private static boolean containsNonBlank(String text, String needle) {
-        return text != null && needle != null && !needle.isBlank() && text.contains(needle);
-    }
-
-    private static DraftAction removeAction(CandidateCardVO candidate) {
-        if (candidate == null || candidate.getFact() == null || candidate.getFact().getProgramId() == null) {
-            return null;
-        }
-        DraftAction action = new DraftAction();
-        action.setType("remove");
-        action.setProgramId(candidate.getFact().getProgramId());
-        return action;
-    }
-
-    private static String firstJsonObject(String text) {
-        if (text == null || text.isBlank()) return null;
-
-        String normalized = text.trim();
-        if (normalized.startsWith("```")) {
-            normalized = normalized
-                .replaceFirst("^```(?:json)?\\s*", "")
-                .replaceFirst("\\s*```$", "")
-                .trim();
-        }
-
-        int start = normalized.indexOf('{');
-        if (start < 0) return null;
-
-        int depth = 0;
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = start; i < normalized.length(); i++) {
-            char ch = normalized.charAt(i);
-            if (escaped) {
-                escaped = false;
-                continue;
-            }
-            if (ch == '\\') {
-                escaped = true;
-                continue;
-            }
-            if (ch == '"') {
-                inString = !inString;
-                continue;
-            }
-            if (inString) continue;
-            if (ch == '{') {
-                depth++;
-            } else if (ch == '}') {
-                depth--;
-                if (depth == 0) {
-                    return normalized.substring(start, i + 1);
-                }
-            }
-        }
-        return null;
     }
 
     @SuppressWarnings("unchecked")

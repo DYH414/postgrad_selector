@@ -1,7 +1,5 @@
 package com.ruoyi.postgrad.recommend.service;
 
-import com.ruoyi.postgrad.recommend.domain.DraftAction;
-
 /**
  * 对话流式回调 —— Service 层不依赖 web 层（SseEmitter），
  * 由 Controller 实现此接口，将 token / done / error 事件桥接到 SSE。
@@ -18,10 +16,21 @@ public interface ChatStreamCallback {
     /**
      * 对话完成。
      *
-     * @param fullMessage AI 完整回复文本（不含 ACTION 分隔部分）
-     * @param draftAction AI 解析出的草稿操作指令（可能为 null 或 type=none）
+     * @param fullMessage AI 完整回复文本。
      */
-    void onDone(String fullMessage, DraftAction draftAction);
+    default void onDone(String fullMessage) {
+    }
+
+    /**
+     * 对话完成。
+     *
+     * @param fullMessage AI 完整回复文本。
+     * @param draftChanged 是否真实触发了草稿写操作
+     * @param toolActionResultJson 工具执行结果 JSON
+     */
+    default void onDone(String fullMessage, boolean draftChanged, String toolActionResultJson) {
+        onDone(fullMessage);
+    }
 
     /**
      * 对话出错。

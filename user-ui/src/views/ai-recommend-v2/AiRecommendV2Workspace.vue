@@ -184,9 +184,7 @@ async function loadProfileData() {
 async function loadDraftData() {
   try {
     const res = await getDraft()
-    if (res.data?.tiers?.some(t => t.candidates?.length > 0)) {
-      draft.value = res.data
-    }
+    draft.value = res.data || null
   } catch (e) { /* 草稿不存在 */ }
 }
 
@@ -352,8 +350,8 @@ async function handleChatSend(message) {
             } else if (currentEvent === 'done') {
               chatStreamingText.value = ''
               chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message) })
-              if (data.draftAction && data.draftAction.type !== 'none') {
-                executeDraftAction(data.draftAction)
+              if (data.draftChanged) {
+                await loadDraftData()
               }
             } else if (currentEvent === 'error') {
               chatStreamingText.value = ''
@@ -371,17 +369,6 @@ async function handleChatSend(message) {
   }
 }
 
-function executeDraftAction(action) {
-  if (action.type === 'remove' && action.programId) {
-    handleRemove(action.programId)
-  } else if (action.type === 'replace' && action.programId) {
-    handleReplace({
-      removeProgramId: action.programId,
-      tier: action.tier || 'steady',
-      preference: action.preference || 'safer'
-    })
-  }
-}
 
 async function handleGenerateReport() {
   const insufficientTiers = (draft.value?.tiers || [])

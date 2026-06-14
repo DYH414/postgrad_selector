@@ -219,7 +219,7 @@ public class V2ChatTools {
                 List<String> names = new ArrayList<>();
                 for (var c : t.getCandidates()) {
                     var f = c.getFact();
-                    names.add(f.getSchoolName() + "-" + f.getProgramName());
+                    names.add(f.getSchoolName() + "-" + f.getProgramName() + "【操作ID:" + f.getProgramId() + "】");
                 }
                 sb.append(String.join("、", names));
             } else {

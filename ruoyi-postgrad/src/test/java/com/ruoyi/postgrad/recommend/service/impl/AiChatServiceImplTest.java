@@ -1,94 +1,92 @@
 package com.ruoyi.postgrad.recommend.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
-import com.ruoyi.postgrad.recommend.domain.DraftAction;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
+import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 
 class AiChatServiceImplTest {
 
     @Test
-    void parseDraftActionUsesFirstObjectWhenModelReturnsMultipleActions() {
-        DraftAction action = AiChatServiceImpl.parseDraftAction("""
-            {"type":"remove","programId":2357,"tier":"steady"}
-            {"type":"remove","programId":3082,"tier":"steady"}
-            {"type":"replace","programId":42,"tier":"safe","preference":"safer"}
-            """);
+    void chatCallbackForwardsOnlyToolExecutionMetadata() {
+        class RecordingCallback implements ChatStreamCallback {
+            String message;
+            boolean draftChanged;
+            String toolResultJson;
 
-        assertNotNull(action);
-        assertEquals("remove", action.getType());
-        assertEquals(2357L, action.getProgramId());
-        assertEquals("steady", action.getTier());
+            @Override
+            public void onToken(String token) {
+            }
+
+            @Override
+            public void onDone(String fullMessage, boolean draftChanged, String toolActionResultJson) {
+                this.message = fullMessage;
+                this.draftChanged = draftChanged;
+                this.toolResultJson = toolActionResultJson;
+            }
+
+            @Override
+            public void onError(Throwable error) {
+            }
+        }
+
+        RecordingCallback callback = new RecordingCallback();
+
+        callback.onDone("ok", true, "{\"ok\":true}");
+
+        assertEquals("ok", callback.message);
+        assertTrue(callback.draftChanged);
+        assertEquals("{\"ok\":true}", callback.toolResultJson);
     }
 
     @Test
-    void parseDraftActionAcceptsJsonFencedBlock() {
-        DraftAction action = AiChatServiceImpl.parseDraftAction("""
-            ```json
-            {"type":"replace","programId":42,"tier":"safe","preference":"safer"}
-            ```
-            """);
+    void legacyCallbackDoesNotInferDraftActionFromAssistantText() {
+        class RecordingCallback implements ChatStreamCallback {
+            String message;
+            boolean calledWithToolMetadata;
 
-        assertNotNull(action);
-        assertEquals("replace", action.getType());
-        assertEquals(42L, action.getProgramId());
-        assertEquals("safer", action.getPreference());
+            @Override
+            public void onToken(String token) {
+            }
+
+            @Override
+            public void onDone(String fullMessage) {
+                this.message = fullMessage;
+            }
+
+            @Override
+            public void onDone(String fullMessage, boolean draftChanged, String toolActionResultJson) {
+                calledWithToolMetadata = true;
+                ChatStreamCallback.super.onDone(fullMessage, draftChanged, toolActionResultJson);
+            }
+
+            @Override
+            public void onError(Throwable error) {
+            }
+        }
+
+        RecordingCallback callback = new RecordingCallback();
+
+        callback.onDone("现在移除宁夏大学：", false, null);
+
+        assertEquals("现在移除宁夏大学：", callback.message);
+        assertTrue(callback.calledWithToolMetadata);
     }
 
     @Test
-    void parseDraftActionReturnsNullWhenNoJsonExists() {
-        assertNull(AiChatServiceImpl.parseDraftAction("继续分析，不执行操作"));
-    }
-
-    @Test
-    void parseDraftActionRejectsInventedStringProgramId() {
-        assertNull(AiChatServiceImpl.parseDraftAction("""
-            {"type":"remove","programId":"xiangtan_university_cs"}
-            """));
-    }
-
-    @Test
-    void inferDraftActionRemovesMentionedCurrentDraftSchoolWhenActionJsonMissing() {
-        SchoolFact safeFact = new SchoolFact();
-        safeFact.setProgramId(3188L);
-        safeFact.setSchoolName("宁夏大学");
-        safeFact.setProgramName("电子信息");
-
-        TierCandidates safeTier = new TierCandidates();
-        safeTier.setLabel("保底档");
-        safeTier.setTargetCount(3);
-        safeTier.setCandidates(List.of(CandidateCardVO.fromFact(safeFact)));
-
-        DraftVO draft = new DraftVO();
-        draft.setTiers(List.of(safeTier));
-
-        DraftAction action = AiChatServiceImpl.inferDraftActionFromDisplayText("""
-            ## 当前状态
-
-            湘潭大学 **已不在草稿中**，不用管了。
-
-            但 **宁夏大学还在保底档**：
-
-            现在移除它：
-            """, draft);
-
-        assertNotNull(action);
-        assertEquals("remove", action.getType());
-        assertEquals(3188L, action.getProgramId());
-    }
-
-    @Test
-    void draftContextIncludesHiddenOperationIdForActions() {
+    void draftContextIncludesHiddenOperationIdForTools() {
         SchoolFact fact = new SchoolFact();
         fact.setProgramId(2357L);
         fact.setSchoolName("湘潭大学");
@@ -110,5 +108,16 @@ class AiChatServiceImplTest {
 
         assertTrue(context.contains("湘潭大学 计算机科学与技术 【操作ID:2357】"));
         assertTrue(context.contains("稳妥档（1/4）"));
+    }
+
+    @Test
+    void promptContractDoesNotDependOnTextActionFallback() throws Exception {
+        String prompt = Files.readString(
+            Path.of("src/main/resources/prompts/v2/chat-system.txt"),
+            StandardCharsets.UTF_8);
+
+        assertFalse(prompt.contains("---ACTION---"));
+        assertFalse(prompt.contains("\"type\":\"remove\""));
+        assertTrue(prompt.contains("removeDraftCandidate(programId)"));
     }
 }

@@ -57,6 +57,8 @@ public class AiConfig {
             .apiKey(apiKey)
             .modelName(modelName)
             .temperature(temperature)
+            .strictTools(true)
+            .parallelToolCalls(false)
             .timeout(Duration.ofSeconds(timeoutSeconds))
             .build();
     }

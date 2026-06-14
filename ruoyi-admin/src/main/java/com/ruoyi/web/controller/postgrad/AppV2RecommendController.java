@@ -333,7 +333,7 @@ public class AppV2RecommendController {
      * <p>异步执行对话流程，通过 SseEmitter 推送 token 流。</p>
      *
      * @param request 包含用户消息文本
-     * @return SseEmitter，推送 token → done(message, draftAction) | error
+     * @return SseEmitter，推送 token → done(message, draftChanged, toolActionResult) | error
      */
     @PostMapping(value = "/chat/send", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter chat(@RequestBody ChatSendRequest request) {
@@ -356,10 +356,14 @@ public class AppV2RecommendController {
 
                     @Override
                     public void onDone(String fullMessage,
-                                       com.ruoyi.postgrad.recommend.domain.DraftAction draftAction) {
+                                       boolean draftChanged,
+                                       String toolActionResultJson) {
                         Map<String, Object> payload = new LinkedHashMap<>();
                         payload.put("message", fullMessage);
-                        payload.put("draftAction", draftAction);
+                        payload.put("draftChanged", draftChanged);
+                        if (toolActionResultJson != null && !toolActionResultJson.isBlank()) {
+                            payload.put("toolActionResult", JSON.parseObject(toolActionResultJson));
+                        }
                         sendSseEvent(emitter, "done", payload);
                         emitter.complete();
                     }

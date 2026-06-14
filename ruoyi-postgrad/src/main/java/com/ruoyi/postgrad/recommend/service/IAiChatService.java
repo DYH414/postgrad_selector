@@ -3,8 +3,8 @@ package com.ruoyi.postgrad.recommend.service;
 import com.ruoyi.postgrad.recommend.domain.ChatStartResultVO;
 
 /**
- * AI 对话服务 —— SSE 流式对话 + 草稿调整意图解析。
- * <p>对话不直接操作草稿。AI 解析用户意图后返回 DraftAction，由前端调用 DraftService API 执行。</p>
+ * AI 对话服务 —— SSE 流式对话 + 后端工具调用调整草稿。
+ * <p>草稿写操作只能由 AI 原生调用后端 tool 完成，不返回前端动作指令执行。</p>
  */
 public interface IAiChatService {
 
@@ -18,7 +18,7 @@ public interface IAiChatService {
 
     /**
      * 流式对话（通过回调推送 token，不依赖 web 层）。
-     * <p>回调事件序列：onToken(...) → ... → onDone(message, draftAction) | onError(throwable)。</p>
+     * <p>回调事件序列：onToken(...) → ... → onDone(message, draftChanged, toolActionResult) | onError(throwable)。</p>
      *
      * @param userId   当前用户 ID
      * @param message  用户消息文本
