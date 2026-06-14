@@ -1,101 +1,95 @@
 <template>
   <section class="draft-panel">
-    <div class="panel-head">
-      <div>
-        <p class="panel-eyebrow">候选池确认</p>
-        <h3>报告草稿</h3>
+    <header class="panel-head">
+      <div class="panel-head-left">
+        <p class="panel-eyebrow">报告草稿</p>
+        <h2 class="panel-title">候选池</h2>
       </div>
-      <span class="draft-total">{{ totalCount }} / 10 所</span>
-    </div>
+      <div class="panel-head-right">
+        <span class="total t-num">{{ totalCount }}<em>/10</em></span>
+      </div>
+    </header>
 
     <!-- 加载态 -->
     <div v-if="loading && !draft" class="panel-loading">
-      <div class="loading-phase">
-        <i class="el-icon-loading"></i>
-        <span>{{ progress.message || '正在准备...' }}</span>
-      </div>
+      <span class="loading-spinner" />
+      <p>{{ progress.message || '正在准备...' }}</p>
     </div>
 
-    <!-- 空态 -->
+    <!-- 空态 — 更有视觉引导 -->
     <div v-else-if="!draft || allEmpty" class="panel-empty">
-      <div class="empty-icon">
-        <svg viewBox="0 0 64 64" width="64" height="64">
-          <rect x="8" y="12" width="48" height="40" rx="4" fill="none" stroke="#c0c8d4" stroke-width="2"/>
-          <line x1="20" y1="26" x2="44" y2="26" stroke="#c0c8d4" stroke-width="2" stroke-linecap="round"/>
-          <line x1="20" y1="32" x2="38" y2="32" stroke="#c0c8d4" stroke-width="2" stroke-linecap="round"/>
-          <line x1="20" y1="38" x2="34" y2="38" stroke="#c0c8d4" stroke-width="2" stroke-linecap="round"/>
-        </svg>
+      <div class="empty-illustration" aria-hidden="true">
+        <span class="orb orb-1" />
+        <span class="orb orb-2" />
+        <span class="orb orb-3" />
+        <span class="orb-center">+</span>
       </div>
-      <p>草稿尚未生成</p>
-      <span>先生成 AI 推荐草稿，再确认要写入报告的学校。</span>
-      <div class="draft-steps">
-        <span>生成候选</span>
-        <span>确认学校</span>
-        <span>生成报告</span>
+      <p class="empty-title">尚未生成草稿</p>
+      <p class="empty-sub">点击左侧 <strong>生成候选草稿</strong><br/>AI 会按画像筛选冲稳保候选。</p>
+      <div class="empty-steps">
+        <span class="empty-step"><i>1</i>生成</span>
+        <span class="empty-step-sep" />
+        <span class="empty-step"><i>2</i>校准</span>
+        <span class="empty-step-sep" />
+        <span class="empty-step"><i>3</i>出报告</span>
       </div>
     </div>
 
     <!-- 三档内容 -->
     <div v-else class="tier-workspace">
-      <div class="tier-tabs">
+      <nav class="tier-tabs">
         <button
           type="button"
-          class="tier-tab"
+          class="tier-tab tier-tab--all"
           :class="{ active: activeTier === 'all' }"
           @click="activeTier = 'all'"
         >
-          <span>全部</span>
-          <strong>{{ totalCount }}/10</strong>
+          <span class="tier-tab-name">全部</span>
+          <span class="tier-tab-count t-num">{{ totalCount }}</span>
         </button>
         <button
           v-for="tier in draft.tiers"
           :key="tier.level"
           type="button"
           class="tier-tab"
-          :class="{ active: tier.level === activeTier }"
+          :class="['tier-tab--' + tier.level, { active: tier.level === activeTier }]"
           @click="activeTier = tier.level"
         >
-          <span>{{ tier.label }}</span>
-          <strong>{{ tier.candidates?.length || 0 }}/{{ tier.targetCount }}</strong>
+          <span class="tier-tab-name">{{ tier.label }}</span>
+          <span class="tier-tab-count t-num">
+            {{ tier.candidates?.length || 0 }}<em>/{{ tier.targetCount }}</em>
+          </span>
         </button>
-      </div>
+      </nav>
 
-      <div class="tier-list-shell">
+      <div class="tier-list">
         <div v-for="tier in visibleTiers" :key="tier.level" class="tier-group">
           <div class="tier-head">
-            <div>
-              <span class="tier-label">{{ tier.label }}</span>
-              <small>{{ tierHint(tier.level) }}</small>
+            <div class="tier-head-left">
+              <span :class="['tier-badge', 'tier-badge--' + tier.level]">{{ tier.label }}</span>
+              <span class="tier-hint">{{ tierHint(tier.level) }}</span>
             </div>
-            <div class="tier-meta">
-              <span class="tier-progress">{{ tier.candidates?.length || 0 }} / {{ tier.targetCount }}</span>
-              <el-tag v-if="tier.insufficient" type="warning" size="small" effect="plain">不足</el-tag>
-            </div>
+            <span v-if="tier.insufficient" class="tier-insufficient">不足 · {{ tier.insufficientReason || '数据有限' }}</span>
           </div>
 
-          <p v-if="tier.insufficient && tier.insufficientReason" class="tier-notice">
-            {{ tier.insufficientReason }}
-          </p>
-
-          <!-- 候选卡片列表 -->
-          <TransitionGroup name="card-list" tag="div">
+          <TransitionGroup name="card-list" tag="div" class="cards">
             <DraftCandidateCard
               v-for="candidate in tier.candidates"
               :key="candidate.fact.programId"
               :candidate="candidate"
+              :tier="tier.level"
               @remove="$emit('remove', candidate.fact.programId)"
               @ask-about="$emit('ask-about', candidate.fact.programId, candidate.fact.schoolName, candidate.fact.programName)"
             />
           </TransitionGroup>
 
-          <!-- 替换占位（该档不足时） -->
           <button
             v-if="tier.insufficient && tier.candidates?.length < tier.targetCount"
             class="add-slot"
             @click="$emit('replace', { tier: tier.level, preference: 'safer' })"
           >
-            <span>补充{{ tier.label }}候选</span>
-            <i class="el-icon-plus"></i>
+            <span>补充一个 {{ tier.label }} 候选</span>
+            <span class="add-icon">+</span>
           </button>
         </div>
       </div>
@@ -103,28 +97,30 @@
 
     <!-- 已移除候选 -->
     <div v-if="draft?.removedCandidates?.length" class="removed-list">
-      <h4>已移出草稿</h4>
-      <div v-for="c in draft.removedCandidates" :key="c.fact.programId" class="removed-item">
-        <span>{{ c.fact.schoolName }} — {{ c.fact.programName }}</span>
-        <el-button type="text" size="small" @click="$emit('add-back', c.fact.programId)">加回</el-button>
-      </div>
+      <p class="t-eyebrow removed-title">已移出</p>
+      <ul>
+        <li v-for="c in draft.removedCandidates" :key="c.fact.programId">
+          <span class="removed-name">{{ c.fact.schoolName }}<em>·</em>{{ c.fact.programName }}</span>
+          <button class="removed-restore" @click="$emit('add-back', c.fact.programId)">加回</button>
+        </li>
+      </ul>
     </div>
 
     <!-- 底部生成按钮 -->
-    <div class="report-action-bar">
-      <div>
-        <span>最终报告</span>
-        <strong>{{ totalCount ? '已整理候选草稿' : '等待候选草稿' }}</strong>
+    <footer class="report-action-bar">
+      <div class="report-action-meta">
+        <span class="t-eyebrow">最终报告</span>
+        <strong>{{ totalCount ? `${totalCount} 所已就绪` : '等待候选草稿' }}</strong>
       </div>
-      <el-button
-        type="primary"
-        size="large"
+      <button
+        class="report-action-btn"
         :disabled="!draft || totalCount === 0"
         @click="$emit('generate-report')"
       >
-        生成最终报告
-      </el-button>
-    </div>
+        生成报告
+        <span class="btn-arrow">→</span>
+      </button>
+    </footer>
   </section>
 </template>
 
@@ -171,12 +167,12 @@ watch(
 
 function tierHint(level) {
   const map = {
-    reach: '冲刺档：保留上限机会',
-    steady: '稳妥档：优先匹配主目标',
-    safe: '保底档：控制落空风险',
-    conservative: '保底档：控制落空风险'
+    reach: '冲刺档 · 保留上限机会',
+    steady: '稳妥档 · 主目标区间',
+    safe: '保底档 · 控制落空风险',
+    conservative: '保底档 · 控制落空风险'
   }
-  return map[level] || '按画像和数据质量排序'
+  return map[level] || '按画像与数据排序'
 }
 </script>
 
@@ -184,69 +180,213 @@ function tierHint(level) {
 .draft-panel {
   height: 100%;
   min-height: 0;
-  padding: 16px 16px 0;
-  border: 1px solid #dce7f6;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(39,86,166,.07);
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  box-shadow: 0 8px 24px rgba(36, 78, 156, 0.06);
   overflow: hidden;
-  overflow-x: hidden;
 }
+
+/* ── Head ── */
 .panel-head {
   flex-shrink: 0;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 14px;
+  align-items: flex-end;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, rgba(23, 105, 246, 0.05) 0%, rgba(155, 89, 255, 0.04) 100%),
+    var(--bg-elev);
 }
-.panel-eyebrow { margin: 0 0 4px; color: #1769f6; font-size: 12px; line-height: 16px; font-weight: 900; }
-.panel-head h3 { margin: 0; font-size: 18px; }
-.draft-total { font-size: 13px; color: #71829a; font-weight: 600; }
 
-/* 加载 */
-.panel-loading { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 60px 0; }
-.loading-phase { display: flex; align-items: center; justify-content: center; gap: 8px; color: #71829a; font-size: 14px; }
+.panel-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand);
+}
 
-/* 空态 */
+.panel-title {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.total {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--brand);
+  line-height: 1;
+}
+
+.total em {
+  font-size: 12px;
+  color: var(--ink-4);
+  font-style: normal;
+  font-weight: 400;
+  margin-left: 1px;
+}
+
+/* ── Loading ── */
+.panel-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--brand-soft-2);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.panel-loading p { margin: 0; }
+
+/* ── Empty state — illustration + steps ── */
 .panel-empty {
   flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 36px 20px;
-  border: 1px dashed #cfe0f6;
-  border-radius: 8px;
-  background: #fbfdff;
-}
-.empty-icon { margin-bottom: 16px; }
-.panel-empty p { margin: 0 0 4px; font-size: 15px; color: #303133; }
-.panel-empty span { font-size: 13px; color: #a8b2c1; }
-.draft-steps {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 18px;
-}
-.draft-steps span {
-  min-width: 0;
-  min-height: 30px;
-  padding: 6px;
-  border-radius: 7px;
-  background: #eef4fb;
-  color: #607592;
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 800;
+  padding: 28px 20px;
+  gap: 14px;
 }
 
-/* 档位 */
+.empty-illustration {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.6;
+}
+
+.orb-1 {
+  width: 40px;
+  height: 40px;
+  background: var(--brand-soft-2);
+  top: 4px;
+  left: 4px;
+  animation: float 4s var(--ease) infinite;
+}
+
+.orb-2 {
+  width: 28px;
+  height: 28px;
+  background: #f0e9ff;
+  bottom: 8px;
+  right: 6px;
+  animation: float 4s var(--ease) infinite 0.6s;
+}
+
+.orb-3 {
+  width: 18px;
+  height: 18px;
+  background: var(--warn-soft-2);
+  top: 14px;
+  right: 4px;
+  animation: float 4s var(--ease) infinite 1.2s;
+}
+
+.orb-center {
+  position: relative;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--brand);
+  font-size: 18px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(36, 78, 156, 0.1);
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(0, -4px); }
+}
+
+.empty-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.empty-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.6;
+  max-width: 240px;
+}
+
+.empty-sub strong { color: var(--brand); font-weight: 600; }
+
+.empty-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.empty-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.empty-step i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-soft);
+  color: var(--brand);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.empty-step-sep {
+  width: 16px;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* ── Tier workspace ── */
 .tier-workspace {
   flex: 1;
   min-height: 0;
@@ -254,131 +394,313 @@ function tierHint(level) {
   flex-direction: column;
   overflow: hidden;
 }
+
 .tier-tabs {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 6px;
-  border: 1px solid #edf2f9;
-  border-radius: 8px;
-  background: #f7faff;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
 }
+
 .tier-tab {
-  min-width: 0;
-  min-height: 44px;
-  padding: 7px 8px;
-  border: 1px solid transparent;
-  border-radius: 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 8px 10px;
   background: transparent;
-  color: #607592;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--ink-3);
   cursor: pointer;
   text-align: left;
-  transition: background .18s ease, border-color .18s ease, color .18s ease;
+  transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
-.tier-tab:hover,
+
+.tier-tab:hover {
+  color: var(--ink-1);
+  background: var(--brand-soft-3);
+}
+
+.tier-tab-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.tier-tab-count {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink-2);
+  letter-spacing: -0.02em;
+}
+
+.tier-tab-count em {
+  font-size: 11px;
+  color: var(--ink-4);
+  font-style: normal;
+  font-weight: 400;
+}
+
 .tier-tab.active {
-  border-color: #b8d3fb;
-  background: #fff;
-  color: #1769f6;
+  color: var(--ink-1);
+  background: var(--bg-elev);
+  border-bottom-color: var(--brand);
 }
-.tier-tab span,
-.tier-tab strong {
-  display: block;
+
+.tier-tab.active .tier-tab-count { color: var(--brand); }
+
+.tier-tab--reach.active { border-bottom-color: var(--tier-reach); }
+.tier-tab--reach.active .tier-tab-count { color: var(--tier-reach); }
+.tier-tab--steady.active { border-bottom-color: var(--tier-steady); }
+.tier-tab--safe.active,
+.tier-tab--conservative.active { border-bottom-color: var(--tier-safe); }
+.tier-tab--safe.active .tier-tab-count,
+.tier-tab--conservative.active .tier-tab-count { color: var(--tier-safe); }
+
+/* ── Tier list ── */
+.tier-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 20px 16px;
+}
+
+.tier-group { padding: 14px 0 12px; }
+.tier-group + .tier-group { border-top: 1px dashed var(--line); }
+
+.tier-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tier-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* Tier badge — 替换原来简陋的色条 */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.tier-badge--reach {
+  background: linear-gradient(135deg, #f57c1f 0%, #e85a0a 100%);
+  box-shadow: 0 2px 8px rgba(232, 90, 10, 0.25);
+}
+
+.tier-badge--steady {
+  background: linear-gradient(135deg, #2a7bff 0%, #1769f6 100%);
+  box-shadow: 0 2px 8px rgba(23, 105, 246, 0.25);
+}
+
+.tier-badge--safe,
+.tier-badge--conservative {
+  background: linear-gradient(135deg, #2bb078 0%, #0f9b6c 100%);
+  box-shadow: 0 2px 8px rgba(15, 155, 108, 0.25);
+}
+
+.tier-hint {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.tier-insufficient {
+  font-size: 11px;
+  color: var(--warn);
+  background: var(--warn-soft-2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.cards { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Add slot ── */
+.add-slot {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all var(--t-fast) var(--ease);
+}
+
+.add-slot:hover {
+  border-color: var(--brand);
+  border-style: solid;
+  color: var(--brand);
+  background: var(--brand-soft-3);
+}
+
+.add-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--brand);
+  transition: all var(--t-fast) var(--ease);
+}
+
+.add-slot:hover .add-icon {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
+/* ── Card transition ── */
+.card-list-enter-active { transition: all .25s var(--ease); }
+.card-list-leave-active { transition: all .2s var(--ease); }
+.card-list-enter-from { opacity: 0; transform: translateY(4px); }
+.card-list-leave-to { opacity: 0; transform: translateX(8px); }
+
+/* ── Removed list ── */
+.removed-list {
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  padding: 12px 20px;
+  background: var(--bg-soft);
+}
+
+.removed-title { margin: 0 0 8px; }
+
+.removed-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.removed-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.removed-name {
+  font-size: 12px;
+  color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tier-tab span { font-size: 12px; line-height: 16px; font-weight: 800; }
-.tier-tab strong { margin-top: 2px; color: #10213f; font-size: 14px; line-height: 18px; }
-.tier-list-shell {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-.tier-group { margin-bottom: 18px; }
-.tier-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.tier-label { display: block; color: #10213f; font-size: 15px; font-weight: 800; }
-.tier-head small { display: block; margin-top: 2px; color: #71829a; font-size: 12px; line-height: 17px; }
-.tier-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.tier-progress { font-size: 12px; color: #71829a; }
-.tier-notice { color: #e6a23c; font-size: 12px; margin: 0 0 8px; line-height: 18px; }
 
-/* 卡片过渡 */
-.card-list-enter-active { transition: all .3s ease; }
-.card-list-leave-active { transition: all .25s ease; }
-.card-list-enter-from { opacity: 0; transform: translateY(10px); }
-.card-list-leave-to { opacity: 0; transform: translateX(20px); }
+.removed-name em {
+  margin: 0 4px;
+  color: var(--ink-4);
+  font-style: normal;
+}
 
-/* 补充按钮 */
-.add-slot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 10px;
-  border: 1px dashed #c0c8d4;
-  border-radius: 6px;
+.removed-restore {
   background: transparent;
-  color: #71829a;
-  font-size: 13px;
+  border: 0;
+  padding: 2px 6px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  transition: border-color .2s, color .2s;
-}
-.add-slot:hover { border-color: #409eff; color: #409eff; }
-
-/* 已移除 */
-.removed-list {
   flex-shrink: 0;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid #f0f4fa;
 }
-.removed-list h4 { margin: 0 0 8px; font-size: 13px; color: #71829a; }
-.removed-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 0;
-  font-size: 13px;
-  color: #a8b2c1;
-}
+.removed-restore:hover { color: var(--brand-hover); text-decoration: underline; }
 
+/* ── Report action bar ── */
 .report-action-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
   flex-shrink: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  margin: 12px -16px 0;
-  padding: 12px 16px;
-  border-top: 1px solid #edf2f9;
-  background: rgba(255,255,255,.96);
-  box-shadow: 0 -10px 24px rgba(39,86,166,.08);
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-elev);
 }
-.report-action-bar span,
-.report-action-bar strong {
+
+.report-action-meta { min-width: 0; }
+.report-action-meta strong {
   display: block;
-  min-width: 0;
+  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.report-action-bar span { color: #71829a; font-size: 12px; line-height: 16px; }
-.report-action-bar strong { overflow: hidden; color: #10213f; font-size: 13px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
-.report-action-bar .el-button { width: 100%; min-width: 0; font-size: 14px; font-weight: 800; height: 42px; border-radius: 8px; }
+
+.report-action-btn {
+  height: 36px;
+  padding: 0 18px;
+  background: var(--brand-gradient);
+  color: #fff;
+  border: 0;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(23, 105, 246, 0.22);
+  transition: box-shadow var(--t-fast) var(--ease);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.report-action-btn:hover:not(:disabled) {
+  box-shadow: 0 10px 20px rgba(23, 105, 246, 0.32);
+}
+
+.report-action-btn:hover:not(:disabled) .btn-arrow {
+  transform: translateX(2px);
+}
+
+.btn-arrow {
+  transition: transform var(--t-fast) var(--ease);
+}
+
+.report-action-btn:disabled {
+  background: var(--line-strong);
+  color: var(--ink-4);
+  cursor: not-allowed;
+  box-shadow: none;
+}
 
 @media (max-width: 960px) {
-  .tier-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .report-action-bar { grid-template-columns: 1fr; }
+  .tier-tabs { grid-template-columns: repeat(2, 1fr); }
+  .report-action-bar { flex-direction: column; align-items: stretch; }
 }
 </style>

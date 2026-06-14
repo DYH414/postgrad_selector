@@ -19,10 +19,12 @@ import com.ruoyi.postgrad.mapper.AiChatMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
 import com.ruoyi.postgrad.recommend.domain.AiChatMessage;
+import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.ChatMessageVO;
 import com.ruoyi.postgrad.recommend.domain.ChatStartResultVO;
 import com.ruoyi.postgrad.recommend.domain.DraftAction;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
+import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
@@ -118,17 +120,9 @@ public class AiChatServiceImpl implements IAiChatService {
         }
         final List<ChatMessageVO> history = loadedHistory;
 
-        // 2. 提取系统提示词
-        String systemPrompt = "";
-        for (ChatMessageVO m : history) {
-            if ("system".equals(m.getRole())) {
-                systemPrompt = m.getContent();
-                break;
-            }
-        }
-        if (systemPrompt.isEmpty()) {
-            systemPrompt = buildSystemPrompt(userId);
-        }
+        // 2. 每轮都重建系统提示词，确保草稿调整后的档位和操作ID是最新的。
+        String systemPrompt = buildSystemPrompt(userId);
+        redisTemplate.opsForValue().set(chatKey(userId), systemPrompt, CHAT_TTL);
 
         // 3. 构建 ChatMemory
         ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(MAX_MESSAGES);
@@ -182,6 +176,13 @@ public class AiChatServiceImpl implements IAiChatService {
                         action = parseDraftAction(actionText);
                         if (action == null) {
                             log.warn("[AiChat] Failed to parse DraftAction: {}", actionText);
+                        }
+                    }
+                    if (action == null) {
+                        action = inferDraftActionFromDisplayText(displayText, draftService.getDraft(userId));
+                        if (action != null) {
+                            log.info("[AiChat] Inferred DraftAction from assistant text: type={}, programId={}",
+                                action.getType(), action.getProgramId());
                         }
                     }
 
@@ -281,7 +282,7 @@ public class AiChatServiceImpl implements IAiChatService {
         for (AiChatMessage row : rows) {
             if ("system".equals(row.getRole())) continue;
             if (!"user".equals(row.getRole()) && !"assistant".equals(row.getRole())) continue;
-            String content = row.getContent() != null ? row.getContent() : row.getDisplayContent();
+            String content = row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent();
             if (content == null || content.isBlank()) continue;
             result.add(new ChatMessageVO(row.getRole(), content));
         }
@@ -296,6 +297,89 @@ public class AiChatServiceImpl implements IAiChatService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    static DraftAction inferDraftActionFromDisplayText(String displayText, DraftVO draft) {
+        if (!hasRemoveIntent(displayText) || draft == null || draft.getTiers() == null) {
+            return null;
+        }
+
+        CandidateCardVO lastMentioned = null;
+        String[] lines = displayText.split("\\R");
+        for (String line : lines) {
+            if (line == null || line.isBlank() || isAlreadyAbsentLine(line)) {
+                continue;
+            }
+            for (TierCandidates tier : draft.getTiers()) {
+                if (tier.getCandidates() == null) continue;
+                for (CandidateCardVO candidate : tier.getCandidates()) {
+                    if (!mentionsCandidate(line, candidate)) continue;
+                    if (hasRemoveIntent(line)) {
+                        return removeAction(candidate);
+                    }
+                    lastMentioned = candidate;
+                }
+            }
+        }
+
+        return lastMentioned != null ? removeAction(lastMentioned) : null;
+    }
+
+    private static boolean hasRemoveIntent(String text) {
+        if (text == null || text.isBlank()) return false;
+        String[] terms = {"移除", "移出", "删除", "删掉", "去掉", "剔除", "拿掉", "移走"};
+        for (String term : terms) {
+            int idx = text.indexOf(term);
+            while (idx >= 0) {
+                if (!isNegatedAction(text, idx)) {
+                    return true;
+                }
+                idx = text.indexOf(term, idx + term.length());
+            }
+        }
+        return false;
+    }
+
+    private static boolean isNegatedAction(String text, int actionIndex) {
+        int start = Math.max(0, actionIndex - 8);
+        String prefix = text.substring(start, actionIndex);
+        String[] negations = {"不要", "不用", "无需", "不必", "不能", "无法", "暂不", "先不", "别", "勿"};
+        for (String negation : negations) {
+            if (prefix.contains(negation)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAlreadyAbsentLine(String line) {
+        return line.contains("已不在草稿")
+            || line.contains("不在草稿中")
+            || line.contains("已经不在草稿")
+            || line.contains("不用管")
+            || line.contains("无需处理");
+    }
+
+    private static boolean mentionsCandidate(String text, CandidateCardVO candidate) {
+        if (candidate == null || candidate.getFact() == null) return false;
+        SchoolFact fact = candidate.getFact();
+        return containsNonBlank(text, fact.getSchoolName())
+            || containsNonBlank(text, fact.getProgramName())
+            || containsNonBlank(text, fact.getCollegeName());
+    }
+
+    private static boolean containsNonBlank(String text, String needle) {
+        return text != null && needle != null && !needle.isBlank() && text.contains(needle);
+    }
+
+    private static DraftAction removeAction(CandidateCardVO candidate) {
+        if (candidate == null || candidate.getFact() == null || candidate.getFact().getProgramId() == null) {
+            return null;
+        }
+        DraftAction action = new DraftAction();
+        action.setType("remove");
+        action.setProgramId(candidate.getFact().getProgramId());
+        return action;
     }
 
     private static String firstJsonObject(String text) {
@@ -399,7 +483,7 @@ public class AiChatServiceImpl implements IAiChatService {
         }
     }
 
-    private String buildDraftContextText(DraftVO draft) {
+    static String buildDraftContextText(DraftVO draft) {
         if (draft == null || draft.getTiers() == null) return "尚未生成草稿。";
 
         StringBuilder sb = new StringBuilder();
@@ -413,7 +497,8 @@ public class AiChatServiceImpl implements IAiChatService {
             for (var c : t.getCandidates()) {
                 var f = c.getFact();
                 sb.append("  - ").append(f.getSchoolName())
-                    .append(" ").append(f.getProgramName());
+                    .append(" ").append(f.getProgramName())
+                    .append(" 【操作ID:").append(f.getProgramId()).append("】");
                 if (f.getAvgAdmittedScore() != null) {
                     sb.append(" 均分").append(f.getAvgAdmittedScore());
                 }

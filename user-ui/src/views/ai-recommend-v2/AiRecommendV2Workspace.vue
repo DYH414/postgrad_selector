@@ -1,38 +1,43 @@
 <template>
-  <div class="prototype-page">
+  <div class="ai-workspace">
     <AppHeader current-page="ai" />
 
-    <main class="v2-wrap">
-      <!-- Hero -->
-      <section class="hero">
-        <div class="hero-copy">
-          <span class="hero-kicker">AI 推荐工作流</span>
-          <h1>AI 择校工作台</h1>
-          <p>从画像出发生成候选池，在对话中确认冲刺、稳妥、保底学校，最后沉淀成可交付报告。</p>
+    <main class="ai-main">
+      <!-- Hero — single dense band, with a soft gradient blob for visual interest -->
+      <header class="page-head">
+        <div class="page-head-blob" aria-hidden="true" />
+        <div class="page-head-left">
+          <p class="t-eyebrow">
+            <span class="kicker-dot" />
+            AI · 择校工作台
+          </p>
+          <h1 class="t-display">和 AI 一起，把志愿表确定下来。</h1>
+          <p class="page-head-sub">
+            从你的画像出发，AI 先生成冲稳保候选，再用对话校准风险，最后沉淀成可交付报告。
+          </p>
         </div>
-        <div class="hero-status-strip">
-          <div class="status-item primary">
-            <span>候选池</span>
-            <strong>{{ poolCount }}</strong>
-            <em>所</em>
+        <div class="page-head-right">
+          <div class="head-stat">
+            <span class="head-stat-label">候选池</span>
+            <span class="head-stat-value t-num">{{ poolCount }}<em>所</em></span>
           </div>
-          <div class="status-item">
-            <span>草稿中</span>
-            <strong>{{ draftCount }}</strong>
-            <em>/ 10 所</em>
+          <div class="head-stat-divider" />
+          <div class="head-stat">
+            <span class="head-stat-label">草稿</span>
+            <span class="head-stat-value t-num">{{ draftCount }}<em>/10</em></span>
           </div>
-          <div class="status-item strategy">
-            <span>当前策略</span>
-            <strong>{{ strategyLabel }}</strong>
-            <em>冲稳保均衡</em>
+          <div class="head-stat-divider" />
+          <div class="head-stat">
+            <span class="head-stat-label">策略</span>
+            <span class="head-stat-pill">{{ strategyLabel }}</span>
           </div>
         </div>
-      </section>
+      </header>
 
-      <!-- 三栏网格 -->
-      <section class="main-grid">
-        <!-- 左栏 -->
-        <aside class="left-col">
+      <!-- Body grid: rail / canvas / draft -->
+      <div class="body-grid">
+        <!-- Left rail -->
+        <aside class="rail">
           <ProfileSidebar
             :profile="profile"
             :loading="loadingProfile"
@@ -46,45 +51,37 @@
           />
         </aside>
 
-        <!-- 中栏 -->
-        <section class="center-col">
-          <div class="ai-workflow-strip">
-            <div
-              v-for="step in workflowSteps"
-              :key="step.key"
-              class="workflow-step"
-              :class="{ active: step.active, done: step.done }"
+        <!-- Main canvas: chat -->
+        <section class="canvas">
+          <div class="canvas-head">
+            <div class="canvas-head-left">
+              <div class="canvas-orb" :class="{ live: chatStreaming }" />
+              <div>
+                <h2 class="canvas-title">AI 助手</h2>
+                <p class="canvas-sub">解释候选理由 · 校准冲稳保 · 检查风险</p>
+              </div>
+            </div>
+            <span
+              :class="['canvas-state', { live: chatStreaming }]"
             >
-              <span class="workflow-index">{{ step.index }}</span>
-              <div>
-                <strong>{{ step.title }}</strong>
-                <em>{{ step.desc }}</em>
-              </div>
-            </div>
+              <span class="state-dot" />
+              {{ chatStreaming ? '生成中' : (chatMessages.length ? '可追问' : '待对话') }}
+            </span>
           </div>
-          <div class="chat-panel-frame">
-            <div class="chat-frame-head">
-              <div>
-                <h2>候选分析与追问</h2>
-                <p>AI 会解释候选来源、风险和纳入草稿的理由。</p>
-              </div>
-              <span :class="['chat-state', chatVisible || chatMessages.length ? 'active' : 'idle']">
-                {{ chatVisible || chatMessages.length ? '可追问' : '未开始' }}
-              </span>
-            </div>
-            <AiChatMiniPanel
-              :visible="chatVisible"
-              :messages="chatMessages"
-              :streaming="chatStreaming"
-              :streaming-text="chatStreamingText"
-              @send="handleChatSend"
-              @toggle="chatVisible = !chatVisible"
-            />
-          </div>
+
+          <AiChatMiniPanel
+            class="canvas-chat"
+            :visible="chatVisible"
+            :messages="chatMessages"
+            :streaming="chatStreaming"
+            :streaming-text="chatStreamingText"
+            @send="handleChatSend"
+            @toggle="chatVisible = !chatVisible"
+          />
         </section>
 
-        <!-- 右栏 -->
-        <aside class="right-col">
+        <!-- Right column: draft -->
+        <aside class="draft-col">
           <DraftPanel
             :draft="draft"
             :loading="generating"
@@ -96,7 +93,7 @@
             @generate-report="handleGenerateReport"
           />
         </aside>
-      </section>
+      </div>
     </main>
   </div>
 </template>
@@ -148,43 +145,8 @@ const strategyLabel = computed(() => {
   const p = profile.value
   if (p?.riskPreference === 'safe_first') return '稳妥优先'
   if (p?.riskPreference === 'reach_first') return '冲刺优先'
-  return '均衡策略'
+  return '均衡'
 })
-
-const workflowSteps = computed(() => [
-  {
-    key: 'profile',
-    index: '01',
-    title: '画像读取',
-    desc: missingFields.value.length ? `缺 ${missingFields.value.length} 项信息` : '画像可用',
-    active: !draft.value && !generating.value,
-    done: missingFields.value.length === 0
-  },
-  {
-    key: 'pool',
-    index: '02',
-    title: '候选生成',
-    desc: progressState.value.message || '按冲稳保形成候选池',
-    active: generating.value,
-    done: poolCount.value > 0
-  },
-  {
-    key: 'chat',
-    index: '03',
-    title: '对话调整',
-    desc: chatMessages.value.length ? '已进入追问调整' : '可解释和替换学校',
-    active: chatVisible.value || chatMessages.value.length > 0,
-    done: chatMessages.value.length > 0
-  },
-  {
-    key: 'report',
-    index: '04',
-    title: '报告确认',
-    desc: draftCount.value ? `${draftCount.value}/10 所待确认` : '等待草稿',
-    active: draftCount.value > 0,
-    done: draftCount.value >= 10
-  }
-])
 
 // ── 方法 ──
 
@@ -271,7 +233,6 @@ async function handleGenerate() {
         phase: data.phase || 'running',
         message: data.message || '正在生成草稿...'
       }
-      // 逐档实时渲染：后端推送某档完整数据后立即展示，不等全部完成
       if (data.tierData) {
         if (!draft.value) {
           draft.value = { tiers: [], removedCandidates: [], blockedCandidates: [] }
@@ -352,7 +313,6 @@ async function handleAddBack(programId) {
 function handleAskAbout(programId, schoolName, programName) {
   chatVisible.value = true
   const label = programName ? `${schoolName}-${programName}` : (schoolName || '这所学校')
-  // 用户只看到自然语言问题。AI 通过 getDraftContext 定位学校，按名调用 getProgramDetail。
   handleChatSend(`帮我分析一下 ${label} 为什么被推荐，有什么风险`)
 }
 
@@ -465,244 +425,368 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.prototype-page {
+.ai-workspace {
   height: 100vh;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   background:
-    linear-gradient(180deg, #f7faff 0%, #f3f6fb 42%, #f6f8fc 100%);
-  color: #10213f;
+    radial-gradient(ellipse 60% 60% at 20% 0%, #e0ebff 0%, transparent 50%),
+    radial-gradient(ellipse 50% 40% at 90% 10%, #f0e9ff 0%, transparent 50%),
+    linear-gradient(180deg, #f5f8ff 0%, #eef4ff 320px, #f5f8ff 100%);
+  color: var(--ink-1);
+  overflow: hidden;
+  position: relative;
 }
 
-:deep(.app-header) {
-  flex-shrink: 0;
+.ai-workspace::before {
+  /* 微妙点阵网格，丰富背景 */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(36, 78, 156, 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+  opacity: 0.5;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 70%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 70%);
 }
 
-.v2-wrap {
+.ai-main {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  max-width: 1520px;
+  max-width: 1480px;
   width: 100%;
   margin: 0 auto;
-  padding: 0 24px 16px;
+  padding: 24px 40px 20px;
+  gap: 20px;
   overflow: hidden;
 }
 
-/* ── Hero ── */
-.hero {
+/* ── Hero — 单行紧凑布局 + 装饰光斑 ── */
+.page-head {
   flex-shrink: 0;
-  min-height: 118px;
+  position: relative;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 24px;
-  padding: 18px 0 14px;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 20px 28px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: 0 6px 20px rgba(36, 78, 156, 0.06);
+  overflow: hidden;
 }
-.hero-copy { flex: 1; }
-.hero-kicker {
+
+.page-head-blob {
+  position: absolute;
+  top: -40px;
+  left: -20px;
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle, rgba(23, 105, 246, 0.12) 0%, transparent 70%);
+  pointer-events: none;
+  filter: blur(20px);
+}
+
+.page-head-left {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.kicker-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  margin-right: 6px;
+  vertical-align: middle;
+  box-shadow: 0 0 0 4px rgba(23, 105, 246, 0.15);
+}
+
+.t-eyebrow {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #eaf2ff;
-  color: #1769f6;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+  margin: 0 0 6px;
+}
+
+.page-head-left h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--ink-1);
+  max-width: 580px;
+}
+
+.page-head-sub {
+  margin: 0;
+  max-width: 520px;
+  color: var(--ink-3);
   font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0;
-  margin-bottom: 8px;
+  line-height: 1.55;
 }
-.hero-copy h1 { margin: 0 0 8px; font-size: 30px; font-weight: 800; line-height: 36px; letter-spacing: 0; }
-.hero-copy p { max-width: 640px; margin: 0; color: #5d6f89; font-size: 15px; line-height: 1.65; }
 
-.hero-status-strip {
-  display: grid;
-  grid-template-columns: 130px 130px minmax(180px, 1fr);
+/* ── Right stats — single line, pill for strategy ── */
+.page-head-right {
+  position: relative;
+  display: flex;
   align-items: center;
+  gap: 18px;
   flex-shrink: 0;
-  width: min(560px, 44vw);
-  min-height: 72px;
-  padding: 10px;
-  border: 1px solid #dce7f6;
-  border-radius: 10px;
-  background: rgba(255,255,255,.9);
-  box-shadow: 0 12px 28px rgba(39,86,166,.08);
 }
-.status-item {
-  min-width: 0;
-  min-height: 52px;
-  padding: 6px 16px;
-  border-right: 1px solid #edf2f9;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.status-item:last-child { border-right: 0; }
-.status-item span { display: block; color: #6d7f99; font-size: 12px; font-weight: 800; line-height: 16px; }
-.status-item strong { display: block; margin-top: 4px; color: #10213f; font-size: 22px; line-height: 26px; font-weight: 900; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.status-item em { display: block; margin-top: 1px; color: #8a9ab2; font-size: 12px; line-height: 16px; font-style: normal; font-weight: 800; }
-.status-item.primary strong { color: #1769f6; }
-.status-item.strategy strong { font-size: 17px; }
 
-/* ── 三栏 ── */
-.main-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 300px minmax(560px, 1fr) 480px;
-  gap: 20px;
-  height: auto;
-  min-height: 0;
-  align-items: stretch;
-  overflow: hidden;
+.head-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 56px;
 }
-.left-col {
+
+.head-stat-label {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.head-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink-1);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.head-stat-value em {
+  font-size: 11px;
+  color: var(--ink-4);
+  font-style: normal;
+  font-weight: 400;
+}
+
+.head-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  background: var(--brand-soft);
+  padding: 5px 10px;
+  border-radius: 999px;
+  line-height: 1;
+}
+
+.head-stat-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+/* ── Body grid: rail / canvas / draft — 减小侧栏增加主区 ── */
+.body-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 380px;
+  gap: 18px;
+}
+
+.rail {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  overflow: hidden;
-}
-.left-col :deep(.profile-card) {
-  flex: 1;
-  min-height: 0;
+  gap: 14px;
   overflow-y: auto;
 }
-.left-col :deep(.generate-section) {
-  flex-shrink: 0;
-}
-.center-col,
-.right-col {
+
+/* ── Canvas — 视觉锚点，圆角略大，加深阴影 + 渐变头 ── */
+.canvas {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
-}
-.center-col {
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  box-shadow: 0 10px 28px rgba(36, 78, 156, 0.08);
+  overflow: hidden;
+  position: relative;
 }
-.right-col { position: static; }
 
-.ai-workflow-strip {
+.canvas::before {
+  /* 极淡的网格背景，给聊天区一些肌理 */
+  content: "";
+  position: absolute;
+  inset: 60px 0 0 0;
+  background-image:
+    linear-gradient(rgba(23, 105, 246, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 105, 246, 0.025) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+  opacity: 0.6;
+  z-index: 0;
+}
+
+.canvas-head {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.workflow-step {
-  min-width: 0;
-  min-height: 64px;
   display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 9px 10px;
-  border: 1px solid #dce7f6;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, .86);
-  transition: border-color .18s ease, background .18s ease;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, rgba(23, 105, 246, 0.04) 0%, rgba(155, 89, 255, 0.04) 100%),
+    var(--bg-elev);
 }
 
-.workflow-step.active {
-  border-color: #9dc4ff;
-  background: #f4f8ff;
+.canvas-head-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
-.workflow-step.done .workflow-index {
-  border-color: #9ee3c0;
-  background: #ecfdf5;
-  color: #087443;
-}
-
-.workflow-index {
-  flex: none;
-  width: 28px;
-  height: 28px;
+.canvas-orb {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--brand-gradient);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #d7e6fb;
-  border-radius: 50%;
-  color: #1769f6;
-  background: #fff;
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.workflow-step strong,
-.workflow-step em {
-  display: block;
-  min-width: 0;
-}
-
-.workflow-step strong {
-  color: #10213f;
   font-size: 13px;
-  line-height: 18px;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0;
+  box-shadow: 0 6px 16px rgba(23, 105, 246, 0.3);
+  position: relative;
 }
 
-.workflow-step em {
-  margin-top: 3px;
-  color: #71829a;
-  font-size: 12px;
-  line-height: 17px;
-  font-style: normal;
+.canvas-orb::after {
+  content: "AI";
 }
 
-.chat-panel-frame {
+.canvas-orb.live {
+  animation: orb-pulse 1.6s var(--ease) infinite;
+}
+
+@keyframes orb-pulse {
+  0%, 100% { box-shadow: 0 6px 16px rgba(23, 105, 246, 0.3), 0 0 0 0 rgba(23, 105, 246, 0.4); }
+  50% { box-shadow: 0 6px 16px rgba(23, 105, 246, 0.3), 0 0 0 10px rgba(23, 105, 246, 0); }
+}
+
+.canvas-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink-1);
+  letter-spacing: -0.01em;
+}
+
+.canvas-sub {
+  margin: 1px 0 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.canvas-state {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-elev);
+  transition: all var(--t-base) var(--ease);
+}
+
+.state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-4);
+  transition: background var(--t-base) var(--ease);
+}
+
+.canvas-state.live {
+  color: var(--brand);
+  border-color: var(--brand-soft-2);
+  background: var(--brand-soft);
+}
+.canvas-state.live .state-dot {
+  background: var(--brand);
+  animation: dot-blink 1.2s var(--ease) infinite;
+}
+
+@keyframes dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.canvas-chat {
+  position: relative;
+  z-index: 1;
   flex: 1;
-  height: auto;
+  min-height: 0;
+}
+
+.draft-col {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid #dce7f6;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(39,86,166,.07);
-  overflow: hidden;
 }
 
-.chat-frame-head {
-  min-height: 62px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #edf2f9;
-  background: #fbfdff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+/* ── Responsive ── */
+@media (max-width: 1280px) {
+  .ai-main { padding: 20px 24px 16px; }
+  .body-grid {
+    grid-template-columns: 220px minmax(0, 1fr) 340px;
+    gap: 14px;
+  }
 }
-.chat-frame-head h2 { margin: 0; color: #10213f; font-size: 17px; line-height: 23px; }
-.chat-frame-head p { margin: 3px 0 0; color: #6d7f99; font-size: 13px; line-height: 18px; }
-.chat-state {
-  flex-shrink: 0;
-  min-height: 24px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 800;
-}
-.chat-state.active { color: #0b6b43; background: #e8f8f0; }
-.chat-state.idle { color: #607592; background: #eef4fb; }
 
-@media (max-width: 1200px) {
-  .main-grid { grid-template-columns: 280px minmax(520px, 1fr) 430px; gap: 16px; }
-  .hero-status-strip { width: min(520px, 44vw); grid-template-columns: 112px 112px minmax(160px, 1fr); }
-  .ai-workflow-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 @media (max-width: 960px) {
-  .prototype-page { height: auto; min-height: 100vh; overflow: visible; }
-  .v2-wrap { overflow: visible; }
-  .hero { align-items: flex-start; flex-direction: column; }
-  .hero-status-strip { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .main-grid { grid-template-columns: 1fr; height: auto; overflow: visible; }
-  .left-col { order: 1; }
-  .right-col { order: 2; position: static; }
-  .center-col { order: 3; }
+  .ai-workspace { height: auto; min-height: 100vh; overflow: visible; }
+  .ai-main { overflow: visible; }
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .page-head-right { gap: 16px; }
+  .body-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+  .rail { order: 1; overflow: visible; }
+  .canvas { order: 2; height: 600px; }
+  .draft-col { order: 3; }
 }
 </style>

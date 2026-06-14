@@ -1,23 +1,21 @@
 <template>
   <div class="generate-section">
-    <el-button
-      type="primary"
-      size="large"
-      :loading="generating"
-      :disabled="generating"
+    <button
       class="generate-btn"
+      :disabled="generating"
       @click="$emit('generate')"
     >
-      {{ generating ? 'AI 正在生成...' : '生成 AI 推荐草稿' }}
-    </el-button>
+      <span v-if="generating" class="btn-spinner" />
+      <span>{{ generating ? 'AI 生成中...' : '生成候选草稿' }}</span>
+    </button>
 
-    <div v-if="generating && progress.message" class="progress-hint">
-      <i class="el-icon-loading"></i>
-      <span>{{ progress.message }}</span>
-    </div>
+    <p v-if="generating && progress.message" class="progress-hint">
+      <span class="progress-dot" />
+      {{ progress.message }}
+    </p>
 
-    <p v-if="!generating" class="generate-tip">
-      系统将基于画像自动筛选候选池，由 AI 在每档内挑选最合适的学校。
+    <p v-else class="generate-tip">
+      基于画像自动筛选候选池，AI 在每档内挑选最合适的学校。
     </p>
   </div>
 </template>
@@ -32,33 +30,88 @@ defineEmits(['generate'])
 
 <style scoped>
 .generate-section {
-  padding: 14px;
-  border: 1px solid #dce7f6;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(39,86,166,.07);
-  text-align: center;
-}
-.generate-btn {
-  width: 100%;
-  font-size: 15px;
-  font-weight: 600;
-  height: 44px;
-  border-radius: 7px;
-}
-.progress-hint {
-  margin-top: 10px;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  box-shadow: 0 8px 24px rgba(36, 78, 156, 0.06);
+}
+
+.generate-btn {
+  height: 44px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #71829a;
+  gap: 8px;
+  padding: 0 16px;
+  background: var(--brand-gradient);
+  color: #fff;
+  border: 0;
+  border-radius: var(--r-md);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(23, 105, 246, 0.22);
+  transition: box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
-.generate-tip {
-  margin-top: 10px;
+
+.generate-btn:hover:not(:disabled) {
+  box-shadow: 0 12px 24px rgba(23, 105, 246, 0.32);
+  transform: translateY(-1px);
+}
+
+.generate-btn:active:not(:disabled) { transform: translateY(0); }
+
+.generate-btn:disabled {
+  background: var(--line-strong);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.progress-hint {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
-  color: #a8b2c1;
-  line-height: 18px;
+  color: var(--brand);
+  padding: 0 4px;
+}
+
+.progress-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+  flex-shrink: 0;
+  animation: pulse 1.4s var(--ease) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.generate-tip {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+  line-height: 1.55;
+  padding: 0 4px;
 }
 </style>

@@ -1,257 +1,291 @@
 <template>
-  <div class="candidate-card" :class="{ 'is-adjusted': candidate.adjusted }">
+  <article class="candidate-card" :class="{ 'is-adjusted': candidate.adjusted, ['tier--' + tier]: tier }">
     <div class="card-top">
       <div class="card-title">
-        <span class="school-name">{{ candidate.fact.schoolName }}</span>
+        <h4 class="school-name">{{ candidate.fact.schoolName }}</h4>
         <p class="program-name">{{ candidate.fact.collegeName }} · {{ candidate.fact.programName }}</p>
       </div>
-      <div class="card-badges">
-        <el-tag :type="tierTagType" size="small" effect="plain">{{ candidate.fact.schoolTier }}</el-tag>
-        <button class="remove-btn" title="移出草稿" @click="$emit('remove')">
-          <svg viewBox="0 0 16 16" width="14" height="14">
-            <line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
+      <button class="remove-btn" title="移出草稿" aria-label="移出草稿" @click="$emit('remove')">
+        <svg viewBox="0 0 16 16" width="12" height="12">
+          <line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <dl class="fact-grid">
+      <div class="fact">
+        <dt>均分</dt>
+        <dd class="t-num">{{ displayVal(candidate.fact.avgAdmittedScore) }}</dd>
       </div>
-    </div>
+      <div class="fact">
+        <dt>差距</dt>
+        <dd :class="['t-num', gapClass]">{{ displayGap(candidate.fact.scoreGap) }}</dd>
+      </div>
+      <div class="fact">
+        <dt>名额</dt>
+        <dd class="t-num">{{ candidate.fact.unifiedExamQuota || candidate.fact.planCount || '—' }}</dd>
+      </div>
+      <div class="fact">
+        <dt>城市</dt>
+        <dd>{{ candidate.fact.city || '—' }}</dd>
+      </div>
+    </dl>
 
-    <div class="fact-grid">
-      <span class="fact-item">
-        <em>均分</em>{{ displayVal(candidate.fact.avgAdmittedScore) }}
-      </span>
-      <span class="fact-item">
-        <em>差距</em>{{ displayGap(candidate.fact.scoreGap) }}
-      </span>
-      <span class="fact-item">
-        <em>名额</em>{{ candidate.fact.unifiedExamQuota || candidate.fact.planCount || '-' }}
-      </span>
-      <span class="fact-item">
-        <em>城市</em>{{ candidate.fact.city || '-' }}
-      </span>
-    </div>
-
-    <p v-if="candidate.opinion?.reason" class="ai-reason">{{ candidate.opinion.reason }}</p>
+    <p v-if="candidate.opinion?.reason" class="ai-reason">
+      <span class="ai-quote">"</span>{{ candidate.opinion.reason }}
+    </p>
 
     <div v-if="candidate.opinion?.risks?.length" class="risk-tags">
       <span v-for="risk in candidate.opinion.risks" :key="risk" class="risk-tag">{{ risk }}</span>
     </div>
 
     <div v-if="candidate.adjusted" class="adjust-notice">
-      <i class="el-icon-warning"></i>
-      {{ candidate.adjustReason || '系统已自动调整档位' }}
+      <i class="el-icon-warning-outline" />
+      {{ candidate.adjustReason || '已自动调整档位' }}
     </div>
 
-    <div class="card-actions">
-      <button type="button" class="ask-btn" @click="$emit('ask-about')">问 AI</button>
-    </div>
-  </div>
+    <footer class="card-actions">
+      <span v-if="candidate.fact.schoolTier" class="tier-label">{{ candidate.fact.schoolTier }}</span>
+      <button type="button" class="ask-btn" @click="$emit('ask-about')">问 AI →</button>
+    </footer>
+  </article>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 
 const props = defineProps({
-  candidate: { type: Object, required: true }
+  candidate: { type: Object, required: true },
+  tier: { type: String, default: '' }
 })
 
 defineEmits(['remove', 'ask-about'])
 
-const tierTagType = computed(() => {
-  const tier = props.candidate.fact.schoolTier || ''
-  if (tier.includes('985')) return 'danger'
-  if (tier.includes('211') || tier.includes('双一流')) return 'warning'
-  return 'info'
+const gapClass = computed(() => {
+  const g = props.candidate.fact.scoreGap
+  if (g == null) return ''
+  if (g > 0) return 'gap--up'
+  if (g < 0) return 'gap--down'
+  return ''
 })
 
 function displayVal(value) {
-  return value != null ? value : '-'
+  return value != null ? value : '—'
 }
 
 function displayGap(value) {
-  if (value == null) return '-'
+  if (value == null) return '—'
   return value >= 0 ? `+${value}` : `${value}`
 }
 </script>
 
 <style scoped>
 .candidate-card {
-  min-width: 0;
-  padding: 13px;
-  border: 1px solid #e4edf8;
-  border-radius: 8px;
-  background: #fff;
-  margin-bottom: 10px;
-  transition: border-color .18s ease, background .18s ease;
+  position: relative;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-elev);
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
 }
 
 .candidate-card:hover {
-  border-color: #b8d3fb;
-  background: #fbfdff;
+  border-color: var(--brand-soft-2);
+  box-shadow: 0 4px 12px rgba(36, 78, 156, 0.08);
 }
 
 .candidate-card.is-adjusted {
   border-color: #f5dab1;
-  background: #fef8ef;
+  background: var(--warn-amber-soft);
 }
 
+.candidate-card.tier--reach { border-left: 3px solid var(--tier-reach); }
+.candidate-card.tier--steady { border-left: 3px solid var(--tier-steady); }
+.candidate-card.tier--safe,
+.candidate-card.tier--conservative { border-left: 3px solid var(--tier-safe); }
+
+/* ── Top row ── */
 .card-top {
-  min-width: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
 
-.card-title {
-  min-width: 0;
-  flex: 1;
-}
+.card-title { min-width: 0; flex: 1; }
 
 .school-name {
-  display: block;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink-1);
+  letter-spacing: -0.01em;
   overflow: hidden;
-  color: #10213f;
-  font-weight: 900;
-  font-size: 15px;
-  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .program-name {
-  overflow: hidden;
-  margin: 4px 0 0;
-  color: #71829a;
+  margin: 2px 0 0;
   font-size: 12px;
-  line-height: 17px;
+  line-height: 1.4;
+  color: var(--ink-3);
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.card-badges {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .remove-btn {
-  width: 24px;
-  height: 24px;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid #e4edf8;
-  border-radius: 6px;
-  background: #f6f9fd;
-  color: #a8b2c1;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--ink-4);
   cursor: pointer;
-  transition: color .18s ease, background .18s ease, border-color .18s ease;
+  transition: all var(--t-fast) var(--ease);
 }
 
 .remove-btn:hover {
-  border-color: #fecdd3;
-  background: #fff1f2;
-  color: #dc2626;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
+/* ── Fact grid ── */
 .fact-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  margin: 10px 0 8px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin: 12px 0 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
-.fact-item {
-  min-width: 0;
-  padding: 7px 6px;
-  border-radius: 7px;
-  background: #f6f9fd;
-  color: #10213f;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 800;
-  text-align: center;
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 6px;
+  border-right: 1px solid var(--line);
 }
 
-.fact-item em {
-  display: block;
-  margin: 0 0 2px;
-  color: #71829a;
-  font-style: normal;
-  font-weight: 700;
+.fact:last-child { border-right: 0; }
+
+.fact dt {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
 }
 
+.fact dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-1);
+  line-height: 1.3;
+}
+
+.gap--up { color: var(--ok); }
+.gap--down { color: var(--danger); }
+
+/* ── AI reason — 浅蓝块引用 ── */
 .ai-reason {
-  margin: 8px 0;
-  padding: 8px 10px;
-  border-left: 3px solid #1769f6;
-  border-radius: 6px;
-  background: #f4f8ff;
-  color: #334155;
+  position: relative;
+  margin: 10px 0 0;
+  padding: 8px 10px 8px 22px;
   font-size: 12px;
-  line-height: 19px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  background: var(--brand-soft-3);
+  border-left: 2px solid var(--brand);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }
 
+.ai-quote {
+  position: absolute;
+  left: 8px;
+  top: 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--brand);
+  line-height: 1;
+}
+
+/* ── Risk tags ── */
 .risk-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: 4px;
+  margin: 8px 0 0;
 }
 
 .risk-tag {
-  max-width: 100%;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: #fff7ed;
-  color: #c46810;
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--warn-soft-2);
+  color: var(--warn);
+  font-weight: 500;
 }
 
+/* ── Adjust notice ── */
 .adjust-notice {
-  margin-top: 6px;
+  margin: 8px 0 0;
   padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(230, 162, 60, .1);
-  font-size: 12px;
-  color: #b88230;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--warn-amber);
+  background: var(--warn-amber-soft);
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
+.adjust-notice i { font-size: 12px; }
+
+/* ── Actions ── */
 .card-actions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
+}
+
+.tier-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  background: var(--bg-soft);
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 
 .ask-btn {
-  min-width: 72px;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid #cfe0f6;
-  border-radius: 999px;
-  background: #fff;
-  color: #1769f6;
-  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  color: var(--brand);
   font-size: 12px;
-  line-height: 28px;
-  font-weight: 800;
-  transition: background .18s ease, border-color .18s ease;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease);
 }
 
-.ask-btn:hover {
-  border-color: #9dc4ff;
-  background: #f4f8ff;
-}
+.ask-btn:hover { color: var(--brand-hover); }
 
 @media (max-width: 520px) {
-  .fact-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  .fact-grid { grid-template-columns: repeat(2, 1fr); row-gap: 8px; }
+  .fact { border-right: 0; }
 }
 </style>

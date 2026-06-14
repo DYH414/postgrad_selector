@@ -1,56 +1,56 @@
 <template>
   <section class="profile-card">
-    <div class="card-head">
-      <div>
-        <p class="card-eyebrow">决策输入</p>
-        <h2>当前画像</h2>
-        <p v-if="missingFields.length === 0">画像完整，可生成推荐草稿。</p>
-        <p v-else>还缺少 {{ missingFields.length }} 项关键信息。</p>
+    <header class="card-head">
+      <p class="card-eyebrow">画像</p>
+      <h2 class="card-title">决策输入</h2>
+    </header>
+
+    <div v-loading="loading" class="card-body">
+      <!-- 分数块 — 浅蓝渐变 + 大数字 -->
+      <div class="score-block">
+        <div class="score-block-top">
+          <span class="score-label">预计初试总分</span>
+          <span class="score-badge">分</span>
+        </div>
+        <div class="score-value t-num">
+          {{ profile.estimatedScore || '—' }}
+        </div>
+        <p class="score-hint">用于判断复试线区间与冲稳保档位</p>
       </div>
-      <span :class="['profile-status', missingFields.length ? 'warn' : 'good']">
-        {{ missingFields.length ? '待完善' : '可推荐' }}
-      </span>
+
+      <dl class="kv-list">
+        <div class="kv">
+          <dt>本科</dt>
+          <dd>{{ tierLabel(profile.undergradTier) }}</dd>
+        </div>
+        <div class="kv">
+          <dt>跨考</dt>
+          <dd>{{ profile.isCrossMajor ? '是' : '否' }}</dd>
+        </div>
+        <div class="kv">
+          <dt>地区</dt>
+          <dd class="dd-ellipsis" :title="targetRegionsLabel">{{ targetRegionsLabel }}</dd>
+        </div>
+        <div class="kv">
+          <dt>策略</dt>
+          <dd>{{ riskLabel(profile.riskPreference) }}</dd>
+        </div>
+        <div class="kv">
+          <dt>层次</dt>
+          <dd class="dd-ellipsis" :title="schoolTierLabel(profile.schoolTierPreference)">{{ schoolTierLabel(profile.schoolTierPreference) }}</dd>
+        </div>
+      </dl>
+
+      <div v-if="missingFields.length" class="warn-line">
+        <i class="el-icon-warning-outline" />
+        还缺 {{ missingFields.length }} 项关键信息
+      </div>
     </div>
 
-    <div v-loading="loading" class="profile-list">
-      <div class="score-panel">
-        <span>预计初试总分</span>
-        <strong>{{ profile.estimatedScore || '-' }}</strong>
-        <em>用于判断复试线区间与冲稳保档位</em>
-      </div>
-
-      <div class="profile-section">
-        <h3>基础条件</h3>
-        <div class="profile-row">
-          <span>本科层次</span>
-          <strong>{{ tierLabel(profile.undergradTier) }}</strong>
-        </div>
-        <div class="profile-row">
-          <span>跨考情况</span>
-          <strong>{{ profile.isCrossMajor ? '跨考' : '非跨考' }}</strong>
-        </div>
-      </div>
-
-      <div class="profile-section">
-        <h3>偏好策略</h3>
-        <div class="profile-row">
-          <span>目标地区</span>
-          <strong>{{ targetRegionsLabel }}</strong>
-        </div>
-        <div class="profile-row">
-          <span>整体策略</span>
-          <strong>{{ riskLabel(profile.riskPreference) }}</strong>
-        </div>
-        <div class="profile-row">
-          <span>层次偏好</span>
-          <strong>{{ schoolTierLabel(profile.schoolTierPreference) }}</strong>
-        </div>
-      </div>
-    </div>
-
-    <div class="profile-actions">
-      <el-button size="small" @click="$emit('edit')">编辑画像</el-button>
-    </div>
+    <button class="card-link" @click="$emit('edit')">
+      编辑画像
+      <span class="arrow">→</span>
+    </button>
   </section>
 </template>
 
@@ -92,92 +92,219 @@ function tierLabel(v) {
 }
 
 function riskLabel(v) {
-  const map = { safe_first: '稳妥优先', reach_first: '冲刺优先', balanced: '均衡策略' }
-  return map[v] || '均衡策略'
+  const map = { safe_first: '稳妥优先', reach_first: '冲刺优先', balanced: '均衡' }
+  return map[v] || '均衡'
 }
 
 function schoolTierLabel(v) {
   const map = {
-    must_211_or_better: '强烈倾向 211/双一流',
-    prefer_211_or_better: '优先 211/双一流',
-    no_strict_requirement: '不强求层次'
+    must_211_or_better: '必须 211+',
+    prefer_211_or_better: '优先 211+',
+    no_strict_requirement: '不限制'
   }
-  return map[v] || '不强求层次'
+  return map[v] || '不限制'
 }
 </script>
 
 <style scoped>
 .profile-card {
-  padding: 18px;
-  border: 1px solid #dce7f6;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(39,86,166,.07);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  box-shadow: 0 8px 24px rgba(36, 78, 156, 0.06);
+  padding: 16px 16px 12px;
+  position: relative;
+  overflow: hidden;
 }
+
+.profile-card::before {
+  /* 右上角装饰光斑 */
+  content: "";
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 120px;
+  height: 120px;
+  background: radial-gradient(circle, rgba(23, 105, 246, 0.1) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
 .card-head {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 14px;
+  position: relative;
+}
+
+.card-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand);
+  letter-spacing: 0.02em;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-1);
+  letter-spacing: -0.01em;
+}
+
+.card-body { flex: 1; min-height: 0; position: relative; }
+
+/* Score block — visual focal point */
+.score-block {
+  padding: 14px 14px 12px;
+  border: 1px solid var(--brand-soft-2);
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(135deg, #f0f6ff 0%, #eaf2ff 50%, #f7eeff 100%);
+  margin-bottom: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.score-block::after {
+  /* 右上角斜纹装饰 */
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 60px;
+  height: 60px;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0,
+      transparent 6px,
+      rgba(23, 105, 246, 0.06) 6px,
+      rgba(23, 105, 246, 0.06) 7px
+    );
+  pointer-events: none;
+}
+
+.score-block-top {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
 }
-.card-eyebrow { margin: 0 0 4px; color: #1769f6; font-size: 12px; line-height: 16px; font-weight: 900; }
-.card-head h2 { margin: 0; font-size: 18px; line-height: 24px; }
-.card-head p { margin: 5px 0 0; color: #71829a; font-size: 13px; }
-.profile-status {
-  align-self: flex-start;
-  flex-shrink: 0;
-  padding: 4px 9px;
+
+.score-label {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.score-badge {
+  font-size: 10px;
+  color: var(--brand);
+  background: var(--bg-elev);
+  border: 1px solid var(--brand-soft-2);
+  padding: 1px 6px;
   border-radius: 999px;
+  font-weight: 600;
+}
+
+.score-value {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--brand);
+  margin: 6px 0 6px;
+}
+
+.score-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+/* KV list */
+.kv-list {
+  margin: 0 0 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.kv:last-child { border-bottom: 0; }
+
+.kv dt {
   font-size: 12px;
-  font-weight: 800;
+  color: var(--ink-3);
+  font-weight: 400;
+  flex-shrink: 0;
 }
-.profile-status.good { background: #edfdf5; color: #087443; }
-.profile-status.warn { background: rgba(230,162,60,.12); color: #e6a23c; }
-.profile-list { margin-bottom: 16px; }
-.score-panel {
-  margin-bottom: 14px;
-  padding: 14px;
-  border: 1px solid #d7e6fb;
-  border-radius: 8px;
-  background: #f6f9ff;
-}
-.score-panel span,
-.score-panel em {
-  display: block;
-  color: #6d7f99;
+
+.kv dd {
+  margin: 0;
   font-size: 12px;
-  line-height: 16px;
-  font-style: normal;
+  color: var(--ink-1);
+  font-weight: 600;
+  text-align: right;
+  word-break: break-word;
 }
-.score-panel strong {
-  display: block;
-  margin: 5px 0 3px;
-  color: #1769f6;
-  font-size: 28px;
-  line-height: 34px;
-  font-weight: 900;
+
+.dd-ellipsis {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.profile-section {
-  padding-top: 12px;
-  border-top: 1px solid #edf2f9;
+
+.warn-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--warn);
+  padding: 6px 10px;
+  background: var(--warn-soft-2);
+  border-radius: var(--r-sm);
+  margin-bottom: 4px;
+  border: 1px solid #f5dab1;
 }
-.profile-section + .profile-section { margin-top: 12px; }
-.profile-section h3 {
-  margin: 0 0 6px;
-  color: #10213f;
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 900;
+
+.warn-line i { font-size: 12px; }
+
+.card-link {
+  margin-top: 8px;
+  padding: 9px 4px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: 0;
+  border-top: 1px dashed var(--line);
+  border-radius: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease);
 }
-.profile-row {
-  display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
-  gap: 12px;
-  padding: 7px 0;
-  font-size: 13px;
+
+.card-link:hover { color: var(--brand); }
+
+.card-link .arrow {
+  transition: transform var(--t-fast) var(--ease);
 }
-.profile-row span { color: #71829a; }
-.profile-row strong { min-width: 0; font-weight: 700; color: #10213f; text-align: right; word-break: break-word; }
-.profile-actions { text-align: right; }
-.profile-actions :deep(.el-button) { border-radius: 7px; font-weight: 700; }
+
+.card-link:hover .arrow { transform: translateX(2px); }
 </style>
