@@ -23,11 +23,15 @@ import com.ruoyi.postgrad.recommend.domain.AiOpinion;
 import com.ruoyi.postgrad.recommend.domain.AiSelectionResult;
 import com.ruoyi.postgrad.recommend.domain.AiSelectionResult.SelectedItem;
 import com.ruoyi.postgrad.recommend.domain.BlockedCandidateVO;
+import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
+import com.ruoyi.postgrad.recommend.domain.CandidateUniverseVO;
+import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.ProfileBasisVO;
 import com.ruoyi.postgrad.recommend.domain.ReplaceResultVO;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
+import com.ruoyi.postgrad.recommend.domain.WorkspaceTierVO;
 import com.ruoyi.postgrad.recommend.service.DraftGenerationCallback;
 import com.ruoyi.postgrad.recommend.service.IAiSelectorService;
 import com.ruoyi.postgrad.recommend.service.ICandidatePoolService;
@@ -35,7 +39,7 @@ import com.ruoyi.postgrad.recommend.service.IDraftService;
 
 /**
  * 草稿服务实现 —— 编排候选池构建、AI 选择、校验、Redis 持久化。
- * <p>调整操作（remove/replace/addBack/alternatives）委托给 {@link DraftAdjustServiceImpl}。</p>
+ * <p>调整操作（remove/replace/addBack/alternatives）委托给 {@code IDraftMutationService}，触发 refill 策略。</p>
  */
 @Service
 public class DraftServiceImpl implements IDraftService {
@@ -44,6 +48,8 @@ public class DraftServiceImpl implements IDraftService {
 
     public static final String DRAFT_KEY_PREFIX = "ai:v2:draft:";
     public static final String DRAFT_POOL_KEY_PREFIX = "ai:v2:draft:pool:";
+    static final String UNIVERSE_KEY_PREFIX = "ai:v2:universe:";
+    static final String WORKSPACE_KEY_PREFIX = "ai:v2:workspace:";
     private static final String LOCK_KEY_PREFIX = "ai:v2:draft:lock:";
     private static final long TTL_DAYS = 7;
     /** 生成锁 TTL：5 分钟，防止重复点击 */
@@ -78,7 +84,16 @@ public class DraftServiceImpl implements IDraftService {
     private IAiSelectorService aiSelectorService;
 
     @Autowired
-    private DraftAdjustServiceImpl adjustService;
+    private com.ruoyi.postgrad.recommend.service.IDraftMutationService draftMutationService;
+
+    @Autowired
+    private com.ruoyi.postgrad.recommend.service.ICandidateUniverseService universeService;
+
+    @Autowired
+    private com.ruoyi.postgrad.recommend.service.ICandidateWorkspaceService workspaceService;
+
+    @Autowired
+    private com.ruoyi.postgrad.mapper.AiChatMapper aiChatMapper;
 
     // ==================== generateDraft ====================
 
@@ -94,7 +109,10 @@ public class DraftServiceImpl implements IDraftService {
             return;
         }
         try {
-            // 1. 加载用户画像
+            // 1. 终结旧对话（新草稿 = 新上下文，避免旧对话污染）
+            aiChatMapper.finalizeActiveConversations(userId);
+
+            // 2. 加载用户画像
             callback.onProgress("loading_profile", "正在加载用户画像...", null, null);
             UserProfile up = userProfileMapper.selectUserProfileByUserId(userId);
             if (up == null || up.getEstimatedScore() == null || up.getEstimatedScore() <= 0) {
@@ -114,22 +132,47 @@ public class DraftServiceImpl implements IDraftService {
 
             savePoolSnapshot(userId, allTiers);
 
-            // 3. 对每档调用 AI 选择
+            // 2.5 构建 Universe → Workspace（混合架构：保留广泛候选供给）
+            ProfileBasisVO basis = buildProfileBasis(up, totalCandidates);
+            CandidateUniverseVO universe = universeService.buildUniverse(
+                userId, basis, estimatedScore, regions, schoolTierPref);
+            saveUniverse(userId, universe);
+            // 用 Universe 真实规模更新画像依据
+            int universeCount = universe.candidateCount();
+            basis = buildProfileBasis(up, universeCount);
+            CandidateWorkspaceVO workspace = workspaceService.buildWorkspace(
+                universe, schoolTierPref, up.getRegionStrategy());
+            saveWorkspace(userId, workspace);
+            log.info("[Draft] Universe={} Workspace={} Pool={}",
+                universeCount, workspace.totalCandidates(), totalCandidates);
+
+            // 3. 对每档从 Workspace 调用 AI 选择（混合架构：30/档 而不是旧池的 15/档）
             List<TierCandidates> resultTiers = new ArrayList<>(3);
             List<BlockedCandidateVO> allBlocked = new ArrayList<>();
 
-            for (TierCandidates tier : allTiers) {
+            for (WorkspaceTierVO wsTier : workspace.getTiers()) {
+                String tierLevel = wsTier.getLevel();
+                String tierLabel = wsTier.getLabel();
+                List<CandidateCardVO> wsCandidates = wsTier.getCandidates();
+                int draftTarget = "reach".equals(tierLevel) ? 3 : "steady".equals(tierLevel) ? 4 : 3;
+
                 callback.onProgress("ai_selecting",
-                    "AI 正在" + tier.getLabel() + "挑选合适的学校...", null, tier.getLevel());
+                    "AI 正在" + tierLabel + "挑选合适的学校...（工作集 " + wsCandidates.size() + " 所）",
+                    null, tierLevel);
 
                 AiSelectionResult sel = aiSelectorService.select(
-                    tier.getLevel(), tier.getCandidates(), estimatedScore);
+                    tierLevel, wsCandidates, estimatedScore);
 
-                TierCandidates resultTier = mergeSelection(tier, sel);
+                // 包装为 TierCandidates 保持下游兼容
+                TierCandidates rawTier = new TierCandidates();
+                rawTier.setLevel(tierLevel);
+                rawTier.setLabel(tierLabel);
+                rawTier.setTargetCount(draftTarget);
+                rawTier.setCandidates(wsCandidates);
+                TierCandidates resultTier = mergeSelection(rawTier, sel);
                 resultTiers.add(resultTier);
 
-                // 逐档实时推送：不等全部完成，前端即可渲染当前档位的候选卡片
-                callback.onTierComplete(tier.getLevel(), JSON.toJSONString(resultTier));
+                callback.onTierComplete(tierLevel, JSON.toJSONString(resultTier));
 
                 if (sel.getBlocked() != null) {
                     for (AiSelectionResult.BlockedItem bi : sel.getBlocked()) {
@@ -144,14 +187,19 @@ public class DraftServiceImpl implements IDraftService {
 
             callback.onProgress("validating", "正在校验 AI 推荐结果...", null, null);
 
-            // 4. 构建 DraftVO + 持久化
-            ProfileBasisVO basis = buildProfileBasis(up, totalCandidates);
+            // 4. 构建 DraftVO + 持久化（basis 已在 step 2.5 构建）
             DraftVO draft = new DraftVO();
             draft.setTiers(resultTiers);
             draft.setRemovedCandidates(Collections.emptyList());
             draft.setBlockedCandidates(allBlocked);
             draft.setProfileBasis(basis);
             draft.setGeneratedAt(LocalDateTime.now());
+            // 混合架构：附加工作集规模
+            Map<String, Integer> wsSummary = new LinkedHashMap<>();
+            for (WorkspaceTierVO wt : workspace.getTiers()) {
+                wsSummary.put(wt.getLevel(), wt.getCandidates().size());
+            }
+            draft.setWorkspaceSummary(wsSummary);
 
             saveDraft(userId, draft);
             callback.onDone(draft, basis, allBlocked.size());
@@ -179,26 +227,102 @@ public class DraftServiceImpl implements IDraftService {
         }
     }
 
-    // ==================== delegate to DraftAdjustServiceImpl ====================
+    // ==================== delegate to DraftMutationService ====================
+
+    private CandidateWorkspaceVO loadWorkspace(Long userId) {
+        String json = redisTemplate.opsForValue().get(WORKSPACE_KEY_PREFIX + userId);
+        if (json == null || json.isBlank()) return null;
+        try { return JSON.parseObject(json, CandidateWorkspaceVO.class); }
+        catch (Exception e) { return null; }
+    }
 
     @Override
     public DraftVO removeCandidate(Long userId, Long programId) {
-        return adjustService.removeCandidate(userId, programId);
+        CandidateWorkspaceVO ws = loadWorkspace(userId);
+        DraftMutationResultVO r = draftMutationService.removeCandidate(userId, programId, ws);
+        return r.getDraft();
     }
 
     @Override
     public ReplaceResultVO replaceCandidate(Long userId, Long removeProgramId, String tier, String preference) {
-        return adjustService.replaceCandidate(userId, removeProgramId, tier, preference);
+        CandidateWorkspaceVO ws = loadWorkspace(userId);
+        DraftMutationResultVO r = draftMutationService.replaceCandidate(
+            userId, removeProgramId, removeProgramId /* add candidate handled by mutation */, tier, ws);
+        ReplaceResultVO result = new ReplaceResultVO();
+        result.setDraft(r.getDraft());
+        return result;
+    }
+
+    @Override
+    public DraftVO addFromWorkspace(Long userId, String tier, String preference) {
+        CandidateWorkspaceVO ws = loadWorkspace(userId);
+        if (ws == null) throw new IllegalStateException("工作集已过期，请重新生成草稿");
+
+        // 收集已在草稿中的候选 ID
+        DraftVO draft = getDraft(userId);
+        java.util.Set<Long> draftIds = new java.util.LinkedHashSet<>();
+        if (draft.getTiers() != null) {
+            for (TierCandidates t : draft.getTiers()) {
+                if (t.getCandidates() != null) {
+                    for (CandidateCardVO c : t.getCandidates()) {
+                        if (c.getFact().getProgramId() != null) draftIds.add(c.getFact().getProgramId());
+                    }
+                }
+            }
+        }
+
+        // 从工作集同档选取最佳候选
+        var wsTier = ws.tierByLevel(tier);
+        if (wsTier == null || wsTier.getCandidates() == null || wsTier.getCandidates().isEmpty()) {
+            throw new IllegalStateException("工作集中该档位没有候选");
+        }
+
+        CandidateCardVO best = wsTier.getCandidates().stream()
+            .filter(c -> c.getFact().getProgramId() != null
+                && !draftIds.contains(c.getFact().getProgramId()))
+            .min((a, b) -> {
+                if ("safer".equals(preference)) {
+                    Integer ga = a.getFact().getScoreGap(); Integer gb = b.getFact().getScoreGap();
+                    return Integer.compare(gb != null ? gb : 0, ga != null ? ga : 0);
+                }
+                return 0;
+            })
+            .orElseThrow(() -> new IllegalStateException("该档位没有可用的新候选"));
+
+        DraftMutationResultVO r = draftMutationService.addCandidate(userId,
+            best.getFact().getProgramId(), tier, ws);
+        return r.getDraft();
     }
 
     @Override
     public DraftVO addBackCandidate(Long userId, Long programId) {
-        return adjustService.addBackCandidate(userId, programId);
+        // 从 removedCandidates 找到候选的原始档位
+        DraftVO draft = getDraft(userId);
+        String tier = "steady";
+        if (draft.getRemovedCandidates() != null) {
+            for (CandidateCardVO c : draft.getRemovedCandidates()) {
+                if (programId.equals(c.getFact().getProgramId())) {
+                    tier = c.getFact().inferTier();
+                    break;
+                }
+            }
+        }
+        CandidateWorkspaceVO ws = loadWorkspace(userId);
+        DraftMutationResultVO r = draftMutationService.addCandidate(userId, programId, tier, ws);
+        return r.getDraft();
     }
 
     @Override
     public List<CandidateCardVO> getAlternatives(Long userId, String tier, Long excludeId) {
-        return adjustService.getAlternatives(userId, tier, excludeId);
+        // 从 workspace 获取替代候选
+        CandidateWorkspaceVO ws = loadWorkspace(userId);
+        if (ws == null) return Collections.emptyList();
+        var wsTier = ws.tierByLevel(tier);
+        if (wsTier == null || wsTier.getCandidates() == null) return Collections.emptyList();
+        return wsTier.getCandidates().stream()
+            .filter(c -> !c.getFact().getProgramId().equals(excludeId))
+            .limit(10)
+            .collect(java.util.stream.Collectors.toList());
     }
 
     // ==================== private helpers ====================
@@ -280,6 +404,16 @@ public class DraftServiceImpl implements IDraftService {
     }
 
     // ── key / util / empty ──
+
+    private void saveUniverse(Long userId, CandidateUniverseVO universe) {
+        redisTemplate.opsForValue().set(
+            UNIVERSE_KEY_PREFIX + userId, JSON.toJSONString(universe), Duration.ofDays(TTL_DAYS));
+    }
+
+    private void saveWorkspace(Long userId, CandidateWorkspaceVO workspace) {
+        redisTemplate.opsForValue().set(
+            WORKSPACE_KEY_PREFIX + userId, JSON.toJSONString(workspace), Duration.ofDays(TTL_DAYS));
+    }
 
     private String draftKey(Long userId) { return DRAFT_KEY_PREFIX + userId; }
     private String draftPoolKey(Long userId) { return DRAFT_POOL_KEY_PREFIX + userId; }

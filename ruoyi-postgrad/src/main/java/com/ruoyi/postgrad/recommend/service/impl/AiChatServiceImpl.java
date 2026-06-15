@@ -86,7 +86,15 @@ public class AiChatServiceImpl implements IAiChatService {
     }
 
     @Override
+    public void finalizeConversation(Long userId) {
+        aiChatMapper.finalizeActiveConversations(userId);
+        log.info("[Chat] Finalized active conversations for userId={}", userId);
+    }
+
+    @Override
     public ChatStartResultVO startChat(Long userId) {
+        // 终结旧对话，避免上下文污染新草稿
+        aiChatMapper.finalizeActiveConversations(userId);
         AiChatConversation conversation = getOrCreateActiveConversation(userId);
 
         // 清除旧对话历史

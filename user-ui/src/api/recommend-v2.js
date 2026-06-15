@@ -40,6 +40,15 @@ export function removeCandidate(programId) {
   })
 }
 
+/** 从工作集添加候选（不替换） */
+export function addFromWorkspace(tier, preference = 'safer') {
+  return request({
+    url: '/app/ai-recommend-v2/draft/add-from-workspace',
+    method: 'post',
+    data: { tier, preference }
+  })
+}
+
 /** 替换候选 */
 export function replaceCandidate(removeProgramId, tier, preference = 'safer') {
   return request({

@@ -250,6 +250,20 @@ public class AppV2RecommendController {
     }
 
     /**
+     * 从工作集选取最佳候选加入草稿（不替换任何已有候选）。
+     */
+    @PostMapping("/draft/add-from-workspace")
+    public AjaxResult addFromWorkspace(@RequestBody Map<String, String> body) {
+        AppLoginUser user = requireLogin();
+        String tier = body.get("tier");
+        if (tier == null || tier.isBlank()) {
+            return AjaxResult.error("缺少 tier");
+        }
+        String preference = body.get("preference") != null ? body.get("preference") : "safer";
+        return AjaxResult.success(draftService.addFromWorkspace(user.getUserId(), tier, preference));
+    }
+
+    /**
      * 将之前移除的候选加回草稿。
      *
      * @param request 包含要加回的 programId

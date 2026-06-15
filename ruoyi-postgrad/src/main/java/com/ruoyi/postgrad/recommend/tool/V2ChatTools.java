@@ -11,6 +11,7 @@ import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
+import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.impl.DraftServiceImpl;
@@ -33,8 +34,9 @@ public class V2ChatTools {
 
         StringBuilder sb = new StringBuilder();
 
-        // 先查候选池快照
-        List<CandidateCardVO> pool = loadPoolSnapshot(ctx.userId());
+        // 先查 Workspace，回退到候选池快照
+        List<CandidateCardVO> pool = loadWorkspaceCandidates(ctx.userId());
+        if (pool.isEmpty()) pool = loadPoolSnapshot(ctx.userId());
         for (CandidateCardVO c : pool) {
             if (c.getFact() != null && programId == c.getFact().getProgramId()) {
                 sb.append(formatFactCard(c.getFact()));
@@ -67,34 +69,33 @@ public class V2ChatTools {
         return sb.toString();
     }
 
-    @Tool("在候选池中搜索学校，支持按关键词、档位(tier)、地区(region)过滤。" +
-          "tier 可选值: reach/steady/safe，region 为省份或城市名。")
+    @Tool("在候选工作集中搜索学校，支持按关键词、档位(tier)、地区(region)过滤。" +
+          "tier 可选值: reach/steady/safe，region 为省份或城市名。搜索结果来自工作集（CandidateWorkspace），包含不在当前草稿中的候选。")
     public String searchPrograms(String keyword, String tier, String region) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return "[]";
 
-        List<CandidateCardVO> pool = loadPoolSnapshot(ctx.userId());
-        List<java.util.Map<String, Object>> results = new ArrayList<>();
+        // 优先搜索 Workspace（包含更广泛的候选），回退到旧池快照
+        List<CandidateCardVO> candidates = loadWorkspaceCandidates(ctx.userId());
+        if (candidates.isEmpty()) {
+            candidates = loadPoolSnapshot(ctx.userId());
+        }
 
+        List<java.util.Map<String, Object>> results = new ArrayList<>();
         String kw = keyword != null ? keyword.toLowerCase() : "";
         String t = tier != null && !tier.isBlank() ? tier : null;
         String r = region != null && !region.isBlank() ? region : null;
 
-        for (CandidateCardVO c : pool) {
+        for (CandidateCardVO c : candidates) {
             var f = c.getFact();
             if (f == null) continue;
 
-            // 关键词过滤
             if (!kw.isEmpty()) {
                 String school = f.getSchoolName() != null ? f.getSchoolName().toLowerCase() : "";
                 String program = f.getProgramName() != null ? f.getProgramName().toLowerCase() : "";
                 if (!school.contains(kw) && !program.contains(kw)) continue;
             }
-
-            // 档位过滤
             if (t != null && !t.equals(f.inferTier())) continue;
-
-            // 地区过滤
             if (r != null) {
                 String prov = f.getProvince() != null ? f.getProvince() : "";
                 String city = f.getCity() != null ? f.getCity() : "";
@@ -110,10 +111,37 @@ public class V2ChatTools {
             item.put("gap", f.getScoreGap());
             item.put("quota", f.getUnifiedExamQuota() != null ? f.getUnifiedExamQuota() : f.getPlanCount());
             results.add(item);
-
             if (results.size() >= 10) break;
         }
 
+        return JSON.toJSONString(results);
+    }
+
+    @Tool("获取指定档位的候选填充列表。在移除学校后如需手动选择替代候选时使用。" +
+          "tier 可选值: reach/steady/safe, count 默认为 3。")
+    public String getRefillCandidates(String tier, int count) {
+        V2ChatToolContext.Context ctx = V2ChatToolContext.current();
+        if (ctx == null) return "[]";
+
+        List<CandidateCardVO> candidates = loadWorkspaceCandidates(ctx.userId());
+        if (candidates.isEmpty()) return "[]";
+
+        String t = tier != null && !tier.isBlank() ? tier : "steady";
+        int limit = count > 0 && count <= 5 ? count : 3;
+
+        List<java.util.Map<String, Object>> results = new ArrayList<>();
+        for (CandidateCardVO c : candidates) {
+            var f = c.getFact();
+            if (f == null || !t.equals(f.inferTier())) continue;
+            java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("programId", f.getProgramId());
+            item.put("schoolName", f.getSchoolName());
+            item.put("programName", f.getProgramName());
+            item.put("gap", f.getScoreGap());
+            item.put("riskLevel", f.getQuotaRisk());
+            results.add(item);
+            if (results.size() >= limit) break;
+        }
         return JSON.toJSONString(results);
     }
 
@@ -157,6 +185,24 @@ public class V2ChatTools {
     }
 
     // ── helpers ──
+
+    private static final String WORKSPACE_KEY_PREFIX = "ai:v2:workspace:";
+
+    private List<CandidateCardVO> loadWorkspaceCandidates(Long userId) {
+        String json = V2ChatToolContext.current().redis()
+            .opsForValue().get(WORKSPACE_KEY_PREFIX + userId);
+        if (json == null || json.isBlank()) return new ArrayList<>();
+        try {
+            CandidateWorkspaceVO ws = JSON.parseObject(json, CandidateWorkspaceVO.class);
+            List<CandidateCardVO> all = new ArrayList<>();
+            if (ws.getTiers() != null) {
+                for (var tier : ws.getTiers()) {
+                    if (tier.getCandidates() != null) all.addAll(tier.getCandidates());
+                }
+            }
+            return all;
+        } catch (Exception e) { return new ArrayList<>(); }
+    }
 
     private List<CandidateCardVO> loadPoolSnapshot(Long userId) {
         String json = V2ChatToolContext.current().redis()

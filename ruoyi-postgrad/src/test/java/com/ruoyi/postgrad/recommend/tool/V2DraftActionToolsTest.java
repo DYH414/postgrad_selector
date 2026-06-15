@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -18,13 +20,18 @@ import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
+import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
+import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
+import com.ruoyi.postgrad.recommend.domain.WorkspaceTierVO;
+import com.ruoyi.postgrad.recommend.service.IDraftMutationService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 
 class V2DraftActionToolsTest {
@@ -52,12 +59,25 @@ class V2DraftActionToolsTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void removeDraftCandidateDelegatesToDraftServiceAndRecordsToolResult() {
         IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(ops);
+        when(ops.get(any())).thenReturn(null);
+
         V2DraftActionTools tools = new V2DraftActionTools();
         tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
+        // inject redis via reflection
+        try {
+            var f = V2DraftActionTools.class.getDeclaredField("redisTemplate");
+            f.setAccessible(true);
+            f.set(tools, redis);
+        } catch (Exception e) { throw new RuntimeException(e); }
 
-        StringRedisTemplate redis = mock(StringRedisTemplate.class);
         RecommendationMapper mapper = mock(RecommendationMapper.class);
         V2ChatToolContext.init(1L, redis, mapper);
 
@@ -65,7 +85,13 @@ class V2DraftActionToolsTest {
         DraftVO after = emptyDraft();
         after.setRemovedCandidates(List.of(candidate(1764L, "South China Agricultural University")));
         when(draftService.getDraft(1L)).thenReturn(before);
-        when(draftService.removeCandidate(1L, 1764L)).thenReturn(after);
+
+        DraftMutationResultVO mutation = new DraftMutationResultVO();
+        mutation.setOk(true);
+        mutation.setAction("remove");
+        mutation.setDraft(after);
+        mutation.setDraftCount(0);
+        when(mutationService.removeCandidate(eq(1L), eq(1764L), any())).thenReturn(mutation);
 
         String json = tools.removeDraftCandidate(1764L);
         Map<String, Object> result = JSON.parseObject(json, Map.class);
@@ -77,14 +103,17 @@ class V2DraftActionToolsTest {
         assertEquals(0, ((Number) result.get("draftCount")).intValue());
         assertTrue(V2ChatToolContext.writeExecuted());
         assertEquals(json, V2ChatToolContext.lastActionResultJson());
-        verify(draftService).removeCandidate(1L, 1764L);
+        verify(mutationService).removeCandidate(eq(1L), eq(1764L), any());
     }
 
     @Test
     void removeDraftCandidateRejectsProgramOutsideCurrentDraft() {
         IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+
         V2DraftActionTools tools = new V2DraftActionTools();
         tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
 
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         RecommendationMapper mapper = mock(RecommendationMapper.class);
@@ -99,14 +128,17 @@ class V2DraftActionToolsTest {
         assertEquals("program_not_in_draft", result.get("error"));
         assertFalse(V2ChatToolContext.writeExecuted());
         assertNull(V2ChatToolContext.lastActionResultJson());
-        verify(draftService, never()).removeCandidate(eq(1L), eq(9999L));
+        verify(mutationService, never()).removeCandidate(anyLong(), anyLong(), any());
     }
 
     @Test
     void removeDraftCandidateRejectsSecondWriteInSameTurn() {
         IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+
         V2DraftActionTools tools = new V2DraftActionTools();
         tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
 
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         RecommendationMapper mapper = mock(RecommendationMapper.class);
@@ -118,30 +150,45 @@ class V2DraftActionToolsTest {
 
         assertEquals(false, result.get("ok"));
         assertEquals("write_already_executed", result.get("error"));
-        verify(draftService, never()).removeCandidate(eq(1L), eq(1764L));
+        verify(mutationService, never()).removeCandidate(anyLong(), anyLong(), any());
     }
 
     @Test
     void removeDraftCandidateRejectsMissingToolContext() {
         IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+
         V2DraftActionTools tools = new V2DraftActionTools();
         tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
 
         String json = tools.removeDraftCandidate(1764L);
         Map<String, Object> result = JSON.parseObject(json, Map.class);
 
         assertEquals(false, result.get("ok"));
         assertEquals("no_tool_context", result.get("error"));
-        verify(draftService, never()).removeCandidate(eq(1L), eq(1764L));
+        verify(mutationService, never()).removeCandidate(anyLong(), anyLong(), any());
     }
 
     @Test
     void boundDraftActionToolCarriesContextAcrossWorkerThread() throws Exception {
         IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(ops);
+        when(ops.get(any())).thenReturn(null);
+
         V2DraftActionTools tools = new V2DraftActionTools();
         tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
+        try {
+            var f = V2DraftActionTools.class.getDeclaredField("redisTemplate");
+            f.setAccessible(true);
+            f.set(tools, redis);
+        } catch (Exception e) { throw new RuntimeException(e); }
 
-        StringRedisTemplate redis = mock(StringRedisTemplate.class);
         RecommendationMapper mapper = mock(RecommendationMapper.class);
         V2ChatToolContext.Context context = V2ChatToolContext.init(1L, redis, mapper);
         V2ChatToolContext.clear();
@@ -149,7 +196,13 @@ class V2DraftActionToolsTest {
         DraftVO before = draftWithCandidate(1764L, "South China Agricultural University");
         DraftVO after = emptyDraft();
         when(draftService.getDraft(1L)).thenReturn(before);
-        when(draftService.removeCandidate(1L, 1764L)).thenReturn(after);
+
+        DraftMutationResultVO mutation = new DraftMutationResultVO();
+        mutation.setOk(true);
+        mutation.setAction("remove");
+        mutation.setDraft(after);
+        mutation.setDraftCount(0);
+        when(mutationService.removeCandidate(eq(1L), eq(1764L), any())).thenReturn(mutation);
 
         V2BoundDraftActionTools boundTools = new V2BoundDraftActionTools(tools, context);
         String json = CompletableFuture.supplyAsync(() -> boundTools.removeDraftCandidate(1764L)).get();
@@ -158,7 +211,7 @@ class V2DraftActionToolsTest {
         assertEquals(true, result.get("ok"));
         assertTrue(context.draftChanged());
         assertEquals(json, context.lastActionResultJson());
-        verify(draftService).removeCandidate(1L, 1764L);
+        verify(mutationService).removeCandidate(eq(1L), eq(1764L), any());
     }
 
     private DraftVO draftWithCandidate(Long programId, String schoolName) {

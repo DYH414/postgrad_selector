@@ -27,6 +27,12 @@ public class DraftVO implements Serializable {
     /** 草稿生成时间 */
     private LocalDateTime generatedAt;
 
+    /** 工作集规模摘要（混合架构）：reach/steady/safe 各档候选数 */
+    private java.util.Map<String, Integer> workspaceSummary;
+
+    /** 待确认的填充候选 */
+    private java.util.Map<String, Object> pendingRefill;
+
     // ── getters / setters ──
 
     public List<TierCandidates> getTiers() { return tiers; }
@@ -43,4 +49,10 @@ public class DraftVO implements Serializable {
 
     public LocalDateTime getGeneratedAt() { return generatedAt; }
     public void setGeneratedAt(LocalDateTime generatedAt) { this.generatedAt = generatedAt; }
+
+    public java.util.Map<String, Integer> getWorkspaceSummary() { return workspaceSummary; }
+    public void setWorkspaceSummary(java.util.Map<String, Integer> workspaceSummary) { this.workspaceSummary = workspaceSummary; }
+
+    public java.util.Map<String, Object> getPendingRefill() { return pendingRefill; }
+    public void setPendingRefill(java.util.Map<String, Object> pendingRefill) { this.pendingRefill = pendingRefill; }
 }

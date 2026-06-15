@@ -34,6 +34,12 @@
         limit 1
     </select>
 
+    <update id="finalizeActiveConversations">
+        update ai_chat_conversation
+        set status = 'finalized', updated_at = now()
+        where user_id = #{userId} and status = 'active'
+    </update>
+
     <insert id="insertConversation" useGeneratedKeys="true" keyProperty="id">
         insert into ai_chat_conversation (user_id, draft_key, title, status, last_message_at)
         values (#{userId}, #{draftKey}, #{title}, #{status}, now())

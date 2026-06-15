@@ -89,6 +89,7 @@
             @remove="handleRemove"
             @replace="handleReplace"
             @add-back="handleAddBack"
+            @add-from-workspace="handleAddFromWorkspace"
             @ask-about="handleAskAbout"
             @generate-report="handleGenerateReport"
           />
@@ -104,7 +105,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getDraft, startGenerateDraft, openDraftGenerationStream, removeCandidate, replaceCandidate,
-  addBackCandidate, generateReport, sendChatMessage, startChat, resumeChat
+  addBackCandidate, addFromWorkspace, generateReport, sendChatMessage, startChat, resumeChat
 } from '@/api/recommend-v2'
 import { getProfile } from '@/api/profile'
 import { closeEventSource } from '@/utils/event-source'
@@ -295,6 +296,16 @@ async function handleReplace({ removeProgramId, tier, preference }) {
     ElMessage.success('已替换')
   } catch (e) {
     ElMessage.error('替换失败：' + (e.response?.data?.msg || e.message))
+  }
+}
+
+async function handleAddFromWorkspace({ tier, preference }) {
+  try {
+    const res = await addFromWorkspace(tier, preference || 'safer')
+    draft.value = res.data
+    ElMessage.success('已补充候选')
+  } catch (e) {
+    ElMessage.error('补充失败：' + (e.response?.data?.msg || e.message))
   }
 }
 

@@ -86,7 +86,7 @@
           <button
             v-if="tier.insufficient && tier.candidates?.length < tier.targetCount"
             class="add-slot"
-            @click="$emit('replace', { tier: tier.level, preference: 'safer' })"
+            @click="$emit('add-from-workspace', { tier: tier.level, preference: 'safer' })"
           >
             <span>补充一个 {{ tier.label }} 候选</span>
             <span class="add-icon">+</span>
@@ -134,7 +134,7 @@ const props = defineProps({
   progress: { type: Object, default: () => ({ phase: '', message: '' }) }
 })
 
-defineEmits(['remove', 'replace', 'add-back', 'ask-about', 'generate-report'])
+defineEmits(['remove', 'replace', 'add-back', 'add-from-workspace', 'ask-about', 'generate-report'])
 
 const activeTier = ref('all')
 

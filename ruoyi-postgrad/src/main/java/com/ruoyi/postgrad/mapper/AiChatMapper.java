@@ -10,6 +10,8 @@ import com.ruoyi.postgrad.recommend.domain.AiChatMessage;
 public interface AiChatMapper {
     AiChatConversation selectActiveConversation(@Param("userId") Long userId);
 
+    int finalizeActiveConversations(@Param("userId") Long userId);
+
     int insertConversation(AiChatConversation conversation);
 
     int touchConversation(@Param("id") Long id);

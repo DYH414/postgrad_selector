@@ -27,6 +27,12 @@ public interface IAiChatService {
     void chat(Long userId, String message, ChatStreamCallback callback);
 
     /**
+     * 终结当前活跃对话（status: active → finalized）。
+     * <p>新草稿生成时调用，避免旧对话上下文污染新草稿。</p>
+     */
+    void finalizeConversation(Long userId);
+
+    /**
      * 恢复对话（Redis 未过期时）。
      *
      * @param userId 当前用户 ID

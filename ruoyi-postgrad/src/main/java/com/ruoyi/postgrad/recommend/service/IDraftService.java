@@ -61,6 +61,16 @@ public interface IDraftService {
     DraftVO addBackCandidate(Long userId, Long programId);
 
     /**
+     * 从工作集选取最佳候选加入草稿（不替换任何已有候选）。
+     *
+     * @param userId     当前用户 ID
+     * @param tier       目标档位
+     * @param preference 选取偏好：safer / higher_tier
+     * @return 更新后的草稿
+     */
+    DraftVO addFromWorkspace(Long userId, String tier, String preference);
+
+    /**
      * 获取同档其他可选候选（用于替换操作）。
      *
      * @param userId    当前用户 ID
