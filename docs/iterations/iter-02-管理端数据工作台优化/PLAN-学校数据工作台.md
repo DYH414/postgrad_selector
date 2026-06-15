@@ -405,6 +405,14 @@ GET /postgrad/workspace/school/{id}
 
 ### Phase 7：审核中心联动
 
+**状态：已完成基础版**
+
+**阶段产物**
+
+- `docs/iterations/iter-02-管理端数据工作台优化/PHASE7-审核中心联动完成记录.md`
+- `ruoyi-ui/src/views/postgrad/review/index.vue`
+- `ruoyi-ui/test/review.query-link.test.mjs`
+
 **目标**
 
 学校数据工作台先和审核中心打通，不在第一版内重做审核中心。

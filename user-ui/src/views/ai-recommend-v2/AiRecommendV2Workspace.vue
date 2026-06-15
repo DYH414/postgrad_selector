@@ -136,11 +136,18 @@ const chatStreamingText = ref('')
 
 // ── 计算属性 ──
 const poolCount = computed(() => {
+  // 使用 workspaceSummary（工作集规模），而非 draft 候选数
+  const ws = draft.value?.workspaceSummary
+  if (ws) return (ws.reach || 0) + (ws.steady || 0) + (ws.safe || 0)
+  // 回退：无 workspaceSummary 时用 draft 候选数
   if (!draft.value?.tiers) return 0
   return draft.value.tiers.reduce((s, t) => s + (t.candidates?.length || 0), 0)
 })
 
-const draftCount = computed(() => poolCount.value)
+const draftCount = computed(() => {
+  if (!draft.value?.tiers) return 0
+  return draft.value.tiers.reduce((s, t) => s + (t.candidates?.length || 0), 0)
+})
 
 const strategyLabel = computed(() => {
   const p = profile.value

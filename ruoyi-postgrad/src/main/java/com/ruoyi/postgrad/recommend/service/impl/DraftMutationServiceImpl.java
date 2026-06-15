@@ -323,13 +323,24 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
 
     private DraftVO addToDraft(DraftVO draft, CandidateCardVO candidate, String tier) {
         candidate.setStatus("selected");
+        Long pid = candidate.getFact() != null ? candidate.getFact().getProgramId() : null;
         for (TierCandidates t : draft.getTiers()) {
             if (t.getLevel().equals(tier)) {
                 if (t.getCandidates() == null) t.setCandidates(new ArrayList<>());
+                // 去重：已存在则跳过
+                if (pid != null && t.getCandidates().stream()
+                        .anyMatch(c -> pid.equals(c.getFact() != null ? c.getFact().getProgramId() : null))) {
+                    return draft;
+                }
                 t.getCandidates().add(candidate);
                 t.setInsufficient(t.getCandidates().size() < t.getTargetCount());
                 break;
             }
+        }
+        // 从 removedCandidates 中清除，防止重复累积
+        if (pid != null && draft.getRemovedCandidates() != null) {
+            draft.getRemovedCandidates().removeIf(
+                c -> pid.equals(c.getFact() != null ? c.getFact().getProgramId() : null));
         }
         return draft;
     }
@@ -350,6 +361,13 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
                             ids.add(c.getFact().getProgramId());
                     }
                 }
+            }
+        }
+        // 已移除的候选也纳入排除范围，防止 refill/fillTier 重复加入
+        if (draft.getRemovedCandidates() != null) {
+            for (CandidateCardVO c : draft.getRemovedCandidates()) {
+                if (c.getFact().getProgramId() != null)
+                    ids.add(c.getFact().getProgramId());
             }
         }
         return ids;
@@ -399,7 +417,12 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
                     if (draft.getRemovedCandidates() == null) {
                         draft.setRemovedCandidates(new ArrayList<>());
                     }
-                    draft.getRemovedCandidates().add(c);
+                    // 去重：已在 removedCandidates 中则跳过
+                    boolean alreadyRemoved = draft.getRemovedCandidates().stream()
+                        .anyMatch(rc -> programId.equals(rc.getFact() != null ? rc.getFact().getProgramId() : null));
+                    if (!alreadyRemoved) {
+                        draft.getRemovedCandidates().add(c);
+                    }
                     tier.setInsufficient(candidates.size() < tier.getTargetCount());
                     if (tier.isInsufficient()) {
                         tier.setInsufficientReason(String.format(

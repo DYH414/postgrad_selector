@@ -198,8 +198,32 @@ export default {
       autoApproving: false
     }
   },
-  created() { this.getList(); this.getStats() },
+  created() {
+    this.applyRouteQuery()
+    this.getList()
+    this.getStats()
+  },
+  watch: {
+    '$route.query': {
+      handler() {
+        this.applyRouteQuery()
+        this.getList()
+      }
+    }
+  },
   methods: {
+    applyRouteQuery() {
+      const query = this.$route.query || {}
+      const allowed = ['schoolName', 'programCode', 'year', 'status', 'confidence', 'sourceType', 'matchStatus', 'is408']
+      const next = { pageNum: 1, pageSize: this.queryParams.pageSize || 10 }
+      allowed.forEach(key => {
+        const value = query[key]
+        if (value !== undefined && value !== null && value !== '') {
+          next[key] = Array.isArray(value) ? value[0] : value
+        }
+      })
+      this.queryParams = { ...this.queryParams, ...next }
+    },
     getList() {
       this.loading = true
       listReview(this.queryParams).then(r => {

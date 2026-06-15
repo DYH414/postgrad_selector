@@ -95,15 +95,20 @@
       </div>
     </div>
 
-    <!-- 已移除候选 -->
-    <div v-if="draft?.removedCandidates?.length" class="removed-list">
-      <p class="t-eyebrow removed-title">已移出</p>
-      <ul>
-        <li v-for="c in draft.removedCandidates" :key="c.fact.programId">
-          <span class="removed-name">{{ c.fact.schoolName }}<em>·</em>{{ c.fact.programName }}</span>
-          <button class="removed-restore" @click="$emit('add-back', c.fact.programId)">加回</button>
-        </li>
-      </ul>
+    <!-- 已移除候选（默认折叠） -->
+    <div v-if="dedupedRemoved.length" class="removed-list">
+      <button class="removed-toggle" @click="showRemoved = !showRemoved">
+        <span class="t-eyebrow removed-title">已移出（{{ dedupedRemoved.length }}）</span>
+        <span class="toggle-icon">{{ showRemoved ? '▾' : '▸' }}</span>
+      </button>
+      <Transition name="collapse">
+        <ul v-if="showRemoved">
+          <li v-for="c in dedupedRemoved" :key="c.fact.programId">
+            <span class="removed-name">{{ c.fact.schoolName }}<em>·</em>{{ c.fact.programName }}</span>
+            <button class="removed-restore" @click="$emit('add-back', c.fact.programId)">加回</button>
+          </li>
+        </ul>
+      </Transition>
     </div>
 
     <!-- 底部生成按钮 -->
@@ -137,6 +142,18 @@ const props = defineProps({
 defineEmits(['remove', 'replace', 'add-back', 'add-from-workspace', 'ask-about', 'generate-report'])
 
 const activeTier = ref('all')
+const showRemoved = ref(false)
+
+const dedupedRemoved = computed(() => {
+  const list = props.draft?.removedCandidates || []
+  const seen = new Set()
+  return list.filter(c => {
+    const pid = c?.fact?.programId
+    if (!pid || seen.has(pid)) return false
+    seen.add(pid)
+    return true
+  })
+})
 
 const totalCount = computed(() => {
   if (!props.draft?.tiers) return 0
@@ -594,6 +611,34 @@ function tierHint(level) {
 }
 
 .removed-title { margin: 0 0 8px; }
+
+.removed-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+.toggle-icon {
+  font-size: 10px;
+  color: var(--ink-4);
+  margin-left: 8px;
+}
+
+.collapse-enter-active,
+.collapse-leave-active {
+  transition: all 0.2s ease;
+}
+.collapse-enter-from,
+.collapse-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
 
 .removed-list ul {
   list-style: none;

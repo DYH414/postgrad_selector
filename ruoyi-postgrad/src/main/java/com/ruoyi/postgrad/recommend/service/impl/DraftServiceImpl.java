@@ -258,8 +258,19 @@ public class DraftServiceImpl implements IDraftService {
         CandidateWorkspaceVO ws = loadWorkspace(userId);
         if (ws == null) throw new IllegalStateException("工作集已过期，请重新生成草稿");
 
-        // 收集已在草稿中的候选 ID
         DraftVO draft = getDraft(userId);
+        // 检查档位是否已满
+        for (TierCandidates t : draft.getTiers()) {
+            if (t.getLevel().equals(tier)) {
+                int current = t.getCandidates() != null ? t.getCandidates().size() : 0;
+                if (current >= t.getTargetCount()) {
+                    throw new IllegalStateException(t.getLabel() + "已满（" + current + "/" + t.getTargetCount() + "），无需补充");
+                }
+                break;
+            }
+        }
+
+        // 收集已在草稿中的候选 ID
         java.util.Set<Long> draftIds = new java.util.LinkedHashSet<>();
         if (draft.getTiers() != null) {
             for (TierCandidates t : draft.getTiers()) {
@@ -440,9 +451,18 @@ public class DraftServiceImpl implements IDraftService {
     }
 
     private List<String> parseRegions(String raw) {
-        if (raw == null || raw.isBlank() || "不限".equals(raw) || "[]".equals(raw)) return Collections.emptyList();
-        try { return JSON.parseArray(raw, String.class); }
-        catch (Exception e) { return Collections.emptyList(); }
+        if (raw == null || raw.isBlank() || "不限".equals(raw) || "[]".equals(raw)) {
+            log.info("[Draft] parseRegions: empty/unset (raw={})", raw == null ? "null" : "'" + raw + "'");
+            return Collections.emptyList();
+        }
+        try {
+            List<String> result = JSON.parseArray(raw, String.class);
+            log.info("[Draft] parseRegions: parsed {} regions from raw='{}'", result.size(), raw);
+            return result;
+        } catch (Exception e) {
+            log.warn("[Draft] parseRegions: FAILED to parse raw='{}' — {}", raw, e.getMessage());
+            return Collections.emptyList();
+        }
     }
 
     private String prefLabel(String val, String type) {
