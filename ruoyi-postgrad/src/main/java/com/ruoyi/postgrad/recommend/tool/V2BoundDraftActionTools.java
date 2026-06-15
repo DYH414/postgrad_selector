@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.tool;
 
+import java.util.List;
+
 import dev.langchain4j.agent.tool.Tool;
 
 /**
@@ -33,5 +35,15 @@ public class V2BoundDraftActionTools {
     @Tool("Replace one draft school with another from the workspace. Removes and adds in the same tier.")
     public String replaceDraftCandidate(long removeProgramId, long addProgramId) {
         return V2ChatToolContext.callWith(context, () -> delegate.replaceDraftCandidate(removeProgramId, addProgramId));
+    }
+
+    @Tool("Fill one draft tier to its target count from workspace candidates. Use when a tier has fewer schools than its target. Backend selects candidates; AI only chooses the tier (reach/steady/safe).")
+    public String fillTier(String tier) {
+        return V2ChatToolContext.callWith(context, () -> delegate.fillTier(tier));
+    }
+
+    @Tool("Remove multiple schools from the draft at once. programIds must come from the draft context. Each removal triggers refill.")
+    public String batchRemoveDraftCandidates(List<Long> programIds) {
+        return V2ChatToolContext.callWith(context, () -> delegate.batchRemoveDraftCandidates(programIds));
     }
 }

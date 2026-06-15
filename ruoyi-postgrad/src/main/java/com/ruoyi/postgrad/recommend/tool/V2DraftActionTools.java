@@ -169,6 +169,53 @@ public class V2DraftActionTools {
         return json;
     }
 
+    @Tool("Fill one draft tier to its target count from workspace candidates. Use when a tier has fewer schools than its target. Backend handles candidate selection; AI only chooses the tier. tier must be reach/steady/safe.")
+    public String fillTier(String tier) {
+        V2ChatToolContext.Context ctx = V2ChatToolContext.current();
+        if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
+        if (tier == null || tier.isBlank()) return error("invalid_tier", "tier is required: reach/steady/safe");
+
+        CandidateWorkspaceVO workspace = loadWorkspace(ctx.userId());
+        if (workspace == null) return error("no_workspace", "Workspace expired. Regenerate draft first.");
+
+        DraftMutationResultVO mutation = draftMutationService.fillTier(ctx.userId(), tier, workspace);
+        if (!mutation.isOk()) return error("fill_failed", "No available candidates in workspace for tier=" + tier);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ok", true);
+        result.put("action", "fill_tier");
+        result.put("tier", tier);
+        result.put("draftCount", mutation.getDraftCount());
+
+        String json = JSON.toJSONString(result);
+        V2ChatToolContext.markWriteExecuted(json);
+        log.info("[DraftTool] fillTier userId={} tier={} count={}", ctx.userId(), tier, mutation.getDraftCount());
+        return json;
+    }
+
+    @Tool("Remove multiple schools from the draft at once. programIds must be from the draft context. Each removal triggers auto-refill or confirm-refill per tier rules.")
+    public String batchRemoveDraftCandidates(List<Long> programIds) {
+        V2ChatToolContext.Context ctx = V2ChatToolContext.current();
+        if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
+        if (programIds == null || programIds.isEmpty()) return error("empty_ids", "programIds is empty.");
+
+        CandidateWorkspaceVO workspace = loadWorkspace(ctx.userId());
+        DraftMutationResultVO mutation = draftMutationService.batchRemove(ctx.userId(), programIds, workspace);
+        if (!mutation.isOk()) return error("none_in_draft", "None of the given programIds are in the current draft.");
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ok", true);
+        result.put("action", "batch_remove");
+        result.put("draftCount", mutation.getDraftCount());
+
+        String json = JSON.toJSONString(result);
+        V2ChatToolContext.markWriteExecuted(json);
+        log.info("[DraftTool] batchRemove userId={} count={}", ctx.userId(), programIds.size());
+        return json;
+    }
+
     void setDraftServiceForTest(IDraftService draftService) {
         this.draftService = draftService;
     }

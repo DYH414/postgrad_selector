@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.service;
 
+import java.util.List;
+
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
 
@@ -33,4 +35,16 @@ public interface IDraftMutationService {
      */
     DraftMutationResultVO confirmRefillCandidate(Long userId, Long programId, String tier,
                                                   CandidateWorkspaceVO workspace);
+
+    /**
+     * 批量填充档位 — 从工作集选取最优候选填满指定档位。
+     * <p>后端按策略自动选候选，AI 只需指定档位。</p>
+     */
+    DraftMutationResultVO fillTier(Long userId, String tier, CandidateWorkspaceVO workspace);
+
+    /**
+     * 批量移除候选 — 从草稿中移除多个学校，每个移除触发 refill 策略。
+     */
+    DraftMutationResultVO batchRemove(Long userId, List<Long> programIds,
+                                       CandidateWorkspaceVO workspace);
 }

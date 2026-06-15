@@ -171,6 +171,129 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         return result;
     }
 
+    // ── fillTier / batchRemove ──
+
+    @Override
+    public DraftMutationResultVO fillTier(Long userId, String tier,
+                                           CandidateWorkspaceVO workspace) {
+        DraftMutationResultVO result = new DraftMutationResultVO();
+        result.setOk(true);
+        result.setAction("fill_tier");
+
+        DraftVO draft = readDraft(userId);
+        TierCandidates draftTier = findDraftTier(draft, tier);
+        int current = draftTier != null && draftTier.getCandidates() != null
+            ? draftTier.getCandidates().size() : 0;
+        int target = draftTier != null ? draftTier.getTargetCount() : ("steady".equals(tier) ? 4 : 3);
+        int needed = target - current;
+        if (needed <= 0) {
+            result.setDraft(draft);
+            result.setDraftCount(countDraft(draft));
+            return result;
+        }
+
+        var wsTier = workspace.tierByLevel(tier);
+        if (wsTier == null || wsTier.getCandidates() == null || wsTier.getCandidates().isEmpty()) {
+            result.setOk(false);
+            return result;
+        }
+
+        Set<Long> excluded = collectDraftIds(draft);
+        if (draft.getRemovedCandidates() != null) {
+            for (CandidateCardVO c : draft.getRemovedCandidates()) {
+                if (c.getFact().getProgramId() != null)
+                    excluded.add(c.getFact().getProgramId());
+            }
+        }
+
+        String preference = switch (tier) {
+            case "safe" -> "safer";
+            case "reach" -> "higher_tier";
+            default -> "balanced";
+        };
+
+        List<CandidateCardVO> available = wsTier.getCandidates().stream()
+            .filter(c -> c.getFact().getProgramId() != null
+                && !excluded.contains(c.getFact().getProgramId()))
+            .sorted((a, b) -> {
+                if ("safer".equals(preference)) {
+                    Integer ga = a.getFact().getScoreGap(); Integer gb = b.getFact().getScoreGap();
+                    return Integer.compare(gb != null ? gb : 0, ga != null ? ga : 0);
+                }
+                if ("higher_tier".equals(preference)) {
+                    return Integer.compare(tierWeight(b.getFact().getSchoolTier()),
+                                           tierWeight(a.getFact().getSchoolTier()));
+                }
+                return 0;
+            })
+            .limit(needed)
+            .toList();
+
+        for (CandidateCardVO c : available) {
+            draft = addToDraft(draft, c, tier);
+            logDecision(userId, "fill_tier", c.getFact().getProgramId(),
+                c.getFact().getSchoolName(), tier, "system",
+                "批量填充" + tier + "档");
+        }
+
+        writeDraft(userId, draft);
+        result.setDraft(draft);
+        result.setDraftCount(countDraft(draft));
+        log.info("[Mutation] fillTier userId={} tier={} added={}", userId, tier, available.size());
+        return result;
+    }
+
+    @Override
+    public DraftMutationResultVO batchRemove(Long userId, List<Long> programIds,
+                                              CandidateWorkspaceVO workspace) {
+        DraftMutationResultVO result = new DraftMutationResultVO();
+        result.setOk(true);
+        result.setAction("batch_remove");
+
+        DraftVO draft = readDraft(userId);
+        int removed = 0;
+        for (Long pid : programIds) {
+            if (pid == null) continue;
+            String tier = findCandidateTier(draft, pid);
+            if (tier == null) continue; // 不在草稿中，跳过
+
+            draft = removeFromDraft(userId, pid);
+            removed++;
+
+            // 每个移除触发 refill
+            ExcludedCandidateVO excluded = new ExcludedCandidateVO();
+            excluded.setProgramId(pid);
+            excluded.setReasonType("user_removed");
+            excluded.setTierAtRemoval(tier);
+            excluded.setCreatedAt(LocalDateTime.now());
+            saveExcluded(userId, excluded);
+
+            logDecision(userId, "batch_remove", pid, findCandidateName(draft, pid),
+                tier, "user", "批量移除");
+        }
+
+        if (removed == 0) {
+            result.setOk(false);
+        }
+        result.setDraft(draft);
+        result.setDraftCount(countDraft(draft));
+        log.info("[Mutation] batchRemove userId={} removed={}/{}", userId, removed, programIds.size());
+        return result;
+    }
+
+    private TierCandidates findDraftTier(DraftVO draft, String tier) {
+        if (draft.getTiers() == null) return null;
+        return draft.getTiers().stream()
+            .filter(t -> tier.equals(t.getLevel())).findFirst().orElse(null);
+    }
+
+    private int tierWeight(String label) {
+        if (label == null) return 0;
+        if (label.contains("985")) return 3;
+        if (label.contains("211") || label.contains("双一流")) return 2;
+        return 1;
+    }
+
     // ── helpers ──
 
     private String findCandidateTier(DraftVO draft, Long programId) {
