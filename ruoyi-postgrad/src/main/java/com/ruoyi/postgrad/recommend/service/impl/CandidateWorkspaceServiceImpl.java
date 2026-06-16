@@ -85,12 +85,17 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
     private WorkspaceTierVO buildTier(String level, String label, int draftTarget,
                                        List<SchoolFact> facts, String schoolTierPref,
                                        String regionStrategy) {
+        // 排除数据完整度为 C 的候选（数据不足，不具备推荐条件）
+        List<SchoolFact> filtered = facts.stream()
+            .filter(f -> !"C".equalsIgnoreCase(f.getDataCompleteness()))
+            .toList();
+
         // 按策略得分排序（含地区策略权重）
-        facts.sort(Comparator.comparingInt(
+        filtered.sort(Comparator.comparingInt(
             (SchoolFact f) -> policyScore(f, level, schoolTierPref, regionStrategy)).reversed());
 
         // 多样性修剪：同学校只保留最高分的一个专业方向
-        List<SchoolFact> diverse = diversityTrim(facts);
+        List<SchoolFact> diverse = diversityTrim(filtered);
 
         // 截断
         List<SchoolFact> top = diverse.size() > DEFAULT_TIER_LIMIT
