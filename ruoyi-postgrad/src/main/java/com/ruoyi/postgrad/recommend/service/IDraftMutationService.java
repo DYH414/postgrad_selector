@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.recommend.service;
 
 import java.util.List;
 
+import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
 
@@ -47,4 +48,10 @@ public interface IDraftMutationService {
      */
     DraftMutationResultVO batchRemove(Long userId, List<Long> programIds,
                                        CandidateWorkspaceVO workspace);
+
+    /**
+     * 直接添加候选到草稿（跳过 Workspace 校验）。
+     * <p>用于从外部 DB 搜索结果添加画像地区以外的学校。</p>
+     */
+    DraftMutationResultVO addCandidateDirect(Long userId, CandidateCardVO candidate, String tier);
 }

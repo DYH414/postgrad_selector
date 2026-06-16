@@ -289,6 +289,26 @@ public class SchoolFact implements Serializable {
         };
     }
 
+    /**
+     * 判断候选是否满足保底条件（系统唯一副本）。
+     * <p>规则：名额 &gt; 3 且（名额 ≥ 10 或（数据完整度非 C 且有录取区间））。</p>
+     *
+     * @param quota         统考名额（unifiedExamQuota 或 planCount）
+     * @param completeness  数据完整度 A/B/C
+     * @param admissionLow  录取最低分（可为 null）
+     * @param admissionHigh 录取最高分（可为 null）
+     * @return true 表示可作保底
+     */
+    public static boolean canBeSafe(int quota, String completeness,
+                                    Integer admissionLow, Integer admissionHigh) {
+        if (quota <= 3) return false;
+        if (quota < 10) {
+            boolean hasRange = admissionLow != null || admissionHigh != null;
+            if ("C".equalsIgnoreCase(completeness) || !hasRange) return false;
+        }
+        return true;
+    }
+
     /** RowMap 安全取值 → String */
     public static String strVal(Object v) { return v == null ? null : v.toString(); }
 

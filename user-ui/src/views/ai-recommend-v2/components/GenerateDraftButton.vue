@@ -14,7 +14,7 @@
       {{ progress.message }}
     </p>
 
-    <p v-else class="generate-tip">
+    <p v-else-if="!generating" class="generate-tip">
       基于画像自动筛选候选池，AI 在每档内挑选最合适的学校。
     </p>
   </div>

@@ -75,6 +75,7 @@
             :messages="chatMessages"
             :streaming="chatStreaming"
             :streaming-text="chatStreamingText"
+            :tool-call="currentToolCall"
             @send="handleChatSend"
             @toggle="chatVisible = !chatVisible"
           />
@@ -133,6 +134,7 @@ const chatVisible = ref(true)
 const chatMessages = ref([])
 const chatStreaming = ref(false)
 const chatStreamingText = ref('')
+const currentToolCall = ref('')
 
 // ── 计算属性 ──
 const poolCount = computed(() => {
@@ -212,6 +214,7 @@ async function handleGenerate() {
   generating.value = true
   progressState.value = { phase: 'queued', message: '正在准备生成草稿...' }
   draft.value = null
+  chatMessages.value = []
   closeEventSource(draftEventSource)
 
   try {
@@ -252,13 +255,14 @@ async function handleGenerate() {
       }
     })
 
-    source.addEventListener('done', event => {
+    source.addEventListener('done', async event => {
       const data = JSON.parse(event.data)
       draft.value = data.draft
       progressState.value = { phase: 'done', message: '草稿生成完成' }
       generating.value = false
       closeEventSource(draftEventSource)
       ElMessage.success('草稿生成完成')
+      await loadChatHistory()
     })
 
     source.addEventListener('error', event => {
@@ -337,6 +341,7 @@ async function handleChatSend(message) {
   chatMessages.value.push({ role: 'user', content: message })
   chatStreaming.value = true
   chatStreamingText.value = ''
+  currentToolCall.value = ''
 
   try {
     const response = await sendChatMessage(message)
@@ -362,16 +367,21 @@ async function handleChatSend(message) {
         } else if (line.startsWith('data:')) {
           try {
             const data = JSON.parse(line.slice(5))
-            if (currentEvent === 'token') {
+            if (currentEvent === 'tool_call') {
+              currentToolCall.value = data.tool || ''
+            } else if (currentEvent === 'token') {
+              currentToolCall.value = ''
               assistantText += data.text
               chatStreamingText.value = sanitizeAssistantText(assistantText)
             } else if (currentEvent === 'done') {
+              currentToolCall.value = ''
               chatStreamingText.value = ''
               chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message) })
               if (data.draftChanged) {
                 await loadDraftData()
               }
             } else if (currentEvent === 'error') {
+              currentToolCall.value = ''
               chatStreamingText.value = ''
               ElMessage.error(data.message || '对话失败')
             }
@@ -380,9 +390,11 @@ async function handleChatSend(message) {
       }
     }
   } catch (e) {
+    currentToolCall.value = ''
     chatStreamingText.value = ''
     ElMessage.error('对话失败：' + (e.message || '网络错误'))
   } finally {
+    currentToolCall.value = ''
     chatStreaming.value = false
   }
 }
@@ -417,15 +429,51 @@ async function handleGenerateReport() {
   }
 }
 
+// ── 草稿恢复（刷新后自动轮询直到完整）──
+let pollTimer = null
+
+function isIncomplete(d) {
+  if (!d || !d.tiers) return false
+  return d.tiers.some(t => t.insufficient && t.insufficientReason && t.insufficientReason.includes('正在'))
+}
+
+function startDraftPolling() {
+  if (!isIncomplete(draft.value)) return
+  if (pollTimer) clearInterval(pollTimer)
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await getDraft()
+      draft.value = res.data || null
+      if (!isIncomplete(draft.value)) {
+        clearInterval(pollTimer)
+        pollTimer = null
+        if (draft.value) {
+          ElMessage.success('草稿已恢复')
+          loadChatHistory()
+        }
+      }
+    } catch { /* 继续轮询 */ }
+  }, 2000)
+  setTimeout(() => {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+      ElMessage.warning('草稿恢复超时，请重新生成')
+    }
+  }, 60000)
+}
+
 // ── 初始化 ──
-onMounted(() => {
-  loadProfileData()
-  loadDraftData()
-  loadChatHistory()
+onMounted(async () => {
+  await loadProfileData()
+  await loadDraftData()
+  await loadChatHistory()
+  startDraftPolling()
 })
 
 onBeforeUnmount(() => {
   closeEventSource(draftEventSource)
+  if (pollTimer) clearInterval(pollTimer)
 })
 </script>
 

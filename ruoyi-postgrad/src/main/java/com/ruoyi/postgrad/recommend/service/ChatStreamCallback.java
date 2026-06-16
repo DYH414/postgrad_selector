@@ -14,6 +14,14 @@ public interface ChatStreamCallback {
     void onToken(String token);
 
     /**
+     * 工具调用通知（可选择实现）。
+     *
+     * @param toolName 工具名称（如 searchPrograms / addDraftCandidate）
+     */
+    default void onToolCall(String toolName) {
+    }
+
+    /**
      * 对话完成。
      *
      * @param fullMessage AI 完整回复文本。

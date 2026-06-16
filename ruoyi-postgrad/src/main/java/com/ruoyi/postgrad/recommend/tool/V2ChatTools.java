@@ -13,6 +13,7 @@ import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
+import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.impl.DraftServiceImpl;
 
@@ -70,7 +71,8 @@ public class V2ChatTools {
     }
 
     @Tool("在候选工作集中搜索学校，支持按关键词、档位(tier)、地区(region)过滤。" +
-          "tier 可选值: reach/steady/safe，region 为省份或城市名。搜索结果来自工作集（CandidateWorkspace），包含不在当前草稿中的候选。")
+          "tier 可选值: reach/steady/safe，region 为省份或城市名。" +
+          "工作集无结果时自动回退到全国数据库搜索（适用于探索画像地区以外的学校）。")
     public String searchPrograms(String keyword, String tier, String region) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return "[]";
@@ -89,32 +91,140 @@ public class V2ChatTools {
         for (CandidateCardVO c : candidates) {
             var f = c.getFact();
             if (f == null) continue;
-
-            if (!kw.isEmpty()) {
-                String school = f.getSchoolName() != null ? f.getSchoolName().toLowerCase() : "";
-                String program = f.getProgramName() != null ? f.getProgramName().toLowerCase() : "";
-                if (!school.contains(kw) && !program.contains(kw)) continue;
-            }
-            if (t != null && !t.equals(f.inferTier())) continue;
-            if (r != null) {
-                String prov = f.getProvince() != null ? f.getProvince() : "";
-                String city = f.getCity() != null ? f.getCity() : "";
-                if (!prov.contains(r) && !city.contains(r)) continue;
-            }
-
-            java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
-            item.put("programId", f.getProgramId());
-            item.put("schoolName", f.getSchoolName());
-            item.put("programName", f.getProgramName());
-            item.put("tier", f.inferTier());
-            item.put("city", f.getCity());
-            item.put("gap", f.getScoreGap());
-            item.put("quota", f.getUnifiedExamQuota() != null ? f.getUnifiedExamQuota() : f.getPlanCount());
-            results.add(item);
+            if (!matchSearch(f, kw, t, r)) continue;
+            results.add(toSearchItem(f));
             if (results.size() >= 10) break;
         }
 
+        // 工作集无结果且有地区筛选 → 回退到全国 DB 搜索
+        if (results.isEmpty() && r != null) {
+            log.info("[ChatTool] searchPrograms workspace empty for region='{}', falling back to DB", r);
+            results = fallbackDbSearch(ctx, kw, t, r);
+        }
+
         return JSON.toJSONString(results);
+    }
+
+    /** 工作集候选匹配检查 */
+    private boolean matchSearch(SchoolFact f, String kw, String tier, String region) {
+        if (!kw.isEmpty()) {
+            String school = f.getSchoolName() != null ? f.getSchoolName().toLowerCase() : "";
+            String program = f.getProgramName() != null ? f.getProgramName().toLowerCase() : "";
+            if (!school.contains(kw) && !program.contains(kw)) return false;
+        }
+        if (tier != null && !tier.equals(f.inferTier())) return false;
+        if (region != null) {
+            String prov = f.getProvince() != null ? f.getProvince() : "";
+            String city = f.getCity() != null ? f.getCity() : "";
+            if (!prov.contains(region) && !city.contains(region)) return false;
+        }
+        return true;
+    }
+
+    /** 搜索结果项（包含足够分析所需的所有字段） */
+    private java.util.Map<String, Object> toSearchItem(SchoolFact f) {
+        java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+        item.put("programId", f.getProgramId());
+        item.put("schoolName", f.getSchoolName());
+        item.put("programName", f.getProgramName());
+        item.put("tier", f.inferTier());
+        item.put("city", f.getCity());
+        item.put("province", f.getProvince());
+        item.put("gap", f.getScoreGap());
+        int quota = f.getUnifiedExamQuota() != null ? f.getUnifiedExamQuota()
+            : (f.getPlanCount() != null ? f.getPlanCount() : 0);
+        item.put("quota", quota);
+        item.put("schoolTier", f.getSchoolTier());
+        item.put("avgAdmittedScore", f.getAvgAdmittedScore());
+        item.put("scoreLine", f.getScoreLine());
+        item.put("riskLevel", quotaRisk(quota));
+        item.put("quotaLabel", quotaLabel(quota));
+        item.put("canBeSafe", Boolean.TRUE.equals(f.getCanBeSafe()));
+        return item;
+    }
+
+    private String quotaLabel(int quota) {
+        if (quota <= 0) return "名额未知";
+        if (quota <= 3) return "名额极少";
+        if (quota < 10) return "名额偏少";
+        if (quota < 20) return "名额正常";
+        return "名额充裕";
+    }
+
+    private String quotaRisk(int quota) {
+        if (quota <= 0) return "unknown";
+        if (quota <= 3) return "very_high";
+        if (quota < 10) return "high";
+        if (quota < 20) return "medium";
+        return "normal";
+    }
+
+    /** DB 回退搜索：不限制地区，从全国数据库搜索指定地区的学校 */
+    private List<java.util.Map<String, Object>> fallbackDbSearch(
+            V2ChatToolContext.Context ctx, String kw, String tier, String region) {
+        List<java.util.Map<String, Object>> results = new ArrayList<>();
+
+        try {
+            // 从草稿中获取用户预估分数
+            int estimatedScore = getEstimatedScore(ctx);
+            RecommendationMapper mapper = ctx.mapper();
+
+            // 两套考试组合，不限制省份
+            List<String> examCombos = List.of("101,204,302,408", "101,201,301,408");
+            java.util.LinkedHashSet<Long> seen = new java.util.LinkedHashSet<>();
+
+            for (String subjectCodes : examCombos) {
+                List<RowMap> rows = mapper.selectCandidates(
+                    subjectCodes, null, null, estimatedScore, 40, "full_time");
+                if (rows == null) continue;
+                for (RowMap row : rows) {
+                    Object pid = row.get("programId");
+                    if (!(pid instanceof Number n) || !seen.add(n.longValue())) continue;
+
+                    SchoolFact f = SchoolFact.fromRow(row);
+                    // 计算 gap
+                    Integer avg = f.getAvgAdmittedScore();
+                    int gap = avg != null ? estimatedScore - avg : 0;
+                    f.setScoreGap(gap);
+                    if (gap < -30) continue; // 差距过大
+
+                    int quota = f.getUnifiedExamQuota() != null ? f.getUnifiedExamQuota()
+                        : (f.getPlanCount() != null ? f.getPlanCount() : 0);
+                    f.setCanBeSafe(SchoolFact.canBeSafe(quota, f.getDataCompleteness(),
+                        f.getAdmissionLow(), f.getAdmissionHigh()));
+
+                    if (!matchSearch(f, kw, tier, region)) continue;
+
+                    results.add(toSearchItem(f));
+                    if (results.size() >= 10) break;
+                }
+                if (results.size() >= 10) break;
+            }
+
+            log.info("[ChatTool] DB fallback found {} results for region='{}'", results.size(), region);
+        } catch (Exception e) {
+            log.warn("[ChatTool] DB fallback search failed: {}", e.getMessage());
+        }
+
+        return results;
+    }
+
+    /** 从 Redis 草稿中读取用户预估分数，默认 300 */
+    private int getEstimatedScore(V2ChatToolContext.Context ctx) {
+        try {
+            String json = ctx.redis().opsForValue()
+                .get(DraftServiceImpl.DRAFT_KEY_PREFIX + ctx.userId());
+            if (json != null && !json.isBlank()) {
+                DraftVO draft = JSON.parseObject(json, DraftVO.class);
+                if (draft.getProfileBasis() != null
+                    && draft.getProfileBasis().getEstimatedScore() != null) {
+                    return draft.getProfileBasis().getEstimatedScore();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[ChatTool] Failed to read estimatedScore from draft: {}", e.getMessage());
+        }
+        return 300; // fallback default
     }
 
     @Tool("获取指定档位的候选填充列表。在移除学校后如需手动选择替代候选时使用。" +

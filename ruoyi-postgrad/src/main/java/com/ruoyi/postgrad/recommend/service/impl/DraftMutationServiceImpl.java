@@ -116,6 +116,29 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
     }
 
     @Override
+    public DraftMutationResultVO addCandidateDirect(Long userId, CandidateCardVO candidate, String tier) {
+        DraftMutationResultVO result = new DraftMutationResultVO();
+        result.setOk(true);
+        result.setAction("add_external");
+
+        DraftVO draft = readDraft(userId);
+        draft = addToDraft(draft, candidate, tier);
+        writeDraft(userId, draft);
+
+        result.setDraft(draft);
+        result.setDraftCount(countDraft(draft));
+        logDecision(userId, "manual_add_external",
+            candidate.getFact() != null ? candidate.getFact().getProgramId() : null,
+            candidate.getFact() != null ? candidate.getFact().getSchoolName() : null,
+            tier, "user", "手动添加外部候选");
+        log.info("[Mutation] addCandidateDirect userId={} programId={} tier={}",
+            userId,
+            candidate.getFact() != null ? candidate.getFact().getProgramId() : null,
+            tier);
+        return result;
+    }
+
+    @Override
     public DraftMutationResultVO replaceCandidate(Long userId, Long removeProgramId,
                                                    Long addProgramId, String tier,
                                                    CandidateWorkspaceVO workspace) {

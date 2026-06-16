@@ -73,7 +73,7 @@ public class CandidateUniverseServiceImpl implements ICandidateUniverseService {
             // 差距标签
             fact.setGapLabel(gap >= 0 ? "+" + gap : String.valueOf(gap));
             // 保底条件
-            boolean safe = canBeSafe(quota, fact.getDataCompleteness(),
+            boolean safe = SchoolFact.canBeSafe(quota, fact.getDataCompleteness(),
                 fact.getAdmissionLow(), fact.getAdmissionHigh());
             fact.setCanBeSafe(safe);
             if (!safe) {
@@ -113,16 +113,6 @@ public class CandidateUniverseServiceImpl implements ICandidateUniverseService {
         if (quota < 10) return "high";
         if (quota < 20) return "medium";
         return "normal";
-    }
-
-    private boolean canBeSafe(int quota, String completeness,
-                               Integer admissionLow, Integer admissionHigh) {
-        if (quota <= 3) return false;
-        if (quota < 10) {
-            boolean hasRange = admissionLow != null || admissionHigh != null;
-            if ("C".equalsIgnoreCase(completeness) || !hasRange) return false;
-        }
-        return true;
     }
 
     private String buildSafeBlockReason(int quota, String completeness) {

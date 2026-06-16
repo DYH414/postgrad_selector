@@ -135,7 +135,7 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
         f.setQuotaLabel(quotaLabel(quota));
         f.setQuotaRisk(quotaRisk(quota));
 
-        boolean safe = canBeSafe(quota, gap, f.getDataCompleteness(), f.getAdmissionLow(), f.getAdmissionHigh());
+        boolean safe = SchoolFact.canBeSafe(quota, f.getDataCompleteness(), f.getAdmissionLow(), f.getAdmissionHigh());
         f.setCanBeSafe(safe);
         if (!safe) {
             f.setSafeBlockReason(buildSafeBlockReason(quota, gap, f.getDataCompleteness()));
@@ -184,16 +184,6 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
      * 判断是否满足严格保底条件。
      * <p>名额 &gt; 3 且（名额 ≥ 10 或（数据完整度非 C 且有录取区间））。</p>
      */
-    private boolean canBeSafe(int quota, int gap, String completeness,
-                               Integer admissionLow, Integer admissionHigh) {
-        if (quota <= 3) return false;
-        if (quota < 10) {
-            boolean hasRange = admissionLow != null || admissionHigh != null;
-            if ("C".equalsIgnoreCase(completeness) || !hasRange) return false;
-        }
-        return true;
-    }
-
     /**
      * 名额风险等级。
      */

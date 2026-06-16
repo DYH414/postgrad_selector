@@ -187,6 +187,21 @@ public class AppV2RecommendController {
                     }
 
                     @Override
+                    public void onTierComplete(String tier, String tierJson) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("phase", "ai_selecting");
+                        payload.put("message", "档位完成");
+                        payload.put("tier", tier);
+                        // 解析 JSON 传到前端，触发增量渲染
+                        try {
+                            payload.put("tierData", com.alibaba.fastjson2.JSON.parse(tierJson));
+                        } catch (Exception ignored) {
+                            payload.put("tierData", tierJson);
+                        }
+                        sendSseEvent(emitter, "progress", payload);
+                    }
+
+                    @Override
                     public void onDone(com.ruoyi.postgrad.recommend.domain.DraftVO draft,
                                        com.ruoyi.postgrad.recommend.domain.ProfileBasisVO profileBasis,
                                        int removedCount) {
@@ -366,6 +381,11 @@ public class AppV2RecommendController {
                     @Override
                     public void onToken(String token) {
                         sendSseEvent(emitter, "token", Map.of("text", token));
+                    }
+
+                    @Override
+                    public void onToolCall(String toolName) {
+                        sendSseEvent(emitter, "tool_call", Map.of("tool", toolName));
                     }
 
                     @Override

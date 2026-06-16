@@ -35,6 +35,15 @@
         </div>
       </div>
 
+      <!-- 工具调用指示器 -->
+      <div v-if="props.toolCall && !props.streamingText" class="tool-call-indicator">
+        <span class="tool-dot-pulse" />
+        <span class="tool-label">{{ toolLabel(props.toolCall) }}</span>
+        <span class="tool-dots">
+          <span class="t-dot" v-for="i in 3" :key="i" :style="{ animationDelay: (i - 1) * 0.15 + 's' }" />
+        </span>
+      </div>
+
       <!-- 流式输出中的消息 -->
       <div v-if="props.streamingText" class="msg msg--assistant msg--streaming">
         <span class="msg-avatar msg-avatar--assistant">AI</span>
@@ -72,7 +81,8 @@ const props = defineProps({
   visible: { type: Boolean, default: false },
   messages: { type: Array, default: () => [] },
   streaming: { type: Boolean, default: false },
-  streamingText: { type: String, default: '' }
+  streamingText: { type: String, default: '' },
+  toolCall: { type: String, default: '' }
 })
 
 const emit = defineEmits(['send', 'toggle'])
@@ -96,6 +106,23 @@ function sendPreset(text) {
   nextTick(() => {
     if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight
   })
+}
+
+function toolLabel(name) {
+  const map = {
+    searchPrograms: '搜索学校中',
+    getDraftContext: '检查草稿状态',
+    getProgramDetail: '查询学校详情',
+    comparePrograms: '对比学校',
+    getRefillCandidates: '查找候选',
+    addDraftCandidate: '添加到草稿',
+    removeDraftCandidate: '从草稿移除',
+    replaceDraftCandidate: '替换草稿',
+    fillTier: '填充档位',
+    batchRemoveDraftCandidates: '批量移除',
+    confirmRefillCandidate: '确认候选'
+  }
+  return map[name] || '处理中'
 }
 </script>
 
@@ -289,6 +316,65 @@ function sendPreset(text) {
 }
 
 .msg--streaming .msg-body { min-height: 24px; }
+
+/* ── Tool call indicator ── */
+.tool-call-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin: 4px 0;
+  background: var(--brand-soft-3);
+  border: 1px solid var(--brand-soft-2);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  color: var(--brand);
+  font-weight: 500;
+  animation: toolIn 0.3s var(--ease);
+}
+
+@keyframes toolIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tool-dot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: toolPulse 0.8s var(--ease) infinite;
+  flex-shrink: 0;
+}
+
+@keyframes toolPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.5; }
+}
+
+.tool-label {
+  flex: 1;
+}
+
+.tool-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.t-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: dotHop 0.6s var(--ease) infinite;
+}
+
+@keyframes dotHop {
+  0%, 100% { transform: translateY(0); opacity: 0.3; }
+  50% { transform: translateY(-4px); opacity: 1; }
+}
 
 .cursor-blink {
   display: inline-block;

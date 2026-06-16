@@ -178,6 +178,7 @@ public class AiChatServiceImpl implements IAiChatService {
                     String arguments = toolRequest != null && toolRequest.request() != null
                         ? toolRequest.request().arguments() : "";
                     log.info("[AiChat-Tool] before userId={} tool={} args={}", userId, toolName, arguments);
+                    callback.onToolCall(toolName);
                 })
                 .onToolExecuted(toolExecution -> {
                     String toolName = toolExecution != null && toolExecution.request() != null

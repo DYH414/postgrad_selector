@@ -109,8 +109,10 @@ public class DraftServiceImpl implements IDraftService {
             return;
         }
         try {
-            // 1. 终结旧对话（新草稿 = 新上下文，避免旧对话污染）
+            // 1. 终结旧对话 + 清除 Redis 聊天记忆（新草稿 = 新上下文）
             aiChatMapper.finalizeActiveConversations(userId);
+            redisTemplate.delete("ai:v2:chat:msg:" + userId);
+            redisTemplate.delete("ai:v2:chat:system:" + userId);
 
             // 2. 加载用户画像
             callback.onProgress("loading_profile", "正在加载用户画像...", null, null);
@@ -149,6 +151,7 @@ public class DraftServiceImpl implements IDraftService {
             // 3. 对每档从 Workspace 调用 AI 选择（混合架构：30/档 而不是旧池的 15/档）
             List<TierCandidates> resultTiers = new ArrayList<>(3);
             List<BlockedCandidateVO> allBlocked = new ArrayList<>();
+            Map<String, Integer> wsSummary = new LinkedHashMap<>();
 
             for (WorkspaceTierVO wsTier : workspace.getTiers()) {
                 String tierLevel = wsTier.getLevel();
@@ -171,6 +174,11 @@ public class DraftServiceImpl implements IDraftService {
                 rawTier.setCandidates(wsCandidates);
                 TierCandidates resultTier = mergeSelection(rawTier, sel);
                 resultTiers.add(resultTier);
+                wsSummary.put(tierLevel, wsCandidates.size());
+
+                // ★ 每档选完立刻持久化：刷新/断连后能从 Redis 恢复已完成的档位
+                DraftVO partial = buildPartialDraft(resultTiers, allBlocked, basis, wsSummary);
+                saveDraft(userId, partial);
 
                 callback.onTierComplete(tierLevel, JSON.toJSONString(resultTier));
 
@@ -187,18 +195,13 @@ public class DraftServiceImpl implements IDraftService {
 
             callback.onProgress("validating", "正在校验 AI 推荐结果...", null, null);
 
-            // 4. 构建 DraftVO + 持久化（basis 已在 step 2.5 构建）
+            // 4. 构建最终 DraftVO（已在循环中逐档持久化）
             DraftVO draft = new DraftVO();
             draft.setTiers(resultTiers);
             draft.setRemovedCandidates(Collections.emptyList());
             draft.setBlockedCandidates(allBlocked);
             draft.setProfileBasis(basis);
             draft.setGeneratedAt(LocalDateTime.now());
-            // 混合架构：附加工作集规模
-            Map<String, Integer> wsSummary = new LinkedHashMap<>();
-            for (WorkspaceTierVO wt : workspace.getTiers()) {
-                wsSummary.put(wt.getLevel(), wt.getCandidates().size());
-            }
             draft.setWorkspaceSummary(wsSummary);
 
             saveDraft(userId, draft);
@@ -340,6 +343,50 @@ public class DraftServiceImpl implements IDraftService {
 
     private void saveDraft(Long userId, DraftVO draft) {
         redisTemplate.opsForValue().set(draftKey(userId), JSON.toJSONString(draft), Duration.ofDays(TTL_DAYS));
+    }
+
+    /**
+     * 构建部分草稿（用于逐档持久化，支持刷新恢复）。
+     * <p>未完成的档位标记为 insufficient，前端据此显示 loading 状态。</p>
+     */
+    private DraftVO buildPartialDraft(List<TierCandidates> doneTiers,
+                                       List<BlockedCandidateVO> blocked,
+                                       ProfileBasisVO basis,
+                                       Map<String, Integer> wsSummary) {
+        DraftVO partial = new DraftVO();
+        // 已完成的档位直接拷贝
+        List<TierCandidates> tiers = new ArrayList<>();
+        for (TierCandidates t : doneTiers) {
+            TierCandidates copy = new TierCandidates();
+            copy.setLevel(t.getLevel());
+            copy.setLabel(t.getLabel());
+            copy.setTargetCount(t.getTargetCount());
+            copy.setCandidates(t.getCandidates() != null ? new ArrayList<>(t.getCandidates()) : new ArrayList<>());
+            copy.setInsufficient(false);
+            tiers.add(copy);
+        }
+        // 补齐未完成的档位（空占位）
+        String[][] allTierDefs = {{"reach", "冲刺档", "3"}, {"steady", "稳妥档", "4"}, {"safe", "保底档", "3"}};
+        for (String[] def : allTierDefs) {
+            boolean alreadyDone = tiers.stream().anyMatch(t -> def[0].equals(t.getLevel()));
+            if (!alreadyDone) {
+                TierCandidates pending = new TierCandidates();
+                pending.setLevel(def[0]);
+                pending.setLabel(def[1]);
+                pending.setTargetCount(Integer.parseInt(def[2]));
+                pending.setCandidates(new ArrayList<>());
+                pending.setInsufficient(true);
+                pending.setInsufficientReason("AI 正在" + def[1] + "挑选合适的学校...");
+                tiers.add(pending);
+            }
+        }
+        partial.setTiers(tiers);
+        partial.setRemovedCandidates(Collections.emptyList());
+        partial.setBlockedCandidates(blocked != null ? blocked : Collections.emptyList());
+        partial.setProfileBasis(basis);
+        partial.setGeneratedAt(LocalDateTime.now());
+        partial.setWorkspaceSummary(wsSummary);
+        return partial;
     }
 
     /**
