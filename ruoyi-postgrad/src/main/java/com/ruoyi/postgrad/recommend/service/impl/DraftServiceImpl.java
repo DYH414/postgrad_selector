@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -148,49 +149,68 @@ public class DraftServiceImpl implements IDraftService {
             log.info("[Draft] Universe={} Workspace={} Pool={}",
                 universeCount, workspace.totalCandidates(), totalCandidates);
 
-            // 3. 对每档从 Workspace 调用 AI 选择（混合架构：30/档 而不是旧池的 15/档）
-            List<TierCandidates> resultTiers = new ArrayList<>(3);
-            List<BlockedCandidateVO> allBlocked = new ArrayList<>();
+            // 3. 并行对每档从 Workspace 调用 AI 选择
+            // 三档互不依赖，并行调用将 60s 缩短为 ~20s
+            List<WorkspaceTierVO> wsTiers = workspace.getTiers();
             Map<String, Integer> wsSummary = new LinkedHashMap<>();
+            List<BlockedCandidateVO> allBlocked = Collections.synchronizedList(new ArrayList<>());
 
-            for (WorkspaceTierVO wsTier : workspace.getTiers()) {
+            // 3a. 立即推送三档都在 "ai_selecting" 的进度
+            for (WorkspaceTierVO wsTier : wsTiers) {
+                wsSummary.put(wsTier.getLevel(), wsTier.getCandidates().size());
+                callback.onProgress("ai_selecting",
+                    "AI 正在" + wsTier.getLabel() + "挑选合适的学校...（工作集 " + wsTier.getCandidates().size() + " 所）",
+                    null, wsTier.getLevel());
+            }
+
+            // 3b. 并行提交三档 AI 调用
+            List<CompletableFuture<TierResult>> futures = new ArrayList<>(3);
+            for (WorkspaceTierVO wsTier : wsTiers) {
                 String tierLevel = wsTier.getLevel();
                 String tierLabel = wsTier.getLabel();
                 List<CandidateCardVO> wsCandidates = wsTier.getCandidates();
                 int draftTarget = "reach".equals(tierLevel) ? 3 : "steady".equals(tierLevel) ? 4 : 3;
 
-                callback.onProgress("ai_selecting",
-                    "AI 正在" + tierLabel + "挑选合适的学校...（工作集 " + wsCandidates.size() + " 所）",
-                    null, tierLevel);
+                CompletableFuture<TierResult> future = CompletableFuture.supplyAsync(() -> {
+                    AiSelectionResult sel = aiSelectorService.select(
+                        tierLevel, wsCandidates, estimatedScore);
 
-                AiSelectionResult sel = aiSelectorService.select(
-                    tierLevel, wsCandidates, estimatedScore);
+                    TierCandidates rawTier = new TierCandidates();
+                    rawTier.setLevel(tierLevel);
+                    rawTier.setLabel(tierLabel);
+                    rawTier.setTargetCount(draftTarget);
+                    rawTier.setCandidates(wsCandidates);
+                    TierCandidates resultTier = mergeSelection(rawTier, sel);
 
-                // 包装为 TierCandidates 保持下游兼容
-                TierCandidates rawTier = new TierCandidates();
-                rawTier.setLevel(tierLevel);
-                rawTier.setLabel(tierLabel);
-                rawTier.setTargetCount(draftTarget);
-                rawTier.setCandidates(wsCandidates);
-                TierCandidates resultTier = mergeSelection(rawTier, sel);
-                resultTiers.add(resultTier);
-                wsSummary.put(tierLevel, wsCandidates.size());
+                    List<BlockedCandidateVO> tierBlocked = new ArrayList<>();
+                    if (sel.getBlocked() != null) {
+                        for (AiSelectionResult.BlockedItem bi : sel.getBlocked()) {
+                            BlockedCandidateVO bvo = new BlockedCandidateVO();
+                            bvo.setProgramId(bi.getProgramId());
+                            bvo.setSchoolName(bi.getSchoolName());
+                            bvo.setBlockReason(bi.getBlockReason());
+                            tierBlocked.add(bvo);
+                        }
+                    }
+                    return new TierResult(tierLevel, resultTier, tierBlocked);
+                });
+                futures.add(future);
+            }
 
-                // ★ 每档选完立刻持久化：刷新/断连后能从 Redis 恢复已完成的档位
+            // 3c. 按 reach → steady → safe 顺序收集结果，逐档持久化+推送
+            List<TierCandidates> resultTiers = new ArrayList<>(3);
+            for (CompletableFuture<TierResult> future : futures) {
+                TierResult tr = future.join(); // 阻塞直到这一档完成
+                resultTiers.add(tr.tier);
+                allBlocked.addAll(tr.blocked);
+
+                // 每档完成后立即增量持久化（支持刷新恢复）
                 DraftVO partial = buildPartialDraft(resultTiers, allBlocked, basis, wsSummary);
                 saveDraft(userId, partial);
 
-                callback.onTierComplete(tierLevel, JSON.toJSONString(resultTier));
-
-                if (sel.getBlocked() != null) {
-                    for (AiSelectionResult.BlockedItem bi : sel.getBlocked()) {
-                        BlockedCandidateVO bvo = new BlockedCandidateVO();
-                        bvo.setProgramId(bi.getProgramId());
-                        bvo.setSchoolName(bi.getSchoolName());
-                        bvo.setBlockReason(bi.getBlockReason());
-                        allBlocked.add(bvo);
-                    }
-                }
+                callback.onTierComplete(tr.level, JSON.toJSONString(tr.tier));
+                log.info("[Draft] tier={} completed, selected={}", tr.level,
+                    tr.tier.getCandidates() != null ? tr.tier.getCandidates().size() : 0);
             }
 
             callback.onProgress("validating", "正在校验 AI 推荐结果...", null, null);
@@ -533,5 +553,20 @@ public class DraftServiceImpl implements IDraftService {
             };
             default -> val;
         };
+    }
+
+    /**
+     * 并行 AI 选择结果容器。
+     */
+    private static class TierResult {
+        final String level;
+        final TierCandidates tier;
+        final List<BlockedCandidateVO> blocked;
+
+        TierResult(String level, TierCandidates tier, List<BlockedCandidateVO> blocked) {
+            this.level = level;
+            this.tier = tier;
+            this.blocked = blocked;
+        }
     }
 }
