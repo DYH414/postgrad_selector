@@ -116,6 +116,12 @@ public class AiSelectorServiceImpl implements IAiSelectorService {
      * 构建候选事实卡文本（供 LLM 选择）。
      * <p>格式：ID:123 | XX大学 | 计算机技术 | 985 | 北京 | 均分345 | 差距+10 | 招生15人 | 名额正常 | 可保底</p>
      */
+    /**
+     * 构建候选事实卡文本（供 LLM 选择）。
+     * <p>只输出原始数据字段，不输出后端预判标签（名额充裕/可以保底等），
+     * 让 AI 从原始数据自行推理，判断质量更高。</p>
+     * <p>格式：ID:123 | XX大学 | 计算机技术 | 985 | 北京 | 均分345 | 差距+10 | 招生15</p>
+     */
     private String buildFactsText(List<CandidateCardVO> candidates) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < candidates.size(); i++) {
@@ -125,15 +131,12 @@ public class AiSelectorServiceImpl implements IAiSelectorService {
             sb.append("ID:").append(f.getProgramId());
             sb.append(" | ").append(nullToDash(f.getSchoolName()));
             sb.append(" | ").append(nullToDash(f.getProgramName()));
-            sb.append(" | 层次:").append(nullToDash(f.getSchoolTier()));
-            sb.append(" | 城市:").append(nullToDash(f.getCity()));
-            sb.append(" | 均分:").append(nullToDash(f.getAvgAdmittedScore()));
-            sb.append(" | 差距:").append(nullToDash(f.getGapLabel()));
-            sb.append(" | 招生:").append(nullToDash(f.getUnifiedExamQuota() != null
+            sb.append(" | ").append(nullToDash(f.getSchoolTier()));
+            sb.append(" | ").append(nullToDash(f.getCity()));
+            sb.append(" | 均分").append(nullToDash(f.getAvgAdmittedScore()));
+            sb.append(" | 差距").append(nullToDash(f.getGapLabel()));
+            sb.append(" | 招生").append(nullToDash(f.getUnifiedExamQuota() != null
                 ? f.getUnifiedExamQuota() : f.getPlanCount()));
-            sb.append(" | ").append(nullToDash(f.getQuotaLabel()));
-            sb.append(" | ").append(Boolean.TRUE.equals(f.getCanBeSafe()) ? "可以保底" : "不可保底");
-            sb.append(" | 数据:").append(nullToDash(f.getDataCompleteness()));
             sb.append("\n");
         }
         return sb.toString();
