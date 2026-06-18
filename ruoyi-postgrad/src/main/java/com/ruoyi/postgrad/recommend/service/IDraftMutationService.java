@@ -1,10 +1,13 @@
 package com.ruoyi.postgrad.recommend.service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
+import com.ruoyi.postgrad.recommend.domain.DraftReplacementRequest;
 
 /**
  * 草稿变更服务 —— 移除、添加、替换的统一编排。
@@ -48,6 +51,14 @@ public interface IDraftMutationService {
      */
     DraftMutationResultVO batchRemove(Long userId, List<Long> programIds,
                                        CandidateWorkspaceVO workspace);
+
+    /**
+     * 批量替换草稿候选 — 每个替换项独立校验，单项失败不阻塞其他项。
+     * <p>至少一个成功 → ok=true；全部失败 → ok=false。不触发自动填充（替换即交换，非净变化）。</p>
+     */
+    Map<String, Object> batchReplace(Long userId, List<DraftReplacementRequest> replacements,
+                                      CandidateWorkspaceVO workspace,
+                                      Function<Long, CandidateCardVO> externalCandidateResolver);
 
     /**
      * 直接添加候选到草稿（跳过 Workspace 校验）。

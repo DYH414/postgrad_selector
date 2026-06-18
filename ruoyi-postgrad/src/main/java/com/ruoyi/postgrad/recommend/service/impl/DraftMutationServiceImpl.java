@@ -2,9 +2,12 @@ package com.ruoyi.postgrad.recommend.service.impl;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -16,6 +19,8 @@ import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftDecisionLogVO;
 import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
+import com.ruoyi.postgrad.recommend.domain.DraftReplacementItemResultVO;
+import com.ruoyi.postgrad.recommend.domain.DraftReplacementRequest;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.ExcludedCandidateVO;
 import com.ruoyi.postgrad.recommend.domain.RefillResultVO;
@@ -301,6 +306,98 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         result.setDraft(draft);
         result.setDraftCount(countDraft(draft));
         log.info("[Mutation] batchRemove userId={} removed={}/{}", userId, removed, programIds.size());
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> batchReplace(Long userId, List<DraftReplacementRequest> replacements,
+                                             CandidateWorkspaceVO workspace,
+                                             Function<Long, CandidateCardVO> externalCandidateResolver) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("action", "batch_replace");
+        result.put("requested", replacements.size());
+
+        DraftVO draft = readDraft(userId);
+        List<DraftReplacementItemResultVO> items = new ArrayList<>();
+        int replaced = 0;
+        int failed = 0;
+
+        for (DraftReplacementRequest req : replacements) {
+            Long removeId = req.getRemoveProgramId();
+            Long addId = req.getAddProgramId();
+            DraftReplacementItemResultVO item = new DraftReplacementItemResultVO();
+            item.setRemoveProgramId(removeId);
+            item.setAddProgramId(addId);
+
+            // 1. Find removeProgramId in draft → determine tier
+            String tier = findCandidateTier(draft, removeId);
+            if (tier == null) {
+                item.setOk(false);
+                item.setError("not_in_draft");
+                item.setMessage("Remove candidate not found in draft.");
+                items.add(item);
+                failed++;
+                continue;
+            }
+            item.setTier(tier);
+            item.setRemovedSchoolName(findCandidateName(draft, removeId));
+
+            // 2. Check addProgramId is not already in draft (different from removeId)
+            if (!addId.equals(removeId) && findCandidateTier(draft, addId) != null) {
+                item.setOk(false);
+                item.setError("duplicate_candidate");
+                item.setMessage("Replacement candidate already exists in draft.");
+                items.add(item);
+                failed++;
+                continue;
+            }
+
+            // 3. Find replacement candidate — workspace first, then DB fallback
+            CandidateCardVO replacement = findInWorkspace(workspace, addId, tier);
+            if (replacement == null && externalCandidateResolver != null) {
+                replacement = externalCandidateResolver.apply(addId);
+            }
+            if (replacement == null) {
+                item.setOk(false);
+                item.setError("not_found");
+                item.setMessage("Replacement candidate not found in workspace or database.");
+                items.add(item);
+                failed++;
+                continue;
+            }
+            item.setAddedSchoolName(replacement.getFact() != null ? replacement.getFact().getSchoolName() : "unknown");
+
+            // 4. Execute: remove then add (no refill — this is a swap)
+            draft = removeFromDraft(userId, removeId);
+            draft = addToDraft(draft, replacement, tier);
+            writeDraft(userId, draft);
+
+            // 5. Record exclusion for removed candidate
+            ExcludedCandidateVO excluded = new ExcludedCandidateVO();
+            excluded.setProgramId(removeId);
+            excluded.setSchoolName(item.getRemovedSchoolName());
+            excluded.setReasonType("replaced");
+            excluded.setTierAtRemoval(tier);
+            excluded.setCreatedAt(LocalDateTime.now());
+            saveExcluded(userId, excluded);
+
+            // 6. Log decision
+            logDecision(userId, "batch_replace", addId, item.getAddedSchoolName(), tier, "user",
+                "批量替换自 programId=" + removeId);
+
+            item.setOk(true);
+            items.add(item);
+            replaced++;
+        }
+
+        result.put("ok", replaced > 0);
+        result.put("replaced", replaced);
+        result.put("failed", failed);
+        result.put("draftCount", countDraft(draft));
+        result.put("items", items);
+
+        log.info("[Mutation] batchReplace userId={} requested={} replaced={} failed={}",
+            userId, replacements.size(), replaced, failed);
         return result;
     }
 
