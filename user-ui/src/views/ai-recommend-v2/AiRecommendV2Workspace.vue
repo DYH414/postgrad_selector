@@ -28,7 +28,7 @@
           </div>
           <div class="head-stat-divider" />
           <div class="head-stat">
-            <span class="head-stat-label">策略</span>
+            <span class="head-stat-label">安全</span>
             <span class="head-stat-pill">{{ strategyLabel }}</span>
           </div>
         </div>
@@ -181,9 +181,9 @@ const draftCount = computed(() => {
 
 const strategyLabel = computed(() => {
   const p = profile.value
-  if (p?.riskPreference === 'safe_first') return '稳妥优先'
-  if (p?.riskPreference === 'reach_first') return '冲刺优先'
-  return '均衡'
+  if (p?.riskPreference === 'safe_first' || p?.riskPreference === 'conservative') return '稳妥优先'
+  if (p?.riskPreference === 'reach_first' || p?.riskPreference === 'aggressive') return '接受压线'
+  return '适度冲刺'
 })
 
 // ── 方法 ──
