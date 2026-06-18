@@ -587,20 +587,19 @@ public class DraftServiceImpl implements IDraftService {
         if (val == null) val = "";
         return switch (type) {
             case "risk" -> switch (val) {
-                case "safe_first" -> "稳妥优先";
-                case "reach_first" -> "冲刺优先";
-                default -> "均衡策略";
+                case "safe_first", "conservative" -> "稳妥优先";
+                case "reach_first", "aggressive" -> "接受压线";
+                default -> "适度冲刺";
             };
             case "tier" -> switch (val) {
-                case "must_211_or_better" -> "强烈倾向 211/双一流及以上";
-                case "prefer_211_or_better" -> "优先 211/双一流及以上";
-                default -> "不强求层次";
+                case "tier_priority", "must_211_or_better" -> "学校层次优先";
+                case "prefer_211_or_better" -> "211/双一流优先";
+                default -> "层次不过度追求";
             };
             case "region" -> switch (val) {
-                case "developed_priority" -> "发达地区优先";
-                case "developed_balanced" -> "发达地区兼顾稳妥";
-                case "target_regions_only" -> "只看目标地区";
-                default -> "地区不强求";
+                case "developed_priority", "developed_balanced" -> "发达地区优先";
+                case "target_regions_only" -> "只看目标省份";
+                default -> "地区不限制";
             };
             default -> val;
         };
