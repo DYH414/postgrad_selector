@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, watch } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps({
@@ -90,22 +90,30 @@ const emit = defineEmits(['send', 'toggle'])
 const inputText = ref('')
 const msgBox = ref(null)
 
-function handleSend() {
-  const text = inputText.value.trim()
-  if (!text || props.streaming) return
-  inputText.value = ''
-  emit('send', text)
+function scrollToBottom() {
   nextTick(() => {
     if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight
   })
 }
 
+watch(
+  () => [props.messages.length, props.streamingText, props.toolCall],
+  scrollToBottom,
+  { flush: 'post' }
+)
+
+function handleSend() {
+  const text = inputText.value.trim()
+  if (!text || props.streaming) return
+  inputText.value = ''
+  emit('send', text)
+  scrollToBottom()
+}
+
 function sendPreset(text) {
   if (props.streaming) return
   emit('send', text)
-  nextTick(() => {
-    if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight
-  })
+  scrollToBottom()
 }
 
 function toolLabel(name) {
@@ -257,11 +265,23 @@ function toolLabel(name) {
   gap: 10px;
   align-items: flex-start;
   max-width: 94%;
+  animation: msgIn 0.32s var(--ease);
 }
 
 .msg--user {
   align-self: flex-end;
   flex-direction: row-reverse;
+}
+
+@keyframes msgIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .msg-avatar {

@@ -115,8 +115,23 @@ import ProfileSidebar from './components/ProfileSidebar.vue'
 import GenerateDraftButton from './components/GenerateDraftButton.vue'
 import AiChatMiniPanel from './components/AiChatMiniPanel.vue'
 import DraftPanel from './components/DraftPanel.vue'
+import { mergeTierRevealFrame, revealTierFrames } from './draftRevealQueue.mjs'
+import {
+  getGenerationStartMessage,
+  getGenerationProgressMessage,
+  getGenerationDoneMessage
+} from './generationChatMessages.mjs'
 
 const router = useRouter()
+const STAGES = [
+  { phase: 'profile_analysis', label: '分析用户画像' },
+  { phase: 'filter_408', label: '筛选408专业' },
+  { phase: 'candidate_pool', label: '构建候选池' },
+  { phase: 'ai_selecting_reach', label: 'AI选择冲刺档' },
+  { phase: 'ai_selecting_steady', label: 'AI选择稳妥档' },
+  { phase: 'ai_selecting_safe', label: 'AI选择保底档' },
+  { phase: 'finalize', label: '生成候选草稿' }
+]
 
 // ── 画像 ──
 const loadingProfile = ref(false)
@@ -128,6 +143,15 @@ const draft = shallowRef(null)
 const generating = ref(false)
 const progressState = ref({ phase: '', message: '' })
 const draftEventSource = ref(null)
+const pendingFinalDraft = ref(null)
+const revealTimers = new Set()
+let revealFrameIndex = 0
+const {
+  applyProgress,
+  startProgress,
+  stopProgress,
+  resetProgress
+} = useGenerationProgress()
 
 // ── 对话 ──
 const chatVisible = ref(true)
@@ -135,6 +159,10 @@ const chatMessages = ref([])
 const chatStreaming = ref(false)
 const chatStreamingText = ref('')
 const currentToolCall = ref('')
+const generationBubbleQueue = ref([])
+const generationBubbleKeys = new Set()
+let generationBubbleTimer = null
+let generationBubbleTicking = false
 
 // ── 计算属性 ──
 const poolCount = computed(() => {
@@ -160,6 +188,95 @@ const strategyLabel = computed(() => {
 
 // ── 方法 ──
 
+function useGenerationProgress() {
+  const currentPhase = ref('')
+  const currentMessage = ref('')
+  const currentTierKey = ref('')
+  const currentStageLabel = ref('')
+  const completedTiers = ref([])
+  const tierCandidateCounts = ref({})
+  const elapsedSec = ref(0)
+  const stageElapsed = ref(0)
+  const currentStep = ref(0)
+  const totalSteps = ref(STAGES.length)
+  const progressPercent = ref(0)
+  let timer = null
+
+  function applyProgress(data = {}) {
+    currentPhase.value = data.phase || 'running'
+    currentMessage.value = data.message || '正在生成草稿...'
+    progressState.value = {
+      phase: currentPhase.value,
+      message: currentMessage.value
+    }
+    currentTierKey.value = data.tier || ''
+    const stageIndex = STAGES.findIndex(stage => stage.phase === currentPhase.value)
+    if (stageIndex >= 0) {
+      currentStep.value = stageIndex + 1
+      currentStageLabel.value = STAGES[stageIndex].label
+    } else {
+      currentStageLabel.value = currentMessage.value
+    }
+    progressPercent.value = Math.max(0, Math.min(100, Math.round((currentStep.value / totalSteps.value) * 100)))
+
+    if (data.status === 'success' && data.tier && !completedTiers.value.includes(data.tier)) {
+      completedTiers.value = [...completedTiers.value, data.tier]
+    }
+    if (data.tier && data.afterCount != null) {
+      tierCandidateCounts.value = { ...tierCandidateCounts.value, [data.tier]: data.afterCount }
+    }
+  }
+
+  function startProgress() {
+    stopProgress()
+    elapsedSec.value = 0
+    stageElapsed.value = 0
+    timer = window.setInterval(() => {
+      elapsedSec.value += 1
+      stageElapsed.value += 1
+    }, 1000)
+  }
+
+  function stopProgress() {
+    if (timer) {
+      window.clearInterval(timer)
+      timer = null
+    }
+  }
+
+  function resetProgress() {
+    stopProgress()
+    currentPhase.value = ''
+    currentMessage.value = ''
+    currentTierKey.value = ''
+    currentStageLabel.value = ''
+    completedTiers.value = []
+    tierCandidateCounts.value = {}
+    elapsedSec.value = 0
+    stageElapsed.value = 0
+    currentStep.value = 0
+    progressPercent.value = 0
+  }
+
+  return {
+    currentPhase,
+    currentMessage,
+    currentTierKey,
+    currentStageLabel,
+    completedTiers,
+    tierCandidateCounts,
+    elapsedSec,
+    stageElapsed,
+    currentStep,
+    totalSteps,
+    progressPercent,
+    applyProgress,
+    startProgress,
+    stopProgress,
+    resetProgress
+  }
+}
+
 function sanitizeAssistantText(text) {
   if (!text) return ''
   return String(text)
@@ -181,6 +298,63 @@ function normalizeChatMessage(msg) {
   }
 }
 
+function resetGenerationBubbles() {
+  generationBubbleQueue.value = []
+  generationBubbleKeys.clear()
+  if (generationBubbleTimer) {
+    window.clearTimeout(generationBubbleTimer)
+    generationBubbleTimer = null
+  }
+  generationBubbleTicking = false
+}
+
+function enqueueGenerationBubble(message) {
+  if (!message || !message.content) return
+  const key = message.metadataJson?.key || `${message.role}:${message.content}`
+  if (generationBubbleKeys.has(key)) return
+
+  generationBubbleKeys.add(key)
+  generationBubbleQueue.value.push(message)
+  scheduleGenerationBubbleFlush()
+}
+
+function scheduleGenerationBubbleFlush() {
+  if (generationBubbleTicking || !generationBubbleQueue.value.length) return
+  generationBubbleTicking = true
+
+  const flushNext = () => {
+    const next = generationBubbleQueue.value.shift()
+    if (next) {
+      chatMessages.value.push(next)
+    }
+
+    if (!generationBubbleQueue.value.length) {
+      generationBubbleTicking = false
+      generationBubbleTimer = null
+      return
+    }
+
+    const delay = next?.metadataJson?.key === 'start'
+      ? 900
+      : 1900 + Math.floor(Math.random() * 1100)
+    generationBubbleTimer = window.setTimeout(flushNext, delay)
+  }
+
+  generationBubbleTimer = window.setTimeout(flushNext, 320)
+}
+
+function flushGenerationBubblesNow() {
+  if (generationBubbleTimer) {
+    window.clearTimeout(generationBubbleTimer)
+    generationBubbleTimer = null
+  }
+  generationBubbleQueue.value.forEach(message => {
+    chatMessages.value.push(message)
+  })
+  generationBubbleQueue.value = []
+  generationBubbleTicking = false
+}
+
 async function loadProfileData() {
   loadingProfile.value = true
   try {
@@ -198,23 +372,35 @@ async function loadDraftData() {
   } catch (e) { /* 草稿不存在 */ }
 }
 
-async function loadChatHistory() {
+async function loadChatHistory(options = {}) {
   try {
     const res = await resumeChat()
     const messages = Array.isArray(res.data?.messages) ? res.data.messages : []
-    chatMessages.value = messages
+    const preserved = options.preserveGenerationStatus
+      ? chatMessages.value.filter(message => message?.messageType === 'generation_status')
+      : []
+    chatMessages.value = preserved.concat(messages
       .map(normalizeChatMessage)
-      .filter(Boolean)
+      .filter(Boolean))
   } catch (e) {
-    chatMessages.value = []
+    if (!options.preserveGenerationStatus) {
+      chatMessages.value = []
+    }
   }
 }
 
 async function handleGenerate() {
   generating.value = true
-  progressState.value = { phase: 'queued', message: '正在准备生成草稿...' }
+  clearRevealTimers()
+  revealFrameIndex = 0
+  resetGenerationBubbles()
+  resetProgress()
+  startProgress()
+  applyProgress({ phase: 'queued', message: '正在准备生成草稿...' })
   draft.value = null
+  pendingFinalDraft.value = null
   chatMessages.value = []
+  enqueueGenerationBubble(getGenerationStartMessage())
   closeEventSource(draftEventSource)
 
   try {
@@ -222,7 +408,9 @@ async function handleGenerate() {
     const task = res.data || {}
     if (task.status === 'busy') {
       generating.value = false
-      progressState.value = { phase: 'busy', message: task.message || '已有草稿正在生成' }
+      stopProgress()
+      resetGenerationBubbles()
+      applyProgress({ phase: 'busy', message: task.message || '已有草稿正在生成' })
       ElMessage.warning(task.message || '已有草稿正在生成，请稍候')
       return
     }
@@ -238,31 +426,21 @@ async function handleGenerate() {
 
     source.addEventListener('progress', event => {
       const data = JSON.parse(event.data)
-      progressState.value = {
-        phase: data.phase || 'running',
-        message: data.message || '正在生成草稿...'
-      }
+      applyProgress(data)
+      enqueueGenerationBubble(getGenerationProgressMessage(data))
       if (data.tierData) {
-        if (!draft.value) {
-          draft.value = { tiers: [], removedCandidates: [], blockedCandidates: [] }
-        }
-        const existingIdx = draft.value.tiers.findIndex(t => t.level === data.tierData.level)
-        if (existingIdx >= 0) {
-          draft.value.tiers[existingIdx] = data.tierData
-        } else {
-          draft.value.tiers.push(data.tierData)
-        }
+        revealTierCandidates(data.tierData)
       }
     })
 
     source.addEventListener('done', async event => {
       const data = JSON.parse(event.data)
-      draft.value = data.draft
-      progressState.value = { phase: 'done', message: '草稿生成完成' }
-      generating.value = false
+      pendingFinalDraft.value = data.draft
+      applyProgress({ phase: 'finalize', message: '正在整理候选草稿...' })
+      enqueueGenerationBubble(getGenerationProgressMessage({ phase: 'finalize' }))
+      enqueueGenerationBubble(getGenerationDoneMessage(data.draft))
       closeEventSource(draftEventSource)
-      ElMessage.success('草稿生成完成')
-      await loadChatHistory()
+      await completeGenerationWhenRevealSettles()
     })
 
     source.addEventListener('error', event => {
@@ -272,8 +450,11 @@ async function handleGenerate() {
           message = JSON.parse(event.data).message || message
         } catch (_) {}
       }
-      progressState.value = { phase: 'error', message }
+      applyProgress({ phase: 'error', message })
       generating.value = false
+      stopProgress()
+      clearRevealTimers()
+      resetGenerationBubbles()
       closeEventSource(draftEventSource)
       ElMessage.error(message)
     })
@@ -284,8 +465,11 @@ async function handleGenerate() {
     } else {
       ElMessage.error('生成草稿失败：' + msg)
     }
-    progressState.value = { phase: 'error', message: msg }
+    applyProgress({ phase: 'error', message: msg })
     generating.value = false
+    stopProgress()
+    clearRevealTimers()
+    resetGenerationBubbles()
     closeEventSource(draftEventSource)
   }
 }
@@ -429,6 +613,46 @@ async function handleGenerateReport() {
   }
 }
 
+function revealTierCandidates(tierData) {
+  if (!tierData?.level) return
+  if (!draft.value) {
+    draft.value = { tiers: [], removedCandidates: [], blockedCandidates: [] }
+  }
+  const frames = revealTierFrames(tierData)
+  if (!frames.length) {
+    draft.value = mergeTierRevealFrame(draft.value, tierData, 0)
+    return
+  }
+
+  frames.forEach((visibleCount) => {
+    const delay = revealFrameIndex * 420
+    revealFrameIndex += 1
+    const timer = window.setTimeout(() => {
+      revealTimers.delete(timer)
+      draft.value = mergeTierRevealFrame(draft.value, tierData, visibleCount)
+      completeGenerationWhenRevealSettles()
+    }, delay)
+    revealTimers.add(timer)
+  })
+}
+
+function clearRevealTimers() {
+  revealTimers.forEach(timer => window.clearTimeout(timer))
+  revealTimers.clear()
+}
+
+async function completeGenerationWhenRevealSettles() {
+  if (!pendingFinalDraft.value || revealTimers.size > 0) return
+  draft.value = pendingFinalDraft.value
+  pendingFinalDraft.value = null
+  generating.value = false
+  stopProgress()
+  applyProgress({ phase: 'done', message: '草稿生成完成' })
+  ElMessage.success('草稿生成完成')
+  flushGenerationBubblesNow()
+  await loadChatHistory({ preserveGenerationStatus: true })
+}
+
 // ── 草稿恢复（刷新后自动轮询直到完整）──
 let pollTimer = null
 
@@ -473,6 +697,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   closeEventSource(draftEventSource)
+  stopProgress()
+  clearRevealTimers()
+  resetGenerationBubbles()
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>
