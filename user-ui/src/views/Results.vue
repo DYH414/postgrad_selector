@@ -4,58 +4,95 @@
 
     <main class="result-layout" :class="{ 'result-layout--compare': activeTab === 'compare' }">
       <aside class="filter-sidebar" :class="{ 'shortlist-sidebar': activeTab === 'compare' }">
-        <div class="sidebar-title">
-          <strong>筛选条件</strong>
-          <button type="button" @click="resetFilters">清空</button>
-        </div>
-        <div class="filter-group">
-          <label>搜索关键词</label>
-          <el-input v-model="filterForm.keyword" placeholder="学校/专业/学院名称" clearable @clear="applyFilters" @keyup.enter="applyFilters"/>
-        </div>
-        <div class="filter-group">
-          <label>预计初试总分</label>
-          <el-input v-model.number="filterForm.score" placeholder="请输入分数">
-            <template #append>分</template>
-          </el-input>
-        </div>
-        <div class="filter-group">
-          <label>考试组合</label>
-          <el-select v-model="filterForm.exam" placeholder="请选择考试组合">
-            <el-option label="11408（数学一 + 英语一 + 408）" value="11408" />
-            <el-option label="22408（数学二 + 英语二 + 408）" value="22408" />
-          </el-select>
-        </div>
-        <div class="filter-group">
-          <label>地区</label>
-          <el-select v-model="filterForm.regions" multiple collapse-tags clearable filterable placeholder="不限地区">
-            <el-option v-for="region in regionOptions" :key="region" :label="region" :value="region" />
-          </el-select>
-        </div>
-        <div class="filter-group">
-          <label>专业方向</label>
-          <el-select v-model="filterForm.majorDirections" multiple collapse-tags clearable filterable placeholder="不限专业方向">
-            <el-option label="计算机科学与技术（081200）" value="081200" />
-            <el-option label="软件工程（083500）" value="083500" />
-            <el-option label="电子信息-计算机方向（085404）" value="085404" />
-            <el-option label="电子信息-软件工程方向（085405）" value="085405" />
-          </el-select>
-        </div>
-        <div class="filter-group">
-          <label>筛选范围</label>
-          <div class="range-buttons">
-            <button :class="{ active: filterForm.scoreRange === 5 }" type="button" @click="filterForm.scoreRange = 5">均分+5</button>
-            <button :class="{ active: filterForm.scoreRange === 10 }" type="button" @click="filterForm.scoreRange = 10">均分+10</button>
-            <button :class="{ active: filterForm.scoreRange === 15 }" type="button" @click="filterForm.scoreRange = 15">均分+15</button>
-            <button :class="{ active: filterForm.scoreRange === 20 }" type="button" @click="filterForm.scoreRange = 20">均分+20</button>
-            <button :class="{ active: filterForm.scoreRange === null }" type="button" @click="filterForm.scoreRange = null">不限</button>
+        <template v-if="activeTab !== 'compare'">
+          <div class="sidebar-title">
+            <strong>筛选条件</strong>
+            <button type="button" @click="resetFilters">清空</button>
           </div>
-        </div>
-        <el-button class="filter-button" type="primary" :loading="filtering" @click="applyFilters">应用筛选</el-button>
-        <div class="tip-box">
-          <i class="el-icon-info"></i>
-          <strong>小贴士</strong>
-          <p>筛选结果不是唯一可报范围，复试线也不是最低录取分；N诺数据可能遗漏或错误，请结合院校官网复核。</p>
-        </div>
+          <div class="filter-group">
+            <label>搜索关键词</label>
+            <el-input v-model="filterForm.keyword" placeholder="学校/专业/学院名称" clearable @clear="applyFilters" @keyup.enter="applyFilters"/>
+          </div>
+          <div class="filter-group">
+            <label>预计初试总分</label>
+            <el-input v-model.number="filterForm.score" placeholder="请输入分数">
+              <template #append>分</template>
+            </el-input>
+          </div>
+          <div class="filter-group">
+            <label>考试组合</label>
+            <el-select v-model="filterForm.exam" placeholder="请选择考试组合">
+              <el-option label="11408（数学一 + 英语一 + 408）" value="11408" />
+              <el-option label="22408（数学二 + 英语二 + 408）" value="22408" />
+            </el-select>
+          </div>
+          <div class="filter-group">
+            <label>地区</label>
+            <el-select v-model="filterForm.regions" multiple collapse-tags clearable filterable placeholder="不限地区">
+              <el-option v-for="region in regionOptions" :key="region" :label="region" :value="region" />
+            </el-select>
+          </div>
+          <div class="filter-group">
+            <label>专业方向</label>
+            <el-select v-model="filterForm.majorDirections" multiple collapse-tags clearable filterable placeholder="不限专业方向">
+              <el-option label="计算机科学与技术（081200）" value="081200" />
+              <el-option label="软件工程（083500）" value="083500" />
+              <el-option label="电子信息-计算机方向（085404）" value="085404" />
+              <el-option label="电子信息-软件工程方向（085405）" value="085405" />
+            </el-select>
+          </div>
+          <div class="filter-group">
+            <label>筛选范围</label>
+            <div class="range-buttons">
+              <button :class="{ active: filterForm.scoreRange === 5 }" type="button" @click="filterForm.scoreRange = 5">均分+5</button>
+              <button :class="{ active: filterForm.scoreRange === 10 }" type="button" @click="filterForm.scoreRange = 10">均分+10</button>
+              <button :class="{ active: filterForm.scoreRange === 15 }" type="button" @click="filterForm.scoreRange = 15">均分+15</button>
+              <button :class="{ active: filterForm.scoreRange === 20 }" type="button" @click="filterForm.scoreRange = 20">均分+20</button>
+              <button :class="{ active: filterForm.scoreRange === null }" type="button" @click="filterForm.scoreRange = null">不限</button>
+            </div>
+          </div>
+          <el-button class="filter-button" type="primary" :loading="filtering" @click="applyFilters">应用筛选</el-button>
+          <div class="tip-box">
+            <i class="el-icon-info"></i>
+            <strong>小贴士</strong>
+            <p>筛选结果不是唯一可报范围，复试线也不是最低录取分；N诺数据可能遗漏或错误，请结合院校官网复核。</p>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="shortlist-header">
+            <strong>我的备选</strong>
+            <span>{{ backupTotal }} 个方案</span>
+            <p>选择 2 个以上即可横向对比</p>
+            <p v-if="compareSchools.length">已加入对比 {{ compareSchools.length }}/8</p>
+          </div>
+
+          <div v-if="!backupTotal" class="shortlist-empty">
+            <p>暂无备选</p>
+            <p>先去筛选结果中加入感兴趣的学校</p>
+            <el-button size="small" type="primary" @click="$router.push('/results')">去筛选结果</el-button>
+          </div>
+
+          <div v-else class="shortlist-list">
+            <div v-for="item in flatBackupItems" :key="item.programId" class="shortlist-card">
+              <div class="shortlist-card-info">
+                <strong>{{ item.schoolName || item.name }}</strong>
+                <span>{{ item.programName || item.grade }}</span>
+                <span class="shortlist-meta">{{ item.programCode || item.grade }} · {{ item.degreeType }}</span>
+              </div>
+              <div class="shortlist-actions">
+                <el-button
+                  size="mini"
+                  :type="isInCompare(item.programId) ? 'success' : 'primary'"
+                  :disabled="!isInCompare(item.programId) && compareSchools.length >= 8"
+                  @click="isInCompare(item.programId) ? removeBackupFromCompare(item.programId) : addBackupToCompare(item)">
+                  {{ isInCompare(item.programId) ? '已加入' : '加入对比' }}
+                </el-button>
+                <el-button size="mini" type="danger" plain @click="removeBackupItem(item)">移出备选</el-button>
+              </div>
+            </div>
+          </div>
+        </template>
       </aside>
 
       <section class="result-main" v-loading="loading">
@@ -530,6 +567,17 @@ const filteredItems = computed(() => {
 
 const backupTotal = computed(() => {
   return backupGroups.value.reduce((total, group) => total + group.items.length, 0)
+})
+
+const flatBackupItems = computed(() => {
+  if (!backupGroups.value || !backupGroups.value.length) return []
+  return backupGroups.value.flatMap(group => (group.items || []).map(item => ({
+    ...item,
+    schoolName: item.name ? item.name.split(' · ')[0] : '',
+    programName: item.name ? item.name.split(' · ')[1] : '',
+    programCode: item.grade || '',
+    degreeType: item.degreeType || '学硕'
+  })))
 })
 
 const backupProgramIds = computed(() => {
