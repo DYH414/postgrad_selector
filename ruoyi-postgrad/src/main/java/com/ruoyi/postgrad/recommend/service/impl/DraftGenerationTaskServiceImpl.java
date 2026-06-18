@@ -3,6 +3,10 @@ package com.ruoyi.postgrad.recommend.service.impl;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -13,6 +17,7 @@ import org.springframework.stereotype.Service;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskState;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskVO;
+import com.ruoyi.postgrad.recommend.domain.RecommendationProgressEvent;
 import com.ruoyi.postgrad.recommend.service.DraftGenerationCallback;
 import com.ruoyi.postgrad.recommend.service.IDraftGenerationTaskService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
@@ -76,6 +81,33 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
                 if (state == null) return;
                 state.setTier(tier);
                 state.setTierJson(tierJson);
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("phase", "ai_selecting");
+                payload.put("message", "档位完成");
+                payload.put("tier", tier);
+                try {
+                    payload.put("tierData", JSON.parse(tierJson));
+                } catch (Exception ignored) {
+                    payload.put("tierData", tierJson);
+                }
+                appendStreamEvent(state, payload);
+                state.setUpdatedAt(System.currentTimeMillis());
+                save(state);
+            }
+
+            @Override
+            public void onProgress(RecommendationProgressEvent event) {
+                DraftGenerationTaskState state = getState(taskId);
+                if (state == null || event == null) {
+                    return;
+                }
+                state.setStatus(DraftGenerationTaskState.STATUS_RUNNING);
+                state.setPhase(event.getPhase());
+                state.setMessage(event.getMessage());
+                state.setFound(event.getAfterCount());
+                state.setTier(event.getTier());
+                state.setProgressJson(JSON.toJSONString(event));
+                appendStreamEvent(state, event);
                 state.setUpdatedAt(System.currentTimeMillis());
                 save(state);
             }
@@ -91,6 +123,13 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
                 state.setMessage(message);
                 state.setFound(found);
                 state.setTier(tier);
+                state.setProgressJson(null);
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("phase", phase);
+                payload.put("message", message);
+                if (found != null) payload.put("found", found);
+                if (tier != null) payload.put("tier", tier);
+                appendStreamEvent(state, payload);
                 state.setUpdatedAt(System.currentTimeMillis());
                 save(state);
             }
@@ -131,6 +170,19 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
 
     private void save(DraftGenerationTaskState state) {
         redisTemplate.opsForValue().set(key(state.getTaskId()), JSON.toJSONString(state), TASK_TTL);
+    }
+
+    private void appendStreamEvent(DraftGenerationTaskState state, Object payload) {
+        List<Object> events = new ArrayList<>();
+        if (state.getStreamEventsJson() != null && !state.getStreamEventsJson().isBlank()) {
+            try {
+                events.addAll(JSON.parseArray(state.getStreamEventsJson(), Object.class));
+            } catch (Exception ignored) {
+                events.clear();
+            }
+        }
+        events.add(payload);
+        state.setStreamEventsJson(JSON.toJSONString(events));
     }
 
     private static String key(String taskId) {

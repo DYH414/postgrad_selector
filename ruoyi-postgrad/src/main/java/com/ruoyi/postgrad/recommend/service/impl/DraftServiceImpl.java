@@ -30,6 +30,7 @@ import com.ruoyi.postgrad.recommend.domain.CandidateUniverseVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.ProfileBasisVO;
+import com.ruoyi.postgrad.recommend.domain.RecommendationProgressEvent;
 import com.ruoyi.postgrad.recommend.domain.ReplaceResultVO;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.domain.WorkspaceTierVO;
@@ -100,6 +101,9 @@ public class DraftServiceImpl implements IDraftService {
 
     @Override
     public void generateDraft(Long userId, DraftGenerationCallback callback) {
+        String currentPhase = "profile_analysis";
+        String currentTitle = "分析用户画像";
+        String currentTier = null;
         // 生成锁：防止重复点击导致多个 LLM 调用并行
         // 使用 UUID 作为锁持有者标识，释放时 Lua 原子校验，防止误删他人锁
         String lockKey = LOCK_KEY_PREFIX + userId;
@@ -116,26 +120,38 @@ public class DraftServiceImpl implements IDraftService {
             redisTemplate.delete("ai:v2:chat:system:" + userId);
 
             // 2. 加载用户画像
-            callback.onProgress("loading_profile", "正在加载用户画像...", null, null);
+            callback.onProgress(RecommendationProgressEvent.running(
+                currentPhase, currentTitle, "正在分析用户画像...", null, null));
             UserProfile up = userProfileMapper.selectUserProfileByUserId(userId);
             if (up == null || up.getEstimatedScore() == null || up.getEstimatedScore() <= 0) {
                 callback.onError(new IllegalArgumentException("请先在个人资料中补充预计分数"));
                 return;
             }
+            callback.onProgress(RecommendationProgressEvent.success(
+                currentPhase, currentTitle, null, null, null));
             int estimatedScore = up.getEstimatedScore();
             List<String> regions = parseRegions(up.getTargetRegions());
             String schoolTierPref = up.getSchoolTierPreference() != null
                 ? up.getSchoolTierPreference() : "no_strict_requirement";
 
             // 2. 构建候选池 + 分档
-            callback.onProgress("building_pool", "正在筛选候选学校...", null, null);
+            currentPhase = "filter_408";
+            currentTitle = "筛选408专业";
+            callback.onProgress(RecommendationProgressEvent.running(
+                currentPhase, currentTitle, "正在筛选408专业...", null, null));
             List<TierCandidates> allTiers = candidatePoolService.buildPool(estimatedScore, regions, schoolTierPref);
             int totalCandidates = allTiers.stream().mapToInt(t -> t.getCandidates().size()).sum();
+            callback.onProgress(RecommendationProgressEvent.success(
+                currentPhase, currentTitle, null, totalCandidates, null));
             log.info("[Draft] userId={} — pool: {} candidates across 3 tiers", userId, totalCandidates);
 
             savePoolSnapshot(userId, allTiers);
 
             // 2.5 构建 Universe → Workspace（混合架构：保留广泛候选供给）
+            currentPhase = "candidate_pool";
+            currentTitle = "构建候选池";
+            callback.onProgress(RecommendationProgressEvent.running(
+                currentPhase, currentTitle, "正在构建候选池...", totalCandidates, null));
             ProfileBasisVO basis = buildProfileBasis(up, totalCandidates);
             CandidateUniverseVO universe = universeService.buildUniverse(
                 userId, basis, estimatedScore, regions, schoolTierPref);
@@ -146,6 +162,8 @@ public class DraftServiceImpl implements IDraftService {
             CandidateWorkspaceVO workspace = workspaceService.buildWorkspace(
                 universe, schoolTierPref, up.getRegionStrategy());
             saveWorkspace(userId, workspace);
+            callback.onProgress(RecommendationProgressEvent.success(
+                currentPhase, currentTitle, universeCount, workspace.totalCandidates(), null));
             log.info("[Draft] Universe={} Workspace={} Pool={}",
                 universeCount, workspace.totalCandidates(), totalCandidates);
 
@@ -158,9 +176,12 @@ public class DraftServiceImpl implements IDraftService {
             // 3a. 立即推送三档都在 "ai_selecting" 的进度
             for (WorkspaceTierVO wsTier : wsTiers) {
                 wsSummary.put(wsTier.getLevel(), wsTier.getCandidates().size());
-                callback.onProgress("ai_selecting",
-                    "AI 正在" + wsTier.getLabel() + "挑选合适的学校...（工作集 " + wsTier.getCandidates().size() + " 所）",
-                    null, wsTier.getLevel());
+                callback.onProgress(RecommendationProgressEvent.running(
+                    selectionPhase(wsTier.getLevel()),
+                    "AI选择" + wsTier.getLabel(),
+                    "AI正在选择" + wsTier.getLabel() + "...",
+                    wsTier.getCandidates().size(),
+                    wsTier.getLevel()));
             }
 
             // 3b. 并行提交三档 AI 调用
@@ -209,11 +230,26 @@ public class DraftServiceImpl implements IDraftService {
                 saveDraft(userId, partial);
 
                 callback.onTierComplete(tr.level, JSON.toJSONString(tr.tier));
+                int selectedCount = tr.tier.getCandidates() != null ? tr.tier.getCandidates().size() : 0;
+                callback.onProgress(RecommendationProgressEvent.success(
+                    selectionPhase(tr.level),
+                    "AI选择" + tr.tier.getLabel(),
+                    wsSummary.get(tr.level),
+                    selectedCount,
+                    tr.level));
                 log.info("[Draft] tier={} completed, selected={}", tr.level,
                     tr.tier.getCandidates() != null ? tr.tier.getCandidates().size() : 0);
             }
 
-            callback.onProgress("validating", "正在校验 AI 推荐结果...", null, null);
+            currentPhase = "validate";
+            currentTitle = "校验推荐结果";
+            int draftCandidateCount = resultTiers.stream()
+                .mapToInt(t -> t.getCandidates() != null ? t.getCandidates().size() : 0)
+                .sum();
+            callback.onProgress(RecommendationProgressEvent.running(
+                currentPhase, currentTitle, "正在校验推荐结果...", draftCandidateCount, null));
+            callback.onProgress(RecommendationProgressEvent.success(
+                currentPhase, currentTitle, null, null, null));
 
             // 4. 构建最终 DraftVO（已在循环中逐档持久化）
             DraftVO draft = new DraftVO();
@@ -225,10 +261,18 @@ public class DraftServiceImpl implements IDraftService {
             draft.setWorkspaceSummary(wsSummary);
 
             saveDraft(userId, draft);
+            callback.onProgress(RecommendationProgressEvent.success(
+                "finalize", "生成候选草稿", null, draftCandidateCount, null));
             callback.onDone(draft, basis, allBlocked.size());
 
         } catch (Exception e) {
             log.error("[Draft] generateDraft failed for userId={}: {}", userId, e.getMessage(), e);
+            callback.onProgress(RecommendationProgressEvent.error(
+                currentPhase != null ? currentPhase : "finalize",
+                currentTitle != null ? currentTitle : "生成候选草稿",
+                "生成候选草稿失败",
+                e.getMessage(),
+                currentTier));
             callback.onError(e);
         } finally {
             // 仅当锁仍属于当前持有者时才释放（Lua 原子操作）
@@ -491,6 +535,13 @@ public class DraftServiceImpl implements IDraftService {
     private void saveWorkspace(Long userId, CandidateWorkspaceVO workspace) {
         redisTemplate.opsForValue().set(
             WORKSPACE_KEY_PREFIX + userId, JSON.toJSONString(workspace), Duration.ofDays(TTL_DAYS));
+    }
+
+    private String selectionPhase(String tier) {
+        if ("reach".equals(tier)) return "select_reach";
+        if ("steady".equals(tier)) return "select_steady";
+        if ("safe".equals(tier)) return "select_safe";
+        return "select_" + tier;
     }
 
     private String draftKey(Long userId) { return DRAFT_KEY_PREFIX + userId; }

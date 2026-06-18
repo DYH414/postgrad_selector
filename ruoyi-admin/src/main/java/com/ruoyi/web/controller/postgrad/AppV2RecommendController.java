@@ -1,6 +1,7 @@
 package com.ruoyi.web.controller.postgrad;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -23,6 +24,7 @@ import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskState;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskVO;
+import com.ruoyi.postgrad.recommend.domain.RecommendationProgressEvent;
 import com.ruoyi.postgrad.recommend.domain.dto.AddBackCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ChatSendRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.RemoveCandidateRequest;
@@ -110,6 +112,7 @@ public class AppV2RecommendController {
         CompletableFuture.runAsync(() -> {
             long deadline = System.currentTimeMillis() + 300_000L;
             String lastSignature = "";
+            int sentStreamEventCount = 0;
             while (!closed.get() && System.currentTimeMillis() < deadline) {
                 DraftGenerationTaskState state = draftGenerationTaskService.getState(taskId);
                 if (state == null) {
@@ -118,9 +121,17 @@ public class AppV2RecommendController {
                 }
 
                 String signature = state.getStatus() + "|" + state.getPhase() + "|" + state.getMessage()
-                    + "|" + state.getUpdatedAt() + "|" + state.getTierJson();
+                    + "|" + state.getUpdatedAt() + "|" + state.getProgressJson() + "|" + state.getTierJson();
                 if (!signature.equals(lastSignature)) {
                     lastSignature = signature;
+                    if (state.getStreamEventsJson() != null && !state.getStreamEventsJson().isBlank()) {
+                        List<Object> streamEvents = JSON.parseArray(state.getStreamEventsJson(), Object.class);
+                        while (sentStreamEventCount < streamEvents.size()) {
+                            Object payload = streamEvents.get(sentStreamEventCount);
+                            safeSend(emitter, "progress", payloadToMap(payload), closed);
+                            sentStreamEventCount++;
+                        }
+                    }
                     if (DraftGenerationTaskState.STATUS_DONE.equals(state.getStatus())) {
                         Map<String, Object> payload = new LinkedHashMap<>();
                         payload.put("draft", JSON.parseObject(state.getDraftJson()));
@@ -134,12 +145,16 @@ public class AppV2RecommendController {
                         safeSend(emitter, "error", Map.of(
                             "message", state.getErrorMessage() != null ? state.getErrorMessage() : "生成失败"), closed);
                         break;
-                    } else {
+                    } else if (state.getStreamEventsJson() == null || state.getStreamEventsJson().isBlank()) {
                         Map<String, Object> payload = new LinkedHashMap<>();
-                        payload.put("phase", state.getPhase());
-                        payload.put("message", state.getMessage());
-                        if (state.getFound() != null) payload.put("found", state.getFound());
-                        if (state.getTier() != null) payload.put("tier", state.getTier());
+                        if (state.getProgressJson() != null && !state.getProgressJson().isBlank()) {
+                            payload.putAll(JSON.parseObject(state.getProgressJson()));
+                        } else {
+                            payload.put("phase", state.getPhase());
+                            payload.put("message", state.getMessage());
+                            if (state.getFound() != null) payload.put("found", state.getFound());
+                            if (state.getTier() != null) payload.put("tier", state.getTier());
+                        }
                         // 逐档实时数据：某档 AI 选完后立即推送候选卡片
                         if (state.getTierJson() != null) {
                             payload.put("tierData", JSON.parseObject(state.getTierJson()));
@@ -176,6 +191,22 @@ public class AppV2RecommendController {
         CompletableFuture.runAsync(() -> {
             try {
                 draftService.generateDraft(user.getUserId(), new DraftGenerationCallback() {
+                    @Override
+                    public void onProgress(RecommendationProgressEvent event) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("type", event.getType());
+                        payload.put("phase", event.getPhase());
+                        payload.put("status", event.getStatus());
+                        payload.put("title", event.getTitle());
+                        payload.put("message", event.getMessage());
+                        if (event.getBeforeCount() != null) payload.put("beforeCount", event.getBeforeCount());
+                        if (event.getAfterCount() != null) payload.put("afterCount", event.getAfterCount());
+                        if (event.getTier() != null) payload.put("tier", event.getTier());
+                        if (event.getDetail() != null) payload.put("detail", event.getDetail());
+                        if (event.getTimestamp() != null) payload.put("timestamp", event.getTimestamp());
+                        sendSseEvent(emitter, "progress", payload);
+                    }
+
                     @Override
                     public void onProgress(String phase, String message, Integer found, String tier) {
                         Map<String, Object> payload = new LinkedHashMap<>();
@@ -484,5 +515,17 @@ public class AppV2RecommendController {
             closed.set(true);
             return false;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> payloadToMap(Object payload) {
+        if (payload instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                result.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return result;
+        }
+        return JSON.parseObject(JSON.toJSONString(payload));
     }
 }

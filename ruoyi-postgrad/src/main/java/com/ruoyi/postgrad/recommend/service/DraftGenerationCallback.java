@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.recommend.service;
 
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.ProfileBasisVO;
+import com.ruoyi.postgrad.recommend.domain.RecommendationProgressEvent;
 
 /**
  * 草稿生成进度回调 —— Service 层不依赖 web 层（SseEmitter），
@@ -18,6 +19,13 @@ public interface DraftGenerationCallback {
      * @param tier    当前 AI 选校的档位（仅 ai_selecting 阶段有意义）
      */
     void onProgress(String phase, String message, Integer found, String tier);
+
+    default void onProgress(RecommendationProgressEvent event) {
+        if (event == null) {
+            return;
+        }
+        onProgress(event.getPhase(), event.getMessage(), event.getAfterCount(), event.getTier());
+    }
 
     /**
      * 草稿生成完成。

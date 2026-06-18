@@ -12,7 +12,9 @@ public class DraftGenerationTaskState {
     private String message;
     private Integer found;
     private String tier;
+    private String progressJson;
     private String tierJson;
+    private String streamEventsJson;
     private String draftJson;
     private String profileBasisJson;
     private Integer removedCount;
@@ -76,12 +78,28 @@ public class DraftGenerationTaskState {
         this.tier = tier;
     }
 
+    public String getProgressJson() {
+        return progressJson;
+    }
+
+    public void setProgressJson(String progressJson) {
+        this.progressJson = progressJson;
+    }
+
     public String getTierJson() {
         return tierJson;
     }
 
     public void setTierJson(String tierJson) {
         this.tierJson = tierJson;
+    }
+
+    public String getStreamEventsJson() {
+        return streamEventsJson;
+    }
+
+    public void setStreamEventsJson(String streamEventsJson) {
+        this.streamEventsJson = streamEventsJson;
     }
 
     public String getDraftJson() {

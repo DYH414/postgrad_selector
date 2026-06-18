@@ -86,9 +86,9 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
                                        List<SchoolFact> facts, String schoolTierPref,
                                        String regionStrategy) {
         // 排除数据完整度为 C 的候选（数据不足，不具备推荐条件）
-        List<SchoolFact> filtered = facts.stream()
+        List<SchoolFact> filtered = new ArrayList<>(facts.stream()
             .filter(f -> !"C".equalsIgnoreCase(f.getDataCompleteness()))
-            .toList();
+            .toList());
 
         // 按策略得分排序（含地区策略权重）
         filtered.sort(Comparator.comparingInt(
