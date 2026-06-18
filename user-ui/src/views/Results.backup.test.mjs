@@ -17,4 +17,11 @@ assert.doesNotMatch(source, /收藏意向专业/)
 assert.doesNotMatch(source, /取消收藏/)
 assert.doesNotMatch(source, /加入收藏/)
 
+// New shortlist sidebar assertions
+assert.match(source, /shortlist-sidebar/)
+assert.match(source, /我的备选/)
+assert.match(source, /移出备选/)
+assert.match(source, /removeBackupItem/)
+assert.match(source, /removeBackupFromCompare/)
+
 console.log('Results backup UI checks passed')
