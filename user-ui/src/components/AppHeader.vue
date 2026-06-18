@@ -32,9 +32,6 @@
           @clear="searchKeyword = ''"
         />
       </div>
-      <el-badge :value="12" class="notice-badge">
-        <el-button icon="el-icon-bell" circle size="small"></el-button>
-      </el-badge>
       <button v-if="!hasToken" class="login-entry" type="button" @click="goLogin">登录/注册</button>
       <div v-else class="user-chip" @click="router.push('/profile')">
         <span class="avatar">408</span>
@@ -241,14 +238,6 @@ function logout() {
 }
 .search-box :deep(.el-input__inner::placeholder) { color: var(--ink-5); }
 .search-box :deep(.el-input__clear) { color: var(--ink-4); }
-
-.notice-badge :deep(.el-badge__content) {
-  border: 0;
-  background: var(--danger) !important;
-  color: #fff;
-  font-size: 10px;
-  font-family: var(--font-mono);
-}
 
 .user-chip {
   display: flex;
