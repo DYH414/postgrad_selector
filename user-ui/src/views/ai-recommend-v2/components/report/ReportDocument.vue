@@ -68,7 +68,17 @@ const tiers = computed(() => Array.isArray(props.report?.tiers) ? props.report.t
 const totalCount = computed(() => tiers.value.reduce((sum, tier) => {
   return sum + (Array.isArray(tier?.candidates) ? tier.candidates.length : 0)
 }, 0))
-const strategyText = computed(() => props.report?.profileBasis?.riskPreference || '均衡推荐')
+const strategyText = computed(() => {
+  const v = props.report?.profileBasis?.riskPreference
+  const map = {
+    safe_first: '稳妥优先',
+    conservative: '稳妥优先',
+    reach_first: '接受压线',
+    aggressive: '接受压线',
+    balanced: '适度冲刺'
+  }
+  return map[v] || '适度冲刺'
+})
 </script>
 
 <style scoped>

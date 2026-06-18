@@ -27,9 +27,9 @@ const items = computed(() => {
     { key: 'targetRegions', label: '目标地区', value: basis.targetRegions },
     { key: 'undergradTier', label: '本科层次', value: basis.undergradTier },
     { key: 'isCrossMajor', label: '跨考情况', value: basis.isCrossMajor },
-    { key: 'riskPreference', label: '风险偏好', value: basis.riskPreference },
-    { key: 'schoolTierPreference', label: '院校层次偏好', value: basis.schoolTierPreference },
-    { key: 'regionStrategy', label: '地区策略', value: basis.regionStrategy },
+    { key: 'riskPreference', label: '安全边际', value: basis.riskPreference },
+    { key: 'schoolTierPreference', label: '学校层次', value: basis.schoolTierPreference },
+    { key: 'regionStrategy', label: '地区偏好', value: basis.regionStrategy },
     { key: 'candidateScope', label: '候选范围', value: basis.candidateScope }
   ]
 })
