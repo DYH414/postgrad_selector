@@ -44,9 +44,9 @@ public class AppProfileController
         profile.setAcceptTransfer(intVal(body.get("acceptTransfer")));
         profile.setAcceptAcademic(intVal(body.get("acceptAcademic")));
         profile.setAcceptJoint(intVal(body.get("acceptJoint")));
-        profile.setRiskPreference(stringVal(body.get("riskPreference")));
-        profile.setSchoolTierPreference(stringVal(body.get("schoolTierPreference")));
-        profile.setRegionStrategy(stringVal(body.get("regionStrategy")));
+        profile.setRiskPreference(normalizeRiskPreference(stringVal(body.get("riskPreference"))));
+        profile.setSchoolTierPreference(normalizeSchoolTier(stringVal(body.get("schoolTierPreference"))));
+        profile.setRegionStrategy(normalizeRegion(stringVal(body.get("regionStrategy"))));
         profile.setUndergradTier(stringVal(body.get("undergradTier")));
         profile.setUndergraduateMajor(stringVal(body.get("undergraduateMajor")));
         profile.setIsCrossMajor(intVal(body.get("isCrossMajor")));
@@ -89,5 +89,26 @@ public class AppProfileController
         if (val == null) return null;
         String s = String.valueOf(val);
         return s.isBlank() ? null : s;
+    }
+
+    private static String normalizeRiskPreference(String v) {
+        if (v == null) return "balanced";
+        return switch (v) {
+            case "conservative" -> "safe_first";
+            case "aggressive" -> "reach_first";
+            default -> v;
+        };
+    }
+
+    private static String normalizeSchoolTier(String v) {
+        if (v == null) return "no_strict_requirement";
+        if ("must_211_or_better".equals(v)) return "tier_priority";
+        return v;
+    }
+
+    private static String normalizeRegion(String v) {
+        if (v == null) return "no_strict_requirement";
+        if ("developed_balanced".equals(v)) return "developed_priority";
+        return v;
     }
 }
