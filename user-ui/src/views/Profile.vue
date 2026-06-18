@@ -72,26 +72,25 @@
               </el-form-item>
               <section class="preference-form-band">
                 <h3>择校偏好</h3>
-                <el-form-item label="整体择校策略">
+                <el-form-item label="安全边际">
                   <el-radio-group v-model="form.riskPreference">
-                    <el-radio-button label="conservative">稳妥优先</el-radio-button>
-                    <el-radio-button label="balanced">冲稳保均衡</el-radio-button>
-                    <el-radio-button label="aggressive">愿意冲刺</el-radio-button>
+                    <el-radio-button label="safe_first">稳妥优先</el-radio-button>
+                    <el-radio-button label="balanced">适度冲刺</el-radio-button>
+                    <el-radio-button label="reach_first">接受压线</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item label="院校层次取舍">
+                <el-form-item label="学校层次">
                   <el-radio-group v-model="form.schoolTierPreference">
-                    <el-radio-button label="must_211_or_better">高层次优先</el-radio-button>
-                    <el-radio-button label="prefer_211_or_better">优先 211+</el-radio-button>
-                    <el-radio-button label="no_strict_requirement">层次不强求</el-radio-button>
+                    <el-radio-button label="tier_priority">学校层次优先</el-radio-button>
+                    <el-radio-button label="prefer_211_or_better">211/双一流优先</el-radio-button>
+                    <el-radio-button label="no_strict_requirement">层次不过度追求</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
-                <el-form-item label="地区取舍">
+                <el-form-item label="地区偏好">
                   <el-radio-group v-model="form.regionStrategy">
                     <el-radio-button label="developed_priority">发达地区优先</el-radio-button>
-                    <el-radio-button label="developed_balanced">发达地区稳妥</el-radio-button>
-                    <el-radio-button label="no_strict_requirement">地区不强求</el-radio-button>
                     <el-radio-button label="target_regions_only">只看目标省份</el-radio-button>
+                    <el-radio-button label="no_strict_requirement">地区不限制</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
               </section>
@@ -335,9 +334,9 @@ const completionPercent = computed(() => {
 
 const profileRows = computed(() => [
   { label: '目标地区', value: regionText.value },
-  { label: '整体策略', value: riskPreferenceLabels[profile.riskPreference] || '稳中求进，冲稳保均衡' },
-  { label: '院校层次取舍', value: schoolTierPreferenceLabels[profile.schoolTierPreference] || '不强求层次，有学上更重要' },
-  { label: '地区取舍', value: regionStrategyLabels[profile.regionStrategy] || '地区不强求，有学上更重要' },
+  { label: '安全边际', value: riskPreferenceLabels[profile.riskPreference] || '适度冲刺' },
+  { label: '学校层次', value: schoolTierPreferenceLabels[profile.schoolTierPreference] || '层次不过度追求' },
+  { label: '地区偏好', value: regionStrategyLabels[profile.regionStrategy] || '地区不限制' },
   { label: '本科层次', value: tierLabel(profile.undergradTier), muted: !profile.undergradTier },
   { label: '本科专业', value: profile.undergraduateMajor || '暂未填写', muted: !profile.undergraduateMajor },
   { label: '跨考情况', value: profile.isCrossMajor ? '跨考' : '非跨考' },
@@ -347,20 +346,23 @@ const profileRows = computed(() => [
 const shortlistSelectedIds = computed(() => selectedRows.value.map(row => row.programId).filter(Boolean))
 
 const riskPreferenceLabels = {
-  conservative: '只要有学上，稳妥优先',
-  balanced: '稳中求进，冲稳保均衡',
-  aggressive: '愿意冲更好的学校'
+  safe_first: '稳妥优先',
+  balanced: '适度冲刺',
+  reach_first: '接受压线',
+  conservative: '稳妥优先',
+  aggressive: '接受压线'
 }
 const schoolTierPreferenceLabels = {
-  must_211_or_better: '高层次院校优先，愿意承担风险',
-  prefer_211_or_better: '优先 211/双一流，但不能太冒险',
-  no_strict_requirement: '不强求层次，有学上更重要'
+  tier_priority: '学校层次优先',
+  prefer_211_or_better: '211/双一流优先',
+  no_strict_requirement: '层次不过度追求',
+  must_211_or_better: '学校层次优先'
 }
 const regionStrategyLabels = {
-  developed_priority: '发达地区优先，愿意承担风险',
-  developed_balanced: '优先发达地区，但不能太冒险',
-  no_strict_requirement: '地区不强求，有学上更重要',
-  target_regions_only: '只看我填写的目标省份'
+  developed_priority: '发达地区优先',
+  target_regions_only: '只看目标省份',
+  no_strict_requirement: '地区不限制',
+  developed_balanced: '发达地区优先'
 }
 
 const shortlistOverview = computed(() => {
@@ -385,6 +387,20 @@ function normalizeRegions(regions) {
   return Array.isArray(regions) ? regions : []
 }
 
+function normalizeRisk(v) {
+  if (v === 'conservative') return 'safe_first'
+  if (v === 'aggressive') return 'reach_first'
+  return v
+}
+function normalizeTier(v) {
+  if (v === 'must_211_or_better') return 'tier_priority'
+  return v
+}
+function normalizeRegion(v) {
+  if (v === 'developed_balanced') return 'developed_priority'
+  return v
+}
+
 function fetchProfile() {
   profileLoading.value = true
   getProfile().then(res => {
@@ -396,9 +412,9 @@ function fetchProfile() {
       profile.undergradTier = p.undergradTier
       profile.undergraduateMajor = p.undergraduateMajor || ''
       profile.isCrossMajor = p.isCrossMajor === 1 || p.isCrossMajor === true
-      profile.riskPreference = p.riskPreference || 'balanced'
-      profile.schoolTierPreference = p.schoolTierPreference || 'no_strict_requirement'
-      profile.regionStrategy = p.regionStrategy || 'no_strict_requirement'
+      profile.riskPreference = normalizeRisk(p.riskPreference) || 'balanced'
+      profile.schoolTierPreference = normalizeTier(p.schoolTierPreference) || 'no_strict_requirement'
+      profile.regionStrategy = normalizeRegion(p.regionStrategy) || 'no_strict_requirement'
     }
   }).finally(() => { profileLoading.value = false })
 }
@@ -410,9 +426,9 @@ function startEdit() {
   form.undergradTier = profile.undergradTier || null
   form.undergraduateMajor = profile.undergraduateMajor || ''
   form.isCrossMajor = profile.isCrossMajor || false
-  form.riskPreference = profile.riskPreference || 'balanced'
-  form.schoolTierPreference = profile.schoolTierPreference || 'no_strict_requirement'
-  form.regionStrategy = profile.regionStrategy || 'no_strict_requirement'
+  form.riskPreference = normalizeRisk(profile.riskPreference) || 'balanced'
+  form.schoolTierPreference = normalizeTier(profile.schoolTierPreference) || 'no_strict_requirement'
+  form.regionStrategy = normalizeRegion(profile.regionStrategy) || 'no_strict_requirement'
   editing.value = true
 }
 
