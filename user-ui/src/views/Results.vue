@@ -2,8 +2,8 @@
   <div class="prototype-page">
     <AppHeader :current-page="currentHeader" />
 
-    <main class="result-layout">
-      <aside class="filter-sidebar">
+    <main class="result-layout" :class="{ 'result-layout--compare': activeTab === 'compare' }">
+      <aside class="filter-sidebar" :class="{ 'shortlist-sidebar': activeTab === 'compare' }">
         <div class="sidebar-title">
           <strong>筛选条件</strong>
           <button type="button" @click="resetFilters">清空</button>
@@ -1207,6 +1207,10 @@ if (activeTab.value === 'compare') {
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr);
   gap: 24px;
+}
+
+.result-layout--compare {
+  grid-template-columns: 300px minmax(0, 1fr);
 }
 
 .filter-sidebar {
