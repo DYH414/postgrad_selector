@@ -83,7 +83,8 @@
               <div class="shortlist-actions">
                 <el-button
                   size="mini"
-                  :type="isInCompare(item.programId) ? 'success' : 'primary'"
+                  :type="isInCompare(item.programId) ? 'primary' : 'primary'"
+                  :plain="isInCompare(item.programId)"
                   :disabled="!isInCompare(item.programId) && compareSchools.length >= 8"
                   @click="isInCompare(item.programId) ? removeBackupFromCompare(item.programId) : addBackupToCompare(item)">
                   {{ isInCompare(item.programId) ? '已加入' : '加入对比' }}
