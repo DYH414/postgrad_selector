@@ -141,7 +141,7 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
         // 学校层次
         String tl = f.getSchoolTier();
         int base = "985".equals(tl) ? 25 : ("211".equals(tl) || "双一流".equals(tl)) ? 18 : 10;
-        if ("must_211_or_better".equals(schoolTierPref) || "prefer_211_or_better".equals(schoolTierPref)) {
+        if ("tier_priority".equals(schoolTierPref) || "must_211_or_better".equals(schoolTierPref) || "prefer_211_or_better".equals(schoolTierPref)) {
             base = "985".equals(tl) ? 30 : ("211".equals(tl) || "双一流".equals(tl)) ? 22 : 5;
         }
         score += base;

@@ -243,7 +243,8 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
         String tierLabel = f.getSchoolTier();
         int baseTier = "985".equals(tierLabel) ? 25
             : ("211".equals(tierLabel) || "双一流".equals(tierLabel)) ? 18 : 10;
-        if ("must_211_or_better".equals(schoolTierPreference)
+        if ("tier_priority".equals(schoolTierPreference)
+            || "must_211_or_better".equals(schoolTierPreference)
             || "prefer_211_or_better".equals(schoolTierPreference)) {
             baseTier = "985".equals(tierLabel) ? 30 : ("211".equals(tierLabel) || "双一流".equals(tierLabel)) ? 22 : 5;
         }
