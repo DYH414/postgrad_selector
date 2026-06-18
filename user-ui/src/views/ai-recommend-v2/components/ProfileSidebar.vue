@@ -32,7 +32,7 @@
           <dd class="dd-ellipsis" :title="targetRegionsLabel">{{ targetRegionsLabel }}</dd>
         </div>
         <div class="kv">
-          <dt>策略</dt>
+          <dt>安全</dt>
           <dd>{{ riskLabel(profile.riskPreference) }}</dd>
         </div>
         <div class="kv">
@@ -92,17 +92,24 @@ function tierLabel(v) {
 }
 
 function riskLabel(v) {
-  const map = { safe_first: '稳妥优先', reach_first: '冲刺优先', balanced: '均衡' }
-  return map[v] || '均衡'
+  const map = {
+    safe_first: '稳妥优先',
+    balanced: '适度冲刺',
+    reach_first: '接受压线',
+    conservative: '稳妥优先',
+    aggressive: '接受压线'
+  }
+  return map[v] || '适度冲刺'
 }
 
 function schoolTierLabel(v) {
   const map = {
-    must_211_or_better: '必须 211+',
-    prefer_211_or_better: '优先 211+',
-    no_strict_requirement: '不限制'
+    tier_priority: '学校层次优先',
+    must_211_or_better: '学校层次优先',
+    prefer_211_or_better: '211/双一流优先',
+    no_strict_requirement: '层次不限制'
   }
-  return map[v] || '不限制'
+  return map[v] || '层次不限制'
 }
 </script>
 
