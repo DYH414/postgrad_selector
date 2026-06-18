@@ -15,9 +15,11 @@ import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
+import com.ruoyi.postgrad.recommend.domain.DraftReplacementRequest;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
+import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.service.IDraftMutationService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 
@@ -42,6 +44,9 @@ public class V2DraftActionTools {
 
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    private RecommendationMapper recommendationMapper;
 
     @Tool("Remove one school from the current report draft. Returns refill info: auto-refill may add a replacement, confirm-refill returns candidates for the user to choose from.")
     public String removeDraftCandidate(long programId) {
@@ -258,6 +263,28 @@ public class V2DraftActionTools {
         return json;
     }
 
+    @Tool("Batch replace multiple schools in the draft. Each entry maps a removeProgramId (must be in draft) to an addProgramId (must be in workspace or searchable in DB). At least one success triggers draftChanged refresh. Returns per-item ok/error details. Use when user says 'replace all / execute the plan / replace together' with explicit programId mappings.")
+    public String batchReplaceDraftCandidates(java.util.List<DraftReplacementRequest> replacements) {
+        V2ChatToolContext.Context ctx = V2ChatToolContext.current();
+        if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
+        if (replacements == null || replacements.isEmpty()) return error("empty_replacements", "replacements is empty.");
+
+        CandidateWorkspaceVO workspace = loadWorkspace(ctx.userId());
+        java.util.Map<String, Object> result = draftMutationService.batchReplace(
+            ctx.userId(), replacements, workspace,
+            pid -> buildCandidateFromDb(pid, ctx.userId())
+        );
+
+        if (Boolean.TRUE.equals(result.get("ok"))) {
+            V2ChatToolContext.markWriteExecuted(com.alibaba.fastjson2.JSON.toJSONString(result));
+        }
+
+        log.info("[DraftTool] batchReplace userId={} requested={} replaced={} failed={}",
+            ctx.userId(), result.get("requested"), result.get("replaced"), result.get("failed"));
+        return com.alibaba.fastjson2.JSON.toJSONString(result);
+    }
+
     void setDraftServiceForTest(IDraftService draftService) {
         this.draftService = draftService;
     }
@@ -365,6 +392,47 @@ public class V2DraftActionTools {
             return candidate;
         } catch (Exception e) {
             log.warn("[DraftTool] buildCandidateFromDb failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** 从 DB 构建 CandidateCardVO（batchReplace 回退路径，使用注入依赖） */
+    private CandidateCardVO buildCandidateFromDb(long programId, Long userId) {
+        try {
+            RowMap row = recommendationMapper.selectProgramForRecommendation(programId);
+            if (row == null) return null;
+
+            SchoolFact fact = SchoolFact.fromRow(row);
+
+            int estimatedScore = 300;
+            try {
+                String draftJson = redisTemplate.opsForValue()
+                    .get("ai:v2:draft:" + userId);
+                if (draftJson != null && !draftJson.isBlank()) {
+                    DraftVO draft = JSON.parseObject(draftJson, DraftVO.class);
+                    if (draft.getProfileBasis() != null
+                        && draft.getProfileBasis().getEstimatedScore() != null) {
+                        estimatedScore = draft.getProfileBasis().getEstimatedScore();
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            Integer avg = fact.getAvgAdmittedScore();
+            int gap = avg != null ? estimatedScore - avg : 0;
+            fact.setScoreGap(gap);
+            fact.setGapLabel(gap >= 0 ? "+" + gap : String.valueOf(gap));
+
+            int quota = fact.getUnifiedExamQuota() != null ? fact.getUnifiedExamQuota()
+                : (fact.getPlanCount() != null ? fact.getPlanCount() : 0);
+            fact.setCanBeSafe(SchoolFact.canBeSafe(quota, fact.getDataCompleteness(),
+                fact.getAdmissionLow(), fact.getAdmissionHigh()));
+
+            CandidateCardVO candidate = new CandidateCardVO();
+            candidate.setFact(fact);
+            candidate.setStatus("selected");
+            return candidate;
+        } catch (Exception e) {
+            log.warn("[DraftTool] buildCandidateFromDb(pid, userId) failed: {}", e.getMessage());
             return null;
         }
     }

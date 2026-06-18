@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.recommend.tool;
 
 import java.util.List;
 
+import com.ruoyi.postgrad.recommend.domain.DraftReplacementRequest;
 import dev.langchain4j.agent.tool.Tool;
 
 /**
@@ -45,5 +46,10 @@ public class V2BoundDraftActionTools {
     @Tool("Remove multiple schools from the draft at once. programIds must come from the draft context. Each removal triggers refill.")
     public String batchRemoveDraftCandidates(List<Long> programIds) {
         return V2ChatToolContext.callWith(context, () -> delegate.batchRemoveDraftCandidates(programIds));
+    }
+
+    @Tool("Batch replace multiple schools in the draft. Each entry maps a removeProgramId (must be in draft) to an addProgramId (must be in workspace or searchable in DB). At least one success triggers draftChanged refresh. Returns per-item ok/error details.")
+    public String batchReplaceDraftCandidates(List<DraftReplacementRequest> replacements) {
+        return V2ChatToolContext.callWith(context, () -> delegate.batchReplaceDraftCandidates(replacements));
     }
 }
