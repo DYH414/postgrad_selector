@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -27,6 +28,7 @@ import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
+import com.ruoyi.postgrad.recommend.domain.DraftReplacementRequest;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
@@ -212,6 +214,107 @@ class V2DraftActionToolsTest {
         assertTrue(context.draftChanged());
         assertEquals(json, context.lastActionResultJson());
         verify(mutationService).removeCandidate(eq(1L), eq(1764L), any());
+    }
+
+    @Test
+    void batchReplaceDelegatesAndMarksWriteWhenAnyItemSucceeds() {
+        IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(ops);
+
+        // Workspace exists in Redis
+        CandidateWorkspaceVO workspace = new CandidateWorkspaceVO();
+        workspace.setWorkspaceId("ws-1");
+        workspace.setUserId(1L);
+        WorkspaceTierVO wsTier = new WorkspaceTierVO();
+        wsTier.setLevel("steady");
+        wsTier.setCandidates(new ArrayList<>());
+        workspace.setTiers(List.of(wsTier));
+        when(ops.get("ai:v2:workspace:1")).thenReturn(JSON.toJSONString(workspace));
+
+        V2DraftActionTools tools = new V2DraftActionTools();
+        tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
+        try {
+            var f = V2DraftActionTools.class.getDeclaredField("redisTemplate");
+            f.setAccessible(true);
+            f.set(tools, redis);
+        } catch (Exception e) { throw new RuntimeException(e); }
+
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        V2ChatToolContext.init(1L, redis, mapper);
+
+        // Mock batchReplace returns ok=true
+        Map<String, Object> serviceResult = new LinkedHashMap<>();
+        serviceResult.put("ok", true);
+        serviceResult.put("action", "batch_replace");
+        serviceResult.put("requested", 2);
+        serviceResult.put("replaced", 2);
+        serviceResult.put("failed", 0);
+        serviceResult.put("draftCount", 3);
+        when(mutationService.batchReplace(eq(1L), any(), any(), any())).thenReturn(serviceResult);
+
+        DraftReplacementRequest req = new DraftReplacementRequest();
+        req.setRemoveProgramId(1001L);
+        req.setAddProgramId(2001L);
+
+        String json = tools.batchReplaceDraftCandidates(List.of(req));
+        Map<String, Object> result = JSON.parseObject(json, Map.class);
+
+        assertEquals(true, result.get("ok"));
+        assertEquals("batch_replace", result.get("action"));
+        assertTrue(V2ChatToolContext.writeExecuted());
+        assertEquals(json, V2ChatToolContext.lastActionResultJson());
+    }
+
+    @Test
+    void batchReplaceRejectsEmptyInput() {
+        IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+
+        V2DraftActionTools tools = new V2DraftActionTools();
+        tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
+
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        V2ChatToolContext.init(1L, redis, mapper);
+
+        String json = tools.batchReplaceDraftCandidates(List.of());
+        Map<String, Object> result = JSON.parseObject(json, Map.class);
+
+        assertEquals(false, result.get("ok"));
+        assertEquals("empty_replacements", result.get("error"));
+        assertFalse(V2ChatToolContext.writeExecuted());
+    }
+
+    @Test
+    void batchReplaceRejectsSecondWriteInSameTurn() {
+        IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+
+        V2DraftActionTools tools = new V2DraftActionTools();
+        tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
+
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        V2ChatToolContext.init(1L, redis, mapper);
+        V2ChatToolContext.markWriteExecuted("{\"ok\":true}");
+
+        DraftReplacementRequest req = new DraftReplacementRequest();
+        req.setRemoveProgramId(1001L);
+        req.setAddProgramId(2001L);
+
+        String json = tools.batchReplaceDraftCandidates(List.of(req));
+        Map<String, Object> result = JSON.parseObject(json, Map.class);
+
+        assertEquals(false, result.get("ok"));
+        assertEquals("write_already_executed", result.get("error"));
+        verify(mutationService, never()).batchReplace(anyLong(), any(), any(), any());
     }
 
     private DraftVO draftWithCandidate(Long programId, String schoolName) {
