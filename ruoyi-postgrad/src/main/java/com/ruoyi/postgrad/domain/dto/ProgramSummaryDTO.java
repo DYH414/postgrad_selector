@@ -28,6 +28,10 @@ public class ProgramSummaryDTO implements Serializable {
 
     // ── 学校信息 ──
     private String schoolName;
+    private String schoolTier;
+    private Boolean is985;
+    private Boolean is211;
+    private Boolean isDoubleFirst;
     private String province;
     private String city;
     private Boolean officialVerified;
@@ -89,6 +93,10 @@ public class ProgramSummaryDTO implements Serializable {
         d.programId = toLong(row.get("programId"));
         d.schoolId = toLong(row.get("schoolId"));
         d.schoolName = str(row.get("schoolName"));
+        d.schoolTier = str(row.get("schoolTier"));
+        d.is985 = bool(row.get("is985"), false);
+        d.is211 = bool(row.get("is211"), false);
+        d.isDoubleFirst = bool(row.get("isDoubleFirst"), false);
         d.province = str(row.get("province"));
         d.city = str(row.get("city"));
         d.officialVerified = bool(row.get("officialVerified"), false);
@@ -227,6 +235,14 @@ public class ProgramSummaryDTO implements Serializable {
     public void setSchoolId(Long v) { this.schoolId = v; }
     public String getSchoolName() { return schoolName; }
     public void setSchoolName(String v) { this.schoolName = v; }
+    public String getSchoolTier() { return schoolTier; }
+    public void setSchoolTier(String v) { this.schoolTier = v; }
+    public Boolean getIs985() { return is985; }
+    public void setIs985(Boolean v) { this.is985 = v; }
+    public Boolean getIs211() { return is211; }
+    public void setIs211(Boolean v) { this.is211 = v; }
+    public Boolean getIsDoubleFirst() { return isDoubleFirst; }
+    public void setIsDoubleFirst(Boolean v) { this.isDoubleFirst = v; }
     public String getProvince() { return province; }
     public void setProvince(String v) { this.province = v; }
     public String getCity() { return city; }

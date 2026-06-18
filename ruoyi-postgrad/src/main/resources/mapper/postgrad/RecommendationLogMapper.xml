@@ -21,14 +21,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from recommendation_log
     </sql>
 
-    <select id="selectLogListByUserId" parameterType="Long" resultType="com.ruoyi.postgrad.domain.RowMap">
-        select id, rule_version, data_version, is_paid, created_at
-        from recommendation_log
-        where user_id = #{userId}
-        order by created_at desc
-        limit 50
-    </select>
-
     <select id="selectLogByIdAndUserId" resultType="com.ruoyi.postgrad.domain.RowMap">
         select * from recommendation_log
         where id = #{id} and user_id = #{userId}

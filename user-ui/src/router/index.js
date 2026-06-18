@@ -67,18 +67,6 @@ const routes = [
     meta: { title: '我的收藏' }
   },
   {
-    path: '/history',
-    name: 'History',
-    component: () => import('@/views/History.vue'),
-    meta: { title: '推荐历史' }
-  },
-  {
-    path: '/history/:id',
-    name: 'HistoryDetail',
-    component: () => import('@/views/HistoryDetail.vue'),
-    meta: { title: '推荐详情' }
-  },
-  {
     path: '/:pathMatch(.*)*',
     redirect: '/'
   }

@@ -69,23 +69,20 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         List<ProgramSummaryDTO> candidates = fetchCandidates(examCombo, regions, majorDirections, estimatedScore, scoreRange, studyMode);
         List<ProgramSummaryDTO> matchedItems = new ArrayList<>(candidates);
 
+        // 数据层过滤 + Java 侧排序（原 SQL ORDER BY 开销过大，迁移到应用层）
         if (scoreRange != null)
         {
             matchedItems = matchedItems.stream()
                 .filter(item -> matchesAverageDive(item, scoreRange))
                 .collect(Collectors.toList());
-            matchedItems.sort(averageDiveRiskComparator(scoreRange));
         }
-        else
+        else if (!includeIncompleteData)
         {
-            if (!includeIncompleteData)
-            {
-                matchedItems = matchedItems.stream()
-                    .filter(item -> !"insufficient_data".equals(item.getFitLevel()))
-                    .collect(Collectors.toList());
-            }
-            matchedItems.sort(averageGapComparator());
+            matchedItems = matchedItems.stream()
+                .filter(item -> !"insufficient_data".equals(item.getFitLevel()))
+                .collect(Collectors.toList());
         }
+        matchedItems.sort(candidateComparator(scoreRange));
 
         Map<String, Object> requestSnapshot = new LinkedHashMap<>();
         requestSnapshot.put("estimatedScore", estimatedScore);
@@ -208,28 +205,38 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         return item.getAvgScoreGap() != null && item.getAvgScoreGap() >= -scoreRange;
     }
 
-    private Comparator<ProgramSummaryDTO> averageDiveRiskComparator(int scoreRange)
+    /**
+     * 统一排序：数据完整度优先 → 分差 → 学校名。
+     * <p>原 SQL ORDER BY 迁移到 Java，避免数据库全表排序。</p>
+     */
+    private Comparator<ProgramSummaryDTO> candidateComparator(Integer scoreRange)
     {
         return (a, b) -> {
+            // 1. 数据完整度 A > B > C，无数据排最后
+            int qa = qualityRank(a.getDataCompleteness());
+            int qb = qualityRank(b.getDataCompleteness());
+            if (qa != qb) return Integer.compare(qa, qb);
+
+            // 2. 均分差距绝对值升序（有 scoreRange 时按偏离程度排）
             int gapA = a.getAvgScoreGap() != null ? a.getAvgScoreGap() : 999;
             int gapB = b.getAvgScoreGap() != null ? b.getAvgScoreGap() : 999;
-            int dA = Math.abs(gapA + scoreRange), dB = Math.abs(gapB + scoreRange);
-            if (dA != dB) return Integer.compare(dA, dB);
+            int scoreA = scoreRange != null ? Math.abs(gapA + scoreRange) : gapA;
+            int scoreB = scoreRange != null ? Math.abs(gapB + scoreRange) : gapB;
+            if (scoreA != scoreB) return Integer.compare(scoreA, scoreB);
+
+            // 3. 均分降序（同差距时高分优先）
             int avgA = a.getAvgAdmittedScore() != null ? a.getAvgAdmittedScore() : 0;
             int avgB = b.getAvgAdmittedScore() != null ? b.getAvgAdmittedScore() : 0;
             if (avgA != avgB) return Integer.compare(avgB, avgA);
+
             return Objects.compare(a.getSchoolName(), b.getSchoolName(), String::compareTo);
         };
     }
 
-    private Comparator<ProgramSummaryDTO> averageGapComparator()
-    {
-        return (a, b) -> {
-            int gapA = a.getAvgScoreGap() != null ? a.getAvgScoreGap() : 999;
-            int gapB = b.getAvgScoreGap() != null ? b.getAvgScoreGap() : 999;
-            if (gapA != gapB) return Integer.compare(gapA, gapB);
-            return Objects.compare(a.getSchoolName(), b.getSchoolName(), String::compareTo);
-        };
+    private static int qualityRank(String level) {
+        if ("A".equalsIgnoreCase(level)) return 0;
+        if ("B".equalsIgnoreCase(level)) return 1;
+        return 2; // C or null
     }
 
     // ── persistence ──

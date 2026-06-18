@@ -230,7 +230,7 @@
                 <div class="card-top">
                   <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
                   <div>
-                    <h3>{{ school.schoolName }} <small>{{ school.badge }}</small></h3>
+                    <h3>{{ school.schoolName }} <small v-if="school.badge">{{ school.badge }}</small></h3>
                     <p>
                       <span :class="{ 'pending-field': isPendingCollege(school.collegeName) }">{{ displayCollegeName(school.collegeName) }}</span>
                       / {{ school.programName }}
@@ -692,7 +692,19 @@ function schoolBadge(item) {
   if (item.is985) badges.push('985')
   if (item.is211) badges.push('211')
   if (item.isDoubleFirst) badges.push('双一流')
+  if (!badges.length && item.schoolTier) badges.push(tierBadgeText(item.schoolTier))
   return badges.join(' ')
+}
+
+function tierBadgeText(value) {
+  const normalized = String(value || '').trim()
+  const map = {
+    '985': '985',
+    '211': '211',
+    'DOUBLE_FIRST': '双一流',
+    'double_first': '双一流'
+  }
+  return map[normalized] || ''
 }
 
 function isPendingCollege(name) {

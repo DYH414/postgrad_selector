@@ -7,7 +7,6 @@ import com.ruoyi.postgrad.domain.RowMap;
 
 public interface RecommendationLogMapper
 {
-    List<RowMap> selectLogListByUserId(@Param("userId") Long userId);
     RowMap selectLogByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
     int insertRecommendationLog(RecommendationLog log);
 

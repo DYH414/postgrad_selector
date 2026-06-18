@@ -97,18 +97,6 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             and ar.avg_admitted_score is not null
             and #{estimatedScore} &gt;= cast(ar.avg_admitted_score as signed) - #{scoreRange}
         </if>
-        order by
-            case when sc.score_line is null then 1 else 0 end asc,
-            case when ar.min_admitted_score is null then 1 else 0 end asc,
-            case <include refid="DynamicDataCompleteness"/> when 'A' then 0 when 'B' then 1 else 2 end asc,
-            case
-                when #{scoreRange} is not null and ar.avg_admitted_score is not null
-                    then abs(cast(ar.avg_admitted_score as signed) - #{estimatedScore})
-                when ar.min_admitted_score is not null
-                    then abs(cast(ar.min_admitted_score as signed) - #{estimatedScore})
-                else 999
-            end asc,
-            s.tier asc
         limit 300
     </select>
 
