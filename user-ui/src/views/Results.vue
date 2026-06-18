@@ -1076,6 +1076,64 @@ function addBackupToCompare(item) {
   activeCompareTab.value = 'compare'
 }
 
+function removeBackupFromCompare(programId) {
+  const id = Number(programId)
+  if (!id) return
+  // Remove from localStorage
+  const stored = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]')
+  const next = stored.filter(pid => Number(pid) !== id)
+  localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(next))
+  // Remove from URL query if present
+  if (route.query.programIds) {
+    const qIds = String(route.query.programIds).split(',').map(Number).filter(Boolean)
+    const filtered = qIds.filter(pid => pid !== id)
+    const query = { ...route.query }
+    if (filtered.length) {
+      query.programIds = filtered.join(',')
+    } else {
+      delete query.programIds
+    }
+    router.replace({ query }).catch(() => {})
+  }
+  loadCompare()
+  ElMessage.success('已从对比中移除')
+}
+
+function removeBackupItem(item) {
+  const programId = Number(item.programId)
+  if (!programId) return
+  // Prevent double-click
+  if (favoriteLoadingIds.value.includes(`program:${programId}`)) return
+  favoriteLoadingIds.value.push(`program:${programId}`)
+
+  removeFavorite(programId).then(() => {
+    // Remove from favorite IDs
+    favoriteProgramIds.value = favoriteProgramIds.value.filter(id => id !== `program:${programId}`)
+    // Remove from compare localStorage
+    const stored = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]')
+    const next = stored.filter(pid => Number(pid) !== programId)
+    localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(next))
+    // Remove from URL query if present
+    if (route.query.programIds) {
+      const qIds = String(route.query.programIds).split(',').map(Number).filter(Boolean)
+      const filtered = qIds.filter(pid => pid !== programId)
+      const query = { ...route.query }
+      if (filtered.length) {
+        query.programIds = filtered.join(',')
+      } else {
+        delete query.programIds
+      }
+      router.replace({ query }).catch(() => {})
+    }
+    loadBackupGroups()
+    ElMessage.success('已移出备选')
+  }).catch(() => {
+    ElMessage.error('移出备选失败，请重试')
+  }).finally(() => {
+    favoriteLoadingIds.value = favoriteLoadingIds.value.filter(id => id !== `program:${programId}`)
+  })
+}
+
 function showCompareTab() {
   activeTab.value = 'compare'
   loadCompare()
