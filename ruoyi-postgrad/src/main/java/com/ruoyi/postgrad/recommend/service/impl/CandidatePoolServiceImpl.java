@@ -277,12 +277,9 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
         String priority = normalizePriority(schoolTierPreference);
 
         if ("school_tier_priority".equals(priority)) {
-            // 学校层次优先：985 加权 +14，211/双一流 +10
-            if ("985".equals(tierLabel)) {
-                score += 14;
-            } else if ("211".equals(tierLabel) || "双一流".equals(tierLabel)) {
-                score += 10;
-            }
+            // 学校层次优先：替换式计分，先减 base 再加 tier 分
+            score -= "985".equals(tierLabel) ? 25 : ("211".equals(tierLabel) || "双一流".equals(tierLabel)) ? 18 : 10;
+            score += "985".equals(tierLabel) ? 34 : ("211".equals(tierLabel) || "双一流".equals(tierLabel)) ? 26 : 6;
         } else if ("safe_admission_priority".equals(priority)) {
             // 安全上岸优先：gap 越高分越多（最多 +16），名额风险 normal +8，数据完整度 A +6
             score += Math.min(16, Math.max(0, gap));
