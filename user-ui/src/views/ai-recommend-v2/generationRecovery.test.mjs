@@ -62,7 +62,7 @@ import { isDraftGenerating, getRestoredGenerationMessage } from './generationRec
   const msg = getRestoredGenerationMessage()
   assert.strictEqual(msg.role, 'assistant')
   assert.strictEqual(msg.messageType, 'generation_status')
-  assert.ok(msg.content.includes('生成候选草稿'))
+  assert.ok(msg.content.includes('筛选学校'))
 }
 
 console.log('generationRecovery tests passed')

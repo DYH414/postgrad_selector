@@ -21,7 +21,7 @@ export function isDraftGenerating(draft) {
 export function getRestoredGenerationMessage() {
   return {
     role: 'assistant',
-    content: '我还在生成候选草稿，页面刷新不会中断任务。右侧会先保持生成中状态，等每个档位完成后自动恢复结果。',
+    content: '我正在后台继续为你筛选学校，稍等片刻就好～',
     messageType: 'generation_status',
     status: 'displayed',
     seq: -1
