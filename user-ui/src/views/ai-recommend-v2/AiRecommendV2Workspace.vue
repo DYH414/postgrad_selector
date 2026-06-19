@@ -630,6 +630,8 @@ function startDraftPolling() {
     if (pollTimer) {
       clearInterval(pollTimer)
       pollTimer = null
+      generating.value = false
+      stopProgress()
       ElMessage.warning('草稿恢复超时，请重新生成')
     }
   }, 60000)
