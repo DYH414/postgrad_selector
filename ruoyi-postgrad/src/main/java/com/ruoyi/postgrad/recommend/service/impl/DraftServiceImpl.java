@@ -119,6 +119,9 @@ public class DraftServiceImpl implements IDraftService {
             redisTemplate.delete("ai:v2:chat:msg:" + userId);
             redisTemplate.delete("ai:v2:chat:system:" + userId);
 
+            // 1.5 写入生成中占位草稿 — 防止页面刷新时展示旧草稿
+            saveDraft(userId, buildGeneratingPlaceholder());
+
             // 2. 加载用户画像
             callback.onProgress(RecommendationProgressEvent.running(
                 currentPhase, currentTitle, "正在分析用户画像...", null, null));
@@ -267,6 +270,7 @@ public class DraftServiceImpl implements IDraftService {
 
         } catch (Exception e) {
             log.error("[Draft] generateDraft failed for userId={}: {}", userId, e.getMessage(), e);
+            saveDraft(userId, buildGenerationFailedPlaceholder("草稿生成失败，请重新生成"));
             callback.onProgress(RecommendationProgressEvent.error(
                 currentPhase != null ? currentPhase : "finalize",
                 currentTitle != null ? currentTitle : "生成候选草稿",
@@ -407,6 +411,60 @@ public class DraftServiceImpl implements IDraftService {
 
     private void saveDraft(Long userId, DraftVO draft) {
         redisTemplate.opsForValue().set(draftKey(userId), JSON.toJSONString(draft), Duration.ofDays(TTL_DAYS));
+    }
+
+    /**
+     * 构建「生成中」占位草稿 — 三档全部 insufficient=true，候选列表为空。
+     * <p>前端 isIncomplete() 检测到 insufficientReason 含 "正在" 后自动启动轮询。</p>
+     */
+    private DraftVO buildGeneratingPlaceholder() {
+        DraftVO d = new DraftVO();
+        List<TierCandidates> tiers = new ArrayList<>(3);
+        tiers.add(generatingTier("reach", "冲刺档", 3));
+        tiers.add(generatingTier("steady", "稳妥档", 4));
+        tiers.add(generatingTier("safe", "保底档", 3));
+        d.setTiers(tiers);
+        d.setRemovedCandidates(Collections.emptyList());
+        d.setBlockedCandidates(Collections.emptyList());
+        d.setGeneratedAt(LocalDateTime.now());
+        return d;
+    }
+
+    private TierCandidates generatingTier(String level, String label, int targetCount) {
+        TierCandidates t = new TierCandidates();
+        t.setLevel(level);
+        t.setLabel(label);
+        t.setTargetCount(targetCount);
+        t.setCandidates(Collections.emptyList());
+        t.setInsufficient(true);
+        t.setInsufficientReason("AI 正在" + label + "挑选合适的学校...");
+        return t;
+    }
+
+    /**
+     * 构建「生成失败」占位草稿 — 不含 "正在"，前端不会误触发轮询。
+     */
+    private DraftVO buildGenerationFailedPlaceholder(String message) {
+        DraftVO d = new DraftVO();
+        List<TierCandidates> tiers = new ArrayList<>(3);
+        String[] levels = {"reach", "steady", "safe"};
+        String[] labels = {"冲刺档", "稳妥档", "保底档"};
+        int[] targets = {3, 4, 3};
+        for (int i = 0; i < 3; i++) {
+            TierCandidates t = new TierCandidates();
+            t.setLevel(levels[i]);
+            t.setLabel(labels[i]);
+            t.setTargetCount(targets[i]);
+            t.setCandidates(Collections.emptyList());
+            t.setInsufficient(true);
+            t.setInsufficientReason(message);
+            tiers.add(t);
+        }
+        d.setTiers(tiers);
+        d.setRemovedCandidates(Collections.emptyList());
+        d.setBlockedCandidates(Collections.emptyList());
+        d.setGeneratedAt(LocalDateTime.now());
+        return d;
     }
 
     /**

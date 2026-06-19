@@ -106,7 +106,7 @@ class AiChatServiceImplTest {
 
         String context = AiChatServiceImpl.buildDraftContextText(draft);
 
-        assertTrue(context.contains("湘潭大学 计算机科学与技术 【操作ID:2357】"));
+        assertTrue(context.contains("湘潭大学 计算机科学与技术 (ID 2357)"));
         assertTrue(context.contains("稳妥档（1/4）"));
     }
 
