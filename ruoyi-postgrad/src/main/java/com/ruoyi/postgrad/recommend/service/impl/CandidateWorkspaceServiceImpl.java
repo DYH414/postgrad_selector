@@ -29,12 +29,15 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
     private static final Logger log = LoggerFactory.getLogger(CandidateWorkspaceServiceImpl.class);
 
     @Override
-    public CandidateWorkspaceVO buildWorkspace(CandidateUniverseVO universe, String schoolTierPref,
-                                                String regionStrategy) {
+    public CandidateWorkspaceVO buildWorkspace(CandidateUniverseVO universe, String schoolTierPref) {
         CandidateWorkspaceVO workspace = new CandidateWorkspaceVO();
         workspace.setWorkspaceId(java.util.UUID.randomUUID().toString());
         workspace.setUserId(universe.getUserId());
         workspace.setUniverseId(universe.getUniverseId());
+
+        // 从单一偏好中推导地区策略（兼容旧值）
+        String regionStrategy = "developed_priority".equals(schoolTierPref)
+            || "developed_region_priority".equals(schoolTierPref) ? "developed_priority" : null;
 
         List<SchoolFact> all = universe.getCandidates();
         if (all == null || all.isEmpty()) {

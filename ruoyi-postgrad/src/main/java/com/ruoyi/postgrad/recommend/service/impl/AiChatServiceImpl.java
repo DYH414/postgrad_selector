@@ -347,12 +347,8 @@ public class AiChatServiceImpl implements IAiChatService {
         var p = draft.getProfileBasis();
         StringBuilder sb = new StringBuilder();
         sb.append("预估分数：").append(p.getEstimatedScore() != null ? p.getEstimatedScore() : "未知").append(" 分\n");
-        sb.append("本科层次：").append(p.getUndergradTier() != null ? p.getUndergradTier() : "未知").append("\n");
         sb.append("目标地区：").append(p.getTargetRegions() != null ? p.getTargetRegions() : "不限").append("\n");
-        sb.append("跨专业：").append(p.getIsCrossMajor() != null ? p.getIsCrossMajor() : "否").append("\n");
-        sb.append("风险偏好：").append(p.getRiskPreference() != null ? p.getRiskPreference() : "均衡").append("\n");
-        sb.append("层次偏好：").append(p.getSchoolTierPreference() != null ? p.getSchoolTierPreference() : "不限").append("\n");
-        sb.append("地区策略：").append(p.getRegionStrategy() != null ? p.getRegionStrategy() : "不限").append("\n");
+        sb.append("择校偏好：").append(p.getSchoolTierPreference() != null ? p.getSchoolTierPreference() : "安全上岸优先").append("\n");
         return sb.toString();
     }
 

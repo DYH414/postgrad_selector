@@ -17,9 +17,7 @@ public interface ICandidateWorkspaceService {
      *
      * @param universe          候选宇宙
      * @param schoolTierPref    学校层次偏好
-     * @param regionStrategy    地区策略（developed_priority 等）
      * @return 三层候选工作集
      */
-    CandidateWorkspaceVO buildWorkspace(CandidateUniverseVO universe, String schoolTierPref,
-                                         String regionStrategy);
+    CandidateWorkspaceVO buildWorkspace(CandidateUniverseVO universe, String schoolTierPref);
 }

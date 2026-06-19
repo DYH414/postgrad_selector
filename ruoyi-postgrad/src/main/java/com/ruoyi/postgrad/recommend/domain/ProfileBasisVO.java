@@ -16,20 +16,8 @@ public class ProfileBasisVO implements Serializable {
     /** 目标地区（中文展示，如 "北京、上海"） */
     private String targetRegions;
 
-    /** 本科层次（中文标签） */
-    private String undergradTier;
-
-    /** 是否跨专业 */
-    private String isCrossMajor;
-
-    /** 风险偏好标签 */
-    private String riskPreference;
-
     /** 学校层次偏好标签 */
     private String schoolTierPreference;
-
-    /** 地区策略标签 */
-    private String regionStrategy;
 
     /** 候选池范围说明 */
     private String candidateScope;
@@ -42,20 +30,8 @@ public class ProfileBasisVO implements Serializable {
     public String getTargetRegions() { return targetRegions; }
     public void setTargetRegions(String targetRegions) { this.targetRegions = targetRegions; }
 
-    public String getUndergradTier() { return undergradTier; }
-    public void setUndergradTier(String undergradTier) { this.undergradTier = undergradTier; }
-
-    public String getIsCrossMajor() { return isCrossMajor; }
-    public void setIsCrossMajor(String isCrossMajor) { this.isCrossMajor = isCrossMajor; }
-
-    public String getRiskPreference() { return riskPreference; }
-    public void setRiskPreference(String riskPreference) { this.riskPreference = riskPreference; }
-
     public String getSchoolTierPreference() { return schoolTierPreference; }
     public void setSchoolTierPreference(String schoolTierPreference) { this.schoolTierPreference = schoolTierPreference; }
-
-    public String getRegionStrategy() { return regionStrategy; }
-    public void setRegionStrategy(String regionStrategy) { this.regionStrategy = regionStrategy; }
 
     public String getCandidateScope() { return candidateScope; }
     public void setCandidateScope(String candidateScope) { this.candidateScope = candidateScope; }

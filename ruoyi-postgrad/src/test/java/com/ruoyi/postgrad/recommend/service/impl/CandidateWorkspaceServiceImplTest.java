@@ -24,7 +24,7 @@ class CandidateWorkspaceServiceImplTest {
         ));
 
         CandidateWorkspaceVO workspace = new CandidateWorkspaceServiceImpl()
-            .buildWorkspace(universe, "no_strict_requirement", "developed_priority");
+            .buildWorkspace(universe, "no_strict_requirement");
 
         assertEquals(3, workspace.totalCandidates());
         assertEquals(1, workspace.tierByLevel("reach").getCandidates().size());

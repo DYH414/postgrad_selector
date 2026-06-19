@@ -163,7 +163,7 @@ public class DraftServiceImpl implements IDraftService {
             int universeCount = universe.candidateCount();
             basis = buildProfileBasis(up, universeCount);
             CandidateWorkspaceVO workspace = workspaceService.buildWorkspace(
-                universe, schoolTierPref, up.getRegionStrategy());
+                universe, schoolTierPref);
             saveWorkspace(userId, workspace);
             callback.onProgress(RecommendationProgressEvent.success(
                 currentPhase, currentTitle, universeCount, workspace.totalCandidates(), null));
@@ -566,11 +566,7 @@ public class DraftServiceImpl implements IDraftService {
         ProfileBasisVO b = new ProfileBasisVO();
         b.setEstimatedScore(up.getEstimatedScore());
         b.setTargetRegions(up.getTargetRegions() != null ? up.getTargetRegions() : "不限");
-        b.setUndergradTier(up.getUndergradTier() != null ? up.getUndergradTier() : "双非");
-        b.setIsCrossMajor((up.getIsCrossMajor() != null && up.getIsCrossMajor() == 1) ? "是" : "否");
-        b.setRiskPreference(prefLabel(up.getRiskPreference(), "risk"));
-        b.setSchoolTierPreference(prefLabel(up.getSchoolTierPreference(), "tier"));
-        b.setRegionStrategy(prefLabel(up.getRegionStrategy(), "region"));
+        b.setSchoolTierPreference(priorityLabel(up.getSchoolTierPreference()));
         b.setCandidateScope("系统按画像自动选择最多 " + candidateCount + " 个具备录取数据的 408 项目");
         return b;
     }
@@ -641,25 +637,21 @@ public class DraftServiceImpl implements IDraftService {
         }
     }
 
-    private String prefLabel(String val, String type) {
-        if (val == null) val = "";
-        return switch (type) {
-            case "risk" -> switch (val) {
-                case "safe_first", "conservative" -> "稳妥优先";
-                case "reach_first", "aggressive" -> "接受压线";
-                default -> "适度冲刺";
-            };
-            case "tier" -> switch (val) {
-                case "tier_priority", "must_211_or_better" -> "学校层次优先";
-                case "prefer_211_or_better" -> "211/双一流优先";
-                default -> "层次不过度追求";
-            };
-            case "region" -> switch (val) {
-                case "developed_priority", "developed_balanced" -> "发达地区优先";
-                case "target_regions_only" -> "只看目标省份";
-                default -> "地区不限制";
-            };
-            default -> val;
+    private String normalizePriority(String val) {
+        if ("developed_region_priority".equals(val) || "developed_priority".equals(val) || "developed_balanced".equals(val)) {
+            return "developed_region_priority";
+        }
+        if ("school_tier_priority".equals(val) || "tier_priority".equals(val) || "must_211_or_better".equals(val) || "prefer_211_or_better".equals(val)) {
+            return "school_tier_priority";
+        }
+        return "safe_admission_priority";
+    }
+
+    private String priorityLabel(String val) {
+        return switch (normalizePriority(val)) {
+            case "developed_region_priority" -> "发达地区优先";
+            case "school_tier_priority" -> "学校层次优先";
+            default -> "安全上岸优先";
         };
     }
 
