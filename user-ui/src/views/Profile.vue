@@ -65,6 +65,13 @@
                 <el-input-number v-model="form.estimatedScore" :min="100" :max="500" />
                 <span class="field-tip">满分 500</span>
               </el-form-item>
+              <el-form-item label="考试科目">
+                <el-radio-group v-model="form.examCombo">
+                  <el-radio-button label="不限">不限</el-radio-button>
+                  <el-radio-button label="11408">11408（数一 + 英一）</el-radio-button>
+                  <el-radio-button label="22408">22408（数二 + 英二）</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
               <el-form-item label="目标省份">
                 <el-select v-model="form.targetRegions" multiple filterable placeholder="不限（默认全国）" style="width:100%">
                   <el-option v-for="p in provinces" :key="p" :label="p" :value="p" />
@@ -257,13 +264,15 @@ const reportsLoaded = ref(false)
 const profile = reactive({
   estimatedScore: null,
   targetRegions: [],
-  schoolTierPreference: 'safe_admission_priority'
+  schoolTierPreference: 'safe_admission_priority',
+  examCombo: '22408'
 })
 
 const form = reactive({
   estimatedScore: null,
   targetRegions: [],
-  schoolTierPreference: 'safe_admission_priority'
+  schoolTierPreference: 'safe_admission_priority',
+  examCombo: '22408'
 })
 
 const favorites = ref([])
@@ -287,6 +296,7 @@ const completionPercent = computed(() => {
   const fields = [
     !!profile.estimatedScore,
     !!(profile.targetRegions && profile.targetRegions.length),
+    !!profile.examCombo,
     !!profile.schoolTierPreference
   ]
   return Math.round((fields.filter(Boolean).length / fields.length) * 100)
@@ -308,7 +318,15 @@ function normalizePriority(v) {
   return 'safe_admission_priority'
 }
 
+function examComboLabel(v) {
+  if (!v || v === '不限') return '不限'
+  if (v === '11408') return '11408（数一 + 英一）'
+  if (v === '22408') return '22408（数二 + 英二）'
+  return v
+}
+
 const profileRows = computed(() => [
+  { label: '考试科目', value: examComboLabel(profile.examCombo) },
   { label: '目标地区', value: regionText.value },
   { label: '择校偏好', value: priorityLabels[normalizePriority(profile.schoolTierPreference)] || '安全上岸优先' }
 ])
@@ -341,6 +359,7 @@ function fetchProfile() {
     if (res.data && res.data.estimatedScore) {
       const p = res.data
       profile.estimatedScore = p.estimatedScore
+      profile.examCombo = p.examCombo || '22408'
       profile.targetRegions = normalizeRegions(p.targetRegions)
       profile.schoolTierPreference = normalizePriority(p.schoolTierPreference || p.regionStrategy || p.riskPreference)
     }
@@ -349,6 +368,7 @@ function fetchProfile() {
 
 function startEdit() {
   form.estimatedScore = profile.estimatedScore || null
+  form.examCombo = profile.examCombo || '22408'
   form.targetRegions = [...(profile.targetRegions || [])]
   form.schoolTierPreference = profile.schoolTierPreference || 'safe_admission_priority'
   editing.value = true
@@ -362,6 +382,7 @@ function handleSave() {
   saving.value = true
   const data = {
     estimatedScore: form.estimatedScore,
+    examCombo: form.examCombo,
     targetRegions: JSON.stringify(form.targetRegions),
     acceptPartTime: false,
     schoolTierPreference: normalizePriority(form.schoolTierPreference)
