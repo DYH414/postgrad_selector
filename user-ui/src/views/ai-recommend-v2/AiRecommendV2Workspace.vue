@@ -73,6 +73,7 @@
 import { ref, onMounted, onBeforeUnmount, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { isDraftGenerating, getRestoredGenerationMessage } from './generationRecovery.mjs'
 import {
   getDraft, startGenerateDraft, openDraftGenerationStream, removeCandidate, replaceCandidate,
   addBackCandidate, addFromWorkspace, generateReport, sendChatMessage, startChat, resumeChat
@@ -603,8 +604,7 @@ async function completeGenerationWhenRevealSettles() {
 let pollTimer = null
 
 function isIncomplete(d) {
-  if (!d || !d.tiers) return false
-  return d.tiers.some(t => t.insufficient && t.insufficientReason && t.insufficientReason.includes('正在'))
+  return isDraftGenerating(d)
 }
 
 function startDraftPolling() {
@@ -637,7 +637,18 @@ function startDraftPolling() {
 onMounted(async () => {
   await loadProfileData()
   await loadDraftData()
-  await loadChatHistory()
+  await loadChatHistory({ preserveGenerationStatus: true })
+
+  // Refresh recovery: if draft is still generating, restore UI state
+  if (isDraftGenerating(draft.value)) {
+    generating.value = true
+    applyProgress({ phase: 'restoring', message: '正在恢复草稿生成状态...' })
+    // Insert a single recovery status bubble if not already present
+    if (!chatMessages.value.some(m => m.messageType === 'generation_status')) {
+      chatMessages.value.push(getRestoredGenerationMessage())
+    }
+  }
+
   startDraftPolling()
 })
 

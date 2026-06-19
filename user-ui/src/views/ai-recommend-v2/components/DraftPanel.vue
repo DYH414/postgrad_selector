@@ -16,7 +16,13 @@
       <p>{{ progress.message || '正在准备...' }}</p>
     </div>
 
-    <!-- 空态 — 更有视觉引导 -->
+    <!-- 生成中占位 — 刷新后恢复 -->
+    <div v-else-if="draftGenerating" class="panel-loading">
+      <span class="loading-spinner" />
+      <p>{{ generatingMessage }}</p>
+    </div>
+
+    <!-- 空态 -->
     <div v-else-if="!draft || allEmpty" class="panel-empty">
       <div class="empty-illustration" aria-hidden="true">
         <span class="orb orb-1" />
@@ -132,6 +138,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import DraftCandidateCard from './DraftCandidateCard.vue'
+import { isDraftGenerating } from '../generationRecovery.mjs'
 
 const props = defineProps({
   draft: { type: Object, default: null },
@@ -161,6 +168,11 @@ const totalCount = computed(() => {
 })
 
 const allEmpty = computed(() => totalCount.value === 0)
+const draftGenerating = computed(() => isDraftGenerating(props.draft))
+const generatingMessage = computed(() => {
+  const t = props.draft?.tiers?.find(t => t.insufficient && t.insufficientReason)
+  return t?.insufficientReason || '正在生成候选草稿...'
+})
 
 const visibleTiers = computed(() => {
   const tiers = props.draft?.tiers || []
