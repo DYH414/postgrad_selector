@@ -35,10 +35,6 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
         workspace.setUserId(universe.getUserId());
         workspace.setUniverseId(universe.getUniverseId());
 
-        // 从单一偏好中推导地区策略（兼容旧值）
-        String regionStrategy = "developed_priority".equals(schoolTierPref)
-            || "developed_region_priority".equals(schoolTierPref) ? "developed_priority" : null;
-
         List<SchoolFact> all = universe.getCandidates();
         if (all == null || all.isEmpty()) {
             workspace.setTiers(buildEmptyTiers());
@@ -62,9 +58,9 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
 
         // 2. 每档按策略排序 + 多样性修剪 + 截断到 DEFAULT_TIER_LIMIT
         List<WorkspaceTierVO> tiers = new ArrayList<>(3);
-        tiers.add(buildTier("reach", "冲刺档", 3, reach, schoolTierPref, regionStrategy));
-        tiers.add(buildTier("steady", "稳妥档", 4, steady, schoolTierPref, regionStrategy));
-        tiers.add(buildTier("safe", "保底档", 3, safe, schoolTierPref, regionStrategy));
+        tiers.add(buildTier("reach", "冲刺档", 3, reach, schoolTierPref));
+        tiers.add(buildTier("steady", "稳妥档", 4, steady, schoolTierPref));
+        tiers.add(buildTier("safe", "保底档", 3, safe, schoolTierPref));
         workspace.setTiers(tiers);
 
         // 3. 元数据
@@ -86,16 +82,15 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
     }
 
     private WorkspaceTierVO buildTier(String level, String label, int draftTarget,
-                                       List<SchoolFact> facts, String schoolTierPref,
-                                       String regionStrategy) {
+                                       List<SchoolFact> facts, String schoolTierPref) {
         // 排除数据完整度为 C 的候选（数据不足，不具备推荐条件）
         List<SchoolFact> filtered = new ArrayList<>(facts.stream()
             .filter(f -> !"C".equalsIgnoreCase(f.getDataCompleteness()))
             .toList());
 
-        // 按策略得分排序（含地区策略权重）
+        // 按策略得分排序
         filtered.sort(Comparator.comparingInt(
-            (SchoolFact f) -> policyScore(f, level, schoolTierPref, regionStrategy)).reversed());
+            (SchoolFact f) -> policyScore(f, level, schoolTierPref)).reversed());
 
         // 多样性修剪：同学校只保留最高分的一个专业方向
         List<SchoolFact> diverse = diversityTrim(filtered);
@@ -131,9 +126,22 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
     );
 
     /**
-     * 策略得分：gap 适配 + 名额风险 + 学校层次 + 数据完整度 + 地区策略。
+     * 归一化择校偏好为三种标准优先级。
      */
-    private int policyScore(SchoolFact f, String tier, String schoolTierPref, String regionStrategy) {
+    private String normalizePriority(String val) {
+        if ("developed_region_priority".equals(val) || "developed_priority".equals(val) || "developed_balanced".equals(val)) {
+            return "developed_region_priority";
+        }
+        if ("school_tier_priority".equals(val) || "tier_priority".equals(val) || "must_211_or_better".equals(val) || "prefer_211_or_better".equals(val)) {
+            return "school_tier_priority";
+        }
+        return "safe_admission_priority";
+    }
+
+    /**
+     * 策略得分：gap 适配 + 名额风险 + 学校层次 + 数据完整度 + 偏好加权。
+     */
+    private int policyScore(SchoolFact f, String tier, String schoolTierPref) {
         int score = 0;
         // 数据完整度：A=30, B=20, 其他=10
         String comp = f.getDataCompleteness();
@@ -141,19 +149,31 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
         // 名额风险：normal=30, medium=20, 其他=10
         String risk = f.getQuotaRisk();
         score += "normal".equals(risk) ? 30 : "medium".equals(risk) ? 20 : 10;
-        // 学校层次
+        // 学校层次基础分：985=25, 211/双一流=18, 其他=10
         String tl = f.getSchoolTier();
-        int base = "985".equals(tl) ? 25 : ("211".equals(tl) || "双一流".equals(tl)) ? 18 : 10;
-        if ("tier_priority".equals(schoolTierPref) || "must_211_or_better".equals(schoolTierPref) || "prefer_211_or_better".equals(schoolTierPref)) {
-            base = "985".equals(tl) ? 30 : ("211".equals(tl) || "双一流".equals(tl)) ? 22 : 5;
-        }
-        score += base;
+        score += "985".equals(tl) ? 25 : ("211".equals(tl) || "双一流".equals(tl)) ? 18 : 10;
         // gap 适配度
         int gap = f.getScoreGap() != null ? f.getScoreGap() : 0;
         int ideal = switch (tier) { case "reach" -> 0; case "safe" -> 20; default -> 10; };
         score += Math.max(0, 15 - Math.abs(gap - ideal));
-        // 地区策略：developed_priority 时发达地区 +10 分
-        if ("developed_priority".equals(regionStrategy)) {
+
+        // ── 偏好加权 ──
+        String priority = normalizePriority(schoolTierPref);
+
+        if ("school_tier_priority".equals(priority)) {
+            // 学校层次优先：985 +14，211/双一流 +10
+            if ("985".equals(tl)) {
+                score += 14;
+            } else if ("211".equals(tl) || "双一流".equals(tl)) {
+                score += 10;
+            }
+        } else if ("safe_admission_priority".equals(priority)) {
+            // 安全上岸优先：gap 越高分越多（最多 +16），名额风险 normal +8，数据完整度 A +6
+            score += Math.min(16, Math.max(0, gap));
+            if ("normal".equals(f.getQuotaRisk())) score += 8;
+            if ("A".equals(f.getDataCompleteness())) score += 6;
+        } else if ("developed_region_priority".equals(priority)) {
+            // 发达地区优先：城市在发达列表内 +10
             String city = f.getCity();
             if (city != null && DEVELOPED_CITIES.contains(city)) {
                 score += 10;

@@ -225,7 +225,27 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
     }
 
     /**
-     * 综合得分：数据完整度(30) + 名额风险(30) + 学校层次(25) + gap适配度(15)。
+     * 归一化择校偏好为三种标准优先级。
+     */
+    private String normalizePriority(String val) {
+        if ("developed_region_priority".equals(val) || "developed_priority".equals(val) || "developed_balanced".equals(val)) {
+            return "developed_region_priority";
+        }
+        if ("school_tier_priority".equals(val) || "tier_priority".equals(val) || "must_211_or_better".equals(val) || "prefer_211_or_better".equals(val)) {
+            return "school_tier_priority";
+        }
+        return "safe_admission_priority";
+    }
+
+    /** 发达地区城市列表 */
+    private static final java.util.Set<String> DEVELOPED_CITIES = java.util.Set.of(
+        "北京", "上海", "广州", "深圳", "杭州", "南京", "苏州", "武汉", "成都",
+        "重庆", "天津", "西安", "长沙", "青岛", "宁波", "东莞", "佛山", "无锡",
+        "合肥", "郑州", "厦门", "福州", "济南", "大连", "珠海"
+    );
+
+    /**
+     * 综合得分：数据完整度(30) + 名额风险(30) + 学校层次(25) + gap适配度(15) + 偏好加权。
      * <p>不同档位对 gap 的"理想值"不同：reach 理想 gap=0，steady 理想 gap=10，safe 理想 gap=20。</p>
      */
     private int compositeScore(SchoolFact f, String tier, String schoolTierPreference) {
@@ -239,16 +259,10 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
         String risk = f.getQuotaRisk();
         score += "normal".equals(risk) ? 30 : "medium".equals(risk) ? 20 : 10;
 
-        // 学校层次：985=25, 211/双一流=18, 其他=10（如偏好高则 985 加权）
+        // 学校层次基础分：985=25, 211/双一流=18, 其他=10
         String tierLabel = f.getSchoolTier();
-        int baseTier = "985".equals(tierLabel) ? 25
+        score += "985".equals(tierLabel) ? 25
             : ("211".equals(tierLabel) || "双一流".equals(tierLabel)) ? 18 : 10;
-        if ("tier_priority".equals(schoolTierPreference)
-            || "must_211_or_better".equals(schoolTierPreference)
-            || "prefer_211_or_better".equals(schoolTierPreference)) {
-            baseTier = "985".equals(tierLabel) ? 30 : ("211".equals(tierLabel) || "双一流".equals(tierLabel)) ? 22 : 5;
-        }
-        score += baseTier;
 
         // gap 适配度：接近该档理想值的位置加分
         int gap = f.getScoreGap() != null ? f.getScoreGap() : 0;
@@ -258,6 +272,29 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
             default -> 10; // steady
         };
         score += Math.max(0, 15 - Math.abs(gap - idealGap));
+
+        // ── 偏好加权 ──
+        String priority = normalizePriority(schoolTierPreference);
+
+        if ("school_tier_priority".equals(priority)) {
+            // 学校层次优先：985 加权 +14，211/双一流 +10
+            if ("985".equals(tierLabel)) {
+                score += 14;
+            } else if ("211".equals(tierLabel) || "双一流".equals(tierLabel)) {
+                score += 10;
+            }
+        } else if ("safe_admission_priority".equals(priority)) {
+            // 安全上岸优先：gap 越高分越多（最多 +16），名额风险 normal +8，数据完整度 A +6
+            score += Math.min(16, Math.max(0, gap));
+            if ("normal".equals(f.getQuotaRisk())) score += 8;
+            if ("A".equals(f.getDataCompleteness())) score += 6;
+        } else if ("developed_region_priority".equals(priority)) {
+            // 发达地区优先：城市在发达列表内 +10
+            String city = f.getCity();
+            if (city != null && DEVELOPED_CITIES.contains(city)) {
+                score += 10;
+            }
+        }
 
         return score;
     }
