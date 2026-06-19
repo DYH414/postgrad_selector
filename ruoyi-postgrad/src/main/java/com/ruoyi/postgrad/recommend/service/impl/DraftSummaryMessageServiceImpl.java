@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.service.impl;
 
+import org.springframework.stereotype.Service;
+
 import java.util.List;
 
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
@@ -8,6 +10,7 @@ import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.IDraftSummaryMessageService;
 
+@Service
 public class DraftSummaryMessageServiceImpl implements IDraftSummaryMessageService {
 
     @Override
