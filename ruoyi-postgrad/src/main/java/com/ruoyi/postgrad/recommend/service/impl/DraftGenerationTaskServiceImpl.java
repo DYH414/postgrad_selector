@@ -10,28 +10,42 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.mapper.AiChatMapper;
+import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
+import com.ruoyi.postgrad.recommend.domain.AiChatMessage;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskState;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskVO;
 import com.ruoyi.postgrad.recommend.domain.RecommendationProgressEvent;
 import com.ruoyi.postgrad.recommend.service.DraftGenerationCallback;
 import com.ruoyi.postgrad.recommend.service.IDraftGenerationTaskService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
+import com.ruoyi.postgrad.recommend.service.IDraftSummaryMessageService;
 
 @Service
 public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskService {
     static final String TASK_KEY_PREFIX = "ai:v2:draft:task:";
     private static final Duration TASK_TTL = Duration.ofMinutes(60);
 
+    private static final Logger log = LoggerFactory.getLogger(DraftGenerationTaskServiceImpl.class);
+
     @Autowired
     private StringRedisTemplate redisTemplate;
 
     @Autowired
     private IDraftService draftService;
+
+    @Autowired
+    private IDraftSummaryMessageService summaryMessageService;
+
+    @Autowired
+    private AiChatMapper aiChatMapper;
 
     @Override
     public DraftGenerationTaskVO start(Long userId) {
@@ -148,6 +162,12 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
                 state.setDraftJson(JSON.toJSONString(draft));
                 state.setProfileBasisJson(JSON.toJSONString(profileBasis));
                 state.setRemovedCount(removedCount);
+                // Generate and persist completion summary
+                String summary = summaryMessageService.generateSummary(draft);
+                if (summary != null) {
+                    state.setSummaryMessage(summary);
+                    saveSummaryAsChatMessage(userId, summary);
+                }
                 state.setUpdatedAt(System.currentTimeMillis());
                 save(state);
             }
@@ -183,6 +203,32 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
         }
         events.add(payload);
         state.setStreamEventsJson(JSON.toJSONString(events));
+    }
+
+    private void saveSummaryAsChatMessage(Long userId, String summary) {
+        try {
+            AiChatConversation conv = aiChatMapper.selectActiveConversation(userId);
+            if (conv == null) {
+                conv = new AiChatConversation();
+                conv.setUserId(userId);
+                conv.setStatus("active");
+                aiChatMapper.insertConversation(conv);
+            }
+            int nextSeq = aiChatMapper.selectNextSeq(conv.getId());
+            AiChatMessage msg = new AiChatMessage();
+            msg.setConversationId(conv.getId());
+            msg.setUserId(userId);
+            msg.setRole("assistant");
+            msg.setContent(summary);
+            msg.setDisplayContent(summary);
+            msg.setMessageType("draft_summary");
+            msg.setStatus("completed");
+            msg.setSeq(nextSeq);
+            aiChatMapper.insertMessage(msg);
+            aiChatMapper.touchConversation(conv.getId());
+        } catch (Exception e) {
+            log.error("[Summary] Failed to save summary as chat message: {}", e.getMessage());
+        }
     }
 
     private static String key(String taskId) {
