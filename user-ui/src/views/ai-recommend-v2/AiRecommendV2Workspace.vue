@@ -386,6 +386,19 @@ async function handleGenerate() {
       applyProgress({ phase: 'finalize', message: '正在整理候选草稿...' })
       enqueueGenerationBubble(getGenerationProgressMessage({ phase: 'finalize' }))
       enqueueGenerationBubble(getGenerationDoneMessage(data.draft))
+      // Insert completion summary bubble if backend sent one
+      if (data.summaryMessage) {
+        const key = 'draft-summary:' + (data.taskId || Date.now())
+        if (!chatMessages.value.some(m => m.metadataJson?.key === key)) {
+          chatMessages.value.push({
+            role: 'assistant',
+            content: data.summaryMessage,
+            messageType: 'draft_summary',
+            status: 'completed',
+            metadataJson: { key, type: 'draft_summary' }
+          })
+        }
+      }
       closeEventSource(draftEventSource)
       await completeGenerationWhenRevealSettles()
     })

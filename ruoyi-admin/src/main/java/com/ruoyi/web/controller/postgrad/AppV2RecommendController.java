@@ -139,6 +139,9 @@ public class AppV2RecommendController {
                             payload.put("profileBasis", JSON.parseObject(state.getProfileBasisJson()));
                         }
                         payload.put("removedCount", state.getRemovedCount());
+                        if (state.getSummaryMessage() != null) {
+                            payload.put("summaryMessage", state.getSummaryMessage());
+                        }
                         safeSend(emitter, "done", payload, closed);
                         break;
                     } else if (DraftGenerationTaskState.STATUS_ERROR.equals(state.getStatus())) {
