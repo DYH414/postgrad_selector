@@ -380,7 +380,7 @@ public class AiChatServiceImpl implements IAiChatService {
                 var f = c.getFact();
                 sb.append("  - ").append(f.getSchoolName())
                     .append(" ").append(f.getProgramName())
-                    .append(" 【操作ID:").append(f.getProgramId()).append("】");
+                    .append(" (ID ").append(f.getProgramId()).append(")");
                 if (f.getAvgAdmittedScore() != null) {
                     sb.append(" 均分").append(f.getAvgAdmittedScore());
                 }
