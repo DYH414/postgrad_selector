@@ -118,11 +118,11 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
         return tier;
     }
 
-    /** 发达地区城市列表 */
+    /** 发达地区城市列表（25 个城市） */
     private static final java.util.Set<String> DEVELOPED_CITIES = java.util.Set.of(
-        "北京", "上海", "广州", "深圳", "杭州", "南京", "苏州", "武汉", "成都",
-        "重庆", "天津", "西安", "长沙", "青岛", "宁波", "东莞", "佛山", "无锡",
-        "合肥", "郑州", "厦门", "福州", "济南", "大连"
+        "北京", "上海", "深圳", "广州", "杭州", "南京", "武汉", "成都", "苏州",
+        "天津", "重庆", "西安", "长沙", "青岛", "厦门", "宁波", "无锡", "合肥",
+        "郑州", "济南", "福州", "东莞", "佛山", "珠海"
     );
 
     /**
@@ -161,22 +161,19 @@ public class CandidateWorkspaceServiceImpl implements ICandidateWorkspaceService
         String priority = normalizePriority(schoolTierPref);
 
         if ("school_tier_priority".equals(priority)) {
-            // 学校层次优先：985 +14，211/双一流 +10
-            if ("985".equals(tl)) {
-                score += 14;
-            } else if ("211".equals(tl) || "双一流".equals(tl)) {
-                score += 10;
-            }
+            // 学校层次优先：替换基础分（985=34, 211/双一流=26, 其他=6）
+            score -= "985".equals(tl) ? 25 : ("211".equals(tl) || "双一流".equals(tl)) ? 18 : 10;
+            score += "985".equals(tl) ? 34 : ("211".equals(tl) || "双一流".equals(tl)) ? 26 : 6;
         } else if ("safe_admission_priority".equals(priority)) {
             // 安全上岸优先：gap 越高分越多（最多 +16），名额风险 normal +8，数据完整度 A +6
             score += Math.min(16, Math.max(0, gap));
             if ("normal".equals(f.getQuotaRisk())) score += 8;
             if ("A".equals(f.getDataCompleteness())) score += 6;
         } else if ("developed_region_priority".equals(priority)) {
-            // 发达地区优先：城市在发达列表内 +10
+            // 发达地区优先：城市在发达列表内 +14
             String city = f.getCity();
             if (city != null && DEVELOPED_CITIES.contains(city)) {
-                score += 10;
+                score += 14;
             }
         }
         return score;

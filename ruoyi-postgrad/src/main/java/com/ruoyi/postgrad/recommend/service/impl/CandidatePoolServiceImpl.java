@@ -237,11 +237,11 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
         return "safe_admission_priority";
     }
 
-    /** 发达地区城市列表 */
+    /** 发达地区城市列表（25 个城市） */
     private static final java.util.Set<String> DEVELOPED_CITIES = java.util.Set.of(
-        "北京", "上海", "广州", "深圳", "杭州", "南京", "苏州", "武汉", "成都",
-        "重庆", "天津", "西安", "长沙", "青岛", "宁波", "东莞", "佛山", "无锡",
-        "合肥", "郑州", "厦门", "福州", "济南", "大连", "珠海"
+        "北京", "上海", "深圳", "广州", "杭州", "南京", "武汉", "成都", "苏州",
+        "天津", "重庆", "西安", "长沙", "青岛", "厦门", "宁波", "无锡", "合肥",
+        "郑州", "济南", "福州", "东莞", "佛山", "珠海"
     );
 
     /**
@@ -289,10 +289,10 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
             if ("normal".equals(f.getQuotaRisk())) score += 8;
             if ("A".equals(f.getDataCompleteness())) score += 6;
         } else if ("developed_region_priority".equals(priority)) {
-            // 发达地区优先：城市在发达列表内 +10
+            // 发达地区优先：城市在发达列表内 +14
             String city = f.getCity();
             if (city != null && DEVELOPED_CITIES.contains(city)) {
-                score += 10;
+                score += 14;
             }
         }
 
