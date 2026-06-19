@@ -25,14 +25,29 @@ const items = computed(() => {
   return [
     { key: 'estimatedScore', label: '预计分数', value: basis.estimatedScore },
     { key: 'targetRegions', label: '目标地区', value: basis.targetRegions },
-    { key: 'undergradTier', label: '本科层次', value: basis.undergradTier },
-    { key: 'isCrossMajor', label: '跨考情况', value: basis.isCrossMajor },
-    { key: 'riskPreference', label: '安全边际', value: basis.riskPreference },
-    { key: 'schoolTierPreference', label: '学校层次', value: basis.schoolTierPreference },
-    { key: 'regionStrategy', label: '地区偏好', value: basis.regionStrategy },
+    { key: 'schoolTierPreference', label: '择校偏好', value: priorityLabel(basis.schoolTierPreference) },
     { key: 'candidateScope', label: '候选范围', value: basis.candidateScope }
   ]
 })
+
+function priorityLabel(v) {
+  const map = {
+    developed_region_priority: '发达地区优先',
+    developed_priority: '发达地区优先',
+    developed_balanced: '发达地区优先',
+    school_tier_priority: '学校层次优先',
+    tier_priority: '学校层次优先',
+    must_211_or_better: '学校层次优先',
+    prefer_211_or_better: '学校层次优先',
+    safe_admission_priority: '安全上岸优先',
+    safe_first: '安全上岸优先',
+    conservative: '安全上岸优先',
+    balanced: '安全上岸优先',
+    reach_first: '安全上岸优先',
+    aggressive: '安全上岸优先'
+  }
+  return map[v] || '安全上岸优先'
+}
 
 function displayValue(value) {
   if (Array.isArray(value)) return value.length ? value.join('、') : '未填写'

@@ -69,15 +69,23 @@ const totalCount = computed(() => tiers.value.reduce((sum, tier) => {
   return sum + (Array.isArray(tier?.candidates) ? tier.candidates.length : 0)
 }, 0))
 const strategyText = computed(() => {
-  const v = props.report?.profileBasis?.riskPreference
+  const v = props.report?.profileBasis?.schoolTierPreference
   const map = {
-    safe_first: '稳妥优先',
-    conservative: '稳妥优先',
-    reach_first: '接受压线',
-    aggressive: '接受压线',
-    balanced: '适度冲刺'
+    developed_region_priority: '发达地区优先',
+    developed_priority: '发达地区优先',
+    developed_balanced: '发达地区优先',
+    school_tier_priority: '学校层次优先',
+    tier_priority: '学校层次优先',
+    must_211_or_better: '学校层次优先',
+    prefer_211_or_better: '学校层次优先',
+    safe_admission_priority: '安全上岸优先',
+    safe_first: '安全上岸优先',
+    conservative: '安全上岸优先',
+    balanced: '安全上岸优先',
+    reach_first: '安全上岸优先',
+    aggressive: '安全上岸优先'
   }
-  return map[v] || '适度冲刺'
+  return map[v] || '安全上岸优先'
 })
 </script>
 
