@@ -1,39 +1,8 @@
-<template>
+﻿<template>
   <div class="ai-workspace">
     <AppHeader current-page="ai" />
 
     <main class="ai-main">
-      <!-- Hero — single dense band, with a soft gradient blob for visual interest -->
-      <header class="page-head">
-        <div class="page-head-blob" aria-hidden="true" />
-        <div class="page-head-left">
-          <p class="t-eyebrow">
-            <span class="kicker-dot" />
-            AI · 择校工作台
-          </p>
-          <h1 class="t-display">和 AI 一起，把志愿表确定下来。</h1>
-          <p class="page-head-sub">
-            从你的画像出发，AI 先生成冲稳保候选，再用对话校准风险，最后沉淀成可交付报告。
-          </p>
-        </div>
-        <div class="page-head-right">
-          <div class="head-stat">
-            <span class="head-stat-label">候选池</span>
-            <span class="head-stat-value t-num">{{ poolCount }}<em>所</em></span>
-          </div>
-          <div class="head-stat-divider" />
-          <div class="head-stat">
-            <span class="head-stat-label">草稿</span>
-            <span class="head-stat-value t-num">{{ draftCount }}<em>/10</em></span>
-          </div>
-          <div class="head-stat-divider" />
-          <div class="head-stat">
-            <span class="head-stat-label">安全</span>
-            <span class="head-stat-pill">{{ strategyLabel }}</span>
-          </div>
-        </div>
-      </header>
-
       <!-- Body grid: rail / canvas / draft -->
       <div class="body-grid">
         <!-- Left rail -->
@@ -101,7 +70,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, shallowRef } from 'vue'
+import { ref, onMounted, onBeforeUnmount, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -165,29 +134,6 @@ let generationBubbleTimer = null
 let generationBubbleTicking = false
 
 // ── 计算属性 ──
-const poolCount = computed(() => {
-  // 使用 workspaceSummary（工作集规模），而非 draft 候选数
-  const ws = draft.value?.workspaceSummary
-  if (ws) return (ws.reach || 0) + (ws.steady || 0) + (ws.safe || 0)
-  // 回退：无 workspaceSummary 时用 draft 候选数
-  if (!draft.value?.tiers) return 0
-  return draft.value.tiers.reduce((s, t) => s + (t.candidates?.length || 0), 0)
-})
-
-const draftCount = computed(() => {
-  if (!draft.value?.tiers) return 0
-  return draft.value.tiers.reduce((s, t) => s + (t.candidates?.length || 0), 0)
-})
-
-const strategyLabel = computed(() => {
-  const p = profile.value
-  if (p?.riskPreference === 'safe_first' || p?.riskPreference === 'conservative') return '稳妥优先'
-  if (p?.riskPreference === 'reach_first' || p?.riskPreference === 'aggressive') return '接受压线'
-  return '适度冲刺'
-})
-
-// ── 方法 ──
-
 function useGenerationProgress() {
   const currentPhase = ref('')
   const currentMessage = ref('')
@@ -747,139 +693,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-/* ── Hero — 单行紧凑布局 + 装饰光斑 ── */
-.page-head {
-  flex-shrink: 0;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 32px;
-  padding: 20px 28px;
-  background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  box-shadow: 0 6px 20px rgba(36, 78, 156, 0.06);
-  overflow: hidden;
-}
-
-.page-head-blob {
-  position: absolute;
-  top: -40px;
-  left: -20px;
-  width: 280px;
-  height: 280px;
-  background: radial-gradient(circle, rgba(23, 105, 246, 0.12) 0%, transparent 70%);
-  pointer-events: none;
-  filter: blur(20px);
-}
-
-.page-head-left {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-}
-
-.kicker-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--brand);
-  margin-right: 6px;
-  vertical-align: middle;
-  box-shadow: 0 0 0 4px rgba(23, 105, 246, 0.15);
-}
-
-.t-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--brand);
-  margin: 0 0 6px;
-}
-
-.page-head-left h1 {
-  margin: 0 0 6px;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  line-height: 1.25;
-  color: var(--ink-1);
-  max-width: 580px;
-}
-
-.page-head-sub {
-  margin: 0;
-  max-width: 520px;
-  color: var(--ink-3);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-/* ── Right stats — single line, pill for strategy ── */
-.page-head-right {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  flex-shrink: 0;
-}
-
-.head-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 56px;
-}
-
-.head-stat-label {
-  font-size: 11px;
-  color: var(--ink-3);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-.head-stat-value {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--ink-1);
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-}
-
-.head-stat-value em {
-  font-size: 11px;
-  color: var(--ink-4);
-  font-style: normal;
-  font-weight: 400;
-}
-
-.head-stat-pill {
-  display: inline-flex;
-  align-items: center;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--brand);
-  background: var(--brand-soft);
-  padding: 5px 10px;
-  border-radius: 999px;
-  line-height: 1;
-}
-
-.head-stat-divider {
-  width: 1px;
-  height: 32px;
-  background: var(--line);
-  flex-shrink: 0;
-}
-
-/* ── Body grid: rail / canvas / draft — 减小侧栏增加主区 ── */
 .body-grid {
   flex: 1;
   min-height: 0;
@@ -1054,12 +867,6 @@ onBeforeUnmount(() => {
 @media (max-width: 960px) {
   .ai-workspace { height: auto; min-height: 100vh; overflow: visible; }
   .ai-main { overflow: visible; }
-  .page-head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-  .page-head-right { gap: 16px; }
   .body-grid {
     grid-template-columns: 1fr;
     height: auto;

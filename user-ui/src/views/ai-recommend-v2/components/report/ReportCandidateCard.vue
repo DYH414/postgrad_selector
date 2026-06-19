@@ -51,7 +51,10 @@
     <footer class="candidate-foot">
       <span>{{ actionText }}</span>
       <em v-if="fact.dataYear">数据年份：{{ fact.dataYear }}</em>
-      <em v-if="fact.sourceOwner || fact.sourceUrl">来源：{{ fact.sourceOwner || fact.sourceUrl }}</em>
+      <em v-if="fact.sourceOwner || fact.sourceUrl">
+        来源：<a v-if="fact.sourceUrl" :href="fact.sourceUrl" target="_blank" rel="noopener noreferrer">{{ fact.sourceOwner || '查看来源' }}</a>
+        <span v-else>{{ fact.sourceOwner }}</span>
+      </em>
     </footer>
   </article>
 </template>
@@ -246,6 +249,13 @@ h4 {
 .candidate-foot em {
   font-style: normal;
 }
+
+.candidate-foot a {
+  color: #1769f6;
+  text-decoration: none;
+}
+
+.candidate-foot a:hover { text-decoration: underline; }
 
 @media (max-width: 760px) {
   .candidate-head {

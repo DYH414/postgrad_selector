@@ -45,6 +45,16 @@
       {{ candidate.adjustReason || '已自动调整档位' }}
     </div>
 
+    <div v-if="hasSourceMeta" class="source-meta">
+      <span v-if="candidate.fact.dataYear">{{ candidate.fact.dataYear }}年数据</span>
+      <span v-if="candidate.fact.dataYear && sourceLabel" class="source-sep"> · </span>
+      <a v-if="candidate.fact.sourceUrl" :href="candidate.fact.sourceUrl" target="_blank" rel="noopener noreferrer" class="source-link">
+        来源：{{ sourceLabel }}
+      </a>
+      <span v-else-if="sourceLabel && !candidate.fact.sourceUrl">来源：{{ sourceLabel }}</span>
+      <span v-else-if="candidate.fact.dataYear && !sourceLabel">来源待补</span>
+    </div>
+
     <footer class="card-actions">
       <span v-if="candidate.fact.schoolTier" class="tier-label">{{ candidate.fact.schoolTier }}</span>
       <button type="button" class="ask-btn" @click="$emit('ask-about')">问 AI →</button>
@@ -68,6 +78,16 @@ const gapClass = computed(() => {
   if (g > 0) return 'gap--up'
   if (g < 0) return 'gap--down'
   return ''
+})
+
+const hasSourceMeta = computed(() => {
+  const f = props.candidate.fact || {}
+  return !!(f.dataYear || f.sourceUrl || f.sourceOwner)
+})
+
+const sourceLabel = computed(() => {
+  const f = props.candidate.fact || {}
+  return f.sourceOwner || '查看来源'
 })
 
 function displayVal(value) {
@@ -252,6 +272,23 @@ function displayGap(value) {
 }
 
 .adjust-notice i { font-size: 12px; }
+
+/* ── Source meta ── */
+.source-meta {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-4);
+  line-height: 1.5;
+}
+
+.source-sep { color: var(--line-strong); }
+
+.source-link {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.source-link:hover { text-decoration: underline; }
 
 /* ── Actions ── */
 .card-actions {
