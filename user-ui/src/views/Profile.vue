@@ -72,48 +72,15 @@
               </el-form-item>
               <section class="preference-form-band">
                 <h3>择校偏好</h3>
-                <el-form-item label="安全边际">
-                  <el-radio-group v-model="form.riskPreference">
-                    <el-radio-button label="safe_first">稳妥优先</el-radio-button>
-                    <el-radio-button label="balanced">适度冲刺</el-radio-button>
-                    <el-radio-button label="reach_first">接受压线</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-                <el-form-item label="学校层次">
+                <p class="preference-help">选择 AI 推荐时最优先考虑的方向。</p>
+                <el-form-item label="推荐优先级">
                   <el-radio-group v-model="form.schoolTierPreference">
-                    <el-radio-button label="tier_priority">学校层次优先</el-radio-button>
-                    <el-radio-button label="prefer_211_or_better">211/双一流优先</el-radio-button>
-                    <el-radio-button label="no_strict_requirement">层次不过度追求</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-                <el-form-item label="地区偏好">
-                  <el-radio-group v-model="form.regionStrategy">
-                    <el-radio-button label="developed_priority">发达地区优先</el-radio-button>
-                    <el-radio-button label="target_regions_only">只看目标省份</el-radio-button>
-                    <el-radio-button label="no_strict_requirement">地区不限制</el-radio-button>
+                    <el-radio-button label="developed_region_priority">发达地区优先</el-radio-button>
+                    <el-radio-button label="school_tier_priority">学校层次优先</el-radio-button>
+                    <el-radio-button label="safe_admission_priority">安全上岸优先</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
               </section>
-              <el-form-item label="接受学硕">
-                <el-switch v-model="form.acceptAcademic" />
-                <span class="field-tip">关闭则只看专硕</span>
-              </el-form-item>
-              <el-form-item label="本科层次">
-                <el-select v-model="form.undergradTier" clearable placeholder="请选择" style="width:100%">
-                  <el-option label="985" value="985" />
-                  <el-option label="211" value="211" />
-                  <el-option label="双一流" value="DOUBLE_FIRST" />
-                  <el-option label="普通一本" value="PUBLIC_REGULAR" />
-                  <el-option label="二本/民办" value="PRIVATE" />
-                  <el-option label="其他" value="OTHER" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="本科专业">
-                <el-input v-model="form.undergraduateMajor" placeholder="如 软件工程" />
-              </el-form-item>
-              <el-form-item label="跨考">
-                <el-switch v-model="form.isCrossMajor" />
-              </el-form-item>
               <el-form-item class="form-actions">
                 <el-button type="primary" :loading="saving" @click="handleSave">保存画像</el-button>
                 <el-button @click="editing = false">取消</el-button>
@@ -274,9 +241,6 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
-const Tiers = { '985':'985', '211':'211', 'DOUBLE_FIRST':'双一流',
-  'PUBLIC_REGULAR':'普通一本', 'PRIVATE':'二本/民办', 'OTHER':'其他' }
-
 const provinces = ['北京','天津','河北','山西','内蒙古','辽宁','吉林','黑龙江','上海','江苏',
   '浙江','安徽','福建','江西','山东','河南','湖北','湖南','广东','广西','海南','重庆','四川',
   '贵州','云南','西藏','陕西','甘肃','青海','宁夏','新疆']
@@ -291,19 +255,15 @@ const favoritesLoaded = ref(false)
 const reportsLoaded = ref(false)
 
 const profile = reactive({
-  estimatedScore: null, targetRegions: [], undergradTier: null,
-  undergraduateMajor: '', isCrossMajor: false, acceptAcademic: false,
-  riskPreference: 'balanced',
-  schoolTierPreference: 'no_strict_requirement',
-  regionStrategy: 'no_strict_requirement'
+  estimatedScore: null,
+  targetRegions: [],
+  schoolTierPreference: 'safe_admission_priority'
 })
 
 const form = reactive({
-  estimatedScore: null, targetRegions: [], undergradTier: null,
-  undergraduateMajor: '', isCrossMajor: false, acceptAcademic: false,
-  riskPreference: 'balanced',
-  schoolTierPreference: 'no_strict_requirement',
-  regionStrategy: 'no_strict_requirement'
+  estimatedScore: null,
+  targetRegions: [],
+  schoolTierPreference: 'safe_admission_priority'
 })
 
 const favorites = ref([])
@@ -326,44 +286,34 @@ const regionCountText = computed(() => {
 const completionPercent = computed(() => {
   const fields = [
     !!profile.estimatedScore,
-    !!profile.undergradTier,
-    !!profile.undergraduateMajor
+    !!(profile.targetRegions && profile.targetRegions.length),
+    !!profile.schoolTierPreference
   ]
   return Math.round((fields.filter(Boolean).length / fields.length) * 100)
 })
 
+const priorityLabels = {
+  developed_region_priority: '发达地区优先',
+  school_tier_priority: '学校层次优先',
+  safe_admission_priority: '安全上岸优先'
+}
+
+function normalizePriority(v) {
+  if (v === 'developed_region_priority' || v === 'developed_priority' || v === 'developed_balanced') {
+    return 'developed_region_priority'
+  }
+  if (v === 'school_tier_priority' || v === 'tier_priority' || v === 'must_211_or_better' || v === 'prefer_211_or_better') {
+    return 'school_tier_priority'
+  }
+  return 'safe_admission_priority'
+}
+
 const profileRows = computed(() => [
   { label: '目标地区', value: regionText.value },
-  { label: '安全边际', value: riskPreferenceLabels[profile.riskPreference] || '适度冲刺' },
-  { label: '学校层次', value: schoolTierPreferenceLabels[profile.schoolTierPreference] || '层次不过度追求' },
-  { label: '地区偏好', value: regionStrategyLabels[profile.regionStrategy] || '地区不限制' },
-  { label: '本科层次', value: tierLabel(profile.undergradTier), muted: !profile.undergradTier },
-  { label: '本科专业', value: profile.undergraduateMajor || '暂未填写', muted: !profile.undergraduateMajor },
-  { label: '跨考情况', value: profile.isCrossMajor ? '跨考' : '非跨考' },
-  { label: '学位类型', value: profile.acceptAcademic ? '接受学硕' : '仅专硕' }
+  { label: '择校偏好', value: priorityLabels[normalizePriority(profile.schoolTierPreference)] || '安全上岸优先' }
 ])
 
 const shortlistSelectedIds = computed(() => selectedRows.value.map(row => row.programId).filter(Boolean))
-
-const riskPreferenceLabels = {
-  safe_first: '稳妥优先',
-  balanced: '适度冲刺',
-  reach_first: '接受压线',
-  conservative: '稳妥优先',
-  aggressive: '接受压线'
-}
-const schoolTierPreferenceLabels = {
-  tier_priority: '学校层次优先',
-  prefer_211_or_better: '211/双一流优先',
-  no_strict_requirement: '层次不过度追求',
-  must_211_or_better: '学校层次优先'
-}
-const regionStrategyLabels = {
-  developed_priority: '发达地区优先',
-  target_regions_only: '只看目标省份',
-  no_strict_requirement: '地区不限制',
-  developed_balanced: '发达地区优先'
-}
 
 const shortlistOverview = computed(() => {
   const professional = favorites.value.filter(item => item.degreeType === 'professional').length
@@ -373,8 +323,6 @@ const shortlistOverview = computed(() => {
     academic: Math.max(0, favorites.value.length - professional)
   }
 })
-
-function tierLabel(v) { return Tiers[v] || v || '-' }
 
 function degreeTypeLabel(value) {
   return value === 'professional' ? '专硕' : '学硕'
@@ -387,20 +335,6 @@ function normalizeRegions(regions) {
   return Array.isArray(regions) ? regions : []
 }
 
-function normalizeRisk(v) {
-  if (v === 'conservative') return 'safe_first'
-  if (v === 'aggressive') return 'reach_first'
-  return v
-}
-function normalizeTier(v) {
-  if (v === 'must_211_or_better') return 'tier_priority'
-  return v
-}
-function normalizeRegion(v) {
-  if (v === 'developed_balanced') return 'developed_priority'
-  return v
-}
-
 function fetchProfile() {
   profileLoading.value = true
   getProfile().then(res => {
@@ -408,13 +342,7 @@ function fetchProfile() {
       const p = res.data
       profile.estimatedScore = p.estimatedScore
       profile.targetRegions = normalizeRegions(p.targetRegions)
-      profile.acceptAcademic = p.acceptAcademic === 1 || p.acceptAcademic === true
-      profile.undergradTier = p.undergradTier
-      profile.undergraduateMajor = p.undergraduateMajor || ''
-      profile.isCrossMajor = p.isCrossMajor === 1 || p.isCrossMajor === true
-      profile.riskPreference = normalizeRisk(p.riskPreference) || 'balanced'
-      profile.schoolTierPreference = normalizeTier(p.schoolTierPreference) || 'no_strict_requirement'
-      profile.regionStrategy = normalizeRegion(p.regionStrategy) || 'no_strict_requirement'
+      profile.schoolTierPreference = normalizePriority(p.schoolTierPreference || p.regionStrategy || p.riskPreference)
     }
   }).finally(() => { profileLoading.value = false })
 }
@@ -422,13 +350,7 @@ function fetchProfile() {
 function startEdit() {
   form.estimatedScore = profile.estimatedScore || null
   form.targetRegions = [...(profile.targetRegions || [])]
-  form.acceptAcademic = profile.acceptAcademic || false
-  form.undergradTier = profile.undergradTier || null
-  form.undergraduateMajor = profile.undergraduateMajor || ''
-  form.isCrossMajor = profile.isCrossMajor || false
-  form.riskPreference = normalizeRisk(profile.riskPreference) || 'balanced'
-  form.schoolTierPreference = normalizeTier(profile.schoolTierPreference) || 'no_strict_requirement'
-  form.regionStrategy = normalizeRegion(profile.regionStrategy) || 'no_strict_requirement'
+  form.schoolTierPreference = profile.schoolTierPreference || 'safe_admission_priority'
   editing.value = true
 }
 
@@ -442,13 +364,7 @@ function handleSave() {
     estimatedScore: form.estimatedScore,
     targetRegions: JSON.stringify(form.targetRegions),
     acceptPartTime: false,
-    acceptAcademic: form.acceptAcademic,
-    undergradTier: form.undergradTier,
-    undergraduateMajor: form.undergraduateMajor,
-    isCrossMajor: form.isCrossMajor,
-    riskPreference: form.riskPreference,
-    schoolTierPreference: form.schoolTierPreference,
-    regionStrategy: form.regionStrategy
+    schoolTierPreference: normalizePriority(form.schoolTierPreference)
   }
   saveProfile(data).then(() => {
     ElMessage.success('保存成功')
@@ -763,9 +679,16 @@ onMounted(() => {
 }
 
 .preference-form-band h3 {
-  margin: 0 0 14px;
+  margin: 0 0 6px;
   color: #10203f;
   font-size: 16px;
+}
+
+.preference-help {
+  margin: 0 0 14px;
+  color: #8793a7;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .preference-form-band :deep(.el-radio-group) {
