@@ -617,6 +617,8 @@ function startDraftPolling() {
       if (!isIncomplete(draft.value)) {
         clearInterval(pollTimer)
         pollTimer = null
+        generating.value = false
+        stopProgress()
         if (draft.value) {
           ElMessage.success('草稿已恢复')
           loadChatHistory()
