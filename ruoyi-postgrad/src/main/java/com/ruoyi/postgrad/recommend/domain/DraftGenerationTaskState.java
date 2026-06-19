@@ -19,6 +19,7 @@ public class DraftGenerationTaskState {
     private String profileBasisJson;
     private Integer removedCount;
     private String errorMessage;
+    private String summaryMessage;
     private String streamTokenHash;
     private Long updatedAt;
 
@@ -133,6 +134,9 @@ public class DraftGenerationTaskState {
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
     }
+
+    public String getSummaryMessage() { return summaryMessage; }
+    public void setSummaryMessage(String summaryMessage) { this.summaryMessage = summaryMessage; }
 
     public String getStreamTokenHash() {
         return streamTokenHash;
