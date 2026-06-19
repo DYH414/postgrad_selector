@@ -60,10 +60,12 @@ public class AiSelectorServiceImpl implements IAiSelectorService {
             return emptyResult(tier);
         }
 
-        // 2. 候选数 ≤ 档位上限 → 跳过 AI，全部选中
+        // 2. 候选数 ≤ 档位上限 → 全部选中但让 AI 生成理由
         int limit = tierLimit(tier);
         if (candidates.size() <= limit) {
-            log.info("[AiSelector] tier={} has {} candidates ≤ limit {}, skip AI", tier, candidates.size(), limit);
+            log.info("[AiSelector] tier={} has {} candidates ≤ limit {}, try AI for opinions only", tier, candidates.size(), limit);
+            AiSelectionResult opinionResult = tryGenerateOpinions(tier, candidates, limit);
+            if (opinionResult != null) return opinionResult;
             return selectAll(tier, candidates);
         }
 
@@ -240,7 +242,50 @@ public class AiSelectorServiceImpl implements IAiSelectorService {
     }
 
     /**
-     * 候选数 ≤ 上限时全部选中（AI 给出通用理由）。
+     * 候选数 ≤ 上限时，仍请 AI 为每所候选生成分析理由。
+     * <p>不要求 AI 做取舍（全选），只要求它为每项输出 reason/risks/pros/cons。</p>
+     *
+     * @return 含 AI 意见的结果，AI 失败时返回 null 由调用方降级
+     */
+    private AiSelectionResult tryGenerateOpinions(String tier, List<CandidateCardVO> candidates, int limit) {
+        String factsText = buildFactsText(candidates);
+        String prompt = loadTierPrompt(tier);
+        if (prompt.isEmpty()) return null;
+
+        // 在 prompt 末尾追加指令：全部选中，只需分析理由
+        String opinionPrompt = prompt
+            + "\n\n## 本次任务\n"
+            + "候选不足，全部 " + candidates.size() + " 所都将入选。"
+            + "你只需为每一所生成分析理由（reason / risks / pros / cons），无需做取舍。\n"
+            + "仍然只输出 JSON 数组，包含全部 " + candidates.size() + " 项。";
+
+        String aiRaw;
+        try {
+            aiRaw = chatModel.chat(
+                SystemMessage.from(opinionPrompt),
+                UserMessage.from(factsText)
+            ).aiMessage().text();
+        } catch (Exception e) {
+            log.error("[AiSelector] tier={} opinion LLM failed: {}", tier, e.getMessage());
+            return null;
+        }
+
+        if (aiRaw == null || aiRaw.isBlank()) {
+            log.warn("[AiSelector] tier={} opinion AI returned empty", tier);
+            return null;
+        }
+
+        List<SelectedItem> parsed = parseAiResponse(aiRaw);
+        if (parsed.isEmpty()) {
+            log.warn("[AiSelector] tier={} opinion JSON parse failed", tier);
+            return null;
+        }
+
+        return validator.validate(tier, parsed, candidates);
+    }
+
+    /**
+     * 候选数 ≤ 上限时全部选中（兜底：AI 不可用时的通用理由）。
      */
     private AiSelectionResult selectAll(String tier, List<CandidateCardVO> candidates) {
         AiSelectionResult result = new AiSelectionResult();
