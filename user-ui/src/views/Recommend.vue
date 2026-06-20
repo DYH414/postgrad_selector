@@ -65,18 +65,6 @@
           </div>
 
           <div class="form-row">
-            <div class="row-label"><i class="el-icon-collection-tag"></i>专业方向</div>
-            <div class="row-control input-shell">
-              <el-select v-model="form.majorDirections" multiple collapse-tags filterable placeholder="选择专业方向（可多选）">
-                <el-option label="计算机科学与技术（081200）" value="081200" />
-                <el-option label="软件工程（083500）" value="083500" />
-                <el-option label="电子信息-计算机方向（085404）" value="085404" />
-                <el-option label="电子信息-软件工程方向（085405）" value="085405" />
-              </el-select>
-            </div>
-          </div>
-
-          <div class="form-row">
             <div class="row-label range-label">
               <i class="el-icon-odometer"></i>
               筛选范围
@@ -162,57 +150,6 @@
         </aside>
       </section>
 
-      <section class="feature-band">
-        <div class="feature-item">
-          <span class="feature-icon target" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <circle cx="12" cy="12" r="8" />
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v4" />
-              <path d="M12 18v4" />
-              <path d="M2 12h4" />
-              <path d="M18 12h4" />
-            </svg>
-          </span>
-          <div>
-            <h3>冲稳保推荐</h3>
-            <p>基于目标分数，智能生成"冲、稳、保"三档院校推荐。</p>
-            <em>更合理的志愿策略</em>
-          </div>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon shield" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path d="M12 3 19 6v5c0 5-3.2 8.2-7 10-3.8-1.8-7-5-7-10V6l7-3Z" />
-              <path d="m8.5 12 2.3 2.3 4.9-5" />
-            </svg>
-          </span>
-          <div>
-            <h3>N诺数据完整度标签</h3>
-            <p>按复试线、拟录取区间、人数等字段完整程度标注 A/B/C。</p>
-            <em>完整度说明清晰</em>
-          </div>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon bot" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <rect x="5" y="7" width="14" height="11" rx="3" />
-              <path d="M12 7V4" />
-              <path d="M8.5 12h.01" />
-              <path d="M15.5 12h.01" />
-              <path d="M9 16h6" />
-              <path d="M3 11v3" />
-              <path d="M21 11v3" />
-            </svg>
-          </span>
-          <div>
-            <h3>AI 推荐独立使用</h3>
-            <p>需要 AI 顾问时请进入顶部「AI 推荐」，系统会按你的画像说明推荐依据。</p>
-            <em>筛选页只保留规则筛选</em>
-          </div>
-        </div>
-      </section>
-
       <footer class="data-footer">
         <i class="el-icon-info"></i>
         本平台专注计算机考研（408统考）数据分析与择校推荐，覆盖院校、专业、分数、人数等核心维度。
@@ -242,7 +179,6 @@ const form = reactive({
   score: 300,
   exam: '22408',
   regions: [],
-  majorDirections: [],
   risk: 'balanced',
   scoreRange: 15
 })
@@ -276,7 +212,6 @@ function startRecommend() {
     estimatedScore: form.score || 300,
     examCombo: form.exam,
     targetRegions: form.regions,
-    majorDirections: form.majorDirections,
     riskPreference: form.risk,
     scoreRange: form.scoreRange,
     includeIncompleteData: true,
@@ -426,7 +361,6 @@ onMounted(() => {
 
 .recommend-panel,
 .notice-panel,
-.feature-band,
 .data-footer {
   border: 1px solid rgba(199, 213, 235, 0.78);
   background: rgba(255, 255, 255, 0.9);
@@ -663,8 +597,7 @@ onMounted(() => {
   justify-content: center;
 }
 
-.notice-icon svg,
-.feature-icon svg {
+.notice-icon svg {
   width: 23px;
   height: 23px;
   fill: none;
@@ -686,8 +619,7 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.notice-card span,
-.feature-item em {
+.notice-card span {
   display: inline-block;
   padding: 4px 8px;
   border-radius: 5px;
@@ -730,80 +662,6 @@ onMounted(() => {
   transform: translateX(2px);
 }
 
-.feature-band {
-  margin-top: 14px;
-  border-radius: 18px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  overflow: hidden;
-  animation: page-rise 0.58s ease 0.12s both;
-}
-
-.feature-item {
-  min-height: 94px;
-  display: grid;
-  grid-template-columns: 70px 1fr;
-  gap: 18px;
-  align-items: center;
-  padding: 14px 24px;
-  border-right: 1px solid #dbe5f4;
-  transition: background 0.18s ease;
-}
-
-.feature-item:hover {
-  background: rgba(239, 246, 255, 0.62);
-}
-
-.feature-item:last-child {
-  border-right: 0;
-}
-
-.feature-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.feature-icon svg {
-  width: 30px;
-  height: 30px;
-}
-
-.feature-icon.target {
-  background: #dce9ff;
-  color: #1769f6;
-}
-
-.feature-icon.shield {
-  background: #daf7ef;
-  color: #0f9b93;
-}
-
-.feature-icon.bot {
-  background: #e9e5ff;
-  color: #6650d8;
-}
-
-.feature-item h3 {
-  margin: 0 0 5px;
-  font-size: 16px;
-}
-
-.feature-item p {
-  margin: 0 0 7px;
-  color: #637083;
-  line-height: 1.45;
-  font-size: 13px;
-}
-
-.feature-item em {
-  background: #eef5ff;
-  color: #1769f6;
-}
-
 .data-footer {
   margin-top: 10px;
   border-radius: 14px;
@@ -836,18 +694,8 @@ onMounted(() => {
     min-width: 0;
   }
 
-  .main-grid,
-  .feature-band {
+  .main-grid {
     grid-template-columns: 1fr;
-  }
-
-  .feature-item {
-    border-right: 0;
-    border-bottom: 1px solid #dbe5f4;
-  }
-
-  .feature-item:last-child {
-    border-bottom: 0;
   }
 }
 
@@ -924,9 +772,5 @@ onMounted(() => {
     padding-top: 12px;
   }
 
-  .feature-item {
-    grid-template-columns: 58px 1fr;
-    padding: 14px 16px;
-  }
 }
 </style>

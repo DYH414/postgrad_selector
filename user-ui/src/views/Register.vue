@@ -79,7 +79,7 @@ async function handleRegister() {
     ElMessage.success('注册成功，请登录')
     router.push({ path: '/login', query: { account: form.phone || form.email } })
   } catch (e) {
-    // error shown by interceptor
+    ElMessage.error(e?.message || '暂时未开放测试通道')
   } finally {
     loading.value = false
   }

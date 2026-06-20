@@ -44,42 +44,7 @@ public class AppAuthController
     @PostMapping("/register")
     public AjaxResult register(@RequestBody Map<String, String> body)
     {
-        String phone = body.get("phone");
-        String email = body.get("email");
-        String password = body.get("password");
-
-        if ((phone == null || phone.isBlank()) && (email == null || email.isBlank()))
-        {
-            return AjaxResult.error("手机号或邮箱至少填写一项");
-        }
-        if (password == null || password.length() < 6)
-        {
-            return AjaxResult.error("密码至少6位");
-        }
-
-        AppUser user = new AppUser();
-        if (phone != null && !phone.isBlank())
-        {
-            String phoneHash = sha256(phone.trim());
-            if (appUserService.selectCountByPhoneHash(phoneHash) > 0)
-            {
-                return AjaxResult.error("该手机号已注册");
-            }
-            user.setPhoneHash(phoneHash);
-        }
-        if (email != null && !email.isBlank())
-        {
-            String emailHash = sha256(email.trim().toLowerCase());
-            if (appUserService.selectCountByEmailHash(emailHash) > 0)
-            {
-                return AjaxResult.error("该邮箱已注册");
-            }
-            user.setEmailHash(emailHash);
-        }
-
-        user.setPasswordHash(bCryptPasswordEncoder.encode(password));
-        appUserService.insertAppUser(user);
-        return AjaxResult.success("注册成功");
+        return AjaxResult.error("暂时未开放测试通道");
     }
 
     @PostMapping("/login")

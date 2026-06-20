@@ -33,10 +33,25 @@
           <el-tab-pane label="登录" name="login">
             <el-form ref="loginFormRef" :model="loginForm" :rules="loginRules" label-position="top">
               <el-form-item label="手机号/邮箱" prop="account">
-                <el-input v-model="loginForm.account" placeholder="请输入手机号或邮箱" size="large" />
+                <el-input
+                  v-model="loginForm.account"
+                  name="postgrad-login-account"
+                  autocomplete="off"
+                  placeholder="请输入手机号或邮箱"
+                  size="large"
+                />
               </el-form-item>
               <el-form-item label="密码" prop="password">
-                <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" show-password size="large" @keyup.enter="handleLogin" />
+                <el-input
+                  v-model="loginForm.password"
+                  name="postgrad-login-password"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="请输入密码"
+                  show-password
+                  size="large"
+                  @keyup.enter="handleLogin"
+                />
               </el-form-item>
               <el-button type="primary" :loading="loading" size="large" class="submit-button" @click="handleLogin">登录</el-button>
             </el-form>
@@ -44,16 +59,44 @@
           <el-tab-pane label="注册" name="register">
             <el-form ref="registerFormRef" :model="registerForm" :rules="registerRules" label-position="top">
               <el-form-item label="手机号" prop="phone">
-                <el-input v-model="registerForm.phone" placeholder="请输入手机号（选填）" size="large" />
+                <el-input
+                  v-model="registerForm.phone"
+                  name="phone"
+                  autocomplete="tel"
+                  placeholder="请输入手机号（选填）"
+                  size="large"
+                />
               </el-form-item>
               <el-form-item label="邮箱" prop="email">
-                <el-input v-model="registerForm.email" placeholder="请输入邮箱（选填）" size="large" />
+                <el-input
+                  v-model="registerForm.email"
+                  name="email"
+                  autocomplete="email"
+                  placeholder="请输入邮箱（选填）"
+                  size="large"
+                />
               </el-form-item>
               <el-form-item label="密码" prop="password">
-                <el-input v-model="registerForm.password" type="password" placeholder="至少6位密码" show-password size="large" />
+                <el-input
+                  v-model="registerForm.password"
+                  name="new-password"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="至少6位密码"
+                  show-password
+                  size="large"
+                />
               </el-form-item>
               <el-form-item label="确认密码" prop="confirmPassword">
-                <el-input v-model="registerForm.confirmPassword" type="password" placeholder="再次输入密码" show-password size="large" />
+                <el-input
+                  v-model="registerForm.confirmPassword"
+                  name="confirm-password"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="再次输入密码"
+                  show-password
+                  size="large"
+                />
               </el-form-item>
               <el-button type="primary" :loading="loading" size="large" class="submit-button" @click="handleRegister">注册</el-button>
             </el-form>
@@ -65,7 +108,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, watch, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -112,6 +155,43 @@ const registerRules = {
   confirmPassword: [{ required: true, message: '请确认密码', trigger: 'blur' }, { validator: validateConfirm, trigger: 'blur' }]
 }
 
+function resetLoginPassword() {
+  loginForm.password = ''
+}
+
+function resetLoginCredentials() {
+  if (!route.query.account) {
+    loginForm.account = ''
+  }
+  resetLoginPassword()
+}
+
+function resetRegisterPasswords() {
+  registerForm.password = ''
+  registerForm.confirmPassword = ''
+}
+
+onMounted(() => {
+  if (route.query.account) {
+    loginForm.account = String(route.query.account)
+  }
+  resetLoginCredentials()
+  resetRegisterPasswords()
+  nextTick(() => {
+    resetLoginCredentials()
+    window.setTimeout(resetLoginCredentials, 100)
+    window.setTimeout(resetLoginCredentials, 500)
+  })
+})
+
+watch(activeTab, tab => {
+  if (tab === 'login') {
+    resetRegisterPasswords()
+    return
+  }
+  resetLoginPassword()
+})
+
 function handleLogin() {
   loginFormRef.value.validate(valid => {
     if (!valid) return
@@ -132,6 +212,8 @@ function handleRegister() {
       ElMessage.success(res.msg || '注册成功，请登录')
       activeTab.value = 'login'
       loginForm.account = registerForm.phone || registerForm.email
+    }).catch(error => {
+      ElMessage.error(error?.message || '暂时未开放测试通道')
     }).finally(() => { loading.value = false })
   })
 }

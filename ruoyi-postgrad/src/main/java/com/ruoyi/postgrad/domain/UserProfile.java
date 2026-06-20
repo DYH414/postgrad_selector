@@ -12,6 +12,7 @@ public class UserProfile extends BaseEntity
     private Long id;
     private Long userId;
     private Integer estimatedScore;
+    private String examCombo;
     private String targetRegions;
     private Integer acceptPartTime;
     private Integer acceptTransfer;
@@ -35,6 +36,8 @@ public class UserProfile extends BaseEntity
     public void setUserId(Long userId) { this.userId = userId; }
     public Integer getEstimatedScore() { return estimatedScore; }
     public void setEstimatedScore(Integer estimatedScore) { this.estimatedScore = estimatedScore; }
+    public String getExamCombo() { return examCombo; }
+    public void setExamCombo(String examCombo) { this.examCombo = examCombo; }
     public String getTargetRegions() { return targetRegions; }
     public void setTargetRegions(String targetRegions) { this.targetRegions = targetRegions; }
     public Integer getAcceptPartTime() { return acceptPartTime; }

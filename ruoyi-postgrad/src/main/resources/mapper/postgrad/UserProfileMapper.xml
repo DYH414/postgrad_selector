@@ -8,6 +8,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <id     property="id"                 column="id"                  />
         <result property="userId"             column="user_id"             />
         <result property="estimatedScore"     column="estimated_score"     />
+        <result property="examCombo"          column="exam_combo"          />
         <result property="targetRegions"      column="target_regions"      />
         <result property="acceptPartTime"     column="accept_part_time"    />
         <result property="acceptTransfer"     column="accept_transfer"     />
@@ -27,7 +28,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </resultMap>
 
     <sql id="selectUserProfileVo">
-        select id, user_id, estimated_score, target_regions, accept_part_time,
+        select id, user_id, estimated_score, exam_combo, target_regions, accept_part_time,
                accept_transfer, accept_academic, accept_joint, risk_preference,
                school_tier_preference, region_strategy,
                undergrad_tier, undergraduate_major, is_cross_major, math_level,
@@ -44,6 +45,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         insert into user_profile(
             <if test="userId != null">user_id,</if>
             <if test="estimatedScore != null">estimated_score,</if>
+            <if test="examCombo != null">exam_combo,</if>
             <if test="targetRegions != null">target_regions,</if>
             <if test="acceptPartTime != null">accept_part_time,</if>
             <if test="acceptTransfer != null">accept_transfer,</if>
@@ -64,6 +66,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         )values(
             <if test="userId != null">#{userId},</if>
             <if test="estimatedScore != null">#{estimatedScore},</if>
+            <if test="examCombo != null">#{examCombo},</if>
             <if test="targetRegions != null">#{targetRegions},</if>
             <if test="acceptPartTime != null">#{acceptPartTime},</if>
             <if test="acceptTransfer != null">#{acceptTransfer},</if>
@@ -88,6 +91,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         update user_profile
         <set>
             <if test="estimatedScore != null">estimated_score = #{estimatedScore},</if>
+            <if test="examCombo != null">exam_combo = #{examCombo},</if>
             <if test="targetRegions != null">target_regions = #{targetRegions},</if>
             <if test="acceptPartTime != null">accept_part_time = #{acceptPartTime},</if>
             <if test="acceptTransfer != null">accept_transfer = #{acceptTransfer},</if>

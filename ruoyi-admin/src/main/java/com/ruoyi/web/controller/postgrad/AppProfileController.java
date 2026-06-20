@@ -39,6 +39,7 @@ public class AppProfileController
 
         UserProfile profile = new UserProfile();
         profile.setEstimatedScore(intVal(body.get("estimatedScore")));
+        profile.setExamCombo(stringVal(body.get("examCombo")));
         profile.setTargetRegions(stringVal(body.get("targetRegions")));
         profile.setAcceptPartTime(intVal(body.get("acceptPartTime")));
         profile.setAcceptTransfer(intVal(body.get("acceptTransfer")));
