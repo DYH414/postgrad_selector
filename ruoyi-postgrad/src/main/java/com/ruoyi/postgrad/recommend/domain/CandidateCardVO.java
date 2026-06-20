@@ -34,6 +34,9 @@ public class CandidateCardVO implements Serializable {
     /** 草稿生命周期状态：selected / removed / verified_pending */
     private String status;
 
+    /** 是否为降级结果（AI 不可用时系统自动选择，无 opinion） */
+    private boolean fallback;
+
     /** 展示标签（从 fact + opinion 派生，供前端渲染） */
     private List<String> tags;
 
@@ -77,6 +80,8 @@ public class CandidateCardVO implements Serializable {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public boolean isFallback() { return fallback; }
+    public void setFallback(boolean fallback) { this.fallback = fallback; }
 
     public List<String> getTags() { return tags; }
     public void setTags(List<String> tags) { this.tags = tags; }

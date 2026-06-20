@@ -9,10 +9,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -97,6 +99,9 @@ public class DraftServiceImpl implements IDraftService {
     @Autowired
     private com.ruoyi.postgrad.mapper.AiChatMapper aiChatMapper;
 
+    @Autowired
+    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
+
     // ==================== generateDraft ====================
 
     @Override
@@ -175,6 +180,7 @@ public class DraftServiceImpl implements IDraftService {
             List<WorkspaceTierVO> wsTiers = workspace.getTiers();
             Map<String, Integer> wsSummary = new LinkedHashMap<>();
             List<BlockedCandidateVO> allBlocked = Collections.synchronizedList(new ArrayList<>());
+            List<String> fallbackTiers = new ArrayList<>();
 
             // 3a. 立即推送三档都在 "ai_selecting" 的进度
             for (WorkspaceTierVO wsTier : wsTiers) {
@@ -188,6 +194,11 @@ public class DraftServiceImpl implements IDraftService {
             }
 
             // 3b. 并行提交三档 AI 调用
+            log.info("[Draft] userId={} — submitting 3 tiers to thread pool: active={} pool={} queue={}",
+                userId,
+                threadPoolTaskExecutor.getActiveCount(),
+                threadPoolTaskExecutor.getPoolSize(),
+                threadPoolTaskExecutor.getThreadPoolExecutor().getQueue().size());
             List<CompletableFuture<TierResult>> futures = new ArrayList<>(3);
             for (WorkspaceTierVO wsTier : wsTiers) {
                 String tierLevel = wsTier.getLevel();
@@ -195,38 +206,59 @@ public class DraftServiceImpl implements IDraftService {
                 List<CandidateCardVO> wsCandidates = wsTier.getCandidates();
                 int draftTarget = "reach".equals(tierLevel) ? 3 : "steady".equals(tierLevel) ? 4 : 3;
 
-                CompletableFuture<TierResult> future = CompletableFuture.supplyAsync(() -> {
-                    AiSelectionResult sel = aiSelectorService.select(
-                        tierLevel, wsCandidates, estimatedScore);
+                CompletableFuture<TierResult> future = CompletableFuture
+                    .supplyAsync(() -> {
+                        long t0 = System.currentTimeMillis();
+                        log.info("[Draft] userId={} tier={} — AI selection started ({} candidates)",
+                            userId, tierLevel, wsCandidates.size());
+                        AiSelectionResult sel = aiSelectorService.select(
+                            tierLevel, wsCandidates, estimatedScore);
+                        long elapsed = System.currentTimeMillis() - t0;
+                        log.info("[Draft] userId={} tier={} — AI selection done in {}ms, selected={}",
+                            userId, tierLevel, elapsed,
+                            sel.getSelected() != null ? sel.getSelected().size() : 0);
 
-                    TierCandidates rawTier = new TierCandidates();
-                    rawTier.setLevel(tierLevel);
-                    rawTier.setLabel(tierLabel);
-                    rawTier.setTargetCount(draftTarget);
-                    rawTier.setCandidates(wsCandidates);
-                    TierCandidates resultTier = mergeSelection(rawTier, sel);
+                        TierCandidates rawTier = new TierCandidates();
+                        rawTier.setLevel(tierLevel);
+                        rawTier.setLabel(tierLabel);
+                        rawTier.setTargetCount(draftTarget);
+                        rawTier.setCandidates(wsCandidates);
+                        TierCandidates resultTier = mergeSelection(rawTier, sel);
 
-                    List<BlockedCandidateVO> tierBlocked = new ArrayList<>();
-                    if (sel.getBlocked() != null) {
-                        for (AiSelectionResult.BlockedItem bi : sel.getBlocked()) {
-                            BlockedCandidateVO bvo = new BlockedCandidateVO();
-                            bvo.setProgramId(bi.getProgramId());
-                            bvo.setSchoolName(bi.getSchoolName());
-                            bvo.setBlockReason(bi.getBlockReason());
-                            tierBlocked.add(bvo);
+                        List<BlockedCandidateVO> tierBlocked = new ArrayList<>();
+                        if (sel.getBlocked() != null) {
+                            for (AiSelectionResult.BlockedItem bi : sel.getBlocked()) {
+                                BlockedCandidateVO bvo = new BlockedCandidateVO();
+                                bvo.setProgramId(bi.getProgramId());
+                                bvo.setSchoolName(bi.getSchoolName());
+                                bvo.setBlockReason(bi.getBlockReason());
+                                tierBlocked.add(bvo);
+                            }
                         }
-                    }
-                    return new TierResult(tierLevel, resultTier, tierBlocked);
-                });
+                        return new TierResult(tierLevel, resultTier, tierBlocked, false);
+                    }, threadPoolTaskExecutor)
+                    .orTimeout(90, TimeUnit.SECONDS)
+                    .exceptionally(ex -> {
+                        log.warn("[Draft] tier={} failed or timeout, falling back to selectAll: {}",
+                            tierLevel, ex.getMessage());
+                        return fallbackTierResult(tierLevel, tierLabel, draftTarget, wsCandidates);
+                    });
                 futures.add(future);
             }
 
             // 3c. 按 reach → steady → safe 顺序收集结果，逐档持久化+推送
+            log.info("[Draft] userId={} — collecting results, thread pool: active={} queue={}",
+                userId,
+                threadPoolTaskExecutor.getActiveCount(),
+                threadPoolTaskExecutor.getThreadPoolExecutor().getQueue().size());
             List<TierCandidates> resultTiers = new ArrayList<>(3);
             for (CompletableFuture<TierResult> future : futures) {
-                TierResult tr = future.join(); // 阻塞直到这一档完成
+                TierResult tr = future.join(); // 阻塞直到这一档完成（不会抛异常，exceptionally 已兜底）
                 resultTiers.add(tr.tier);
                 allBlocked.addAll(tr.blocked);
+                if (tr.fallback) {
+                    fallbackTiers.add(tr.tier.getLabel());
+                }
 
                 // 每档完成后立即增量持久化（支持刷新恢复）
                 DraftVO partial = buildPartialDraft(resultTiers, allBlocked, basis, wsSummary);
@@ -259,6 +291,7 @@ public class DraftServiceImpl implements IDraftService {
             draft.setTiers(resultTiers);
             draft.setRemovedCandidates(Collections.emptyList());
             draft.setBlockedCandidates(allBlocked);
+            draft.setFallbackTiers(fallbackTiers.isEmpty() ? null : fallbackTiers);
             draft.setProfileBasis(basis);
             draft.setGeneratedAt(LocalDateTime.now());
             draft.setWorkspaceSummary(wsSummary);
@@ -656,17 +689,43 @@ public class DraftServiceImpl implements IDraftService {
     }
 
     /**
+     * 单档降级：不调 AI，直接取候选池前 N 所。
+     * <p>候选池传入前已经按 compositeScore 排过序，直接取 top 即可。</p>
+     */
+    private TierResult fallbackTierResult(String level, String label, int targetCount,
+                                           List<CandidateCardVO> candidates) {
+        int count = Math.min(targetCount, candidates.size());
+        List<CandidateCardVO> top = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            CandidateCardVO c = candidates.get(i);
+            CandidateCardVO copy = CandidateCardVO.fromFact(c.getFact());
+            copy.setStatus("selected");
+            copy.setFallback(true);
+            top.add(copy);
+        }
+        TierCandidates tier = new TierCandidates();
+        tier.setLevel(level);
+        tier.setLabel(label);
+        tier.setTargetCount(targetCount);
+        tier.setCandidates(top);
+        tier.setInsufficient(top.size() < targetCount);
+        return new TierResult(level, tier, Collections.emptyList(), true);
+    }
+
+    /**
      * 并行 AI 选择结果容器。
      */
     private static class TierResult {
         final String level;
         final TierCandidates tier;
         final List<BlockedCandidateVO> blocked;
+        final boolean fallback;
 
-        TierResult(String level, TierCandidates tier, List<BlockedCandidateVO> blocked) {
+        TierResult(String level, TierCandidates tier, List<BlockedCandidateVO> blocked, boolean fallback) {
             this.level = level;
             this.tier = tier;
             this.blocked = blocked;
+            this.fallback = fallback;
         }
     }
 }

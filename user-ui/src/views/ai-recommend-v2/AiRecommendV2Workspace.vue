@@ -399,6 +399,9 @@ async function handleGenerate() {
           })
         }
       }
+      if (data.fallbackTiers && data.fallbackTiers.length > 0) {
+        ElMessage.warning('以下档位 AI 分析暂时不可用，已按数据匹配度自动选择：' + data.fallbackTiers.join('、'))
+      }
       closeEventSource(draftEventSource)
       await completeGenerationWhenRevealSettles()
     })

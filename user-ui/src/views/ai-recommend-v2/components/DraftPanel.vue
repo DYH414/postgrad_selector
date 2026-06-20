@@ -31,7 +31,7 @@
         <span class="orb-center">+</span>
       </div>
       <p class="empty-title">尚未生成草稿</p>
-      <p class="empty-sub">点击左侧 <strong>生成候选草稿</strong><br/>AI 会按画像筛选冲稳保候选。</p>
+      <p class="empty-sub">点击左侧 <strong>生成新的候选草稿</strong><br/>AI 会按画像筛选冲稳保候选。</p>
       <div class="empty-steps">
         <span class="empty-step"><i>1</i>生成</span>
         <span class="empty-step-sep" />

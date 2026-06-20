@@ -295,7 +295,6 @@ const regionCountText = computed(() => {
 const completionPercent = computed(() => {
   const fields = [
     !!profile.estimatedScore,
-    !!(profile.targetRegions && profile.targetRegions.length),
     !!profile.examCombo,
     !!profile.schoolTierPreference
   ]

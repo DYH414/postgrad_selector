@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
@@ -47,6 +48,9 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
     @Autowired
     private AiChatMapper aiChatMapper;
 
+    @Autowired
+    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
+
     @Override
     public DraftGenerationTaskVO start(Long userId) {
         String taskId = UUID.randomUUID().toString();
@@ -62,7 +66,7 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
         state.setUpdatedAt(System.currentTimeMillis());
         save(state);
 
-        CompletableFuture.runAsync(() -> runTask(userId, taskId));
+        CompletableFuture.runAsync(() -> runTask(userId, taskId), threadPoolTaskExecutor);
 
         DraftGenerationTaskVO vo = new DraftGenerationTaskVO();
         vo.setTaskId(taskId);

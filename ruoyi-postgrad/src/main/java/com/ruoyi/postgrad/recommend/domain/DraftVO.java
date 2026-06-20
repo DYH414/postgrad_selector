@@ -21,6 +21,9 @@ public class DraftVO implements Serializable {
     /** 被 AI 校验拦截的候选及原因 */
     private List<BlockedCandidateVO> blockedCandidates;
 
+    /** 降级档位标签列表（AI 不可用时走系统选择，如 ["冲刺档"]） */
+    private List<String> fallbackTiers;
+
     /** 画像依据 */
     private ProfileBasisVO profileBasis;
 
@@ -43,6 +46,8 @@ public class DraftVO implements Serializable {
 
     public List<BlockedCandidateVO> getBlockedCandidates() { return blockedCandidates; }
     public void setBlockedCandidates(List<BlockedCandidateVO> blockedCandidates) { this.blockedCandidates = blockedCandidates; }
+    public List<String> getFallbackTiers() { return fallbackTiers; }
+    public void setFallbackTiers(List<String> fallbackTiers) { this.fallbackTiers = fallbackTiers; }
 
     public ProfileBasisVO getProfileBasis() { return profileBasis; }
     public void setProfileBasis(ProfileBasisVO profileBasis) { this.profileBasis = profileBasis; }

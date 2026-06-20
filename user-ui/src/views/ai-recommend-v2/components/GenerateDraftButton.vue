@@ -6,7 +6,7 @@
       @click="$emit('generate')"
     >
       <span v-if="generating" class="btn-spinner" />
-      <span>{{ generating ? 'AI 生成中...' : '生成候选草稿' }}</span>
+      <span>{{ generating ? 'AI 生成中...' : '生成新的候选草稿' }}</span>
     </button>
 
     <p v-if="generating && progress.message" class="progress-hint">

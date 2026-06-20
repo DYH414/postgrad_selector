@@ -98,7 +98,6 @@
           <el-button class="primary-cta" type="primary" :loading="generating" @click="startRecommend">
             <i class="el-icon-magic-stick"></i> 开始筛选
           </el-button>
-          <div class="privacy-note"><i class="el-icon-lock"></i> 信息仅用于筛选，不会泄露或用于其他用途</div>
         </div>
 
         <aside class="notice-panel">

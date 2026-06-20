@@ -8,6 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -56,6 +57,9 @@ public class AppV2RecommendController {
 
     @Autowired
     private IAiChatService aiChatService;
+
+    @Autowired
+    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
 
     // ── 草稿端点 ──
 
@@ -142,6 +146,14 @@ public class AppV2RecommendController {
                         if (state.getSummaryMessage() != null) {
                             payload.put("summaryMessage", state.getSummaryMessage());
                         }
+                        // 传递降级档位信息
+                        Object draftObj = payload.get("draft");
+                        if (draftObj instanceof Map<?, ?> dm) {
+                            Object ft = dm.get("fallbackTiers");
+                            if (ft instanceof List<?> ftl && !ftl.isEmpty()) {
+                                payload.put("fallbackTiers", ftl);
+                            }
+                        }
                         safeSend(emitter, "done", payload, closed);
                         break;
                     } else if (DraftGenerationTaskState.STATUS_ERROR.equals(state.getStatus())) {
@@ -175,7 +187,7 @@ public class AppV2RecommendController {
             }
             closed.set(true);
             emitter.complete();
-        });
+        }, threadPoolTaskExecutor);
 
         return emitter;
     }
@@ -261,7 +273,7 @@ public class AppV2RecommendController {
                 sendSseEvent(emitter, "error", payload);
                 emitter.complete();
             }
-        });
+        }, threadPoolTaskExecutor);
 
         return emitter;
     }
@@ -450,7 +462,7 @@ public class AppV2RecommendController {
                 sendSseEvent(emitter, "error", payload);
                 emitter.complete();
             }
-        });
+        }, threadPoolTaskExecutor);
 
         return emitter;
     }

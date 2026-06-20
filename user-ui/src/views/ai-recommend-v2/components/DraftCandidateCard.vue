@@ -32,13 +32,19 @@
       </div>
     </dl>
 
-    <p v-if="candidate.opinion?.reason" class="ai-reason">
-      <span class="ai-quote">"</span>{{ candidate.opinion.reason }}
-    </p>
+    <template v-if="!candidate.fallback">
+      <p v-if="candidate.opinion?.reason" class="ai-reason">
+        <span class="ai-quote">"</span>{{ candidate.opinion.reason }}
+      </p>
 
-    <div v-if="candidate.opinion?.risks?.length" class="risk-tags">
-      <span v-for="risk in candidate.opinion.risks" :key="risk" class="risk-tag">{{ risk }}</span>
-    </div>
+      <div v-if="candidate.opinion?.risks?.length" class="risk-tags">
+        <span v-for="risk in candidate.opinion.risks" :key="risk" class="risk-tag">{{ risk }}</span>
+      </div>
+    </template>
+
+    <p v-if="candidate.fallback" class="fallback-notice">
+      <i class="el-icon-info" /> 系统按数据匹配度自动选择，暂无 AI 分析
+    </p>
 
     <div v-if="candidate.adjusted" class="adjust-notice">
       <i class="el-icon-warning-outline" />
@@ -215,6 +221,16 @@ function displayGap(value) {
 
 .gap--up { color: var(--ok); }
 .gap--down { color: var(--danger); }
+
+/* ── 降级提示 ── */
+.fallback-notice {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f5f7fa;
+  color: #909399;
+  font-size: 13px;
+}
 
 /* ── AI reason — 浅蓝块引用 ── */
 .ai-reason {
