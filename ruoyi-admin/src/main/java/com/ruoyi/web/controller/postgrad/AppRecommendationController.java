@@ -2,6 +2,8 @@ package com.ruoyi.web.controller.postgrad;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import com.ruoyi.common.annotation.RateLimiter;
+import com.ruoyi.common.enums.LimitType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +33,7 @@ public class AppRecommendationController
         return AjaxResult.success(recommendationService.recommendationOptions(userId));
     }
 
+    @RateLimiter(count = 10, time = 60, limitType = LimitType.IP)
     @PostMapping("/generate")
     public AjaxResult generate(@RequestBody Map<String, Object> body)
     {

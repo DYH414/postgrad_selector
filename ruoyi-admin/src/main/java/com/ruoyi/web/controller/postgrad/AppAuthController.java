@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.Anonymous;
+import com.ruoyi.common.annotation.RateLimiter;
 import com.ruoyi.common.core.domain.AjaxResult;
+import com.ruoyi.common.enums.LimitType;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.framework.web.service.AppTokenService;
@@ -41,12 +43,14 @@ public class AppAuthController
     @Autowired
     private BCryptPasswordEncoder bCryptPasswordEncoder;
 
+    @RateLimiter(count = 5, time = 60, limitType = LimitType.IP)
     @PostMapping("/register")
     public AjaxResult register(@RequestBody Map<String, String> body)
     {
         return AjaxResult.error("暂时未开放测试通道");
     }
 
+    @RateLimiter(count = 10, time = 60, limitType = LimitType.IP)
     @PostMapping("/login")
     public AjaxResult login(@RequestBody Map<String, String> body)
     {

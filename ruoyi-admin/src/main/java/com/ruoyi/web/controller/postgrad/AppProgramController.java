@@ -3,6 +3,8 @@ package com.ruoyi.web.controller.postgrad;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import com.ruoyi.common.annotation.RateLimiter;
+import com.ruoyi.common.enums.LimitType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,6 +61,7 @@ public class AppProgramController
         return AjaxResult.success(recommendationService.comparePrograms(ids, estimatedScore));
     }
 
+    @RateLimiter(count = 30, time = 60, limitType = LimitType.IP)
     @GetMapping("/search")
     public AjaxResult search(@RequestParam String keyword,
                              @RequestParam(defaultValue = "20") int limit)

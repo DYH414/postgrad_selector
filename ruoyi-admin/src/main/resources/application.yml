@@ -119,7 +119,7 @@ token:
   # 令牌自定义标识
   header: Authorization
   # 令牌密钥
-  secret: ${JWT_SECRET:postgrad-selector-dev-secret-change-me}
+  secret: ${JWT_SECRET:}  # 生产环境必须通过环境变量 JWT_SECRET 设置
   # 令牌有效期（默认30分钟）
   expireTime: 30
 
@@ -143,7 +143,7 @@ springdoc:
   api-docs:
     path: /v3/api-docs
   swagger-ui:
-    enabled: true
+    enabled: false
     path: /swagger-ui.html
     tags-sorter: alpha
   group-configs:
