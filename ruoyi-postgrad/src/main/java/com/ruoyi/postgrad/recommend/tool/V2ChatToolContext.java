@@ -103,8 +103,8 @@ public final class V2ChatToolContext {
         StringRedisTemplate redis() { return redis; }
         RecommendationMapper mapper() { return mapper; }
         boolean writeExecuted() { return writeExecuted; }
-        boolean draftChanged() { return draftChanged; }
-        String lastActionResultJson() { return lastActionResultJson; }
+        public boolean draftChanged() { return draftChanged; }
+        public String lastActionResultJson() { return lastActionResultJson; }
 
         void markWriteExecuted(String actionResultJson) {
             this.writeExecuted = true;

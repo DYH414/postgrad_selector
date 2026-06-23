@@ -202,8 +202,8 @@ public class AiChatServiceImpl implements IAiChatService {
                         saveHistory(userId, history);
                         persistMessage(userId, conversation.getId(), "assistant", aiText, aiText);
 
-                        boolean draftChanged = V2ChatToolContext.draftChanged();
-                        String toolActionResultJson = V2ChatToolContext.lastActionResultJson();
+                        boolean draftChanged = toolContext.draftChanged();
+                        String toolActionResultJson = toolContext.lastActionResultJson();
                         callback.onDone(aiText, draftChanged, toolActionResultJson);
                     } catch (Exception e) {
                         log.error("[AiChat] Failed to complete stream for userId={}: {}", userId, e.getMessage());
