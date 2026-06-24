@@ -12,28 +12,47 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskVO;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 
 class DraftGenerationTaskServiceImplTest {
 
-    @Test
-    void startShouldReturnTaskIdAndPersistRunningState() {
-        StringRedisTemplate redis = mock(StringRedisTemplate.class);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, String> ops = mock(ValueOperations.class);
+    private StringRedisTemplate redis;
+    private ValueOperations<String, String> ops;
+    private IDraftService draftService;
+    private DraftGenerationTaskServiceImpl service;
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void setUp() {
+        redis = mock(StringRedisTemplate.class);
+        ops = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(ops);
 
-        IDraftService draftService = mock(IDraftService.class);
-        DraftGenerationTaskServiceImpl service = new DraftGenerationTaskServiceImpl();
+        draftService = mock(IDraftService.class);
+
+        // 同步执行器：CompletableFuture.runAsync 在同一线程执行，测试可预测
+        ThreadPoolTaskExecutor syncExecutor = new ThreadPoolTaskExecutor();
+        syncExecutor.setCorePoolSize(1);
+        syncExecutor.setMaxPoolSize(1);
+        syncExecutor.initialize();
+
+        service = new DraftGenerationTaskServiceImpl();
         service.setRedisTemplateForTest(redis);
         service.setDraftServiceForTest(draftService);
+        service.setThreadPoolTaskExecutorForTest(syncExecutor);
+    }
 
+    @Test
+    void startShouldReturnTaskIdAndPersistRunningState() {
         DraftGenerationTaskVO vo = service.start(1L);
 
         assertNotNull(vo.getTaskId());
@@ -48,15 +67,6 @@ class DraftGenerationTaskServiceImplTest {
 
     @Test
     void validateStreamTokenShouldRejectWrongToken() {
-        StringRedisTemplate redis = mock(StringRedisTemplate.class);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, String> ops = mock(ValueOperations.class);
-        when(redis.opsForValue()).thenReturn(ops);
-
-        IDraftService draftService = mock(IDraftService.class);
-        DraftGenerationTaskServiceImpl service = new DraftGenerationTaskServiceImpl();
-        service.setRedisTemplateForTest(redis);
-        service.setDraftServiceForTest(draftService);
         DraftGenerationTaskVO vo = service.start(1L);
 
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);

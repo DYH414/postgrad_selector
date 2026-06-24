@@ -317,6 +317,124 @@ class V2DraftActionToolsTest {
         verify(mutationService, never()).batchReplace(anyLong(), any(), any(), any());
     }
 
+    // ═══════════ H2: replaceCandidate DB fallback 不双重添加 ═══════════
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void replaceDraftCandidateDbFallbackShouldNotDoubleAdd() {
+        IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(ops);
+
+        // workspace 没有候选 → 触发 DB fallback
+        when(ops.get(any())).thenReturn(null);
+
+        V2DraftActionTools tools = new V2DraftActionTools();
+        tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
+        injectRedis(tools, redis);
+
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        V2ChatToolContext.init(1L, redis, mapper);
+
+        // draft 中有一个候选 (1001L)
+        DraftVO draft = draftWithCandidate(1001L, "Old School");
+        when(draftService.getDraft(1L)).thenReturn(draft);
+
+        // DB 中有替换候选 (2001L)
+        com.ruoyi.postgrad.domain.RowMap row = new com.ruoyi.postgrad.domain.RowMap();
+        row.put("programId", 2001L);
+        row.put("schoolName", "New School");
+        row.put("programName", "CS");
+        row.put("schoolTier", "211");
+        row.put("city", "厦门");
+        row.put("province", "福建");
+        row.put("avgAdmittedScore", 300);
+        row.put("unifiedExamQuota", 15);
+        row.put("planCount", 10);
+        row.put("dataCompleteness", "A");
+        row.put("admissionLow", 290);
+        row.put("admissionHigh", 310);
+        when(mapper.selectProgramForRecommendation(2001L)).thenReturn(row);
+
+        // Mock removeFromDraftDirect → should be called (NOT removeCandidate)
+        DraftMutationResultVO removeResult = new DraftMutationResultVO();
+        removeResult.setOk(true);
+        removeResult.setAction("remove_direct");
+        removeResult.setDraft(draft);
+        removeResult.setDraftCount(0);
+        when(mutationService.removeFromDraftDirect(eq(1L), eq(1001L))).thenReturn(removeResult);
+
+        // Mock addCandidateDirect
+        DraftMutationResultVO addResult = new DraftMutationResultVO();
+        addResult.setOk(true);
+        addResult.setAction("add_external");
+        addResult.setDraft(draft);
+        addResult.setDraftCount(1);
+        when(mutationService.addCandidateDirect(eq(1L), any(), eq("reach"))).thenReturn(addResult);
+
+        String json = tools.replaceDraftCandidate(1001L, 2001L);
+        Map<String, Object> result = JSON.parseObject(json, Map.class);
+
+        assertTrue((Boolean) result.get("ok"), "H2: replace should succeed");
+        assertEquals("replace", result.get("action"));
+        // 关键：verify removeFromDraftDirect 被调用（不是 removeCandidate）
+        verify(mutationService).removeFromDraftDirect(1L, 1001L);
+    }
+
+    // ═══════════ H5: confirmRefillCandidate draft tier 回退 ═══════════
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void confirmRefillCandidateShouldFallbackToDraftTier() {
+        IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(ops);
+        when(ops.get(any())).thenReturn(null); // workspace 为空
+
+        V2DraftActionTools tools = new V2DraftActionTools();
+        tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
+        injectRedis(tools, redis);
+
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        V2ChatToolContext.init(1L, redis, mapper);
+
+        // Workspace 为空 → findTierInWorkspace 返回 null
+        // Draft 中稳妥档有候选 2001L
+        DraftVO draft = draftWithCandidate(2001L, "DB Fallback School");
+        draft.getTiers().get(0).setLevel("steady");
+        draft.getTiers().get(0).setLabel("steady");
+        when(draftService.getDraft(1L)).thenReturn(draft);
+
+        DraftMutationResultVO confirmResult = new DraftMutationResultVO();
+        confirmResult.setOk(true);
+        confirmResult.setAction("confirm_refill");
+        confirmResult.setDraft(draft);
+        confirmResult.setDraftCount(3);
+        when(mutationService.confirmRefillCandidate(eq(1L), eq(2001L), eq("steady"), any()))
+            .thenReturn(confirmResult);
+
+        String json = tools.confirmRefillCandidate(2001L);
+        Map<String, Object> result = JSON.parseObject(json, Map.class);
+
+        assertTrue((Boolean) result.get("ok"), "H5: confirm should succeed via draft tier fallback");
+        assertEquals("steady", result.get("tier"));
+        assertEquals(2001, ((Number) result.get("programId")).intValue());
+    }
+
+    private void injectRedis(V2DraftActionTools tools, StringRedisTemplate redis) {
+        try {
+            var f = V2DraftActionTools.class.getDeclaredField("redisTemplate");
+            f.setAccessible(true);
+            f.set(tools, redis);
+        } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
     private DraftVO draftWithCandidate(Long programId, String schoolName) {
         DraftVO draft = new DraftVO();
         TierCandidates tier = new TierCandidates();

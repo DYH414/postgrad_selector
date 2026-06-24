@@ -142,10 +142,16 @@ public class V2DraftActionTools {
         if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
         if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
 
-        // Determine tier from workspace
+        // 1. 先在 workspace 中找 tier
         CandidateWorkspaceVO workspace = loadWorkspace(ctx.userId());
         String tier = findTierInWorkspace(workspace, programId);
-        if (tier == null) return error("not_in_workspace", "Candidate not found in any workspace tier.");
+
+        // 2. workspace 找不到 → 从 draft 中找（DB 回退候选已在草稿中）
+        if (tier == null) {
+            DraftVO draft = draftService.getDraft(ctx.userId());
+            tier = findTierInDraft(draft, programId);
+        }
+        if (tier == null) return error("not_found", "Candidate not found in workspace or draft tiers.");
 
         DraftMutationResultVO mutation = draftMutationService.confirmRefillCandidate(
             ctx.userId(), programId, tier, workspace);
@@ -191,10 +197,9 @@ public class V2DraftActionTools {
         CandidateCardVO candidate = buildCandidateFromDb(ctx, addProgramId);
         if (candidate == null) return error("not_found", "Replacement candidate not found in workspace or database.");
 
-        // 先移除旧候选
-        DraftMutationResultVO removeMutation = draftMutationService.removeCandidate(
-            ctx.userId(), removeProgramId, workspace);
-        if (!removeMutation.isOk()) return error("remove_failed", "Failed to remove existing candidate.");
+        // 直接移除旧候选（不触发 refill，避免双重添加 H2 bug）
+        DraftMutationResultVO removeMutation = draftMutationService.removeFromDraftDirect(
+            ctx.userId(), removeProgramId);
 
         // 再添加新候选
         DraftMutationResultVO addMutation = draftMutationService.addCandidateDirect(

@@ -41,8 +41,9 @@ public class SelectionValidator {
      */
     public AiSelectionResult validate(String tier, List<SelectedItem> selected,
                                        List<CandidateCardVO> pool) {
-        // 1. 构建 pool programId → CandidateCardVO 映射
+        // 1. 构建 pool programId → CandidateCardVO 映射（跳过 null fact 和无 programId）
         Map<Long, CandidateCardVO> poolMap = pool.stream()
+            .filter(c -> c.getFact() != null && c.getFact().getProgramId() != null)
             .collect(Collectors.toMap(
                 c -> c.getFact().getProgramId(),
                 c -> c,

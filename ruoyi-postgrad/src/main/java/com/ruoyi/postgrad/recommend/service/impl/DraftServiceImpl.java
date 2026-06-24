@@ -56,8 +56,8 @@ public class DraftServiceImpl implements IDraftService {
     static final String WORKSPACE_KEY_PREFIX = "ai:v2:workspace:";
     private static final String LOCK_KEY_PREFIX = "ai:v2:draft:lock:";
     private static final long TTL_DAYS = 7;
-    /** 生成锁 TTL：5 分钟，防止重复点击 */
-    private static final java.time.Duration LOCK_TTL = java.time.Duration.ofMinutes(5);
+    /** 生成锁 TTL：10 分钟，覆盖 AI 三档调用 + 延迟 */
+    private static final java.time.Duration LOCK_TTL = java.time.Duration.ofMinutes(10);
     /**
      * 安全释放锁的 Lua 脚本：仅当 value 匹配时才删除。
      * <p>防止锁过期后被其他请求获取，当前请求误删他人锁。</p>
@@ -349,11 +349,11 @@ public class DraftServiceImpl implements IDraftService {
 
     @Override
     public ReplaceResultVO replaceCandidate(Long userId, Long removeProgramId, String tier, String preference) {
+        // 先移除，refill 策略自动从工作集补位
         CandidateWorkspaceVO ws = loadWorkspace(userId);
-        DraftMutationResultVO r = draftMutationService.replaceCandidate(
-            userId, removeProgramId, removeProgramId /* add candidate handled by mutation */, tier, ws);
+        DraftMutationResultVO removeResult = draftMutationService.removeCandidate(userId, removeProgramId, ws);
         ReplaceResultVO result = new ReplaceResultVO();
-        result.setDraft(r.getDraft());
+        result.setDraft(removeResult.getDraft());
         return result;
     }
 
@@ -417,7 +417,8 @@ public class DraftServiceImpl implements IDraftService {
         if (draft.getRemovedCandidates() != null) {
             for (CandidateCardVO c : draft.getRemovedCandidates()) {
                 if (programId.equals(c.getFact().getProgramId())) {
-                    tier = c.getFact().inferTier();
+                    String inferred = c.getFact().inferTier();
+                    tier = inferred != null ? inferred : "reach";
                     break;
                 }
             }

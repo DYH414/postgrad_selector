@@ -53,6 +53,8 @@ public class AiChatServiceImpl implements IAiChatService {
     private static final String CHAT_MSG_KEY_PREFIX = "ai:v2:chat:msg:";
     private static final int MAX_MESSAGES = 20;
     private static final Duration CHAT_TTL = Duration.ofMinutes(30);
+    private static final String CHAT_LOCK_KEY_PREFIX = "ai:v2:chat:lock:";
+    private static final Duration CHAT_LOCK_TTL = Duration.ofSeconds(60);
 
     @Value("classpath:prompts/v2/chat-system.txt")
     private org.springframework.core.io.Resource chatSystemPromptResource;
@@ -122,41 +124,50 @@ public class AiChatServiceImpl implements IAiChatService {
 
     @Override
     public void chat(Long userId, String message, ChatStreamCallback callback) {
-        AiChatConversation conversation = getOrCreateActiveConversation(userId);
-
-        // 1. 加载/初始化对话历史
-        List<ChatMessageVO> loadedHistory = loadHistory(userId);
-        if (loadedHistory.isEmpty()) {
-            loadedHistory = loadPersistedMemoryMessages(conversation.getId());
+        // 并发锁：防止同一用户同时发多条消息导致历史覆盖
+        String lockKey = CHAT_LOCK_KEY_PREFIX + userId;
+        Boolean locked = redisTemplate.opsForValue()
+            .setIfAbsent(lockKey, "1", CHAT_LOCK_TTL);
+        if (Boolean.FALSE.equals(locked)) {
+            callback.onError(new IllegalStateException("上一条消息仍在处理中，请稍候再发"));
+            return;
         }
-        final List<ChatMessageVO> history = loadedHistory;
-
-        // 2. 每轮都重建系统提示词，确保草稿调整后的档位和操作ID是最新的。
-        String systemPrompt = buildSystemPrompt(userId);
-        redisTemplate.opsForValue().set(chatKey(userId), systemPrompt, CHAT_TTL);
-
-        // 3. 构建 ChatMemory
-        ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(MAX_MESSAGES);
-        for (ChatMessageVO m : history) {
-            if ("system".equals(m.getRole())) continue;
-            if (m.getContent() == null || m.getContent().isBlank()) continue;
-            if ("assistant".equals(m.getRole())) {
-                chatMemory.add(AiMessage.from(m.getContent()));
-            } else if ("user".equals(m.getRole())) {
-                chatMemory.add(UserMessage.from(m.getContent()));
-            }
-        }
-
-        // 4. 保存用户消息
-        persistMessage(userId, conversation.getId(), "user", message, message);
-        history.add(new ChatMessageVO("user", message));
-        saveHistory(userId, history);
-
-        final String finalSystemPrompt = systemPrompt;
-
-        // 5. 初始化工具上下文 + 创建流式 assistant
         try {
-            V2ChatToolContext.Context toolContext = V2ChatToolContext.init(userId, redisTemplate, recommendationMapper);
+            AiChatConversation conversation = getOrCreateActiveConversation(userId);
+
+            // 1. 加载/初始化对话历史
+            List<ChatMessageVO> loadedHistory = loadHistory(userId);
+            if (loadedHistory.isEmpty()) {
+                loadedHistory = loadPersistedMemoryMessages(conversation.getId());
+            }
+            final List<ChatMessageVO> history = loadedHistory;
+
+            // 2. 每轮都重建系统提示词，确保草稿调整后的档位和操作ID是最新的。
+            String systemPrompt = buildSystemPrompt(userId);
+            redisTemplate.opsForValue().set(chatKey(userId), systemPrompt, CHAT_TTL);
+
+            // 3. 构建 ChatMemory
+            ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(MAX_MESSAGES);
+            for (ChatMessageVO m : history) {
+                if ("system".equals(m.getRole())) continue;
+                if (m.getContent() == null || m.getContent().isBlank()) continue;
+                if ("assistant".equals(m.getRole())) {
+                    chatMemory.add(AiMessage.from(m.getContent()));
+                } else if ("user".equals(m.getRole())) {
+                    chatMemory.add(UserMessage.from(m.getContent()));
+                }
+            }
+
+            // 4. 保存用户消息
+            persistMessage(userId, conversation.getId(), "user", message, message);
+            history.add(new ChatMessageVO("user", message));
+            saveHistory(userId, history);
+
+            final String finalSystemPrompt = systemPrompt;
+
+            // 5. 初始化工具上下文 + 创建流式 assistant
+            try {
+                V2ChatToolContext.Context toolContext = V2ChatToolContext.init(userId, redisTemplate, recommendationMapper);
             StreamAssistant assistant = AiServices.builder(StreamAssistant.class)
                 .streamingChatModel(streamingChatModel)
                 .tools(
@@ -218,10 +229,15 @@ public class AiChatServiceImpl implements IAiChatService {
                     callback.onError(error);
                 })
                 .start();
-        } catch (Exception e) {
-            V2ChatToolContext.clear();
-            log.error("[AiChat] Failed to start stream for userId={}: {}", userId, e.getMessage());
-            callback.onError(e);
+            } catch (Exception e) {
+                V2ChatToolContext.clear();
+                log.error("[AiChat] Failed to start stream for userId={}: {}", userId, e.getMessage());
+                callback.onError(e);
+            } finally {
+                V2ChatToolContext.clear();
+            }
+        } finally {
+            redisTemplate.delete(lockKey);
         }
     }
 

@@ -168,6 +168,17 @@ public class GlobalExceptionHandler
     }
 
     /**
+     * 业务操作前置条件不满足（如工作集为空、候选不足等）
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public AjaxResult handleIllegalStateException(IllegalStateException e, HttpServletRequest request)
+    {
+        String requestURI = request.getRequestURI();
+        log.warn("请求地址'{}',操作被拒绝: {}", requestURI, e.getMessage());
+        return AjaxResult.error(e.getMessage());
+    }
+
+    /**
      * 请求体格式错误 / JSON 解析失败
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)

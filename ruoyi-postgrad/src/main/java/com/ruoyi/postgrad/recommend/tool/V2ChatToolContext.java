@@ -20,7 +20,7 @@ import java.util.function.Supplier;
  */
 public final class V2ChatToolContext {
 
-    private static final ThreadLocal<Context> CURRENT = new InheritableThreadLocal<>();
+    private static final ThreadLocal<Context> CURRENT = new ThreadLocal<>();
 
     private V2ChatToolContext() {}
 

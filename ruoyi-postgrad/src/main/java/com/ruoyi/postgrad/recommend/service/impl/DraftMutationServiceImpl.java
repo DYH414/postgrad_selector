@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.recommend.service.impl;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -15,6 +16,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftDecisionLogVO;
@@ -24,6 +28,7 @@ import com.ruoyi.postgrad.recommend.domain.DraftReplacementRequest;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.ExcludedCandidateVO;
 import com.ruoyi.postgrad.recommend.domain.RefillResultVO;
+import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.IDraftDecisionLogService;
 import com.ruoyi.postgrad.recommend.service.IDraftMutationService;
@@ -42,6 +47,9 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
 
     @Autowired
     private IDraftDecisionLogService decisionLogService;
+
+    @Autowired
+    private RecommendationMapper recommendationMapper;
 
     @Override
     public DraftMutationResultVO removeCandidate(Long userId, Long programId,
@@ -117,6 +125,17 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         logDecision(userId, "manual_add", programId,
             candidate.getFact().getSchoolName(), tier, "user",
             "手动添加候选人");
+        return result;
+    }
+
+    @Override
+    public DraftMutationResultVO removeFromDraftDirect(Long userId, Long programId) {
+        DraftMutationResultVO result = new DraftMutationResultVO();
+        result.setOk(true);
+        result.setAction("remove_direct");
+        DraftVO draft = removeFromDraft(userId, programId);
+        result.setDraft(draft);
+        result.setDraftCount(countDraft(draft));
         return result;
     }
 
@@ -220,12 +239,6 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
             return result;
         }
 
-        var wsTier = workspace.tierByLevel(tier);
-        if (wsTier == null || wsTier.getCandidates() == null || wsTier.getCandidates().isEmpty()) {
-            result.setOk(false);
-            return result;
-        }
-
         Set<Long> excluded = collectDraftIds(draft);
         if (draft.getRemovedCandidates() != null) {
             for (CandidateCardVO c : draft.getRemovedCandidates()) {
@@ -240,22 +253,44 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
             default -> "balanced";
         };
 
-        List<CandidateCardVO> available = wsTier.getCandidates().stream()
-            .filter(c -> c.getFact().getProgramId() != null
-                && !excluded.contains(c.getFact().getProgramId()))
-            .sorted((a, b) -> {
-                if ("safer".equals(preference)) {
-                    Integer ga = a.getFact().getScoreGap(); Integer gb = b.getFact().getScoreGap();
-                    return Integer.compare(gb != null ? gb : 0, ga != null ? ga : 0);
-                }
-                if ("higher_tier".equals(preference)) {
-                    return Integer.compare(tierWeight(b.getFact().getSchoolTier()),
-                                           tierWeight(a.getFact().getSchoolTier()));
-                }
-                return 0;
-            })
-            .limit(needed)
-            .toList();
+        // 1. 从 workspace 选取候选
+        List<CandidateCardVO> available = new ArrayList<>();
+        var wsTier = workspace != null ? workspace.tierByLevel(tier) : null;
+        if (wsTier != null && wsTier.getCandidates() != null && !wsTier.getCandidates().isEmpty()) {
+            available = wsTier.getCandidates().stream()
+                .filter(c -> c.getFact().getProgramId() != null
+                    && !excluded.contains(c.getFact().getProgramId()))
+                .sorted((a, b) -> {
+                    if ("safer".equals(preference)) {
+                        Integer ga = a.getFact().getScoreGap(); Integer gb = b.getFact().getScoreGap();
+                        return Integer.compare(gb != null ? gb : 0, ga != null ? ga : 0);
+                    }
+                    if ("higher_tier".equals(preference)) {
+                        return Integer.compare(tierWeight(b.getFact().getSchoolTier()),
+                                               tierWeight(a.getFact().getSchoolTier()));
+                    }
+                    return 0;
+                })
+                .limit(needed)
+                .collect(Collectors.toCollection(ArrayList::new));
+        }
+
+        int wsAdded = available.size();
+        int shortfall = needed - wsAdded;
+
+        // 2. workspace 不够 → DB 回退
+        if (shortfall > 0) {
+            List<CandidateCardVO> dbFallback = queryDbFallback(draft, tier, preference,
+                shortfall, excluded);
+            available.addAll(dbFallback);
+            log.info("[Mutation] fillTier userId={} tier={} wsAdded={} dbFallback={}",
+                userId, tier, wsAdded, dbFallback.size());
+        }
+
+        if (available.isEmpty()) {
+            result.setOk(false);
+            return result;
+        }
 
         for (CandidateCardVO c : available) {
             draft = addToDraft(draft, c, tier);
@@ -271,6 +306,89 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         return result;
     }
 
+    // ── DB fallback for fillTier ──
+
+    private static final List<String> EXAM_408_SUBJECT_CODES = List.of(
+        "101,204,302,408", "101,201,301,408");
+
+    /**
+     * workspace 候选不足时从 DB 补位。
+     */
+    private List<CandidateCardVO> queryDbFallback(DraftVO draft, String tier, String preference,
+                                                   int shortfall, Set<Long> excluded) {
+        if (draft.getProfileBasis() == null) return Collections.emptyList();
+        Integer estimatedScore = draft.getProfileBasis().getEstimatedScore();
+        String targetRegions = draft.getProfileBasis().getTargetRegions();
+        if (estimatedScore == null || estimatedScore <= 0) return Collections.emptyList();
+
+        List<String> regions = parseRegionsList(targetRegions);
+
+        // 查 DB：双考试组合 + programId 去重
+        LinkedHashSet<Long> seen = new LinkedHashSet<>();
+        List<RowMap> allRows = new ArrayList<>();
+        for (String subjectCodes : EXAM_408_SUBJECT_CODES) {
+            List<RowMap> rows = recommendationMapper.selectCandidates(
+                subjectCodes, regions, null, estimatedScore, 30, "full_time");
+            if (rows != null) {
+                for (RowMap row : rows) {
+                    Object pid = row.get("programId");
+                    if (pid instanceof Number n && seen.add(n.longValue())) {
+                        allRows.add(row);
+                    }
+                }
+            }
+        }
+
+        return allRows.stream()
+            .map(SchoolFact::fromRow)
+            .filter(f -> {
+                Integer avg = f.getAvgAdmittedScore();
+                int gap = avg != null ? estimatedScore - avg : 0;
+                f.setScoreGap(gap);
+                // 计算 canBeSafe（DB 回退也需要）
+                int quota = f.getUnifiedExamQuota() != null ? f.getUnifiedExamQuota()
+                    : (f.getPlanCount() != null ? f.getPlanCount() : 0);
+                boolean safe = SchoolFact.canBeSafe(quota, f.getDataCompleteness(),
+                    f.getAdmissionLow(), f.getAdmissionHigh());
+                f.setCanBeSafe(safe);
+                return gap >= -30;
+            })
+            .filter(f -> f.getProgramId() != null && !excluded.contains(f.getProgramId()))
+            .filter(f -> !"C".equalsIgnoreCase(f.getDataCompleteness()))
+            .filter(f -> {
+                int gap = f.getScoreGap() != null ? f.getScoreGap() : 0;
+                String classifiedTier = SchoolFact.classifyTier(gap, f.getCanBeSafe());
+                return tier.equals(classifiedTier);
+            })
+            .sorted((a, b) -> {
+                if ("safer".equals(preference)) {
+                    Integer ga = a.getScoreGap(); Integer gb = b.getScoreGap();
+                    return Integer.compare(gb != null ? gb : 0, ga != null ? ga : 0);
+                }
+                if ("higher_tier".equals(preference)) {
+                    return Integer.compare(tierWeight(b.getSchoolTier()),
+                                           tierWeight(a.getSchoolTier()));
+                }
+                return 0;
+            })
+            .limit(shortfall)
+            .map(CandidateCardVO::fromFact)
+            .toList();
+    }
+
+    private List<String> parseRegionsList(String raw) {
+        if (raw == null || raw.isBlank() || "不限".equals(raw) || "[]".equals(raw)) {
+            return Collections.emptyList();
+        }
+        try {
+            return JSON.parseArray(raw, String.class);
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
+    // ── batchRemove ──
+
     @Override
     public DraftMutationResultVO batchRemove(Long userId, List<Long> programIds,
                                               CandidateWorkspaceVO workspace) {
@@ -285,19 +403,20 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
             String tier = findCandidateTier(draft, pid);
             if (tier == null) continue; // 不在草稿中，跳过
 
+            String schoolName = findCandidateName(draft, pid); // 移除前取名称
             draft = removeFromDraft(userId, pid);
             removed++;
 
             // 每个移除触发 refill
             ExcludedCandidateVO excluded = new ExcludedCandidateVO();
             excluded.setProgramId(pid);
+            excluded.setSchoolName(schoolName);
             excluded.setReasonType("user_removed");
             excluded.setTierAtRemoval(tier);
             excluded.setCreatedAt(LocalDateTime.now());
             saveExcluded(userId, excluded);
 
-            logDecision(userId, "batch_remove", pid, findCandidateName(draft, pid),
-                tier, "user", "批量移除");
+            logDecision(userId, "batch_remove", pid, schoolName, tier, "user", "批量移除");
         }
 
         if (removed == 0) {

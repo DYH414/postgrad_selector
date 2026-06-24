@@ -260,4 +260,8 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
     void setDraftServiceForTest(IDraftService draftService) {
         this.draftService = draftService;
     }
+
+    void setThreadPoolTaskExecutorForTest(ThreadPoolTaskExecutor executor) {
+        this.threadPoolTaskExecutor = executor;
+    }
 }

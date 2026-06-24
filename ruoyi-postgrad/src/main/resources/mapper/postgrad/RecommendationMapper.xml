@@ -82,10 +82,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         </choose>
           and subj.subject_codes = #{subjectCodes}
         <if test="regions != null and regions.size() > 0">
-            and s.province in
+            and (s.province in
             <foreach collection="regions" item="region" open="(" separator="," close=")">
                 #{region}
             </foreach>
+            or s.city in
+            <foreach collection="regions" item="region" open="(" separator="," close=")">
+                #{region}
+            </foreach>)
         </if>
         <if test="programCodes != null and programCodes.size() > 0">
             and p.program_code in
@@ -256,10 +260,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and ar.avg_admitted_score >= #{minScore}
           and ar.avg_admitted_score &lt;= #{maxScore}
         <if test="regions != null and regions.size() > 0">
-            and s.province in
+            and (s.province in
             <foreach collection="regions" item="region" open="(" separator="," close=")">
                 #{region}
             </foreach>
+            or s.city in
+            <foreach collection="regions" item="region" open="(" separator="," close=")">
+                #{region}
+            </foreach>)
         </if>
         order by abs(cast(ar.avg_admitted_score as signed) - #{estimatedScore}) asc
         limit 300
@@ -304,10 +312,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
           and (sc.score_line is not null or ar.avg_admitted_score is not null)
           and (ar.avg_admitted_score is null or ar.avg_admitted_score between #{minScore} and #{maxScore})
         <if test="regions != null and regions.size() > 0">
-            and s.province in
+            and (s.province in
             <foreach collection="regions" item="region" open="(" separator="," close=")">
                 #{region}
             </foreach>
+            or s.city in
+            <foreach collection="regions" item="region" open="(" separator="," close=")">
+                #{region}
+            </foreach>)
         </if>
         order by
             case <include refid="DynamicDataCompleteness"/> when 'A' then 0 when 'B' then 1 else 2 end,

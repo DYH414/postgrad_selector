@@ -65,4 +65,10 @@ public interface IDraftMutationService {
      * <p>用于从外部 DB 搜索结果添加画像地区以外的学校。</p>
      */
     DraftMutationResultVO addCandidateDirect(Long userId, CandidateCardVO candidate, String tier);
+
+    /**
+     * 直接移除候选（不触发 refill 策略）。
+     * <p>用于 replace 流程中避免移除+refill+添加三重效应。</p>
+     */
+    DraftMutationResultVO removeFromDraftDirect(Long userId, Long programId);
 }

@@ -2,15 +2,29 @@ package com.ruoyi.postgrad.recommend.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
+import com.ruoyi.postgrad.mapper.AiChatMapper;
+import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
@@ -119,5 +133,50 @@ class AiChatServiceImplTest {
         assertFalse(prompt.contains("---ACTION---"));
         assertFalse(prompt.contains("\"type\":\"remove\""));
         assertTrue(prompt.contains("removeDraftCandidate(programId)"));
+    }
+
+    // ═══════════ H3: chat() 并发锁拒绝 ═══════════
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void concurrentChatShouldBeRejected() throws Exception {
+        // Given: Redis 锁 SETNX 返回 false（已有对话在进行中）
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(ops);
+        when(ops.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+            .thenReturn(false); // 锁已被占用
+
+        AiChatMapper aiChatMapper = mock(AiChatMapper.class);
+        AiChatConversation conv = new AiChatConversation();
+        conv.setId(1L);
+        conv.setUserId(1L);
+        when(aiChatMapper.selectActiveConversation(1L)).thenReturn(conv);
+
+        AiChatServiceImpl service = new AiChatServiceImpl();
+        injectField(service, "redisTemplate", redis);
+        injectField(service, "aiChatMapper", aiChatMapper);
+
+        AtomicReference<String> errorMsg = new AtomicReference<>();
+        ChatStreamCallback callback = new ChatStreamCallback() {
+            @Override public void onToken(String token) {}
+            @Override public void onError(Throwable error) {
+                errorMsg.set(error.getMessage());
+            }
+        };
+
+        // When: 尝试发送第二条消息
+        service.chat(1L, "并发消息", callback);
+
+        // Then: 被拒绝，错误消息包含"处理中"
+        assertNotNull(errorMsg.get());
+        assertTrue(errorMsg.get().contains("处理中"),
+            "H3: concurrent chat should be rejected: " + errorMsg.get());
+    }
+
+    private static void injectField(Object target, String fieldName, Object value) throws Exception {
+        Field field = AiChatServiceImpl.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 }

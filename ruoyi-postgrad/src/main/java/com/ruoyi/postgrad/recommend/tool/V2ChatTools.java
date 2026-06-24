@@ -127,7 +127,8 @@ public class V2ChatTools {
         item.put("programId", f.getProgramId());
         item.put("schoolName", f.getSchoolName());
         item.put("programName", f.getProgramName());
-        item.put("tier", f.inferTier());
+        String inferredTier = f.inferTier();
+        item.put("tier", inferredTier != null ? inferredTier : "far_reach");
         item.put("city", f.getCity());
         item.put("province", f.getProvince());
         item.put("gap", f.getScoreGap());

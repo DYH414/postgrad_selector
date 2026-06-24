@@ -230,14 +230,13 @@ public class SchoolFact implements Serializable {
 
     /**
      * 根据当前实例的 gap + canBeSafe 推断档位。
-     * <p>委托给 {@link #classifyTier(int, Boolean)}，gap < -15 兜底返回 "reach"。</p>
+     * <p>委托给 {@link #classifyTier(int, Boolean)}，gap < -15 时返回 null（差距过大，不应推荐）。</p>
      *
-     * @return reach / steady / safe
+     * @return reach / steady / safe / null（差距超 15 分，不建议推荐）
      */
     public String inferTier() {
         int gap = this.scoreGap != null ? this.scoreGap : 0;
-        String tier = classifyTier(gap, this.canBeSafe);
-        return tier != null ? tier : "reach"; // gap < -15 兜底
+        return classifyTier(gap, this.canBeSafe);
     }
 
     // ── 静态工厂 / 类型转换工具（系统唯一副本） ──
