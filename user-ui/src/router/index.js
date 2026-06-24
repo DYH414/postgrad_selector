@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getToken } from '@/api/request'
+import { getToken, removeToken } from '@/api/request'
+
+const ONBOARDED_KEY = 'App-Onboarded'
 
 const routes = [
   {
@@ -68,7 +70,9 @@ const routes = [
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/'
+    name: 'NotFound',
+    component: () => import('@/views/NotFound.vue'),
+    meta: { public: true }
   }
 ]
 
@@ -78,12 +82,36 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 })
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   if (to.meta.public) return next()
 
   const token = getToken()
   if (!token) {
     return next({ path: '/login', query: { redirect: to.fullPath } })
+  }
+
+  // 登录用户首次访问时检测画像 → 无画像自动引导
+  try {
+    const userStoreModule = await import('@/stores/user')
+    const userStore = userStoreModule.useUserStore()
+
+    if (!userStore.userId) {
+      await userStore.fetchMe()
+    }
+
+    if (!userStore.profile && to.path !== '/profile') {
+      if (!localStorage.getItem(ONBOARDED_KEY)) {
+        localStorage.setItem(ONBOARDED_KEY, '1')
+        return next({ path: '/profile' })
+      }
+    }
+
+    if (userStore.profile && localStorage.getItem(ONBOARDED_KEY)) {
+      localStorage.removeItem(ONBOARDED_KEY)
+    }
+  } catch {
+    removeToken()
+    return next({ path: '/login' })
   }
 
   next()

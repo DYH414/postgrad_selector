@@ -155,15 +155,28 @@ const registerRules = {
   confirmPassword: [{ required: true, message: '请确认密码', trigger: 'blur' }, { validator: validateConfirm, trigger: 'blur' }]
 }
 
+const REMEMBERED_ACCOUNT_KEY = 'App-Remembered-Account'
+
+function saveRememberedAccount(account) {
+  if (account) {
+    localStorage.setItem(REMEMBERED_ACCOUNT_KEY, account)
+  }
+}
+
+function getRememberedAccount() {
+  return localStorage.getItem(REMEMBERED_ACCOUNT_KEY) || ''
+}
+
 function resetLoginPassword() {
   loginForm.password = ''
 }
 
 function resetLoginCredentials() {
+  // 记住上一次登录的账号，只清除密码
+  loginForm.password = ''
   if (!route.query.account) {
-    loginForm.account = ''
+    loginForm.account = getRememberedAccount()
   }
-  resetLoginPassword()
 }
 
 function resetRegisterPasswords() {
@@ -174,14 +187,12 @@ function resetRegisterPasswords() {
 onMounted(() => {
   if (route.query.account) {
     loginForm.account = String(route.query.account)
+  } else {
+    loginForm.account = getRememberedAccount()
   }
-  resetLoginCredentials()
-  resetRegisterPasswords()
-  nextTick(() => {
-    resetLoginCredentials()
-    window.setTimeout(resetLoginCredentials, 100)
-    window.setTimeout(resetLoginCredentials, 500)
-  })
+  loginForm.password = ''
+  registerForm.password = ''
+  registerForm.confirmPassword = ''
 })
 
 watch(activeTab, tab => {
@@ -196,6 +207,7 @@ function handleLogin() {
   loginFormRef.value.validate(valid => {
     if (!valid) return
     loading.value = true
+    saveRememberedAccount(loginForm.account)
     userStore.loginAction(loginForm).then(() => {
       router.push(route.query.redirect || '/')
     }).catch(() => {
