@@ -5535,3 +5535,8 @@ prototype-snapshot*.md
 
 # Node modules
 node_modules/
+/.workbuddy/
+/.codex-backups/
+/.agents/
+/outputs/
+/openspec/
