@@ -56,9 +56,14 @@ public class ResourcesConfig implements WebMvcConfigurer
     {
         CorsConfiguration config = new CorsConfiguration();
         // 设置访问源地址
+        config.addAllowedOriginPattern("http://localhost:8081");
+        config.addAllowedOriginPattern("http://127.0.0.1:8081");
         config.addAllowedOriginPattern("http://localhost:8082");
+        config.addAllowedOriginPattern("http://127.0.0.1:8082");
         config.addAllowedOriginPattern("http://localhost:8080");
+        config.addAllowedOriginPattern("http://127.0.0.1:8080");
         config.addAllowedOriginPattern("http://localhost:8083");
+        config.addAllowedOriginPattern("http://127.0.0.1:8083");
         config.addAllowedOriginPattern("https://408lab.site");
         config.addAllowedOriginPattern("https://www.408lab.site");
         // 设置访问源请求头

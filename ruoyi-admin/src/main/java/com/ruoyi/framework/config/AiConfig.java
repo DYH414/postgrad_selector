@@ -1,10 +1,13 @@
 package com.ruoyi.framework.config;
 
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,6 +39,18 @@ public class AiConfig {
     @Value("${app.ai.deepseek.timeout-seconds:120}")
     private int timeoutSeconds;
 
+    @Value("${app.ai.rag.embedding.base-url:https://api.siliconflow.cn/v1}")
+    private String ragEmbeddingBaseUrl;
+
+    @Value("${app.ai.rag.embedding.api-key:}")
+    private String ragEmbeddingApiKey;
+
+    @Value("${app.ai.rag.embedding.model-name:BAAI/bge-m3}")
+    private String ragEmbeddingModelName;
+
+    @Value("${app.ai.rag.embedding.timeout-seconds:120}")
+    private int ragEmbeddingTimeoutSeconds;
+
     @Bean
     @ConditionalOnProperty(name = "app.ai.deepseek.api-key")
     public ChatModel chatModel() {
@@ -60,6 +75,17 @@ public class AiConfig {
             .strictTools(true)
             .parallelToolCalls(false)
             .timeout(Duration.ofSeconds(timeoutSeconds))
+            .build();
+    }
+
+    @Bean
+    @ConditionalOnExpression("T(org.springframework.util.StringUtils).hasText('${app.ai.rag.embedding.api-key:}')")
+    public EmbeddingModel embeddingModel() {
+        return OpenAiEmbeddingModel.builder()
+            .baseUrl(ragEmbeddingBaseUrl)
+            .apiKey(ragEmbeddingApiKey)
+            .modelName(ragEmbeddingModelName)
+            .timeout(Duration.ofSeconds(ragEmbeddingTimeoutSeconds))
             .build();
     }
 }

@@ -38,6 +38,7 @@ import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.service.AiServices;
 
 /**
@@ -82,6 +83,9 @@ public class AiChatServiceImpl implements IAiChatService {
 
     @Autowired
     private AiChatMapper aiChatMapper;
+
+    @Autowired(required = false)
+    private RetrievalAugmentor retrievalAugmentor;
 
     private interface StreamAssistant {
         dev.langchain4j.service.TokenStream chat(String message);
@@ -175,6 +179,7 @@ public class AiChatServiceImpl implements IAiChatService {
                     new V2BoundDraftActionTools(v2DraftActionTools, toolContext))
                 .chatMemory(chatMemory)
                 .systemMessageProvider(ignored -> finalSystemPrompt)
+                .retrievalAugmentor(retrievalAugmentor)
                 .build();
 
             StringBuilder fullResponse = new StringBuilder();

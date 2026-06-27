@@ -103,7 +103,7 @@ spring:
 
 app:
   rabbitmq:
-    enabled: true
+    enabled: false
   # AI 模型配置（DeepSeek，兼容 OpenAI 协议）
   ai:
     deepseek:
@@ -113,6 +113,29 @@ app:
       max-tokens: 4096
       temperature: 0.7
       timeout-seconds: 120
+    rag:
+      embedding:
+        base-url: https://api.siliconflow.cn/v1
+        api-key: ${SILICONFLOW_API_KEY:}
+        model-name: BAAI/bge-m3
+        timeout-seconds: 120
+      rerank:
+        base-url: https://api.siliconflow.cn/v1
+        api-key: ${SILICONFLOW_API_KEY:}
+        model-name: BAAI/bge-reranker-v2-m3
+        max-chunks-per-doc: 1024
+        overlap-tokens: 20
+        timeout-seconds: 120
+      retrieval:
+        max-results: 5
+        min-score: 0.6
+        rerank-top-n: 3
+        rerank-min-score: 0.0
+      indexing:
+        documents-path: rag-documents/
+        chunk-size: 500
+        chunk-overlap: 50
+        auto-index-on-startup: true
 
 # token配置
 token:
@@ -151,6 +174,18 @@ springdoc:
       display-name: '考研择校平台'
       paths-to-match: '/**'
       packages-to-scan: com.ruoyi.web.controller.tool
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  health:
+    rabbit:
+      enabled: false
 
 # 防盗链配置
 referer:
