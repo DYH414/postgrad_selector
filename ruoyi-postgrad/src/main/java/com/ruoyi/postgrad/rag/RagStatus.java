@@ -11,6 +11,9 @@ public class RagStatus {
     private LocalDateTime lastIndexedAt;
     private String lastError;
     private String lastRunMode;
+    private String backend;
+    private String collectionName;
+    private boolean reachable;
 
     public boolean isIndexed() {
         return indexed;
@@ -66,6 +69,30 @@ public class RagStatus {
 
     public void setLastRunMode(String lastRunMode) {
         this.lastRunMode = lastRunMode;
+    }
+
+    public String getBackend() {
+        return backend;
+    }
+
+    public void setBackend(String backend) {
+        this.backend = backend;
+    }
+
+    public String getCollectionName() {
+        return collectionName;
+    }
+
+    public void setCollectionName(String collectionName) {
+        this.collectionName = collectionName;
+    }
+
+    public boolean isReachable() {
+        return reachable;
+    }
+
+    public void setReachable(boolean reachable) {
+        this.reachable = reachable;
     }
 
 }

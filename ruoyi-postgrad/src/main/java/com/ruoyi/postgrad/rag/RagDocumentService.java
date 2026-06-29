@@ -62,6 +62,9 @@ public class RagDocumentService {
         copy.setLastIndexedAt(source.getLastIndexedAt());
         copy.setLastError(source.getLastError());
         copy.setLastRunMode(source.getLastRunMode());
+        copy.setBackend(source.getBackend());
+        copy.setCollectionName(source.getCollectionName());
+        copy.setReachable(source.isReachable());
         return copy;
     }
 
