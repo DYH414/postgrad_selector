@@ -34,3 +34,14 @@ DONE
 
 ## Commit
 - `feat(rag): add qdrant collection bootstrap`
+
+## Review Fixes
+- Updated `QdrantCollectionService.ensureCollection()` to create the collection only when `GET /collections/{name}` returns 404/not found. Other `RestClientException` failures now surface to callers so `RagDocumentService` can treat Qdrant as unavailable instead of silently recreating.
+- Updated `QdrantCollectionService.clearCollection()` to delete all points in the configured collection via `POST /collections/{name}/points/delete?wait=true` with body `{"filter":{}}`, rather than filtering on a single `embedding_version`.
+- Expanded `QdrantCollectionServiceTest` to distinguish 404 from 500 and to assert the delete request body matches the whole-collection selector.
+
+## Review Fix Verification
+- Red: `mvn -pl ruoyi-postgrad -Dtest=QdrantCollectionServiceTest test` failed before the service change because `ensureCollection()` attempted `PUT` after a 500 response.
+- Green: `mvn -pl ruoyi-postgrad -Dtest=QdrantCollectionServiceTest test` passed after the service change.
+- Coverage run: `mvn -pl ruoyi-postgrad "-Dtest=QdrantCollectionServiceTest,RagDocumentServiceTest" test`
+- Result: PASS (`QdrantCollectionServiceTest` 5/5, `RagDocumentServiceTest` 3/3)

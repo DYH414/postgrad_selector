@@ -1,14 +1,15 @@
 package com.ruoyi.postgrad.rag.qdrant;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
 public class QdrantCollectionService {
@@ -34,8 +35,15 @@ public class QdrantCollectionService {
     }
 
     public void ensureCollection() {
-        if (isReachable()) {
+        try {
+            restTemplate.getForEntity(collectionUrl(), String.class);
             return;
+        } catch (HttpClientErrorException.NotFound ex) {
+            // Create the collection only when Qdrant explicitly reports it missing.
+        } catch (RestClientResponseException ex) {
+            throw ex;
+        } catch (RestClientException ex) {
+            throw ex;
         }
 
         Map<String, Object> vectors = new LinkedHashMap<>();
@@ -50,11 +58,7 @@ public class QdrantCollectionService {
     }
 
     public void clearCollection() {
-        Map<String, Object> filter = new LinkedHashMap<>();
-        filter.put("must", List.of(
-            Map.of("key", "embedding_version", "match", Map.of("value", "bge-m3-v1"))
-        ));
-        Map<String, Object> body = Map.of("filter", filter);
+        Map<String, Object> body = Map.of("filter", Map.of());
         restTemplate.postForEntity(collectionUrl() + "/points/delete?wait=true",
             new HttpEntity<>(body, headers()), String.class);
     }

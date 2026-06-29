@@ -2,9 +2,12 @@ package com.ruoyi.postgrad.rag.qdrant;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -12,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
 class QdrantCollectionServiceTest {
@@ -25,7 +29,7 @@ class QdrantCollectionServiceTest {
 
         server.expect(requestTo("http://localhost:6333/collections/postgrad_rag_main"))
             .andExpect(method(HttpMethod.GET))
-            .andRespond(withServerError());
+            .andRespond(withResourceNotFound());
         server.expect(requestTo("http://localhost:6333/collections/postgrad_rag_main"))
             .andExpect(method(HttpMethod.PUT))
             .andRespond(withSuccess("{\"result\":true,\"status\":\"ok\"}", MediaType.APPLICATION_JSON));
@@ -35,7 +39,22 @@ class QdrantCollectionServiceTest {
     }
 
     @Test
-    void shouldClearCollectionWithFilterThatMatchesAllPoints() {
+    void shouldSurfaceNon404FailuresWhenEnsuringCollection() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        QdrantCollectionService service = new QdrantCollectionService(restTemplate,
+            "http://localhost:6333", "", "postgrad_rag_main", 1024);
+
+        server.expect(requestTo("http://localhost:6333/collections/postgrad_rag_main"))
+            .andExpect(method(HttpMethod.GET))
+            .andRespond(withServerError());
+
+        assertThrows(RestClientResponseException.class, service::ensureCollection);
+        server.verify();
+    }
+
+    @Test
+    void shouldClearCollectionWithSelectorThatMatchesAllPoints() {
         RestTemplate restTemplate = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
         QdrantCollectionService service = new QdrantCollectionService(restTemplate,
@@ -43,6 +62,7 @@ class QdrantCollectionServiceTest {
 
         server.expect(requestTo("http://localhost:6333/collections/postgrad_rag_main/points/delete?wait=true"))
             .andExpect(method(HttpMethod.POST))
+            .andExpect(content().json("{\"filter\":{}}"))
             .andRespond(withSuccess("{\"result\":true,\"status\":\"ok\"}", MediaType.APPLICATION_JSON));
 
         service.clearCollection();
