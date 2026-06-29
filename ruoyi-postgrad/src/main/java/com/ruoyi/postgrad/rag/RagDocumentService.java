@@ -1,14 +1,19 @@
 package com.ruoyi.postgrad.rag;
 
 import dev.langchain4j.data.document.Document;
+import dev.langchain4j.data.document.DocumentSplitter;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.document.loader.ClassPathDocumentLoader;
 import dev.langchain4j.data.document.parser.TextDocumentParser;
 import dev.langchain4j.data.document.splitter.DocumentSplitters;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -92,6 +97,23 @@ public class RagDocumentService {
             return new RagIndexResult(0, 0);
         }
 
+        try {
+            qdrantCollectionService.ensureCollection();
+            qdrantCollectionService.clearCollection();
+            status.setBackend("qdrant");
+            status.setCollectionName(qdrantCollectionService.getCollectionName());
+            status.setReachable(qdrantCollectionService.isReachable());
+        } catch (Exception ex) {
+            status.setBackend("qdrant");
+            status.setCollectionName(qdrantCollectionService.getCollectionName());
+            status.setReachable(false);
+            status.setIndexed(false);
+            status.setLastError("Qdrant unavailable: " + ex.getMessage());
+            statusRef.set(status);
+            log.error("[RagInit] Qdrant unavailable, skipping RAG indexing: {}", ex.getMessage(), ex);
+            return new RagIndexResult(0, 0);
+        }
+
         long startedAt = System.currentTimeMillis();
         log.info("[RagInit] Starting index: found {} documents in classpath:{}", documents.size(), documentsPath);
 
@@ -102,18 +124,16 @@ public class RagDocumentService {
         }
 
         try {
-            EmbeddingStoreIngestor.builder()
-                .documentSplitter(DocumentSplitters.recursive(chunkSize, chunkOverlap))
-                .embeddingModel(embeddingModel)
-                .embeddingStore(embeddingStore)
-                .build()
-                .ingest(documents);
+            LocalDateTime indexedAt = LocalDateTime.now();
+            List<TextSegment> segments = splitWithMetadata(documents, indexedAt);
+            List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
+            embeddingStore.addAll(embeddings, segments);
 
-            int chunkCount = countSegments(documents);
+            int chunkCount = segments.size();
             status.setIndexed(true);
             status.setDocumentCount(documents.size());
             status.setChunkCount(chunkCount);
-            status.setLastIndexedAt(LocalDateTime.now());
+            status.setLastIndexedAt(indexedAt);
             status.setLastError(null);
             statusRef.set(status);
 
@@ -140,10 +160,79 @@ public class RagDocumentService {
         }
     }
 
-    private int countSegments(List<Document> documents) {
-        List<TextSegment> segments = new ArrayList<>();
-        documents.forEach(document -> segments.addAll(DocumentSplitters.recursive(chunkSize, chunkOverlap).split(document)));
-        return segments.size();
+    private List<TextSegment> splitWithMetadata(List<Document> documents, LocalDateTime indexedAt) {
+        DocumentSplitter splitter = DocumentSplitters.recursive(chunkSize, chunkOverlap);
+        List<TextSegment> result = new ArrayList<>();
+        String updatedAt = indexedAt.toString();
+        for (Document document : documents) {
+            List<TextSegment> segments = splitter.split(document);
+            String sourceName = sourceName(document);
+            String docType = inferDocType(sourceName);
+            for (int i = 0; i < segments.size(); i++) {
+                TextSegment segment = segments.get(i);
+                Metadata metadata = segment.metadata().copy();
+                metadata.put("school_id", "");
+                metadata.put("school_name", "");
+                metadata.put("major_id", "");
+                metadata.put("major_name", "");
+                metadata.put("doc_type", docType);
+                metadata.put("year", "");
+                metadata.put("source_id", sourceName);
+                metadata.put("source_name", sourceName);
+                metadata.put("source_url", "");
+                metadata.put("chunk_index", String.valueOf(i));
+                metadata.put("chunk_title", sourceName);
+                metadata.put("content", segment.text());
+                metadata.put("content_hash", sha256(segment.text()));
+                metadata.put("embedding_version", "bge-m3-v1");
+                metadata.put("updated_at", updatedAt);
+                metadata.put("tags", "general");
+                result.add(TextSegment.from(segment.text(), metadata));
+            }
+        }
+        return result;
+    }
+
+    private String sourceName(Document document) {
+        String fileName = document.metadata().getString("file_name");
+        if (fileName != null && !fileName.isBlank()) {
+            return fileName;
+        }
+        String source = document.metadata().getString("source");
+        if (source != null && !source.isBlank()) {
+            return source;
+        }
+        return "unknown";
+    }
+
+    private String inferDocType(String sourceName) {
+        if (sourceName.contains("调剂")) {
+            return "adjustment_policy";
+        }
+        if (sourceName.contains("国家线") || sourceName.contains("复试")) {
+            return "score_policy";
+        }
+        if (sourceName.contains("择校")) {
+            return "selection_method";
+        }
+        if (sourceName.contains("术语")) {
+            return "terminology";
+        }
+        return "general";
+    }
+
+    private String sha256(String text) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(text.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder();
+            for (byte item : bytes) {
+                builder.append(String.format("%02x", item));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is not available", ex);
+        }
     }
 
 }
