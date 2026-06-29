@@ -127,7 +127,8 @@ public class RagDocumentService {
             LocalDateTime indexedAt = LocalDateTime.now();
             List<TextSegment> segments = splitWithMetadata(documents, indexedAt);
             List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
-            embeddingStore.addAll(embeddings, segments);
+            List<String> ids = segmentIds(segments);
+            embeddingStore.addAll(ids, embeddings, segments);
 
             int chunkCount = segments.size();
             status.setIndexed(true);
@@ -191,6 +192,17 @@ public class RagDocumentService {
             }
         }
         return result;
+    }
+
+    private List<String> segmentIds(List<TextSegment> segments) {
+        List<String> ids = new ArrayList<>(segments.size());
+        for (TextSegment segment : segments) {
+            Metadata metadata = segment.metadata();
+            ids.add(sha256(metadata.getString("source_id")
+                + ":" + metadata.getString("chunk_index")
+                + ":" + metadata.getString("content_hash")));
+        }
+        return ids;
     }
 
     private String sourceName(Document document) {

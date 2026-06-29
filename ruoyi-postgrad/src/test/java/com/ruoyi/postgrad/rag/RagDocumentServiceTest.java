@@ -19,6 +19,9 @@ import dev.langchain4j.model.output.Response;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.data.segment.TextSegment;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -162,6 +165,47 @@ class RagDocumentServiceTest {
     }
 
     @Test
+    void shouldWriteDeterministicChunkIdsToEmbeddingStore() throws Exception {
+        ObjectProvider<EmbeddingModel> provider = mock(ObjectProvider.class);
+        EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        QdrantCollectionService qdrant = mock(QdrantCollectionService.class);
+        when(provider.getIfAvailable()).thenReturn(embeddingModel);
+        when(qdrant.getCollectionName()).thenReturn("postgrad_rag_main");
+        when(qdrant.isReachable()).thenReturn(true);
+        when(embeddingModel.embedAll(any())).thenAnswer(invocation -> {
+            List<TextSegment> segments = invocation.getArgument(0);
+            return Response.from(segments.stream()
+                .map(item -> dev.langchain4j.data.embedding.Embedding.from(new float[]{0.1f, 0.2f, 0.3f}))
+                .toList());
+        });
+
+        RagDocumentService service = newService(provider, store, qdrant);
+        inject(service, "documentsPath", "rag-documents/");
+        inject(service, "chunkSize", 500);
+        inject(service, "chunkOverlap", 50);
+
+        RagIndexResult result = service.reindex();
+
+        ArgumentCaptor<List<String>> idsCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<TextSegment>> segmentsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(store).addAll(idsCaptor.capture(), any(), segmentsCaptor.capture());
+
+        List<String> ids = idsCaptor.getValue();
+        List<TextSegment> segments = segmentsCaptor.getValue();
+        assertEquals(result.getChunkCount(), ids.size());
+        assertEquals(segments.size(), ids.size());
+        for (int i = 0; i < segments.size(); i++) {
+            Metadata metadata = segments.get(i).metadata();
+            assertEquals(expectedChunkId(
+                metadata.getString("source_id"),
+                metadata.getString("chunk_index"),
+                metadata.getString("content_hash")
+            ), ids.get(i));
+        }
+    }
+
+    @Test
     void shouldExposeUsefulStatusWhenQdrantBootstrapFails() throws Exception {
         ObjectProvider<EmbeddingModel> provider = mock(ObjectProvider.class);
         EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
@@ -209,5 +253,23 @@ class RagDocumentServiceTest {
         Field field = RagDocumentService.class.getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(target, value);
+    }
+
+    private static String expectedChunkId(String sourceId, String chunkIndex, String contentHash) {
+        return sha256(sourceId + ":" + chunkIndex + ":" + contentHash);
+    }
+
+    private static String sha256(String text) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(text.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder();
+            for (byte item : bytes) {
+                builder.append(String.format("%02x", item));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is not available", ex);
+        }
     }
 }
