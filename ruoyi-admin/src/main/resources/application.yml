@@ -119,6 +119,13 @@ app:
         api-key: ${SILICONFLOW_API_KEY:}
         model-name: BAAI/bge-m3
         timeout-seconds: 120
+      qdrant:
+        url: ${QDRANT_URL:http://localhost:6333}
+        host: ${QDRANT_HOST:localhost}
+        grpc-port: ${QDRANT_GRPC_PORT:6334}
+        api-key: ${QDRANT_API_KEY:}
+        collection-name: ${QDRANT_COLLECTION:postgrad_rag_main}
+        dimension: ${QDRANT_DIMENSION:1024}
       rerank:
         base-url: https://api.siliconflow.cn/v1
         api-key: ${SILICONFLOW_API_KEY:}

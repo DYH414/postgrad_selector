@@ -1,5 +1,6 @@
 package com.ruoyi.framework.config;
 
+import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
 import com.ruoyi.postgrad.rag.reranker.SiliconFlowReranker;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -8,7 +9,8 @@ import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.aggregator.ReRankingContentAggregator;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.qdrant.QdrantEmbeddingStore;
 import java.time.Duration;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,13 +24,32 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 public class RagConfig {
 
     @Bean
-    public InMemoryEmbeddingStore<TextSegment> inMemoryEmbeddingStore() {
-        return new InMemoryEmbeddingStore<>();
+    public QdrantCollectionService qdrantCollectionService(
+        @Value("${app.ai.rag.qdrant.url:http://localhost:6333}") String url,
+        @Value("${app.ai.rag.qdrant.api-key:}") String apiKey,
+        @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_main}") String collectionName,
+        @Value("${app.ai.rag.qdrant.dimension:1024}") int dimension) {
+        return new QdrantCollectionService(new RestTemplate(), url, apiKey, collectionName, dimension);
+    }
+
+    @Bean
+    public EmbeddingStore<TextSegment> embeddingStore(
+        @Value("${app.ai.rag.qdrant.host:localhost}") String host,
+        @Value("${app.ai.rag.qdrant.grpc-port:6334}") int grpcPort,
+        @Value("${app.ai.rag.qdrant.api-key:}") String apiKey,
+        @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_main}") String collectionName) {
+        return QdrantEmbeddingStore.builder()
+            .host(host)
+            .port(grpcPort)
+            .apiKey(apiKey)
+            .collectionName(collectionName)
+            .payloadTextKey("content")
+            .build();
     }
 
     @Bean
     @ConditionalOnBean(EmbeddingModel.class)
-    public ContentRetriever contentRetriever(InMemoryEmbeddingStore<TextSegment> embeddingStore,
+    public ContentRetriever contentRetriever(EmbeddingStore<TextSegment> embeddingStore,
                                              EmbeddingModel embeddingModel,
                                              @Value("${app.ai.rag.retrieval.max-results:5}") int maxResults,
                                              @Value("${app.ai.rag.retrieval.min-score:0.6}") double minScore) {
