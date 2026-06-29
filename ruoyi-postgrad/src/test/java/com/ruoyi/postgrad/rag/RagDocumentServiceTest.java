@@ -8,9 +8,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.data.segment.TextSegment;
 import java.lang.reflect.Field;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -22,7 +24,9 @@ class RagDocumentServiceTest {
     void shouldSkipIndexingWhenEmbeddingModelMissing() {
         ObjectProvider<EmbeddingModel> provider = mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(null);
-        RagDocumentService service = new RagDocumentService(provider, new InMemoryEmbeddingStore<>());
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        QdrantCollectionService qdrant = mock(QdrantCollectionService.class);
+        RagDocumentService service = newService(provider, store, qdrant);
 
         RagIndexResult result = service.reindex();
 
@@ -44,7 +48,9 @@ class RagDocumentServiceTest {
             return Response.from(embeddings);
         });
 
-        RagDocumentService service = new RagDocumentService(provider, new InMemoryEmbeddingStore<>());
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        QdrantCollectionService qdrant = mock(QdrantCollectionService.class);
+        RagDocumentService service = newService(provider, store, qdrant);
         inject(service, "documentsPath", "rag-documents/");
         inject(service, "chunkSize", 500);
         inject(service, "chunkOverlap", 50);
@@ -60,12 +66,20 @@ class RagDocumentServiceTest {
     @Test
     void statusShouldReturnCopy() {
         ObjectProvider<EmbeddingModel> provider = mock(ObjectProvider.class);
-        RagDocumentService service = new RagDocumentService(provider, new InMemoryEmbeddingStore<>());
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        QdrantCollectionService qdrant = mock(QdrantCollectionService.class);
+        RagDocumentService service = newService(provider, store, qdrant);
 
         RagStatus status = service.getStatus();
         status.setIndexed(true);
 
         assertFalse(service.getStatus().isIndexed());
+    }
+
+    private static RagDocumentService newService(ObjectProvider<EmbeddingModel> provider,
+                                                 EmbeddingStore<TextSegment> store,
+                                                 QdrantCollectionService qdrant) {
+        return new RagDocumentService(provider, store, qdrant);
     }
 
     private static void inject(Object target, String fieldName, Object value) throws Exception {

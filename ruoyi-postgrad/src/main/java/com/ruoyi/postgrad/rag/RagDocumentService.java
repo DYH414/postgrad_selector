@@ -7,7 +7,8 @@ import dev.langchain4j.data.document.splitter.DocumentSplitters;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStoreIngestor;
-import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,7 +26,8 @@ public class RagDocumentService {
     private static final Logger log = LoggerFactory.getLogger(RagDocumentService.class);
 
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
-    private final InMemoryEmbeddingStore<TextSegment> embeddingStore;
+    private final EmbeddingStore<TextSegment> embeddingStore;
+    private final QdrantCollectionService qdrantCollectionService;
 
     @Value("${app.ai.rag.indexing.documents-path:rag-documents/}")
     private String documentsPath;
@@ -39,9 +41,11 @@ public class RagDocumentService {
     private final AtomicReference<RagStatus> statusRef = new AtomicReference<>(new RagStatus());
 
     public RagDocumentService(ObjectProvider<EmbeddingModel> embeddingModelProvider,
-                              InMemoryEmbeddingStore<TextSegment> embeddingStore) {
+                              EmbeddingStore<TextSegment> embeddingStore,
+                              QdrantCollectionService qdrantCollectionService) {
         this.embeddingModelProvider = embeddingModelProvider;
         this.embeddingStore = embeddingStore;
+        this.qdrantCollectionService = qdrantCollectionService;
     }
 
     public boolean isReady() {
@@ -138,4 +142,5 @@ public class RagDocumentService {
         documents.forEach(document -> segments.addAll(DocumentSplitters.recursive(chunkSize, chunkOverlap).split(document)));
         return segments.size();
     }
+
 }
