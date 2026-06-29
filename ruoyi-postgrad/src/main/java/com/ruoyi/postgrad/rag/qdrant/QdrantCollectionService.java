@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
@@ -36,7 +37,7 @@ public class QdrantCollectionService {
 
     public void ensureCollection() {
         try {
-            restTemplate.getForEntity(collectionUrl(), String.class);
+            restTemplate.exchange(collectionUrl(), HttpMethod.GET, new HttpEntity<>(headers()), String.class);
             return;
         } catch (HttpClientErrorException.NotFound ex) {
             // Create the collection only when Qdrant explicitly reports it missing.
@@ -65,7 +66,7 @@ public class QdrantCollectionService {
 
     public boolean isReachable() {
         try {
-            restTemplate.getForEntity(collectionUrl(), String.class);
+            restTemplate.exchange(collectionUrl(), HttpMethod.GET, new HttpEntity<>(headers()), String.class);
             return true;
         } catch (RestClientException ex) {
             log.debug("[RagQdrant] Collection {} is not reachable: {}", collectionName, ex.getMessage());

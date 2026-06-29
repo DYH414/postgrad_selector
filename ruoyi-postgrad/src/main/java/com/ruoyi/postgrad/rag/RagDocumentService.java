@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -198,9 +199,10 @@ public class RagDocumentService {
         List<String> ids = new ArrayList<>(segments.size());
         for (TextSegment segment : segments) {
             Metadata metadata = segment.metadata();
-            ids.add(sha256(metadata.getString("source_id")
+            ids.add(UUID.nameUUIDFromBytes((metadata.getString("source_id")
                 + ":" + metadata.getString("chunk_index")
-                + ":" + metadata.getString("content_hash")));
+                + ":" + metadata.getString("content_hash"))
+                .getBytes(StandardCharsets.UTF_8)).toString());
         }
         return ids;
     }

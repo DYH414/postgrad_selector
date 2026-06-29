@@ -1,6 +1,7 @@
 package com.ruoyi.postgrad.rag;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -26,6 +27,7 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -197,11 +199,13 @@ class RagDocumentServiceTest {
         assertEquals(segments.size(), ids.size());
         for (int i = 0; i < segments.size(); i++) {
             Metadata metadata = segments.get(i).metadata();
+            String id = ids.get(i);
+            assertDoesNotThrow(() -> UUID.fromString(id));
             assertEquals(expectedChunkId(
                 metadata.getString("source_id"),
                 metadata.getString("chunk_index"),
                 metadata.getString("content_hash")
-            ), ids.get(i));
+            ), id);
         }
     }
 
@@ -256,7 +260,8 @@ class RagDocumentServiceTest {
     }
 
     private static String expectedChunkId(String sourceId, String chunkIndex, String contentHash) {
-        return sha256(sourceId + ":" + chunkIndex + ":" + contentHash);
+        return UUID.nameUUIDFromBytes((sourceId + ":" + chunkIndex + ":" + contentHash)
+            .getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     private static String sha256(String text) {
