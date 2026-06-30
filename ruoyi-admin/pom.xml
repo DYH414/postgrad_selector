@@ -60,6 +60,12 @@
             <artifactId>langchain4j-open-ai</artifactId>
         </dependency>
 
+        <!-- Qdrant vector store used by RagConfig -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-qdrant</artifactId>
+        </dependency>
+
         <!-- langchain4j 官方可观测性（Micrometer） -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
