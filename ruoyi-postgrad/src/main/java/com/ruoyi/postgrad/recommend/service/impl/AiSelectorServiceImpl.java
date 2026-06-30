@@ -18,10 +18,13 @@ import com.ruoyi.postgrad.recommend.domain.AiSelectionResult.SelectedItem;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.service.IAiSelectorService;
+import com.ruoyi.postgrad.observe.runtime.AiObserveAttributes;
 
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.ChatRequestOptions;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
 
 /**
  * AI 选校服务实现 —— 在给定候选事实卡内由 AI 挑选。
@@ -83,10 +86,14 @@ public class AiSelectorServiceImpl implements IAiSelectorService {
         log.info("[AiSelector] tier={} — sending {} candidates to AI (limit={})", tier, candidates.size(), limit);
         String aiRaw;
         try {
-            aiRaw = chatModel.chat(
-                SystemMessage.from(prompt),
-                UserMessage.from(factsText)
-            ).aiMessage().text();
+            ChatRequest request = ChatRequest.builder()
+                .messages(SystemMessage.from(prompt), UserMessage.from(factsText))
+                .build();
+            aiRaw = chatModel.chat(request,
+                ChatRequestOptions.builder()
+                    .addListenerAttribute(AiObserveAttributes.OPERATION_KEY, "ai-recommend-draft")
+                    .build())
+                .aiMessage().text();
         } catch (Exception e) {
             log.error("[AiSelector] tier={} LLM call failed: {}", tier, e.getMessage());
             // 降级：取综合得分最高的前 N 所
@@ -261,10 +268,14 @@ public class AiSelectorServiceImpl implements IAiSelectorService {
 
         String aiRaw;
         try {
-            aiRaw = chatModel.chat(
-                SystemMessage.from(opinionPrompt),
-                UserMessage.from(factsText)
-            ).aiMessage().text();
+            ChatRequest request = ChatRequest.builder()
+                .messages(SystemMessage.from(opinionPrompt), UserMessage.from(factsText))
+                .build();
+            aiRaw = chatModel.chat(request,
+                ChatRequestOptions.builder()
+                    .addListenerAttribute(AiObserveAttributes.OPERATION_KEY, "ai-recommend-draft")
+                    .build())
+                .aiMessage().text();
         } catch (Exception e) {
             log.error("[AiSelector] tier={} opinion LLM failed: {}", tier, e.getMessage());
             return null;
@@ -294,6 +305,9 @@ public class AiSelectorServiceImpl implements IAiSelectorService {
         List<SelectedItem> selected = new ArrayList<>(candidates.size());
         for (CandidateCardVO c : candidates) {
             SchoolFact f = c.getFact();
+            if (f == null || f.getProgramId() == null) {
+                continue;
+            }
             SelectedItem item = new SelectedItem();
             item.setProgramId(f.getProgramId());
             item.setReason(String.format("候选池数量有限（共%d所），按数据完整度和分数匹配度入选。",

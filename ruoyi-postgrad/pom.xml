@@ -53,6 +53,12 @@
             <artifactId>langchain4j-qdrant</artifactId>
         </dependency>
 
+        <!-- Micrometer（AI 观测聚合读取 MeterRegistry） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+
         <!-- RabbitMQ -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

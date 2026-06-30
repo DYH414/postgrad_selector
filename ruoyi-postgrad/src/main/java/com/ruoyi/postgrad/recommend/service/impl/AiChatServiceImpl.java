@@ -31,6 +31,7 @@ import com.ruoyi.postgrad.recommend.tool.V2BoundDraftActionTools;
 import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
 import com.ruoyi.postgrad.recommend.tool.V2ChatTools;
 import com.ruoyi.postgrad.recommend.tool.V2DraftActionTools;
+import com.ruoyi.postgrad.observe.runtime.AiInvocationContext;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -137,6 +138,7 @@ public class AiChatServiceImpl implements IAiChatService {
             return;
         }
         try {
+            AiInvocationContext.setOperationKey("ai-chat");
             AiChatConversation conversation = getOrCreateActiveConversation(userId);
 
             // 1. 加载/初始化对话历史
@@ -226,20 +228,24 @@ public class AiChatServiceImpl implements IAiChatService {
                         callback.onError(e);
                     } finally {
                         V2ChatToolContext.clear();
+                        AiInvocationContext.clear();
                     }
                 })
                 .onError(error -> {
                     V2ChatToolContext.clear();
+                    AiInvocationContext.clear();
                     log.error("[AiChat] Stream error for userId={}: {}", userId, error.getMessage());
                     callback.onError(error);
                 })
                 .start();
             } catch (Exception e) {
                 V2ChatToolContext.clear();
+                AiInvocationContext.clear();
                 log.error("[AiChat] Failed to start stream for userId={}: {}", userId, e.getMessage());
                 callback.onError(e);
             } finally {
                 V2ChatToolContext.clear();
+                AiInvocationContext.clear();
             }
         } finally {
             redisTemplate.delete(lockKey);

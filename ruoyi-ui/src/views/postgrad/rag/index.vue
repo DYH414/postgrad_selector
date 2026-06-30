@@ -57,12 +57,12 @@
         <section class="rag-panel">
           <div class="panel-heading">
             <div>
-              <h3>最近一次查询</h3>
-              <span>建议直接看 Micrometer / Actuator 指标与 LangChain4j 官方 listener</span>
+              <h3>RAG 健康说明</h3>
+              <span>这里只看索引状态，不承载 AI 请求级观测</span>
             </div>
           </div>
           <div class="trace-hint">
-            这层页面只保留索引健康检查；请求级观测请去看 `/actuator/metrics`、`/actuator/health` 和 LangChain4j listener 指标。
+            如需查看 AI 调用情况，请打开 “AI 观测台”。
           </div>
         </section>
       </div>

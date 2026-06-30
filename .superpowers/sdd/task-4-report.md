@@ -1,52 +1,89 @@
-# Task 4 Report: Priority-Weighted Sorting
+# Task 4 Report: Add Stable Chunk Payload And Qdrant Reindex Flow
 
 ## Changes Made
 
-### 1. CandidatePoolServiceImpl.java
-- Added `normalizePriority()` helper method — normalizes `schoolTierPreference` to one of three standard priorities: `school_tier_priority`, `developed_region_priority`, `safe_admission_priority`.
-- Added `DEVELOPED_CITIES` set (25 cities including 北京,上海,深圳,广州,杭州,南京,武汉,成都,苏州,天津,重庆,西安,长沙,青岛,厦门,宁波,无锡,合肥,郑州,济南,福州,东莞,佛山,珠海).
-- Updated `compositeScore()` — added priority-weighted boost after base score:
-  - `school_tier_priority`: 985 +14, 211/双一流 +10
-  - `safe_admission_priority`: gap bonus up to +16, quota risk normal +8, data completeness A +6
-  - `developed_region_priority`: developed city +10
-- Removed the old hardcoded tier-priority checks (`"tier_priority"`, `"must_211_or_better"`, `"prefer_211_or_better"`).
+### 1. `RagDocumentService.java`
+- Added Qdrant bootstrap at the start of `reindex()` after the document-empty check:
+  - calls `qdrantCollectionService.ensureCollection()`
+  - calls `qdrantCollectionService.clearCollection()`
+  - sets status `backend=qdrant`, `collectionName`, and `reachable`
+- Added a guarded Qdrant failure path:
+  - sets `backend=qdrant`
+  - sets `collectionName`
+  - sets `reachable=false`
+  - sets `indexed=false`
+  - sets `lastError` to `Qdrant unavailable: <message>`
+  - returns `new RagIndexResult(0, 0)` without attempting ingestion
+- Replaced the old document ingestor path with explicit segment generation and upload:
+  - splits documents with `DocumentSplitters.recursive(chunkSize, chunkOverlap)`
+  - enriches each `TextSegment` with stable metadata payload fields
+  - embeds with `embeddingModel.embedAll(segments)`
+  - stores with `embeddingStore.addAll(ids, embeddings, segments)`
+- Added metadata/payload fields on every chunk:
+  - `school_id`
+  - `school_name`
+  - `major_id`
+  - `major_name`
+  - `doc_type`
+  - `year`
+  - `source_id`
+  - `source_name`
+  - `source_url`
+  - `chunk_index`
+  - `chunk_title`
+  - `content`
+  - `content_hash`
+  - `embedding_version`
+  - `updated_at`
+  - `tags`
+- Added helper methods:
+  - `splitWithMetadata(...)`
+  - `sourceName(...)`
+  - `inferDocType(...)`
+  - `sha256(...)`
+- Removed the old `countSegments(...)` helper.
 
-### 2. CandidateWorkspaceServiceImpl.java
-- Added `normalizePriority()` helper method.
-- Removed `regionStrategy` parameter entirely from `buildTier()` and `policyScore()` — no longer derived or passed.
-- Updated `policyScore()` with same priority-weighted boost logic as `compositeScore()`.
-- Simplified `buildWorkspace()` entry (removed the now-unnecessary `regionStrategy` derivation).
-- Updated `buildTier` call sites to pass only 5 parameters (removed `regionStrategy`).
+### 2. `RagDocumentServiceTest.java`
+- Added `shouldEnsureAndClearQdrantBeforeIndexing()`
+- Added `shouldAttachStableMetadataToSplitSegments()`
+- Added `shouldExposeUsefulStatusWhenQdrantBootstrapFails()`
 
-### 3. Verification
-- `mvn compile -pl ruoyi-postgrad,ruoyi-admin -am -DskipTests -q` — **SUCCESS**
-- `mvn -pl ruoyi-postgrad -DskipTests=false test` — **39/39 tests pass, 0 failures, 0 errors**
+## Local API Verification
 
-## Architecture Notes
-- `ICandidateWorkspaceService` interface already had the simplified single-param `buildWorkspace(CandidateUniverseVO, String schoolTierPref)` signature from Task 3 — no interface change needed.
-- `DraftServiceImpl` already called `workspaceService.buildWorkspace(universe, schoolTierPref)` without `regionStrategy` — no call-site change needed.
-- `normalizePriority()` in both services matches the implementation already present in `DraftServiceImpl`.
+- Verified locally with `javap` that in this workspace's LangChain4j version:
+  - `Metadata` uses typed accessors such as `getString(...)` rather than a generic `get(...)`
+  - `EmbeddingStoreIngestor` does **not** provide `ingest(List<TextSegment>)`
+- Adapted implementation accordingly:
+  - used `document.metadata().getString(...)`
+  - used `embeddingModel.embedAll(segments).content()` plus `embeddingStore.addAll(...)`
 
-## Fixes Applied (2026-06-19)
+## Verification
 
-### Fix 1 — CandidateWorkspaceServiceImpl school_tier_priority base score replacement
-- Changed `school_tier_priority` block: now subtracts the old base score then adds the priority-adjusted score (985=34, 211/双一流=26, other=6), effectively replacing rather than stacking.
+- Red phase:
+  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest#shouldEnsureAndClearQdrantBeforeIndexing" test`
+  - Result: **FAIL** as expected before implementation (`ensureCollection()` not invoked)
+- Acceptance suite:
+  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest,QdrantCollectionServiceTest,RagInitializerTest" test`
+  - Result: **PASS** (15 tests, 0 failures, 0 errors)
 
-### Fix 2 — Developed region bonus +10 -> +14
-- `CandidatePoolServiceImpl.compositeScore()` line 295: `score += 10` changed to `score += 14`
-- `CandidateWorkspaceServiceImpl.policyScore()` line 179: `score += 10` changed to `score += 14`
+## Review Fix: Stable Chunk IDs
 
-### Fix 3 — Unify DEVELOPED_CITIES sets
-- Both files now use the same 24-city set: removed `大连`, added `珠海` (already present in PoolService), matching the unified spec order.
-- CandidatePoolServiceImpl: `"大连"` removed from set
-- CandidateWorkspaceServiceImpl: `"大连"` removed, `"珠海"` added, order re-sorted to match PoolService
+- Updated `RagDocumentService.reindex()` to call `embeddingStore.addAll(ids, embeddings, segments)` instead of the two-argument overload.
+- Added `segmentIds(...)` to derive deterministic point IDs from existing stable metadata using:
+  - `sha256(source_id + ":" + chunk_index + ":" + content_hash)`
+- Kept the chunk payload metadata unchanged; the ID is derived from metadata already attached during `splitWithMetadata(...)`.
+- Added `shouldWriteDeterministicChunkIdsToEmbeddingStore()` in `RagDocumentServiceTest` to capture IDs passed to the store and assert:
+  - the ID count matches the segment count
+  - each ID matches the deterministic SHA-256 formula above
 
-### Verification
-- `mvn compile -pl ruoyi-postgrad,ruoyi-admin -am -DskipTests -q` — **SUCCESS**
-- `mvn test -pl ruoyi-postgrad -DskipTests=false` — **39/39 tests pass, 0 failures, 0 errors**
-- Commit: `fix(sort): correct priority scores to match spec`
+## Review Fix Verification
 
-### Fix 4 — CandidatePoolServiceImpl compositeScore school_tier_priority replacement scoring
-- Changed `school_tier_priority` block in `compositeScore()`: replaced additive scoring (985 +14, 211 +10) with replacement scoring, matching the `CandidateWorkspaceServiceImpl` approach: subtract base (985=25, 211/双一流=18, other=10) then add adjusted (985=34, 211/双一流=26, other=6). Final scores: 985=34, 211/双一流=26, other=6 (was 985=39, 211=28, other=10).
-- Compilation: `mvn compile -pl ruoyi-postgrad,ruoyi-admin -am -DskipTests -q` — **SUCCESS**
-- Commit: `fix(sort): correct school tier replacement scoring in compositeScore`
+- Red phase:
+  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest#shouldWriteDeterministicChunkIdsToEmbeddingStore" test`
+  - Result: **FAIL** before the fix because `RagDocumentService` invoked `embeddingStore.addAll(embeddings, segments)` and never supplied IDs.
+- Green phase:
+  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest#shouldWriteDeterministicChunkIdsToEmbeddingStore" test`
+  - Result: **PASS** after switching to `embeddingStore.addAll(ids, embeddings, segments)`.
+- Coverage suite:
+  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest,QdrantCollectionServiceTest,RagInitializerTest" test`
+  - Result: **PASS** (16 tests, 0 failures, 0 errors).

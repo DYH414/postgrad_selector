@@ -23,6 +23,8 @@ import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.ChatRequestOptions;
+import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 
 /**
@@ -66,6 +68,15 @@ class AiSelectorServiceImplTest {
         return ChatResponse.builder().aiMessage(AiMessage.from(text)).build();
     }
 
+    private ChatResponse chatResponseWithMetadata(String text) {
+        return ChatResponse.builder()
+            .aiMessage(AiMessage.from(text))
+            .metadata(dev.langchain4j.model.chat.response.ChatResponseMetadata.builder()
+                .modelName("deepseek-v4-flash")
+                .build())
+            .build();
+    }
+
     // ═══════════ 降级路径 ═══════════
 
     @Test
@@ -85,7 +96,7 @@ class AiSelectorServiceImplTest {
 
     @Test
     void llmFailureShouldFallbackToSelectAll() {
-        doThrow(new RuntimeException("API timeout")).when(chatModel).chat(any(ChatMessage[].class));
+        doThrow(new RuntimeException("API timeout")).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L, 1003L, 1004L, 1005L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -99,7 +110,7 @@ class AiSelectorServiceImplTest {
 
     @Test
     void emptyAiResponseShouldFallback() {
-        doReturn(chatResponse("")).when(chatModel).chat(any(ChatMessage[].class));
+        doReturn(chatResponse("")).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L, 1003L, 1004L, 1005L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -111,7 +122,7 @@ class AiSelectorServiceImplTest {
     @Test
     void garbledJsonShouldFallback() {
         doReturn(chatResponse("你好，我推荐以下学校：\n1. 厦门大学\n2. 福州大学\n这不是 JSON。"))
-            .when(chatModel).chat(any(ChatMessage[].class));
+            .when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L, 1003L, 1004L, 1005L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -126,7 +137,7 @@ class AiSelectorServiceImplTest {
     void candidatesBelowLimitWithAiOpinionsShouldAllBeSelected() {
         String json = "[{\"programId\":1001,\"reason\":\"推荐\",\"risks\":[],\"pros\":[],\"cons\":[]},"
             + "{\"programId\":1002,\"reason\":\"推荐2\",\"risks\":[],\"pros\":[],\"cons\":[]}]";
-        doReturn(chatResponse(json)).when(chatModel).chat(any(ChatMessage[].class));
+        doReturn(chatResponseWithMetadata(json)).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -137,7 +148,7 @@ class AiSelectorServiceImplTest {
 
     @Test
     void aiOpinionFailureForSmallPoolShouldFallbackToSelectAll() {
-        doThrow(new RuntimeException("API down")).when(chatModel).chat(any(ChatMessage[].class));
+        doThrow(new RuntimeException("API down")).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -156,7 +167,7 @@ class AiSelectorServiceImplTest {
                 {"programId": 1002, "reason": "招生人数多", "risks": [], "pros": ["211"], "cons": ["城市偏远"]},
                 {"programId": 1003, "reason": "稳妥选择", "risks": [], "pros": [], "cons": []}
             ]""";
-        doReturn(chatResponse(json)).when(chatModel).chat(any(ChatMessage[].class));
+        doReturn(chatResponseWithMetadata(json)).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L, 1003L, 1004L, 1005L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -178,7 +189,7 @@ class AiSelectorServiceImplTest {
             ]
             ```
             以上是分析结果。""";
-        doReturn(chatResponse(json)).when(chatModel).chat(any(ChatMessage[].class));
+        doReturn(chatResponseWithMetadata(json)).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L, 1003L, 1004L, 1005L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -195,7 +206,7 @@ class AiSelectorServiceImplTest {
                 {"programId": 9999, "reason": "幻觉候选", "risks": [], "pros": [], "cons": []},
                 {"programId": 1002, "reason": "另一个真实", "risks": [], "pros": [], "cons": []}
             ]""";
-        doReturn(chatResponse(json)).when(chatModel).chat(any(ChatMessage[].class));
+        doReturn(chatResponseWithMetadata(json)).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L, 1003L, 1004L, 1005L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -213,7 +224,7 @@ class AiSelectorServiceImplTest {
         String json = "[{\"programId\":1001,\"reason\":\"1\",\"risks\":[],\"pros\":[],\"cons\":[]},"
             + "{\"programId\":1002,\"reason\":\"2\",\"risks\":[],\"pros\":[],\"cons\":[]},"
             + "{\"programId\":1003,\"reason\":\"3\",\"risks\":[],\"pros\":[],\"cons\":[]}]";
-        doReturn(chatResponse(json)).when(chatModel).chat(any(ChatMessage[].class));
+        doReturn(chatResponseWithMetadata(json)).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L, 1003L, 1004L, 1005L);
 
         AiSelectionResult result = service.select("reach", candidates, 300);
@@ -227,7 +238,7 @@ class AiSelectorServiceImplTest {
             + "{\"programId\":1002,\"reason\":\"2\",\"risks\":[],\"pros\":[],\"cons\":[]},"
             + "{\"programId\":1003,\"reason\":\"3\",\"risks\":[],\"pros\":[],\"cons\":[]},"
             + "{\"programId\":1004,\"reason\":\"4\",\"risks\":[],\"pros\":[],\"cons\":[]}]";
-        doReturn(chatResponse(json)).when(chatModel).chat(any(ChatMessage[].class));
+        doReturn(chatResponseWithMetadata(json)).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
         List<CandidateCardVO> candidates = buildCandidates(1001L, 1002L, 1003L, 1004L, 1005L);
 
         AiSelectionResult result = service.select("steady", candidates, 300);
@@ -248,7 +259,7 @@ class AiSelectorServiceImplTest {
         String json = "[{\"programId\":1001,\"reason\":\"ok\",\"risks\":[],\"pros\":[],\"cons\":[]},"
             + "{\"programId\":1002,\"reason\":\"ok\",\"risks\":[],\"pros\":[],\"cons\":[]},"
             + "{\"programId\":1003,\"reason\":\"ok\",\"risks\":[],\"pros\":[],\"cons\":[]}]";
-        doReturn(chatResponse(json)).when(chatModel).chat(any(ChatMessage[].class));
+        doReturn(chatResponseWithMetadata(json)).when(chatModel).chat(any(ChatRequest.class), any(ChatRequestOptions.class));
 
         AiSelectionResult result = service.select("reach", candidates, 300);
 

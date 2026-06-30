@@ -2,10 +2,15 @@ package com.ruoyi.framework.config;
 
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.micrometer.metrics.listeners.MicrometerMetricsChatModelListener;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import java.time.Duration;
+import java.util.List;
+import io.micrometer.core.instrument.MeterRegistry;
+import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotListener;
+import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotRecorder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -51,6 +56,14 @@ public class AiConfig {
     @Value("${app.ai.rag.embedding.timeout-seconds:120}")
     private int ragEmbeddingTimeoutSeconds;
 
+    private final MeterRegistry meterRegistry;
+    private final AiInvocationSnapshotRecorder snapshotRecorder;
+
+    public AiConfig(MeterRegistry meterRegistry, AiInvocationSnapshotRecorder snapshotRecorder) {
+        this.meterRegistry = meterRegistry;
+        this.snapshotRecorder = snapshotRecorder;
+    }
+
     @Bean
     @ConditionalOnProperty(name = "app.ai.deepseek.api-key")
     public ChatModel chatModel() {
@@ -61,6 +74,7 @@ public class AiConfig {
             .maxTokens(maxTokens)
             .temperature(temperature)
             .timeout(Duration.ofSeconds(timeoutSeconds))
+            .listeners(chatModelListeners())
             .build();
     }
 
@@ -75,6 +89,7 @@ public class AiConfig {
             .strictTools(true)
             .parallelToolCalls(false)
             .timeout(Duration.ofSeconds(timeoutSeconds))
+            .listeners(chatModelListeners())
             .build();
     }
 
@@ -87,5 +102,12 @@ public class AiConfig {
             .modelName(ragEmbeddingModelName)
             .timeout(Duration.ofSeconds(ragEmbeddingTimeoutSeconds))
             .build();
+    }
+
+    private List<dev.langchain4j.model.chat.listener.ChatModelListener> chatModelListeners() {
+        return List.of(
+            new MicrometerMetricsChatModelListener(meterRegistry),
+            new AiInvocationSnapshotListener(meterRegistry, snapshotRecorder)
+        );
     }
 }

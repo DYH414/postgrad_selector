@@ -40,3 +40,7 @@ UPDATE sys_menu SET parent_id = 2133, order_num = 2 WHERE menu_id = 2100;  -- �
 INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, remark) VALUES
 (2134, 'RAG 观测台', 2133, 3, 'rag', 'postgrad/rag/index', 1, 0, 'C', '0', '0', 'postgrad:rag:view', 'monitor', 'admin', NOW(), 'RAG 状态、索引与最近查询观测'),
 (2135, 'RAG 重新索引', 2134, 1, '', '', 1, 0, 'F', '0', '0', 'postgrad:rag:reindex', '', 'admin', NOW(), 'RAG 管理按钮');
+
+-- AI 观测台
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, remark) VALUES
+(2136, 'AI 观测台', 2133, 4, 'ai-observe', 'postgrad/observe/index', 1, 0, 'C', '0', '0', 'postgrad:aiObserve:view', 'monitor', 'admin', NOW(), 'AI 调用总量、耗时、token、最新错误观测');

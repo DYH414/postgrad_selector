@@ -73,6 +73,12 @@
             <version>1.15.1-beta25</version>
         </dependency>
 
+        <!-- Micrometer core for AI observability aggregation -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+
         <!-- Spring Boot Actuator -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
