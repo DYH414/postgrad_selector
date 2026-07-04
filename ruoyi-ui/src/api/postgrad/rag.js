@@ -13,3 +13,19 @@ export function reindexRag() {
     method: 'post'
   })
 }
+
+export function searchTestRag(data) {
+  return request({
+    url: '/postgrad/rag/search-test',
+    method: 'post',
+    data
+  })
+}
+
+export function getRagTraces(limit) {
+  return request({
+    url: '/postgrad/rag/traces',
+    method: 'get',
+    params: { limit: limit || 20 }
+  })
+}

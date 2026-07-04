@@ -5,11 +5,18 @@
         <div>
           <div class="rag-eyebrow">Postgrad RAG</div>
           <h2>知识库观测台</h2>
-          <p>查看索引、检索、重排和最近一次错误，快速确认 AI 推荐是否真的在用知识库。</p>
+          <p>查看索引、检索测试、最近 Trace 和配置参数，快速确认 AI 是否在用知识库。</p>
         </div>
         <div class="rag-actions">
           <el-button size="mini" icon="el-icon-refresh" @click="loadStatus">刷新</el-button>
-          <el-button size="mini" type="primary" icon="el-icon-refresh-right" :loading="reindexing" @click="handleReindex">
+          <el-button
+            v-if="hasReindexPerm"
+            size="mini"
+            type="primary"
+            icon="el-icon-refresh-right"
+            :loading="reindexing"
+            @click="handleReindex"
+          >
             重新索引
           </el-button>
         </div>
@@ -33,18 +40,27 @@
       />
 
       <div class="rag-grid">
+        <!-- 状态面板 -->
         <section class="rag-panel">
           <div class="panel-heading">
             <div>
               <h3>当前状态</h3>
-              <span>索引、启用、错误与最近运行模式</span>
+              <span>索引、向量库后端与配置参数</span>
             </div>
           </div>
           <el-descriptions :column="2" border size="small" class="rag-desc">
-            <el-descriptions-item label="RAG 启用">{{ boolText(status.enabled) }}</el-descriptions-item>
+            <el-descriptions-item label="向量库后端">{{ status.backend || 'Qdrant' }}</el-descriptions-item>
+            <el-descriptions-item label="集合名称">{{ status.collectionName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="可连通">{{ boolText(status.reachable) }}</el-descriptions-item>
             <el-descriptions-item label="已索引">{{ boolText(status.indexed) }}</el-descriptions-item>
             <el-descriptions-item label="文档数">{{ status.documentCount || 0 }}</el-descriptions-item>
             <el-descriptions-item label="切片数">{{ status.chunkCount || 0 }}</el-descriptions-item>
+            <el-descriptions-item label="Embedding 模型">{{ status.embeddingModel || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="Rerank 模型">{{ status.rerankModel || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="分块大小">{{ status.chunkSize || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="分块重叠">{{ status.chunkOverlap || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="召回上限">{{ status.maxResults || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="Rerank 截断">{{ status.rerankTopN || '-' }}</el-descriptions-item>
             <el-descriptions-item label="最近索引">{{ formatTime(status.lastIndexedAt) }}</el-descriptions-item>
             <el-descriptions-item label="运行模式">{{ status.lastRunMode || '-' }}</el-descriptions-item>
           </el-descriptions>
@@ -54,24 +70,128 @@
           </div>
         </section>
 
+        <!-- 检索测试面板 -->
         <section class="rag-panel">
           <div class="panel-heading">
             <div>
-              <h3>RAG 健康说明</h3>
-              <span>这里只看索引状态，不承载 AI 请求级观测</span>
+              <h3>检索测试</h3>
+              <span>不经过 LLM，直接测试 Embedding → Qdrant → Rerank 管道</span>
             </div>
           </div>
-          <div class="trace-hint">
-            如需查看 AI 调用情况，请打开 “AI 观测台”。
+          <div class="search-test-box">
+            <el-input
+              v-model="searchQuery"
+              placeholder="输入查询，如：调剂是什么意思"
+              clearable
+              @keyup.enter.native="handleSearchTest"
+            >
+              <el-button
+                slot="append"
+                icon="el-icon-search"
+                :loading="searchTesting"
+                @click="handleSearchTest"
+              >
+                测试召回
+              </el-button>
+            </el-input>
+            <div v-if="searchError" class="search-error">{{ searchError }}</div>
+
+            <div v-if="searchResult" class="search-result">
+              <div class="search-meta">
+                <span>召回 {{ searchResult.retrievedCount }} 条</span>
+                <span v-if="searchResult.rerankEnabled">| Rerank 后选中 {{ searchResult.selectedCount }} 条</span>
+                <span v-if="searchResult.rerankFailed" class="warn-text">| Rerank 失败，回退向量排序</span>
+                <span class="latency-text">
+                  | 总耗时 {{ searchResult.latency ? searchResult.latency.totalMs : '-' }}ms
+                </span>
+              </div>
+
+              <el-table :data="searchResult.chunks" size="mini" stripe class="search-table">
+                <el-table-column prop="vectorRank" label="向量排名" width="80" />
+                <el-table-column prop="rerankRank" label="Rerank排名" width="90">
+                  <template slot-scope="scope">
+                    {{ scope.row.rerankRank || '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="rerankScore" label="Rerank分" width="85">
+                  <template slot-scope="scope">
+                    <span v-if="scope.row.rerankScore != null">{{ scope.row.rerankScore.toFixed(3) }}</span>
+                    <span v-else>-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="选中" width="55">
+                  <template slot-scope="scope">
+                    <el-tag v-if="scope.row.selectedForPrompt" type="success" size="mini">是</el-tag>
+                    <span v-else>-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="sourceName" label="来源文档" min-width="140" />
+                <el-table-column prop="docType" label="文档类型" width="90" />
+                <el-table-column prop="chunkIndex" label="切片序号" width="80" />
+                <el-table-column prop="contentPreview" label="内容预览" min-width="200" show-overflow-tooltip />
+              </el-table>
+            </div>
           </div>
         </section>
       </div>
+
+      <!-- 最近 Trace -->
+      <section class="rag-panel trace-section" style="margin-top:12px">
+        <div class="panel-heading">
+          <div>
+            <h3>最近 RAG Trace</h3>
+            <span>展示 AI Chat 和检索测试最近产生的 RAG 调用记录</span>
+          </div>
+          <el-button size="mini" icon="el-icon-refresh" @click="loadTraces">刷新 Trace</el-button>
+        </div>
+        <div v-if="traces.length === 0" class="trace-empty">暂无 RAG Trace 记录</div>
+        <el-table v-else :data="traces" size="mini" stripe class="trace-table">
+          <el-table-column prop="operationKey" label="操作" width="100">
+            <template slot-scope="scope">
+              <el-tag v-if="scope.row.operationKey === 'ai-chat'" type="primary" size="mini">AI Chat</el-tag>
+              <el-tag v-else-if="scope.row.operationKey === 'search-test'" type="warning" size="mini">检索测试</el-tag>
+              <span v-else>{{ scope.row.operationKey }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="结果" width="70">
+            <template slot-scope="scope">
+              <el-tag v-if="scope.row.outcome === 'SUCCESS'" type="success" size="mini">成功</el-tag>
+              <el-tag v-else type="danger" size="mini">失败</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="query" label="查询" min-width="160" show-overflow-tooltip />
+          <el-table-column label="召回/选中" width="90">
+            <template slot-scope="scope">
+              {{ scope.row.retrievedCount }}/{{ scope.row.selectedCount }}
+            </template>
+          </el-table-column>
+          <el-table-column label="Top来源" min-width="140">
+            <template slot-scope="scope">
+              <template v-if="scope.row.topSources && scope.row.topSources.length">
+                <el-tag v-for="s in scope.row.topSources.slice(0,2)" :key="s" size="mini" style="margin:2px">{{ s }}</el-tag>
+              </template>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="延迟" width="80">
+            <template slot-scope="scope">
+              {{ scope.row.totalLatencyMs }}ms
+            </template>
+          </el-table-column>
+          <el-table-column label="错误" min-width="120" show-overflow-tooltip>
+            <template slot-scope="scope">
+              <span v-if="scope.row.errorSummary" class="warn-text">{{ scope.row.errorSummary }}</span>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
     </div>
   </div>
 </template>
 
 <script>
-import { getRagStatus, reindexRag } from '@/api/postgrad/rag'
+import { getRagStatus, reindexRag, searchTestRag, getRagTraces } from '@/api/postgrad/rag'
 
 export default {
   name: 'PostgradRagMonitor',
@@ -80,38 +200,61 @@ export default {
       loading: false,
       reindexing: false,
       status: {},
-      notice: ''
+      notice: '',
+      searchQuery: '',
+      searchTesting: false,
+      searchResult: null,
+      searchError: '',
+      traces: []
     }
   },
   computed: {
+    hasReindexPerm() {
+      try {
+        const perms = this.$store?.getters?.permissions || []
+        return perms.includes('postgrad:rag:reindex') || perms.includes('*:*:*')
+      } catch (e) {
+        return true
+      }
+    },
     kpis() {
       return [
-        { key: 'enabled', label: 'RAG 启用', value: this.boolText(this.status.enabled), hint: 'Embedding 模型是否就绪' },
-        { key: 'indexed', label: '索引状态', value: this.boolText(this.status.indexed), hint: '文档是否已加载到内存向量库' },
+        { key: 'backend', label: '向量库后端', value: this.status.backend || 'Qdrant', hint: '当前使用的向量存储' },
+        { key: 'reachable', label: '可连通', value: this.boolText(this.status.reachable), hint: 'Qdrant 是否可达' },
+        { key: 'indexed', label: '索引状态', value: this.boolText(this.status.indexed), hint: '文档是否已加载' },
         { key: 'docs', label: '文档数', value: this.status.documentCount || 0, hint: 'rag-documents/ 下文件数' },
-        { key: 'chunks', label: '切片数', value: this.status.chunkCount || 0, hint: '按 chunk-size / overlap 计算' },
-        { key: 'error', label: '最近错误', value: this.status.lastError ? '有' : '无', hint: '便于排查配置和索引问题' },
-        { key: 'actuator', label: '观测入口', value: '/actuator', hint: '请求级观测走官方指标' }
+        { key: 'chunks', label: '切片数', value: this.status.chunkCount || 0, hint: '分块后的总片段数' },
+        { key: 'embedding', label: 'Embedding', value: this.status.embeddingModel || '-', hint: '向量化模型' }
       ]
     }
   },
   created() {
     this.loadStatus()
+    this.loadTraces()
   },
   methods: {
-    loadStatus() {
+    async loadStatus() {
       this.loading = true
       this.notice = ''
-      getRagStatus().then(res => {
+      try {
+        const res = await getRagStatus()
         this.status = (res && res.data) || {}
-      }).catch(() => {
+      } catch (e) {
         this.notice = 'RAG 状态请求失败，请检查后端接口是否启动。'
-      }).finally(() => {
+      } finally {
         this.loading = false
-      })
+      }
+    },
+    async loadTraces() {
+      try {
+        const res = await getRagTraces(20)
+        this.traces = (res && res.data) || []
+      } catch (e) {
+        // traces are non-critical, ignore silently
+      }
     },
     handleReindex() {
-      this.$confirm('确认重新索引 RAG 文档吗？这会重建内存向量库。', '重新索引').then(() => {
+      this.$confirm('确认重新索引 RAG 文档吗？这会重建 Qdrant 向量库。', '重新索引').then(() => {
         this.reindexing = true
         reindexRag().then(res => {
           this.$message.success((res && res.msg) || '重新索引完成')
@@ -122,6 +265,29 @@ export default {
           this.reindexing = false
         })
       }).catch(() => {})
+    },
+    async handleSearchTest() {
+      const q = (this.searchQuery || '').trim()
+      if (!q) {
+        this.searchError = '请输入查询内容'
+        return
+      }
+      this.searchTesting = true
+      this.searchError = ''
+      this.searchResult = null
+      try {
+        const res = await searchTestRag({ query: q })
+        this.searchResult = (res && res.data) || null
+        if (this.searchResult && this.searchResult.errorSummary) {
+          this.searchError = this.searchResult.errorSummary
+        }
+        // refresh traces to include this test
+        this.loadTraces()
+      } catch (e) {
+        this.searchError = '检索测试失败，请检查后端是否正常'
+      } finally {
+        this.searchTesting = false
+      }
     },
     boolText(value) {
       return value ? '是' : '否'
@@ -228,9 +394,16 @@ export default {
   overflow: hidden;
 }
 
+.trace-section {
+  min-height: auto;
+}
+
 .panel-heading {
   padding: 14px 16px;
   border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .panel-heading h3 {
@@ -250,7 +423,8 @@ export default {
 }
 
 .error-box,
-.trace-hint {
+.trace-hint,
+.trace-empty {
   margin: 0 14px 14px;
   padding: 12px;
   border-radius: 8px;
@@ -267,6 +441,48 @@ export default {
 
 .error-box.is-empty {
   opacity: 0.8;
+}
+
+.search-test-box {
+  padding: 14px;
+}
+
+.search-error {
+  margin-top: 8px;
+  color: #ef4444;
+  font-size: 13px;
+}
+
+.search-result {
+  margin-top: 12px;
+}
+
+.search-meta {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.search-meta .warn-text {
+  color: #f59e0b;
+}
+
+.search-meta .latency-text {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.search-table {
+  font-size: 12px;
+}
+
+.trace-table {
+  margin: 12px;
+  font-size: 12px;
+}
+
+.warn-text {
+  color: #f59e0b;
 }
 
 @media (max-width: 1500px) {

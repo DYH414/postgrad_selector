@@ -32,6 +32,7 @@ import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
 import com.ruoyi.postgrad.recommend.tool.V2ChatTools;
 import com.ruoyi.postgrad.recommend.tool.V2DraftActionTools;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationContext;
+import com.ruoyi.postgrad.rag.trace.RagTrace;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -88,6 +89,9 @@ public class AiChatServiceImpl implements IAiChatService {
     @Autowired(required = false)
     private RetrievalAugmentor retrievalAugmentor;
 
+    @Autowired
+    private com.ruoyi.postgrad.rag.trace.RagTraceRecorder ragTraceRecorder;
+
     private interface StreamAssistant {
         dev.langchain4j.service.TokenStream chat(String message);
     }
@@ -137,6 +141,7 @@ public class AiChatServiceImpl implements IAiChatService {
             callback.onError(new IllegalStateException("上一条消息仍在处理中，请稍候再发"));
             return;
         }
+        long t0 = System.currentTimeMillis();
         try {
             AiInvocationContext.setOperationKey("ai-chat");
             AiChatConversation conversation = getOrCreateActiveConversation(userId);
@@ -223,6 +228,11 @@ public class AiChatServiceImpl implements IAiChatService {
                         boolean draftChanged = toolContext.draftChanged();
                         String toolActionResultJson = toolContext.lastActionResultJson();
                         callback.onDone(aiText, draftChanged, toolActionResultJson);
+
+                        // Record RAG trace for observability
+                        if (retrievalAugmentor != null) {
+                            recordRagTrace(userId, message, RagTrace.Outcome.SUCCESS, null, null, t0);
+                        }
                     } catch (Exception e) {
                         log.error("[AiChat] Failed to complete stream for userId={}: {}", userId, e.getMessage());
                         callback.onError(e);
@@ -235,6 +245,9 @@ public class AiChatServiceImpl implements IAiChatService {
                     V2ChatToolContext.clear();
                     AiInvocationContext.clear();
                     log.error("[AiChat] Stream error for userId={}: {}", userId, error.getMessage());
+                    if (retrievalAugmentor != null) {
+                        recordRagTrace(userId, message, RagTrace.Outcome.FAILURE, "stream", error.getMessage(), t0);
+                    }
                     callback.onError(error);
                 })
                 .start();
@@ -386,6 +399,19 @@ public class AiChatServiceImpl implements IAiChatService {
             log.error("[AiChat] Failed to load chat system prompt: {}", e.getMessage());
             return "你是考研择校助手，帮助用户分析和调整择校草稿。\n当前草稿：{draftContext}";
         }
+    }
+
+    private void recordRagTrace(Long userId, String query, RagTrace.Outcome outcome,
+                                 String failureStage, String errorSummary, long startMs) {
+        RagTrace trace = new RagTrace();
+        trace.setOperationKey("ai-chat");
+        trace.setUserId(userId);
+        trace.setQuery(query);
+        trace.setOutcome(outcome);
+        trace.setFailureStage(failureStage);
+        trace.setErrorSummary(errorSummary);
+        trace.setTotalLatencyMs(System.currentTimeMillis() - startMs);
+        ragTraceRecorder.record(trace);
     }
 
     static String buildDraftContextText(DraftVO draft) {

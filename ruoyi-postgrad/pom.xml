@@ -57,6 +57,7 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
+            <version>1.16.3</version>
         </dependency>
 
         <!-- RabbitMQ -->

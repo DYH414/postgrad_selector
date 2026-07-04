@@ -12,6 +12,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
 import java.nio.charset.StandardCharsets;
+import java.net.URLDecoder;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -210,13 +211,23 @@ public class RagDocumentService {
     private String sourceName(Document document) {
         String fileName = document.metadata().getString("file_name");
         if (fileName != null && !fileName.isBlank()) {
-            return fileName;
+            return decodeIfEncoded(fileName);
         }
         String source = document.metadata().getString("source");
         if (source != null && !source.isBlank()) {
-            return source;
+            return decodeIfEncoded(source);
         }
         return "unknown";
+    }
+
+    private static String decodeIfEncoded(String name) {
+        if (name.contains("%")) {
+            try {
+                return URLDecoder.decode(name, StandardCharsets.UTF_8);
+            } catch (Exception ignored) {
+            }
+        }
+        return name;
     }
 
     private String inferDocType(String sourceName) {
