@@ -27,6 +27,16 @@ Draft（草稿）        →  最终 3/4/3 = 10 所，用户可见
 | CandidateWorkspace | 30 | ~90 | `ai:v2:workspace:{userId}` |
 | Draft | 3/4/3 | 10 | `ai:v2:draft:{userId}` |
 
+RAG 和观测是横切能力：
+
+```
+rag-documents/ → BGE-M3 embedding → Qdrant(postgrad_rag_main)
+                                      ↓
+AI 对话 → RetrievalAugmentor → 检索片段 + 草稿上下文 + Tool Calling
+
+LangChain4j 调用 → Micrometer(gen_ai.client.*) → /postgrad/ai-observe/overview
+```
+
 ---
 
 ## Step 1: 用户画像 → ProfileBasisVO
@@ -638,6 +648,9 @@ UserProfile (MySQL)
 | 校验器 | 5 层拦截 | 幻觉检测 > 去重 > C级剔除 > 上限裁剪 |
 | 同校多专业 | 档内去重(diversityTrim) | 同一档内每个学校只保留一个专业 |
 | 草稿持久化 | Redis（非 MySQL） | 中间态数据，无需 ACID，需要快速读写 |
+| RAG 向量库 | Qdrant collection `postgrad_rag_main` | 专用向量存储，便于 dashboard 查看 points/payload |
+| RAG point id | deterministic UUID | 兼容 LangChain4j Qdrant adapter，重新索引时稳定 |
+| AI 观测 | Micrometer + 最新调用快照 | 后台可看 token、耗时、成功率、最新错误、RAG 快照 |
 
 ---
 
@@ -651,6 +664,13 @@ UserProfile (MySQL)
 | `CandidateUniverseServiceImpl.java` | 候选全集构建（宽阈值） |
 | `CandidateWorkspaceServiceImpl.java` | 工作集构建、diversityTrim、policyScore |
 | `AiSelectorServiceImpl.java` | AI 调用、facts文本拼装、Prompt加载、JSON解析 |
+| `RagDocumentService.java` | RAG 文档加载、切片、metadata、embedding 写入 Qdrant、状态维护 |
+| `QdrantCollectionService.java` | Qdrant collection 创建、清空、连通性检查 |
+| `RagAdminController.java` | RAG 状态与重新索引后台接口 |
+| `RagConfig.java` | Qdrant embedding store、retriever、reranker、retrieval augmentor 配置 |
+| `AiObserveController.java` | AI 观测后台接口 |
+| `AiObserveServiceImpl.java` | Micrometer 指标聚合、RAG 快照、最新调用快照 |
+| `AiInvocationSnapshotRecorder.java` | 保存最新一次 AI 调用快照 |
 | `SelectionValidator.java` | 5层校验（幻觉拦截/去重/C级剔除/上限裁剪） |
 | `ReportServiceImpl.java` | 报告生成、DB快照、Redis缓存 |
 | `SchoolFact.java` | 30字段事实层、档位分类、保底资格审查 |

@@ -65,11 +65,13 @@ graph TB
     subgraph 中间件["中间件层"]
         MySQL[("MySQL 8.x<br/>Druid 连接池")]
         Redis[("Redis<br/>缓存 · Session · 候选池")]
+        Qdrant[("Qdrant<br/>RAG 向量库")]
         RabbitMQ["RabbitMQ 3.13<br/>异步消息队列"]
     end
 
     subgraph AI["AI 服务"]
         DeepSeek["DeepSeek API<br/>V4 Pro / Flash<br/>兼容 OpenAI 协议"]
+        SiliconFlow["SiliconFlow API<br/>BGE-M3 Embedding<br/>BGE Reranker"]
     end
 
     Browser --> Nginx
@@ -83,8 +85,10 @@ graph TB
     SystemModule --> Common
     Postgrad --> MySQL
     Postgrad --> Redis
+    Postgrad --> Qdrant
     Postgrad --> RabbitMQ
     Postgrad -->|"LangChain4j<br/>OpenAI 协议"| DeepSeek
+    Postgrad -->|"Embedding / Rerank"| SiliconFlow
     SystemModule --> MySQL
     Quartz --> MySQL
 ```
@@ -171,7 +175,7 @@ sequenceDiagram
     SSE->>Chat: chatStream(conversationId, message)
 
     Chat->>Redis: 获取会话上下文 (ChatMemory)
-    Redis-->>Chat: 最近 20 条消息历史
+    Redis-->>Chat: 最新 20 条消息历史
 
     Chat->>Chat: 构建 System Prompt<br/>+ 用户画像 + 当前草稿摘要
 
@@ -240,8 +244,10 @@ sequenceDiagram
 | **ORM** | MyBatis + MyBatis XML Mapper | 4.0.1 |
 | **数据库** | MySQL（Druid 连接池） | 8.x |
 | **缓存** | Redis（Lettuce 客户端） | — |
-| **AI 框架** | LangChain4j（兼容 OpenAI 协议） | 1.15.0 |
+| **向量库** | Qdrant | 1.13.4 |
+| **AI 框架** | LangChain4j（兼容 OpenAI 协议） | 1.15.x |
 | **AI 模型** | DeepSeek（V4 Pro / Flash） | — |
+| **Embedding / Rerank** | SiliconFlow BAAI/bge-m3、BAAI/bge-reranker-v2-m3 | — |
 | **安全框架** | Spring Security + JWT | — |
 | **消息队列** | RabbitMQ | 3.13 |
 | **前端（管理端）** | Vue 2.6 + Element UI 2.15 + Vuex + Vue Router | — |
@@ -275,6 +281,7 @@ pom.xml (root, packaging=pom)
 - **📝 用户画像**：填写预估分数、目标地区、本科层次、跨考情况、风险偏好、学校层次偏好
 - **🤖 AI 智能推荐**：四阶段流水线自动生成冲刺/稳妥/保底三档择校方案（共 10 所）
 - **💬 AI 对话调整**：通过自然语言对话对推荐结果进行增删替换，8 个 Tool 支持查询/搜索/对比/写操作
+- **📚 RAG 知识库增强**：将 `rag-documents/` 文档切片后写入 Qdrant，AI 对话可检索知识片段
 - **📊 推荐报告**：生成包含执行摘要、画像基础、档位分析、数据透明度的完整择校报告
 - **⭐ 收藏管理**：收藏感兴趣的专业方向，支持批量操作
 - **📈 历史记录**：查看历史推荐记录和 AI 对话历史
@@ -285,6 +292,8 @@ pom.xml (root, packaging=pom)
 - **📊 录取数据管理**：复试线、录取最低分/平均分、招生计划、录取结果
 - **🔍 数据质量管控**：每条数据完整度评级（A/B/C）+ 数据来源追溯
 - **📝 审核系统**：对入库数据进行审核确认
+- **📚 RAG 观测台**：查看 RAG 是否启用、是否索引、Qdrant collection、最新错误，并支持重新索引
+- **📈 AI 调用观测台**：聚合 LangChain4j/Micrometer 指标，展示 token、耗时、成功率、最新调用和 RAG 快照
 - **👤 系统管理**：用户、角色、菜单、权限、字典、参数、日志、在线用户监控
 - **🔧 代码生成器**：Velocity 模板一键生成前后端 CRUD 代码
 
@@ -300,6 +309,7 @@ pom.xml (root, packaging=pom)
 | Maven | 3.6+ | 后端构建 |
 | MySQL | 8.0+ | 数据持久化 |
 | Redis | 6.0+ | 缓存、Session、候选池 |
+| Qdrant | 1.13+ | RAG 向量库，Docker Compose 默认映射 6333/6334 |
 | Node.js | 16+ | 前端开发（两个前端都需要） |
 | RabbitMQ | 3.13+ | 消息队列（可选，本地开发可跳过） |
 
@@ -328,9 +338,25 @@ export REDIS_PASSWORD=your_redis_password    # Redis 无密码则不设
 
 # AI 推荐功能必需（不使用 AI 功能可不设）
 export DEEPSEEK_API_KEY=sk-your-deepseek-api-key
+
+# RAG / AI 观测增强
+export SILICONFLOW_API_KEY=sk-your-siliconflow-api-key
+export QDRANT_URL=http://localhost:6333
+export QDRANT_HOST=localhost
+export QDRANT_GRPC_PORT=6334
+export QDRANT_COLLECTION=postgrad_rag_main
 ```
 
-### 3. 启动后端
+### 3. 启动 Qdrant
+
+```bash
+docker compose up -d qdrant
+curl http://localhost:6333/collections
+```
+
+Qdrant Web UI: `http://localhost:6333/dashboard`
+
+### 4. 启动后端
 
 ```bash
 # 编译（跳过测试加速）
@@ -342,7 +368,14 @@ java -jar ruoyi-admin/target/ruoyi-admin.jar
 
 后端启动后访问 `http://localhost:8080`，Swagger 文档在 `http://localhost:8080/swagger-ui/index.html`。
 
-### 4. 启动前端
+RAG 初始化成功时日志会出现：
+
+```text
+[RagQdrant] Collection postgrad_rag_main created or updated
+[RagInit] Index complete
+```
+
+### 5. 启动前端
 
 **管理后台（开发模式）：**
 
@@ -363,9 +396,10 @@ npm run dev
 # → Vite 开发服务器（默认端口由 Vite 分配）
 ```
 
-### 5. 登录验证
+### 6. 登录验证
 
 打开 `http://localhost:8081`，使用 `admin / admin123` 登录管理后台，确认功能正常。
+RAG 状态页为 `/postgrad/rag`，AI 观测页为 `/postgrad/observe`。
 
 ---
 
@@ -473,6 +507,7 @@ server {
 | [数据库设计文档](./docs/考研择校平台数据库设计文档-MVP.md) | 数据表结构与关系设计 |
 | [项目技术文档（完整版）](./docs/项目技术文档-完整版.md) | 系统架构、业务流程、部署运维 |
 | [AI 推荐链路完整文档](./docs/AI推荐链路完整文档.md) | 四阶段推荐引擎的完整数据变换链路 |
+| [RAG / Qdrant 运维说明](./docs/RAG-Qdrant-运维说明.md) | Qdrant 启动、RAG 状态确认、重新索引与故障排查 |
 
 ---
 
