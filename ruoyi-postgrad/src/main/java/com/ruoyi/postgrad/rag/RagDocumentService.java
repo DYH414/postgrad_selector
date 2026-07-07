@@ -11,6 +11,12 @@ import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
+import com.ruoyi.postgrad.rag.knowledge.RagDataQualityDocument;
+import com.ruoyi.postgrad.rag.knowledge.RagKnowledgeExportService;
+import com.ruoyi.postgrad.rag.knowledge.RagProgramHistoryDocument;
+import com.ruoyi.postgrad.rag.knowledge.RagProgramYearFact;
+import com.ruoyi.postgrad.rag.knowledge.StructuredRagChunk;
+import com.ruoyi.postgrad.rag.knowledge.StructuredRagChunkBuilder;
 import java.nio.charset.StandardCharsets;
 import java.net.URLDecoder;
 import java.security.MessageDigest;
@@ -19,11 +25,13 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +43,8 @@ public class RagDocumentService {
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
     private final EmbeddingStore<TextSegment> embeddingStore;
     private final QdrantCollectionService qdrantCollectionService;
+    private final RagKnowledgeExportService ragKnowledgeExportService;
+    private final StructuredRagChunkBuilder structuredChunkBuilder = new StructuredRagChunkBuilder();
 
     @Value("${app.ai.rag.indexing.documents-path:rag-documents/}")
     private String documentsPath;
@@ -50,9 +60,18 @@ public class RagDocumentService {
     public RagDocumentService(ObjectProvider<EmbeddingModel> embeddingModelProvider,
                               EmbeddingStore<TextSegment> embeddingStore,
                               QdrantCollectionService qdrantCollectionService) {
+        this(embeddingModelProvider, embeddingStore, qdrantCollectionService, null);
+    }
+
+    @Autowired
+    public RagDocumentService(ObjectProvider<EmbeddingModel> embeddingModelProvider,
+                              EmbeddingStore<TextSegment> embeddingStore,
+                              QdrantCollectionService qdrantCollectionService,
+                              RagKnowledgeExportService ragKnowledgeExportService) {
         this.embeddingModelProvider = embeddingModelProvider;
         this.embeddingStore = embeddingStore;
         this.qdrantCollectionService = qdrantCollectionService;
+        this.ragKnowledgeExportService = ragKnowledgeExportService;
     }
 
     public boolean isReady() {
@@ -153,6 +172,89 @@ public class RagDocumentService {
         }
     }
 
+    public RagIndexResult reindexDatabaseKnowledge(Integer year, int limit) {
+        return reindexDatabaseKnowledge(year, year, limit);
+    }
+
+    public RagIndexResult reindexDatabaseKnowledge(Integer startYear, Integer endYear, int limit) {
+        RagStatus status = new RagStatus();
+        status.setEnabled(true);
+        status.setLastRunMode("database");
+
+        EmbeddingModel embeddingModel = embeddingModelProvider.getIfAvailable();
+        if (embeddingModel == null) {
+            status.setEnabled(false);
+            status.setIndexed(false);
+            status.setLastError("Embedding API key not configured");
+            statusRef.set(status);
+            return new RagIndexResult(0, 0);
+        }
+        if (ragKnowledgeExportService == null) {
+            status.setIndexed(false);
+            status.setLastError("Database RAG export service is not available");
+            statusRef.set(status);
+            return new RagIndexResult(0, 0);
+        }
+
+        List<StructuredRagChunk> chunks = new ArrayList<>();
+        int documentCount = 0;
+        for (RagProgramHistoryDocument history : ragKnowledgeExportService.exportProgramHistoryDocuments(startYear, endYear, limit)) {
+            chunks.addAll(structuredChunkBuilder.buildProgramHistoryChunks(history));
+            documentCount++;
+        }
+        for (RagProgramYearFact fact : ragKnowledgeExportService.exportProgramYearFacts(endYear, limit)) {
+            chunks.addAll(structuredChunkBuilder.buildProgramYearChunks(fact));
+            documentCount++;
+        }
+        for (RagDataQualityDocument quality : ragKnowledgeExportService.exportDataQualityDocuments(startYear, endYear, limit)) {
+            chunks.addAll(structuredChunkBuilder.buildDataQualityChunks(quality));
+            documentCount++;
+        }
+        if (chunks.isEmpty()) {
+            status.setIndexed(false);
+            status.setLastError("No database RAG facts found");
+            statusRef.set(status);
+            return new RagIndexResult(0, 0);
+        }
+
+        try {
+            qdrantCollectionService.ensureCollection();
+            qdrantCollectionService.clearCollection();
+            status.setBackend("qdrant");
+            status.setCollectionName(qdrantCollectionService.getCollectionName());
+            status.setReachable(qdrantCollectionService.isReachable());
+        } catch (Exception ex) {
+            status.setBackend("qdrant");
+            status.setCollectionName(qdrantCollectionService.getCollectionName());
+            status.setReachable(false);
+            status.setIndexed(false);
+            status.setLastError("Qdrant unavailable: " + ex.getMessage());
+            statusRef.set(status);
+            return new RagIndexResult(0, 0);
+        }
+
+        try {
+            LocalDateTime indexedAt = LocalDateTime.now();
+            List<TextSegment> segments = toSegments(chunks, indexedAt);
+            List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
+            List<String> ids = segmentIds(segments);
+            embeddingStore.addAll(ids, embeddings, segments);
+
+            status.setIndexed(true);
+            status.setDocumentCount(documentCount);
+            status.setChunkCount(chunks.size());
+            status.setLastIndexedAt(indexedAt);
+            status.setLastError(null);
+            statusRef.set(status);
+            return new RagIndexResult(status.getDocumentCount(), status.getChunkCount());
+        } catch (Exception ex) {
+            status.setIndexed(false);
+            status.setLastError(ex.getMessage());
+            statusRef.set(status);
+            return new RagIndexResult(0, 0);
+        }
+    }
+
     private List<Document> loadDocuments() {
         try {
             List<Document> documents = ClassPathDocumentLoader.loadDocuments(documentsPath, new TextDocumentParser());
@@ -206,6 +308,24 @@ public class RagDocumentService {
                 .getBytes(StandardCharsets.UTF_8)).toString());
         }
         return ids;
+    }
+
+    private List<TextSegment> toSegments(List<StructuredRagChunk> chunks, LocalDateTime indexedAt) {
+        List<TextSegment> segments = new ArrayList<>();
+        String updatedAt = indexedAt.toString();
+        for (StructuredRagChunk chunk : chunks) {
+            Metadata metadata = new Metadata();
+            for (Map.Entry<String, String> entry : chunk.getMetadata().entrySet()) {
+                metadata.put(entry.getKey(), entry.getValue() != null ? entry.getValue() : "");
+            }
+            metadata.put("source_id", chunk.getChunkId());
+            metadata.put("chunk_index", metadata.getString("section"));
+            metadata.put("content", chunk.getText());
+            metadata.put("updated_at", updatedAt);
+            metadata.put("tags", "database,structured");
+            segments.add(TextSegment.from(chunk.getText(), metadata));
+        }
+        return segments;
     }
 
     private String sourceName(Document document) {

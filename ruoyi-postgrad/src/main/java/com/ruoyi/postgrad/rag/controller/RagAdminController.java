@@ -7,6 +7,10 @@ import com.ruoyi.postgrad.rag.RagIndexResult;
 import com.ruoyi.postgrad.rag.RagStatus;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
+import com.ruoyi.postgrad.rag.eval.RagEvaluationResult;
+import com.ruoyi.postgrad.rag.eval.RagEvaluationService;
+import com.ruoyi.postgrad.rag.knowledge.RagMarkdownDocumentService;
+import com.ruoyi.postgrad.rag.knowledge.RagMarkdownExportResult;
 import com.ruoyi.postgrad.rag.service.RagSearchTestService;
 import com.ruoyi.postgrad.rag.trace.RagTrace;
 import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
@@ -15,6 +19,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +31,8 @@ public class RagAdminController extends BaseController {
     private final RagDocumentService ragDocumentService;
     private final RagSearchTestService ragSearchTestService;
     private final RagTraceRecorder ragTraceRecorder;
+    private final RagEvaluationService ragEvaluationService;
+    private final RagMarkdownDocumentService ragMarkdownDocumentService;
 
     @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_main}")
     private String collectionName;
@@ -50,10 +57,14 @@ public class RagAdminController extends BaseController {
 
     public RagAdminController(RagDocumentService ragDocumentService,
                               RagSearchTestService ragSearchTestService,
-                              RagTraceRecorder ragTraceRecorder) {
+                              RagTraceRecorder ragTraceRecorder,
+                              RagEvaluationService ragEvaluationService,
+                              RagMarkdownDocumentService ragMarkdownDocumentService) {
         this.ragDocumentService = ragDocumentService;
         this.ragSearchTestService = ragSearchTestService;
         this.ragTraceRecorder = ragTraceRecorder;
+        this.ragEvaluationService = ragEvaluationService;
+        this.ragMarkdownDocumentService = ragMarkdownDocumentService;
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
@@ -87,6 +98,30 @@ public class RagAdminController extends BaseController {
         return success(result);
     }
 
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:reindex')")
+    @PostMapping("/reindex-database")
+    public AjaxResult reindexDatabase(@RequestParam(defaultValue = "2023") Integer startYear,
+                                      @RequestParam(defaultValue = "2025") Integer endYear,
+                                      @RequestParam(defaultValue = "1000") int limit) {
+        RagIndexResult result = ragDocumentService.reindexDatabaseKnowledge(startYear, endYear, limit);
+        return success(result);
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:reindex')")
+    @PostMapping("/generate-documents")
+    public AjaxResult generateDocuments(@RequestParam(defaultValue = "2023") Integer startYear,
+                                        @RequestParam(defaultValue = "2025") Integer endYear,
+                                        @RequestParam(defaultValue = "1000") int limit) {
+        RagMarkdownExportResult result = ragMarkdownDocumentService.generateV2Documents(startYear, endYear, limit);
+        Map<String, Object> data = new HashMap<>();
+        data.put("documentCount", result.getDocumentCount());
+        data.put("outputDirectory", result.getOutputDirectory().toString());
+        data.put("writtenFiles", result.getWrittenFiles().stream()
+            .map(Path::toString)
+            .toList());
+        return success(data);
+    }
+
     @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
     @PostMapping("/search-test")
     public AjaxResult searchTest(@Valid @RequestBody RagSearchTestRequest request) {
@@ -118,6 +153,13 @@ public class RagAdminController extends BaseController {
     public AjaxResult traces(@RequestParam(defaultValue = "20") int limit) {
         List<RagTrace> traces = ragTraceRecorder.listRecent(limit);
         return success(traces);
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PostMapping("/evaluate")
+    public AjaxResult evaluate() {
+        RagEvaluationResult result = ragEvaluationService.runDefault();
+        return success(result);
     }
 
     private static String coalesce(String a, String b) {

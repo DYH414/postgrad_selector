@@ -14,6 +14,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
+import com.ruoyi.postgrad.rag.knowledge.RagDataQualityDocument;
+import com.ruoyi.postgrad.rag.knowledge.RagKnowledgeExportService;
+import com.ruoyi.postgrad.rag.knowledge.RagProgramHistoryDocument;
+import com.ruoyi.postgrad.rag.knowledge.RagProgramYearFact;
+import com.ruoyi.postgrad.rag.knowledge.StructuredRagChunk;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
@@ -25,7 +30,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -210,6 +217,50 @@ class RagDocumentServiceTest {
     }
 
     @Test
+    void shouldWriteUuidPointIdsForDatabaseChunks() throws Exception {
+        ObjectProvider<EmbeddingModel> provider = mock(ObjectProvider.class);
+        EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        QdrantCollectionService qdrant = mock(QdrantCollectionService.class);
+        RagKnowledgeExportService knowledgeExportService = mock(RagKnowledgeExportService.class);
+        when(provider.getIfAvailable()).thenReturn(embeddingModel);
+        when(qdrant.getCollectionName()).thenReturn("postgrad_rag_main");
+        when(qdrant.isReachable()).thenReturn(true);
+        when(embeddingModel.embedAll(any())).thenAnswer(invocation -> {
+            List<TextSegment> segments = invocation.getArgument(0);
+            return Response.from(segments.stream()
+                .map(item -> dev.langchain4j.data.embedding.Embedding.from(new float[]{0.1f, 0.2f, 0.3f}))
+                .toList());
+        });
+
+        RagProgramYearFact y2024 = programFact(2024);
+        RagProgramYearFact y2025 = programFact(2025);
+        RagProgramHistoryDocument history = new RagProgramHistoryDocument(List.of(y2024, y2025));
+        when(knowledgeExportService.exportProgramHistoryDocuments(2024, 2025, 10)).thenReturn(List.of(history));
+        when(knowledgeExportService.exportProgramYearFacts(2025, 10)).thenReturn(List.of(y2025));
+        when(knowledgeExportService.exportDataQualityDocuments(2024, 2025, 10))
+            .thenReturn(List.of(new RagDataQualityDocument(history)));
+
+        RagDocumentService service = new RagDocumentService(provider, store, qdrant, knowledgeExportService);
+
+        RagIndexResult result = service.reindexDatabaseKnowledge(2024, 2025, 10);
+
+        ArgumentCaptor<List<String>> idsCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<TextSegment>> segmentsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(store).addAll(idsCaptor.capture(), any(), segmentsCaptor.capture());
+
+        assertTrue(result.getChunkCount() > 3);
+        assertEquals(result.getChunkCount(), idsCaptor.getValue().size());
+        assertDoesNotThrow(() -> UUID.fromString(idsCaptor.getValue().get(0)));
+        assertTrue(segmentsCaptor.getValue().stream()
+            .anyMatch(segment -> "program_history".equals(segment.metadata().getString("doc_type"))));
+        assertTrue(segmentsCaptor.getValue().stream()
+            .anyMatch(segment -> "program_year".equals(segment.metadata().getString("doc_type"))));
+        assertTrue(segmentsCaptor.getValue().stream()
+            .anyMatch(segment -> "data_quality".equals(segment.metadata().getString("doc_type"))));
+    }
+
+    @Test
     void shouldExposeUsefulStatusWhenQdrantBootstrapFails() throws Exception {
         ObjectProvider<EmbeddingModel> provider = mock(ObjectProvider.class);
         EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
@@ -276,5 +327,41 @@ class RagDocumentServiceTest {
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is not available", ex);
         }
+    }
+
+    private static RagProgramYearFact programFact(Integer year) {
+        RagProgramYearFact fact = new RagProgramYearFact();
+        fact.setSchoolId(1L);
+        fact.setSchoolName("广州大学");
+        fact.setProvince("广东");
+        fact.setCity("广州");
+        fact.setSchoolTier("PUBLIC_REGULAR");
+        fact.setCollegeId(128L);
+        fact.setCollegeName("网络空间安全学院");
+        fact.setProgramId(148L);
+        fact.setProgramCode("083900");
+        fact.setProgramName("网络空间安全");
+        fact.setDegreeType("academic");
+        fact.setStudyMode("full_time");
+        fact.setExamType("GENERAL_500");
+        fact.setIs408(true);
+        fact.setExamSubjects("101 思想政治理论 / 201 英语（一） / 301 数学（一） / 408 计算机学科专业基础");
+        fact.setYear(year);
+        fact.setScoreLine(300);
+        fact.setTotalPlan(34);
+        fact.setUnifiedExamQuota(34);
+        fact.setRetestCount(61);
+        fact.setAdmittedCount(28);
+        fact.setMinAdmittedScore(278);
+        fact.setAvgAdmittedScore(307);
+        fact.setMaxAdmittedScore(352);
+        fact.setQualityLevel("B");
+        fact.setHasOfficialSource(false);
+        fact.setHasConflict(false);
+        fact.setMissingFields("");
+        fact.setSourceOwner("N诺考研择校");
+        fact.setSourceName("广州大学 网络空间安全 数据");
+        fact.setSourceUrl("https://noobdream.com/schoolinfo/135/");
+        return fact;
     }
 }

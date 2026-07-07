@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.mapper.RagKnowledgeExportMapper">
+
+    <select id="selectProgramYearFacts" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            s.id schoolId,
+            s.name schoolName,
+            s.province province,
+            s.city city,
+            s.tier schoolTier,
+            c.id collegeId,
+            c.name collegeName,
+            p.id programId,
+            p.program_code programCode,
+            p.program_name programName,
+            p.research_direction researchDirection,
+            p.degree_type degreeType,
+            p.study_mode studyMode,
+            p.exam_type examType,
+            p.is_408 is408,
+            subj.examSubjects examSubjects,
+            coalesce(sc.year, ap.year, ar.year, q.year, #{year}) year,
+            sc.score_line scoreLine,
+            sc.single_politics singlePolitics,
+            sc.single_english singleEnglish,
+            sc.single_math singleMath,
+            sc.single_professional singleProfessional,
+            ap.total_plan totalPlan,
+            ap.unified_exam_quota unifiedExamQuota,
+            ap.retest_count retestCount,
+            ar.admitted_count admittedCount,
+            ar.min_admitted_score minAdmittedScore,
+            ar.avg_admitted_score avgAdmittedScore,
+            ar.max_admitted_score maxAdmittedScore,
+            coalesce(q.completeness_level,
+                case
+                    when sc.score_line is not null
+                        and ar.min_admitted_score is not null
+                        and ar.max_admitted_score is not null
+                        and ar.avg_admitted_score is not null
+                        and (ap.total_plan is not null or ap.unified_exam_quota is not null or ar.admitted_count is not null)
+                        then 'A'
+                    when sc.score_line is not null
+                        and (ar.avg_admitted_score is not null
+                            or ar.min_admitted_score is not null
+                            or ap.total_plan is not null
+                            or ap.unified_exam_quota is not null)
+                        then 'B'
+                    when sc.score_line is not null then 'C'
+                    else 'D'
+                end
+            ) qualityLevel,
+            q.has_official_source hasOfficialSource,
+            q.has_conflict hasConflict,
+            q.missing_fields missingFields,
+            coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, '数据库') sourceOwner,
+            coalesce(ar_ds.title, sc_ds.title, ap_ds.title, concat(s.name, ' ', coalesce(sc.year, ap.year, ar.year, q.year, #{year}), ' ', p.program_name, ' 数据')) sourceName,
+            coalesce(ar_ds.url, sc_ds.url, ap_ds.url) sourceUrl
+        from program p
+            join college c on c.id = p.college_id
+            join school s on s.id = c.school_id
+            left join (
+                select ps.program_id,
+                       group_concat(concat(sub.code, ' ', sub.name) order by ps.subject_order separator ' / ') examSubjects
+                from program_subject ps
+                    left join subject sub on sub.id = ps.subject_id
+                group by ps.program_id
+            ) subj on subj.program_id = p.id
+            left join admission_score sc on sc.program_id = p.id and sc.year = #{year}
+            left join admission_plan ap on ap.program_id = p.id and ap.year = #{year}
+            left join admission_result ar on ar.program_id = p.id and ar.year = #{year}
+            left join program_year_data_quality q on q.program_id = p.id and q.year = #{year}
+            left join data_source sc_ds on sc_ds.id = sc.source_id
+            left join data_source ap_ds on ap_ds.id = ap.source_id
+            left join data_source ar_ds on ar_ds.id = ar.source_id
+        where p.status = 'active'
+          and s.status = 'active'
+          and (
+              sc.program_id is not null
+              or ap.program_id is not null
+              or ar.program_id is not null
+              or q.program_id is not null
+          )
+        order by s.name, c.name, p.program_code, p.program_name
+        limit #{limit}
+    </select>
+
+    <select id="selectProgramHistoryFacts" resultType="com.ruoyi.postgrad.domain.RowMap">
+        select
+            s.id schoolId,
+            s.name schoolName,
+            s.province province,
+            s.city city,
+            s.tier schoolTier,
+            c.id collegeId,
+            c.name collegeName,
+            p.id programId,
+            p.program_code programCode,
+            p.program_name programName,
+            p.research_direction researchDirection,
+            p.degree_type degreeType,
+            p.study_mode studyMode,
+            p.exam_type examType,
+            p.is_408 is408,
+            subj.examSubjects examSubjects,
+            y.year year,
+            sc.score_line scoreLine,
+            sc.single_politics singlePolitics,
+            sc.single_english singleEnglish,
+            sc.single_math singleMath,
+            sc.single_professional singleProfessional,
+            ap.total_plan totalPlan,
+            ap.unified_exam_quota unifiedExamQuota,
+            ap.retest_count retestCount,
+            ar.admitted_count admittedCount,
+            ar.min_admitted_score minAdmittedScore,
+            ar.avg_admitted_score avgAdmittedScore,
+            ar.max_admitted_score maxAdmittedScore,
+            coalesce(q.completeness_level,
+                case
+                    when sc.score_line is not null
+                        and ar.min_admitted_score is not null
+                        and ar.max_admitted_score is not null
+                        and ar.avg_admitted_score is not null
+                        and (ap.total_plan is not null or ap.unified_exam_quota is not null or ar.admitted_count is not null)
+                        then 'A'
+                    when sc.score_line is not null
+                        and (ar.avg_admitted_score is not null
+                            or ar.min_admitted_score is not null
+                            or ap.total_plan is not null
+                            or ap.unified_exam_quota is not null)
+                        then 'B'
+                    when sc.score_line is not null then 'C'
+                    else 'D'
+                end
+            ) qualityLevel,
+            q.has_official_source hasOfficialSource,
+            q.has_conflict hasConflict,
+            q.missing_fields missingFields,
+            coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, '数据库') sourceOwner,
+            coalesce(ar_ds.title, sc_ds.title, ap_ds.title, concat(s.name, ' ', y.year, ' ', p.program_name, ' 数据')) sourceName,
+            coalesce(ar_ds.url, sc_ds.url, ap_ds.url) sourceUrl
+        from program p
+            join college c on c.id = p.college_id
+            join school s on s.id = c.school_id
+            join (
+                select program_id, year from admission_score where year between #{startYear} and #{endYear}
+                union
+                select program_id, year from admission_plan where year between #{startYear} and #{endYear}
+                union
+                select program_id, year from admission_result where year between #{startYear} and #{endYear}
+                union
+                select program_id, year from program_year_data_quality where year between #{startYear} and #{endYear}
+            ) y on y.program_id = p.id
+            left join (
+                select ps.program_id,
+                       group_concat(concat(sub.code, ' ', sub.name) order by ps.subject_order separator ' / ') examSubjects
+                from program_subject ps
+                    left join subject sub on sub.id = ps.subject_id
+                group by ps.program_id
+            ) subj on subj.program_id = p.id
+            left join admission_score sc on sc.program_id = p.id and sc.year = y.year
+            left join admission_plan ap on ap.program_id = p.id and ap.year = y.year
+            left join admission_result ar on ar.program_id = p.id and ar.year = y.year
+            left join program_year_data_quality q on q.program_id = p.id and q.year = y.year
+            left join data_source sc_ds on sc_ds.id = sc.source_id
+            left join data_source ap_ds on ap_ds.id = ap.source_id
+            left join data_source ar_ds on ar_ds.id = ar.source_id
+        where p.status = 'active'
+          and s.status = 'active'
+        order by s.name, c.name, p.program_code, p.program_name, y.year
+        limit #{limit}
+    </select>
+</mapper>
