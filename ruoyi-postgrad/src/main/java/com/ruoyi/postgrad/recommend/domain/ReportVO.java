@@ -3,6 +3,7 @@ package com.ruoyi.postgrad.recommend.domain;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.ruoyi.postgrad.rag.knowledge.RagCitation;
 /**
  * 最终报告 —— 草稿快照 + 生成元数据。
  * <p>存储在 Redis {@code ai:v2:report:{reportId}} 和 DB recommendation_log.result_json。</p>
@@ -21,6 +22,9 @@ public class ReportVO implements Serializable {
 
     /** 画像依据（快照） */
     private ProfileBasisVO profileBasis;
+
+    /** 推荐报告引用溯源 */
+    private List<RagCitation> ragCitations;
 
     /** 报告状态：PENDING / COMPLETED / FAILED */
     private String status;
@@ -43,6 +47,9 @@ public class ReportVO implements Serializable {
 
     public ProfileBasisVO getProfileBasis() { return profileBasis; }
     public void setProfileBasis(ProfileBasisVO profileBasis) { this.profileBasis = profileBasis; }
+
+    public List<RagCitation> getRagCitations() { return ragCitations; }
+    public void setRagCitations(List<RagCitation> ragCitations) { this.ragCitations = ragCitations; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }

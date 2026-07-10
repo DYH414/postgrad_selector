@@ -5539,5 +5539,19 @@ node_modules/
 /.codex-backups/
 /.agents/
 /outputs/
+
+# Local AI assistant and skill-installation artifacts
+/.codebuddy/
+/.hermes/
+/.kiro/
+/.qoder/
+/skills/
+/skills-lock.json
+
 /docs/简历编辑 - CodeCV简历 (7).md
 /docs/面试准备-简历逐点拆解与加分故事.md
+
+# RAG generated documents (auto-generated from database/content pipelines)
+/rag-documents/
+/rag-generated/
+**/rag-generated/

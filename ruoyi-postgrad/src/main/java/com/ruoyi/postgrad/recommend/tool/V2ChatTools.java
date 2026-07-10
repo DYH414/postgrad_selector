@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.alibaba.fastjson2.JSON;
@@ -16,6 +17,9 @@ import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.impl.DraftServiceImpl;
+import com.ruoyi.postgrad.rag.dto.RagEvidenceRequest;
+import com.ruoyi.postgrad.rag.dto.RagEvidenceResponse;
+import com.ruoyi.postgrad.rag.service.RagEvidenceService;
 
 import dev.langchain4j.agent.tool.Tool;
 
@@ -27,6 +31,9 @@ import dev.langchain4j.agent.tool.Tool;
 public class V2ChatTools {
 
     private static final Logger log = LoggerFactory.getLogger(V2ChatTools.class);
+
+    @Autowired(required = false)
+    private RagEvidenceService ragEvidenceService;
 
     @Tool("查询指定 programId 对应学校的完整详细数据，包括学校层次、录取均分、招生人数、复试线等")
     public String getProgramDetail(long programId) {
@@ -68,6 +75,43 @@ public class V2ChatTools {
         }
 
         return sb.toString();
+    }
+
+    @Tool("检索指定 programId 的 RAG 证据。回答某个学校为什么推荐、风险是什么、历年趋势如何时使用。参数 question 是用户具体问题。")
+    public String getProgramEvidence(long programId, String question) {
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("programId", programId);
+        if (ragEvidenceService == null) {
+            result.put("ok", false);
+            result.put("error", "rag_evidence_unavailable");
+            result.put("message", "RAG 证据服务不可用。");
+            return JSON.toJSONString(result);
+        }
+
+        try {
+            RagEvidenceRequest request = new RagEvidenceRequest();
+            request.setProgramId(programId);
+            request.setQuery(question != null && !question.isBlank() ? question : "推荐依据 风险 历年趋势");
+            request.setDocType("program_history");
+            request.setMaxResults(6);
+            request.setRerankTopN(3);
+            RagEvidenceResponse evidence = ragEvidenceService.retrieveProgramEvidence(request);
+
+            result.put("ok", evidence.getErrorSummary() == null);
+            result.put("fallbackUsed", evidence.isFallbackUsed());
+            result.put("fallbackMode", evidence.getFallbackMode());
+            result.put("citations", evidence.getCitations());
+            result.put("selectedChunks", evidence.getSelectedChunks());
+            if (evidence.getErrorSummary() != null) {
+                result.put("error", evidence.getErrorSummary());
+            }
+            return JSON.toJSONString(result);
+        } catch (Exception e) {
+            result.put("ok", false);
+            result.put("error", "rag_evidence_failed");
+            result.put("message", e.getMessage());
+            return JSON.toJSONString(result);
+        }
     }
 
     @Tool("在候选工作集中搜索学校，支持按关键词、档位(tier)、地区(region)过滤。" +

@@ -26,6 +26,10 @@ import com.ruoyi.postgrad.recommend.domain.ReportVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.IReportService;
+import com.ruoyi.postgrad.rag.dto.RagEvidenceRequest;
+import com.ruoyi.postgrad.rag.dto.RagEvidenceResponse;
+import com.ruoyi.postgrad.rag.knowledge.RagCitation;
+import com.ruoyi.postgrad.rag.service.RagEvidenceService;
 
 /**
  * 报告服务实现 —— 草稿快照生成最终报告 + 历史报告查询。
@@ -48,6 +52,9 @@ public class ReportServiceImpl implements IReportService {
 
     @Autowired
     private RecommendationMapper recommendationMapper;
+
+    @Autowired(required = false)
+    private RagEvidenceService ragEvidenceService;
 
     @Override
     public ReportVO generateReport(Long userId) {
@@ -86,6 +93,7 @@ public class ReportServiceImpl implements IReportService {
         report.setTiers(snapshotTiers);
         report.setSummary(summary);
         report.setProfileBasis(draft.getProfileBasis());
+        report.setRagCitations(buildCitations(snapshotTiers));
         report.setStatus("COMPLETED");
         report.setCreatedAt(LocalDateTime.now());
 
@@ -309,6 +317,56 @@ public class ReportServiceImpl implements IReportService {
             sb.append(" 注意：").append(String.join("；", notes));
         }
         return sb.toString();
+    }
+
+    private List<RagCitation> buildCitations(List<TierCandidates> tiers) {
+        List<RagCitation> citations = new ArrayList<>();
+        if (tiers == null) {
+            return citations;
+        }
+        for (TierCandidates tier : tiers) {
+            if (tier.getCandidates() == null) continue;
+            for (CandidateCardVO candidate : tier.getCandidates()) {
+                if (candidate.getFact() == null) continue;
+                List<RagCitation> evidenceCitations = retrieveEvidenceCitations(candidate.getFact());
+                if (!evidenceCitations.isEmpty()) {
+                    citations.addAll(evidenceCitations);
+                } else {
+                    RagCitation citation = RagCitation.fromSchoolFact(candidate.getFact());
+                    if ((citation.getSourceUrl() != null && !citation.getSourceUrl().isBlank())
+                        || (citation.getSourceName() != null && !citation.getSourceName().isBlank())) {
+                        citations.add(citation);
+                    }
+                }
+            }
+        }
+        return citations;
+    }
+
+    private List<RagCitation> retrieveEvidenceCitations(SchoolFact fact) {
+        if (ragEvidenceService == null || fact == null || fact.getProgramId() == null) {
+            return Collections.emptyList();
+        }
+        try {
+            RagEvidenceRequest request = new RagEvidenceRequest();
+            request.setProgramId(fact.getProgramId());
+            request.setSchoolId(fact.getSchoolId());
+            request.setDocType("program_history");
+            request.setQuery((fact.getSchoolName() != null ? fact.getSchoolName() : "")
+                + " " + (fact.getProgramName() != null ? fact.getProgramName() : "")
+                + " 推荐依据 风险 历年分数趋势");
+            request.setMaxResults(6);
+            request.setRerankTopN(3);
+            RagEvidenceResponse response = ragEvidenceService.retrieveProgramEvidence(request);
+            if (response == null || response.getCitations() == null) {
+                return Collections.emptyList();
+            }
+            return response.getCitations();
+        } catch (Exception e) {
+            log.warn("[Report] RAG evidence unavailable for programId={}: {}",
+                fact.getProgramId(), e.getMessage());
+            return Collections.emptyList();
+        }
     }
 
 }

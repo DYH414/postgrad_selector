@@ -12,8 +12,10 @@ import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.filter.Filter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -35,13 +37,23 @@ public class RagSearchTestService {
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
     private final EmbeddingStore<TextSegment> embeddingStore;
     private final ObjectProvider<SiliconFlowReranker> rerankerProvider;
+    private final ObjectProvider<RagQueryMetadataResolver> metadataResolverProvider;
 
     public RagSearchTestService(ObjectProvider<EmbeddingModel> embeddingModelProvider,
                                 EmbeddingStore<TextSegment> embeddingStore,
                                 ObjectProvider<SiliconFlowReranker> rerankerProvider) {
+        this(embeddingModelProvider, embeddingStore, rerankerProvider, null);
+    }
+
+    @Autowired
+    public RagSearchTestService(ObjectProvider<EmbeddingModel> embeddingModelProvider,
+                                EmbeddingStore<TextSegment> embeddingStore,
+                                ObjectProvider<SiliconFlowReranker> rerankerProvider,
+                                ObjectProvider<RagQueryMetadataResolver> metadataResolverProvider) {
         this.embeddingModelProvider = embeddingModelProvider;
         this.embeddingStore = embeddingStore;
         this.rerankerProvider = rerankerProvider;
+        this.metadataResolverProvider = metadataResolverProvider;
     }
 
     /**
@@ -65,6 +77,9 @@ public class RagSearchTestService {
             return resp;
         }
 
+        enrichMetadataFilters(request);
+        resp.setAppliedFilters(request.getMetadataFilters());
+
         // 2. 获取 Embedding 模型
         EmbeddingModel embeddingModel = embeddingModelProvider.getIfAvailable();
         if (embeddingModel == null) {
@@ -81,11 +96,15 @@ public class RagSearchTestService {
             resp.getLatency().setEmbeddingMs(System.currentTimeMillis() - tEmbed);
 
             long tRetrieve = System.currentTimeMillis();
-            EmbeddingSearchRequest searchReq = EmbeddingSearchRequest.builder()
+            Filter filter = RagMetadataFilterBuilder.fromRequest(request);
+            EmbeddingSearchRequest.EmbeddingSearchRequestBuilder builder = EmbeddingSearchRequest.builder()
                 .queryEmbedding(embResp.content())
                 .maxResults(maxResults)
-                .minScore(minScore)
-                .build();
+                .minScore(minScore);
+            if (filter != null) {
+                builder.filter(filter);
+            }
+            EmbeddingSearchRequest searchReq = builder.build();
             EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(searchReq);
             resp.getLatency().setRetrievalMs(System.currentTimeMillis() - tRetrieve);
 
@@ -156,7 +175,15 @@ public class RagSearchTestService {
             chunk.setVectorRank(i + 1);
             chunk.setSourceName(metadata != null ? metadata.getString("source_name") : null);
             chunk.setSourceId(metadata != null ? metadata.getString("source_id") : null);
+            chunk.setSourceUrl(metadata != null ? metadata.getString("source_url") : null);
             chunk.setDocType(metadata != null ? metadata.getString("doc_type") : null);
+            chunk.setSchoolId(metadata != null ? metadata.getString("school_id") : null);
+            chunk.setProgramId(metadata != null ? metadata.getString("program_id") : null);
+            chunk.setSchoolName(metadata != null ? metadata.getString("school_name") : null);
+            chunk.setCollegeName(metadata != null ? metadata.getString("college_name") : null);
+            chunk.setProgramName(metadata != null ? metadata.getString("program_name") : null);
+            chunk.setYear(metadata != null ? metadata.getString("year") : null);
+            chunk.setSection(metadata != null ? metadata.getString("section") : null);
             chunk.setChunkIndex(metadata != null ? metadata.getString("chunk_index") : null);
             chunk.setChunkTitle(metadata != null ? metadata.getString("chunk_title") : null);
             chunk.setContentHash(metadata != null ? metadata.getString("content_hash") : null);
@@ -180,6 +207,16 @@ public class RagSearchTestService {
 
     private static String safeString(Object value) {
         return value != null ? value.toString() : null;
+    }
+
+    private void enrichMetadataFilters(RagSearchTestRequest request) {
+        if (metadataResolverProvider == null) {
+            return;
+        }
+        RagQueryMetadataResolver resolver = metadataResolverProvider.getIfAvailable();
+        if (resolver != null) {
+            resolver.enrich(request);
+        }
     }
 
     private static String preview(String text, int maxLen) {

@@ -27,12 +27,13 @@ Draft（草稿）        →  最终 3/4/3 = 10 所，用户可见
 | CandidateWorkspace | 30 | ~90 | `ai:v2:workspace:{userId}` |
 | Draft | 3/4/3 | 10 | `ai:v2:draft:{userId}` |
 
-RAG 和观测是横切能力：
+RAG 和观测是横切能力。注意：RAG 不替代 MySQL 排序和事实查询，它只在解释、引用和溯源阶段使用。
 
 ```
-rag-documents/ → BGE-M3 embedding → Qdrant(postgrad_rag_main)
-                                      ↓
-AI 对话 → RetrievalAugmentor → 检索片段 + 草稿上下文 + Tool Calling
+MySQL 结构化数据 → rag-generated/ → structured chunk + metadata → BGE-M3 → Qdrant
+rag-documents/ 通用知识 ────────────────────────────────────────┘
+                                                               ↓
+AI 对话/报告解释 → metadata filter → Qdrant 召回 → Rerank → ragCitations
 
 LangChain4j 调用 → Micrometer(gen_ai.client.*) → /postgrad/ai-observe/overview
 ```
@@ -649,8 +650,10 @@ UserProfile (MySQL)
 | 同校多专业 | 档内去重(diversityTrim) | 同一档内每个学校只保留一个专业 |
 | 草稿持久化 | Redis（非 MySQL） | 中间态数据，无需 ACID，需要快速读写 |
 | RAG 向量库 | Qdrant collection `postgrad_rag_main` | 专用向量存储，便于 dashboard 查看 points/payload |
+| RAG 使用边界 | MySQL 做事实和排序，Qdrant 做解释证据 | 防止向量检索覆盖结构化事实 |
+| RAG metadata filter | `program_id` / `school_id` / `year` / `doc_type` / `section` | 推荐解释先限定候选，再做语义召回和 rerank |
 | RAG point id | deterministic UUID | 兼容 LangChain4j Qdrant adapter，重新索引时稳定 |
-| AI 观测 | Micrometer + 最新调用快照 | 后台可看 token、耗时、成功率、最新错误、RAG 快照 |
+| AI 观测 | Micrometer + 最新调用快照 + RAG Trace | 后台可看 token、耗时、成功率、最新错误、RAG 快照和最近检索链路 |
 
 ---
 
@@ -665,14 +668,22 @@ UserProfile (MySQL)
 | `CandidateWorkspaceServiceImpl.java` | 工作集构建、diversityTrim、policyScore |
 | `AiSelectorServiceImpl.java` | AI 调用、facts文本拼装、Prompt加载、JSON解析 |
 | `RagDocumentService.java` | RAG 文档加载、切片、metadata、embedding 写入 Qdrant、状态维护 |
+| `RagKnowledgeExportService.java` | 从 MySQL 结构化数据导出专业历年和数据质量文档模型 |
+| `RagMarkdownDocumentService.java` | 将导出的数据库文档模型写入 `rag-generated/` Markdown |
+| `RagMarkdownDocumentBuilder.java` | 构造数据库 RAG Markdown 的 front matter 和正文 |
+| `StructuredRagChunkBuilder.java` | 按学校、专业、年份、章节构造结构化 chunk 和 metadata |
+| `RagEvidenceService.java` | 推荐证据检索，先 metadata filter，再 Qdrant 召回和 rerank |
 | `QdrantCollectionService.java` | Qdrant collection 创建、清空、连通性检查 |
-| `RagAdminController.java` | RAG 状态与重新索引后台接口 |
+| `RagAdminController.java` | RAG 状态、数据库文档生成、检索测试、最近 Trace 与重新索引后台接口 |
+| `RagSearchTestService.java` | 复用 embedding、Qdrant 和 reranker 执行可观测检索测试 |
+| `RagTraceRecorder.java` | 内存环形缓冲记录最近 AI Chat / 检索测试 / 推荐证据 / 数据库索引的 RAG Trace |
 | `RagConfig.java` | Qdrant embedding store、retriever、reranker、retrieval augmentor 配置 |
 | `AiObserveController.java` | AI 观测后台接口 |
 | `AiObserveServiceImpl.java` | Micrometer 指标聚合、RAG 快照、最新调用快照 |
 | `AiInvocationSnapshotRecorder.java` | 保存最新一次 AI 调用快照 |
 | `SelectionValidator.java` | 5层校验（幻觉拦截/去重/C级剔除/上限裁剪） |
 | `ReportServiceImpl.java` | 报告生成、DB快照、Redis缓存 |
+| `V2ChatTools.java` | AI 对话工具，包含 `getProgramEvidence(programId, question)` 推荐证据检索 |
 | `SchoolFact.java` | 30字段事实层、档位分类、保底资格审查 |
 | `CandidateCardVO.java` | 候选卡片（fact + opinion + 顶层裁决） |
 | `AiOpinion.java` | AI 生成的分析（理由/风险/优劣势） |

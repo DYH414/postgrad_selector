@@ -13,7 +13,15 @@ public class RagChunkResult {
 
     private String sourceName;
     private String sourceId;
+    private String sourceUrl;
     private String docType;
+    private String schoolId;
+    private String programId;
+    private String schoolName;
+    private String collegeName;
+    private String programName;
+    private String year;
+    private String section;
     private String chunkIndex;
     private String chunkTitle;
     private String contentHash;
@@ -33,8 +41,24 @@ public class RagChunkResult {
     public void setSourceName(String sourceName) { this.sourceName = sourceName; }
     public String getSourceId() { return sourceId; }
     public void setSourceId(String sourceId) { this.sourceId = sourceId; }
+    public String getSourceUrl() { return sourceUrl; }
+    public void setSourceUrl(String sourceUrl) { this.sourceUrl = sourceUrl; }
     public String getDocType() { return docType; }
     public void setDocType(String docType) { this.docType = docType; }
+    public String getSchoolId() { return schoolId; }
+    public void setSchoolId(String schoolId) { this.schoolId = schoolId; }
+    public String getProgramId() { return programId; }
+    public void setProgramId(String programId) { this.programId = programId; }
+    public String getSchoolName() { return schoolName; }
+    public void setSchoolName(String schoolName) { this.schoolName = schoolName; }
+    public String getCollegeName() { return collegeName; }
+    public void setCollegeName(String collegeName) { this.collegeName = collegeName; }
+    public String getProgramName() { return programName; }
+    public void setProgramName(String programName) { this.programName = programName; }
+    public String getYear() { return year; }
+    public void setYear(String year) { this.year = year; }
+    public String getSection() { return section; }
+    public void setSection(String section) { this.section = section; }
     public String getChunkIndex() { return chunkIndex; }
     public void setChunkIndex(String chunkIndex) { this.chunkIndex = chunkIndex; }
     public String getChunkTitle() { return chunkTitle; }

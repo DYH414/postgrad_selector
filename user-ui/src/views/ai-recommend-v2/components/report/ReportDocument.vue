@@ -7,6 +7,7 @@
       <nav>
         <a href="#report-summary">结论摘要</a>
         <a href="#report-basis">推荐依据</a>
+        <a href="#report-evidence">证据引用</a>
         <a
           v-for="(tier, index) in tiers"
           :key="tier.level || index"
@@ -44,6 +45,10 @@
         :index="index"
       />
 
+      <div id="report-evidence">
+        <ReportRagCitations :citations="report?.ragCitations" />
+      </div>
+
       <ReportDataNotice
         :tiers="tiers"
         :profile-basis="report?.profileBasis"
@@ -59,6 +64,7 @@ import ReportExecutiveSummary from './ReportExecutiveSummary.vue'
 import ReportProfileBasis from './ReportProfileBasis.vue'
 import ReportTierSection from './ReportTierSection.vue'
 import ReportDataNotice from './ReportDataNotice.vue'
+import ReportRagCitations from './ReportRagCitations.vue'
 
 const props = defineProps({
   report: { type: Object, default: () => ({}) }

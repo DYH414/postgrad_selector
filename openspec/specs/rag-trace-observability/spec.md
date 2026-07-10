@@ -1,7 +1,8 @@
 # rag-trace-observability Specification
 
 ## Purpose
-TBD - created by archiving change add-rag-search-test-and-trace. Update Purpose after archive.
+Define request-level RAG trace observability for AI Chat and search-test flows so administrators can inspect recent retrieval outcomes, selected sources, stage timing, and failure summaries from the RAG management page.
+
 ## Requirements
 ### Requirement: AI Chat records request-level RAG trace
 The system SHALL record a RAG trace whenever AI Chat attempts to use RAG retrieval for a user message.
@@ -46,4 +47,3 @@ The RAG management page SHALL summarize recent RAG traces and show which sources
 #### Scenario: Trace has an error
 - **WHEN** a trace contains an error summary
 - **THEN** the page displays the failing stage and error summary in the trace row
-

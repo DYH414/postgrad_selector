@@ -21,6 +21,11 @@ public class V2BoundChatTools {
         return V2ChatToolContext.callWith(context, () -> delegate.getProgramDetail(programId));
     }
 
+    @Tool("检索指定 programId 的 RAG 证据。回答某个学校为什么推荐、风险是什么、历年趋势如何时使用。参数 question 是用户具体问题。")
+    public String getProgramEvidence(long programId, String question) {
+        return V2ChatToolContext.callWith(context, () -> delegate.getProgramEvidence(programId, question));
+    }
+
     @Tool("在候选池中搜索学校，支持按关键词、档位(tier)、地区(region)过滤。tier 可选值: reach/steady/safe，region 为省份或城市名。")
     public String searchPrograms(String keyword, String tier, String region) {
         return V2ChatToolContext.callWith(context, () -> delegate.searchPrograms(keyword, tier, region));

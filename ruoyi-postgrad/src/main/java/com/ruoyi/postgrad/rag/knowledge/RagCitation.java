@@ -1,12 +1,16 @@
 package com.ruoyi.postgrad.rag.knowledge;
 
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
+import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 
 public class RagCitation {
 
     private String title;
     private String sourceName;
     private String sourceUrl;
+    private String docType;
+    private String schoolId;
+    private String programId;
     private String schoolName;
     private String programName;
     private String year;
@@ -19,6 +23,9 @@ public class RagCitation {
         citation.setTitle(chunk.getChunkTitle());
         citation.setSourceName(chunk.getMetadata().get("source_owner"));
         citation.setSourceUrl(chunk.getMetadata().get("source_url"));
+        citation.setDocType(chunk.getMetadata().get("doc_type"));
+        citation.setSchoolId(chunk.getMetadata().get("school_id"));
+        citation.setProgramId(chunk.getMetadata().get("program_id"));
         citation.setSchoolName(chunk.getMetadata().get("school_name"));
         citation.setProgramName(chunk.getMetadata().get("program_name"));
         citation.setYear(chunk.getMetadata().get("year"));
@@ -28,11 +35,33 @@ public class RagCitation {
         return citation;
     }
 
+    public static RagCitation fromChunkResult(RagChunkResult chunk) {
+        RagCitation citation = new RagCitation();
+        if (chunk == null) {
+            return citation;
+        }
+        citation.setTitle(chunk.getChunkTitle());
+        citation.setSourceName(chunk.getSourceName());
+        citation.setSourceUrl(chunk.getSourceUrl());
+        citation.setDocType(chunk.getDocType());
+        citation.setSchoolId(chunk.getSchoolId());
+        citation.setProgramId(chunk.getProgramId());
+        citation.setSchoolName(chunk.getSchoolName());
+        citation.setProgramName(chunk.getProgramName());
+        citation.setYear(chunk.getYear());
+        citation.setSection(chunk.getSection());
+        citation.setContentHash(chunk.getContentHash());
+        citation.setContentPreview(chunk.getContentPreview());
+        return citation;
+    }
+
     public static RagCitation fromSchoolFact(SchoolFact fact) {
         RagCitation citation = new RagCitation();
         citation.setTitle(fact.getSchoolName() + " " + fact.getProgramName() + " 推荐事实");
         citation.setSourceName(fact.getSourceOwner());
         citation.setSourceUrl(fact.getSourceUrl());
+        citation.setSchoolId(fact.getSchoolId() != null ? String.valueOf(fact.getSchoolId()) : null);
+        citation.setProgramId(fact.getProgramId() != null ? String.valueOf(fact.getProgramId()) : null);
         citation.setSchoolName(fact.getSchoolName());
         citation.setProgramName(fact.getProgramName());
         citation.setYear(fact.getDataYear() != null ? String.valueOf(fact.getDataYear()) : null);
@@ -60,6 +89,12 @@ public class RagCitation {
     public void setSourceName(String sourceName) { this.sourceName = sourceName; }
     public String getSourceUrl() { return sourceUrl; }
     public void setSourceUrl(String sourceUrl) { this.sourceUrl = sourceUrl; }
+    public String getDocType() { return docType; }
+    public void setDocType(String docType) { this.docType = docType; }
+    public String getSchoolId() { return schoolId; }
+    public void setSchoolId(String schoolId) { this.schoolId = schoolId; }
+    public String getProgramId() { return programId; }
+    public void setProgramId(String programId) { this.programId = programId; }
     public String getSchoolName() { return schoolName; }
     public void setSchoolName(String schoolName) { this.schoolName = schoolName; }
     public String getProgramName() { return programName; }

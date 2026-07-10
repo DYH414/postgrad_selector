@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+const root = process.cwd()
+const api = readFileSync(join(root, 'src/api/postgrad/rag.js'), 'utf8')
+const page = readFileSync(join(root, 'src/views/postgrad/rag/index.vue'), 'utf8')
+
+assert.match(api, /generateDatabaseDocuments/, 'RAG API must expose database document generation')
+assert.match(api, /reindexDatabaseRag/, 'RAG API must expose database reindexing')
+assert.match(api, /RAG_LONG_TASK_TIMEOUT/, 'RAG API must define a long timeout for generation and indexing')
+assert.match(api, /generateDatabaseDocuments[\s\S]*timeout:\s*RAG_LONG_TASK_TIMEOUT/, 'RAG document generation must use long task timeout')
+assert.match(api, /reindexDatabaseRag[\s\S]*timeout:\s*RAG_LONG_TASK_TIMEOUT/, 'RAG database reindexing must use long task timeout')
+assert.match(page, /生成数据库文档/, 'RAG page must show database document generation control')
+assert.match(page, /索引数据库 RAG/, 'RAG page must show database RAG indexing control')
+assert.match(page, /生成并索引数据库 RAG/, 'RAG page must show a combined generate-and-index control')
+assert.match(page, /Qdrant 尚未更新/, 'RAG page must warn that generated documents are not indexed yet')
+assert.match(page, /handleGenerateAndReindexDatabase/, 'RAG page must implement the combined database RAG flow')
+assert.match(page, /await generateDatabaseDocuments\(this\.databaseForm\)[\s\S]*await reindexDatabaseRag\(this\.databaseForm\)/, 'Combined flow must generate documents before database reindexing')
+assert.match(page, /databaseOperationStage/, 'RAG page must track combined operation stage for partial failure feedback')
+assert.match(page, /startYear/, 'RAG page must expose start year parameter')
+assert.match(page, /endYear/, 'RAG page must expose end year parameter')
+assert.match(page, /programId/, 'RAG page must expose program metadata filter')
+assert.match(page, /schoolId/, 'RAG page must expose school metadata filter')
+assert.match(page, /docType/, 'RAG page must expose document type metadata filter')
+assert.match(page, /section/, 'RAG page must expose section metadata filter')
+assert.match(page, /recommendation-evidence/, 'Trace labels must include recommendation evidence')
+assert.match(page, /database-reindex/, 'Trace labels must include database reindex operation')
+assert.match(page, /rag-evaluate/, 'Trace labels must include RAG evaluation operation')
+assert.match(page, /评测/, 'Trace UI must show a human-readable RAG evaluation label')
+assert.match(page, /embeddingLatencyMs/, 'Trace UI must expose embedding latency when present')
+assert.match(page, /retrievalLatencyMs/, 'Trace UI must expose retrieval latency when present')
+assert.match(page, /rerankLatencyMs/, 'Trace UI must expose rerank latency when present')

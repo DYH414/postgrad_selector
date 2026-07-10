@@ -17,7 +17,7 @@
             :loading="reindexing"
             @click="handleReindex"
           >
-            重新索引
+            重建通用知识库
           </el-button>
         </div>
       </div>
@@ -38,6 +38,72 @@
         :closable="false"
         class="rag-alert"
       />
+
+      <section class="rag-panel database-ops-panel">
+        <div class="panel-heading">
+          <div>
+            <h3>数据库 RAG 管道</h3>
+            <span>从 MySQL 生成 rag-generated 文档，再索引为推荐证据</span>
+          </div>
+        </div>
+        <div class="database-ops-body">
+          <el-form :inline="true" :model="databaseForm" size="mini" class="database-form">
+            <el-form-item label="起始年份">
+              <el-input-number v-model="databaseForm.startYear" :min="2000" :max="2100" controls-position="right" />
+            </el-form-item>
+            <el-form-item label="结束年份">
+              <el-input-number v-model="databaseForm.endYear" :min="2000" :max="2100" controls-position="right" />
+            </el-form-item>
+            <el-form-item label="上限">
+              <el-input-number v-model="databaseForm.limit" :min="1" :max="10000" controls-position="right" />
+            </el-form-item>
+            <el-form-item>
+              <el-button
+                type="primary"
+                icon="el-icon-document-add"
+                :loading="generatingDocuments"
+                :disabled="!hasReindexPerm"
+                @click="handleGenerateDatabaseDocuments"
+              >
+                生成数据库文档
+              </el-button>
+              <el-button
+                type="success"
+                icon="el-icon-connection"
+                :loading="reindexingDatabase"
+                :disabled="!hasReindexPerm || generatingAndReindexing"
+                @click="handleReindexDatabase"
+              >
+                索引数据库 RAG
+              </el-button>
+              <el-button
+                type="warning"
+                icon="el-icon-finished"
+                :loading="generatingAndReindexing"
+                :disabled="!hasReindexPerm || generatingDocuments || reindexingDatabase"
+                @click="handleGenerateAndReindexDatabase"
+              >
+                生成并索引数据库 RAG
+              </el-button>
+            </el-form-item>
+          </el-form>
+          <el-alert
+            v-if="databaseNeedsIndexing"
+            title="数据库 RAG 文档已生成，但 Qdrant 尚未更新。请继续点击“索引数据库 RAG”，或使用“生成并索引数据库 RAG”完成闭环。"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="database-stage-alert"
+          />
+          <div v-if="databaseResult" class="database-result">
+            <span v-if="databaseOperationStage">{{ databaseOperationStage }}</span>
+            <span>{{ databaseResult.mode || 'database' }}</span>
+            <span>文档 {{ databaseResult.documentCount || 0 }}</span>
+            <span v-if="databaseResult.chunkCount != null">切片 {{ databaseResult.chunkCount }}</span>
+            <span v-if="databaseResult.writtenFileCount != null">写入 {{ databaseResult.writtenFileCount }} 个文件</span>
+          </div>
+        </div>
+      </section>
 
       <div class="rag-grid">
         <!-- 状态面板 -->
@@ -94,6 +160,27 @@
                 测试召回
               </el-button>
             </el-input>
+            <el-form :inline="true" :model="searchFilters" size="mini" class="search-filter-form">
+              <el-form-item label="schoolId">
+                <el-input v-model="searchFilters.schoolId" clearable placeholder="学校ID" />
+              </el-form-item>
+              <el-form-item label="programId">
+                <el-input v-model="searchFilters.programId" clearable placeholder="专业ID" />
+              </el-form-item>
+              <el-form-item label="year">
+                <el-input v-model="searchFilters.year" clearable placeholder="年份" />
+              </el-form-item>
+              <el-form-item label="docType">
+                <el-select v-model="searchFilters.docType" clearable placeholder="文档类型">
+                  <el-option label="program_history" value="program_history" />
+                  <el-option label="program_year" value="program_year" />
+                  <el-option label="data_quality" value="data_quality" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="section">
+                <el-input v-model="searchFilters.section" clearable placeholder="如 score_trend" />
+              </el-form-item>
+            </el-form>
             <div v-if="searchError" class="search-error">{{ searchError }}</div>
 
             <div v-if="searchResult" class="search-result">
@@ -104,6 +191,16 @@
                 <span class="latency-text">
                   | 总耗时 {{ searchResult.latency ? searchResult.latency.totalMs : '-' }}ms
                 </span>
+              </div>
+              <div v-if="searchResult.appliedFilters && Object.keys(searchResult.appliedFilters).length" class="active-filters">
+                <el-tag
+                  v-for="(v, k) in searchResult.appliedFilters"
+                  :key="k"
+                  size="mini"
+                  type="info"
+                >
+                  {{ k }}={{ v }}
+                </el-tag>
               </div>
 
               <el-table :data="searchResult.chunks" size="mini" stripe class="search-table">
@@ -126,7 +223,11 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="sourceName" label="来源文档" min-width="140" />
-                <el-table-column prop="docType" label="文档类型" width="90" />
+                <el-table-column prop="schoolId" label="schoolId" width="80" />
+                <el-table-column prop="programId" label="programId" width="85" />
+                <el-table-column prop="year" label="年份" width="65" />
+                <el-table-column prop="docType" label="文档类型" width="120" />
+                <el-table-column prop="section" label="章节" width="120" />
                 <el-table-column prop="chunkIndex" label="切片序号" width="80" />
                 <el-table-column prop="contentPreview" label="内容预览" min-width="200" show-overflow-tooltip />
               </el-table>
@@ -150,6 +251,10 @@
             <template slot-scope="scope">
               <el-tag v-if="scope.row.operationKey === 'ai-chat'" type="primary" size="mini">AI Chat</el-tag>
               <el-tag v-else-if="scope.row.operationKey === 'search-test'" type="warning" size="mini">检索测试</el-tag>
+              <el-tag v-else-if="scope.row.operationKey === 'recommendation-evidence'" type="success" size="mini">推荐证据</el-tag>
+              <el-tag v-else-if="scope.row.operationKey === 'database-reindex'" type="info" size="mini">数据库索引</el-tag>
+              <el-tag v-else-if="scope.row.operationKey === 'database-generate'" type="info" size="mini">文档生成</el-tag>
+              <el-tag v-else-if="scope.row.operationKey === 'rag-evaluate'" type="danger" size="mini">RAG 评测</el-tag>
               <span v-else>{{ scope.row.operationKey }}</span>
             </template>
           </el-table-column>
@@ -173,9 +278,23 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column label="延迟" width="80">
+          <el-table-column label="过滤/回退" min-width="150">
             <template slot-scope="scope">
-              {{ scope.row.totalLatencyMs }}ms
+              <span v-if="scope.row.fallbackUsed" class="warn-text">fallback: {{ scope.row.fallbackMode || '-' }}</span>
+              <template v-else-if="scope.row.metadataFilters">
+                <el-tag v-for="(v, k) in scope.row.metadataFilters" :key="k" size="mini" type="info" style="margin:2px">
+                  {{ k }}={{ v }}
+                </el-tag>
+              </template>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="延迟" width="150">
+            <template slot-scope="scope">
+              <div>{{ scope.row.totalLatencyMs }}ms</div>
+              <div v-if="scope.row.embeddingLatencyMs != null" class="trace-latency-detail">E {{ scope.row.embeddingLatencyMs }}ms</div>
+              <div v-if="scope.row.retrievalLatencyMs != null" class="trace-latency-detail">Q {{ scope.row.retrievalLatencyMs }}ms</div>
+              <div v-if="scope.row.rerankLatencyMs != null" class="trace-latency-detail">R {{ scope.row.rerankLatencyMs }}ms</div>
             </template>
           </el-table-column>
           <el-table-column label="错误" min-width="120" show-overflow-tooltip>
@@ -191,7 +310,14 @@
 </template>
 
 <script>
-import { getRagStatus, reindexRag, searchTestRag, getRagTraces } from '@/api/postgrad/rag'
+import {
+  getRagStatus,
+  reindexRag,
+  generateDatabaseDocuments,
+  reindexDatabaseRag,
+  searchTestRag,
+  getRagTraces
+} from '@/api/postgrad/rag'
 
 export default {
   name: 'PostgradRagMonitor',
@@ -199,9 +325,27 @@ export default {
     return {
       loading: false,
       reindexing: false,
+      generatingDocuments: false,
+      reindexingDatabase: false,
+      generatingAndReindexing: false,
+      databaseOperationStage: '',
+      databaseNeedsIndexing: false,
       status: {},
       notice: '',
+      databaseForm: {
+        startYear: 2023,
+        endYear: 2025,
+        limit: 1000
+      },
+      databaseResult: null,
       searchQuery: '',
+      searchFilters: {
+        schoolId: '',
+        programId: '',
+        year: '',
+        docType: '',
+        section: ''
+      },
       searchTesting: false,
       searchResult: null,
       searchError: '',
@@ -222,7 +366,7 @@ export default {
         { key: 'backend', label: '向量库后端', value: this.status.backend || 'Qdrant', hint: '当前使用的向量存储' },
         { key: 'reachable', label: '可连通', value: this.boolText(this.status.reachable), hint: 'Qdrant 是否可达' },
         { key: 'indexed', label: '索引状态', value: this.boolText(this.status.indexed), hint: '文档是否已加载' },
-        { key: 'docs', label: '文档数', value: this.status.documentCount || 0, hint: 'rag-documents/ 下文件数' },
+        { key: 'docs', label: '文档数', value: this.status.documentCount || 0, hint: 'rag-generated 或 rag-documents 文档数' },
         { key: 'chunks', label: '切片数', value: this.status.chunkCount || 0, hint: '分块后的总片段数' },
         { key: 'embedding', label: 'Embedding', value: this.status.embeddingModel || '-', hint: '向量化模型' }
       ]
@@ -254,7 +398,7 @@ export default {
       }
     },
     handleReindex() {
-      this.$confirm('确认重新索引 RAG 文档吗？这会重建 Qdrant 向量库。', '重新索引').then(() => {
+      this.$confirm('确认重新索引通用 rag-documents 文档吗？这会重建 Qdrant 向量库。', '重建通用知识库').then(() => {
         this.reindexing = true
         reindexRag().then(res => {
           this.$message.success((res && res.msg) || '重新索引完成')
@@ -264,6 +408,67 @@ export default {
         }).finally(() => {
           this.reindexing = false
         })
+      }).catch(() => {})
+    },
+    handleGenerateDatabaseDocuments() {
+      this.generatingDocuments = true
+      this.databaseOperationStage = '生成文档中'
+      generateDatabaseDocuments(this.databaseForm).then(res => {
+        this.databaseResult = (res && res.data) || {}
+        this.databaseOperationStage = '文档已生成，待索引'
+        this.databaseNeedsIndexing = true
+        this.$message.warning('数据库 RAG 文档生成完成，Qdrant 尚未更新，请继续索引数据库 RAG')
+        this.loadTraces()
+      }).catch(() => {
+        this.databaseOperationStage = '文档生成失败'
+        this.$message.error('数据库 RAG 文档生成失败')
+      }).finally(() => {
+        this.generatingDocuments = false
+      })
+    },
+    handleReindexDatabase() {
+      this.$confirm('确认索引数据库生成的 RAG 证据吗？这会重建 Qdrant 中的推荐证据。', '索引数据库 RAG').then(() => {
+        this.reindexingDatabase = true
+        reindexDatabaseRag(this.databaseForm).then(res => {
+          this.databaseResult = (res && res.data) || {}
+          this.databaseOperationStage = '索引完成'
+          this.databaseNeedsIndexing = false
+          this.$message.success('数据库 RAG 索引完成')
+          this.loadStatus()
+          this.loadTraces()
+        }).catch(() => {
+          this.$message.error('数据库 RAG 索引失败')
+        }).finally(() => {
+          this.reindexingDatabase = false
+        })
+      }).catch(() => {})
+    },
+    async handleGenerateAndReindexDatabase() {
+      this.$confirm('确认生成并索引数据库 RAG 吗？这会先写入 rag-generated 文档，再重建 Qdrant 推荐证据。', '生成并索引数据库 RAG').then(async () => {
+        this.generatingAndReindexing = true
+        this.databaseNeedsIndexing = false
+        this.databaseOperationStage = '生成文档中'
+        try {
+          const generateRes = await generateDatabaseDocuments(this.databaseForm)
+          this.databaseResult = (generateRes && generateRes.data) || {}
+          this.databaseOperationStage = '文档已生成，正在索引'
+          this.databaseNeedsIndexing = true
+          await this.loadTraces()
+          const reindexRes = await reindexDatabaseRag(this.databaseForm)
+          this.databaseResult = (reindexRes && reindexRes.data) || this.databaseResult
+          this.databaseOperationStage = '生成并索引完成'
+          this.databaseNeedsIndexing = false
+          this.$message.success('数据库 RAG 文档生成并索引完成')
+          await this.loadStatus()
+          await this.loadTraces()
+        } catch (e) {
+          this.databaseOperationStage = this.databaseNeedsIndexing ? '索引失败，文档已保留' : '生成并索引失败'
+          this.$message.error(this.databaseNeedsIndexing ? '文档已生成，但数据库 RAG 索引失败' : '数据库 RAG 生成并索引失败')
+          this.loadStatus()
+          this.loadTraces()
+        } finally {
+          this.generatingAndReindexing = false
+        }
       }).catch(() => {})
     },
     async handleSearchTest() {
@@ -276,7 +481,10 @@ export default {
       this.searchError = ''
       this.searchResult = null
       try {
-        const res = await searchTestRag({ query: q })
+        const res = await searchTestRag({
+          query: q,
+          ...this.compactFilters(this.searchFilters)
+        })
         this.searchResult = (res && res.data) || null
         if (this.searchResult && this.searchResult.errorSummary) {
           this.searchError = this.searchResult.errorSummary
@@ -295,6 +503,16 @@ export default {
     formatTime(value) {
       if (!value) return '-'
       return String(value)
+    },
+    compactFilters(filters) {
+      const result = {}
+      Object.keys(filters || {}).forEach(key => {
+        const value = filters[key]
+        if (value !== null && value !== undefined && String(value).trim() !== '') {
+          result[key] = String(value).trim()
+        }
+      })
+      return result
     }
   }
 }
@@ -383,6 +601,36 @@ export default {
   margin-bottom: 12px;
 }
 
+.database-ops-panel {
+  min-height: auto;
+  margin-bottom: 12px;
+}
+
+.database-ops-body {
+  padding: 14px 16px;
+}
+
+.database-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.database-result,
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.database-stage-alert {
+  margin-top: 10px;
+}
+
 .rag-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -453,6 +701,14 @@ export default {
   font-size: 13px;
 }
 
+.search-filter-form {
+  margin-top: 10px;
+}
+
+.search-filter-form ::v-deep .el-form-item {
+  margin-bottom: 8px;
+}
+
 .search-result {
   margin-top: 12px;
 }
@@ -479,6 +735,11 @@ export default {
 .trace-table {
   margin: 12px;
   font-size: 12px;
+}
+
+.trace-latency-detail {
+  color: #64748b;
+  line-height: 1.35;
 }
 
 .warn-text {

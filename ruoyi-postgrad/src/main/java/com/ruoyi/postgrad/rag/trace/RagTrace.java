@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.rag.trace;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -22,6 +23,9 @@ public class RagTrace {
     private int retrievedCount;
     private int selectedCount;
     private List<String> topSources;
+    private Map<String, String> metadataFilters;
+    private boolean fallbackUsed;
+    private String fallbackMode;
 
     private Long embeddingLatencyMs;
     private Long retrievalLatencyMs;
@@ -56,6 +60,12 @@ public class RagTrace {
     public void setSelectedCount(int selectedCount) { this.selectedCount = selectedCount; }
     public List<String> getTopSources() { return topSources; }
     public void setTopSources(List<String> topSources) { this.topSources = topSources; }
+    public Map<String, String> getMetadataFilters() { return metadataFilters; }
+    public void setMetadataFilters(Map<String, String> metadataFilters) { this.metadataFilters = metadataFilters; }
+    public boolean isFallbackUsed() { return fallbackUsed; }
+    public void setFallbackUsed(boolean fallbackUsed) { this.fallbackUsed = fallbackUsed; }
+    public String getFallbackMode() { return fallbackMode; }
+    public void setFallbackMode(String fallbackMode) { this.fallbackMode = fallbackMode; }
     public Long getEmbeddingLatencyMs() { return embeddingLatencyMs; }
     public void setEmbeddingLatencyMs(Long embeddingLatencyMs) { this.embeddingLatencyMs = embeddingLatencyMs; }
     public Long getRetrievalLatencyMs() { return retrievalLatencyMs; }

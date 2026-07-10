@@ -47,21 +47,16 @@ public class QdrantCollectionService {
             throw ex;
         }
 
-        Map<String, Object> vectors = new LinkedHashMap<>();
-        vectors.put("size", dimension);
-        vectors.put("distance", "Cosine");
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("vectors", vectors);
-
-        restTemplate.put(collectionUrl(), new HttpEntity<>(body, headers()));
-        log.info("[RagQdrant] Collection {} created or updated, dimension={}", collectionName, dimension);
+        createCollection();
     }
 
     public void clearCollection() {
-        Map<String, Object> body = Map.of("filter", Map.of());
-        restTemplate.postForEntity(collectionUrl() + "/points/delete?wait=true",
-            new HttpEntity<>(body, headers()), String.class);
+        try {
+            restTemplate.exchange(collectionUrl(), HttpMethod.DELETE, new HttpEntity<>(headers()), String.class);
+        } catch (HttpClientErrorException.NotFound ignored) {
+            // Missing collection is already empty; recreate below.
+        }
+        createCollection();
     }
 
     public boolean isReachable() {
@@ -80,6 +75,18 @@ public class QdrantCollectionService {
 
     private String collectionUrl() {
         return url + "/collections/" + collectionName;
+    }
+
+    private void createCollection() {
+        Map<String, Object> vectors = new LinkedHashMap<>();
+        vectors.put("size", dimension);
+        vectors.put("distance", "Cosine");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("vectors", vectors);
+
+        restTemplate.put(collectionUrl(), new HttpEntity<>(body, headers()));
+        log.info("[RagQdrant] Collection {} created or updated, dimension={}", collectionName, dimension);
     }
 
     private HttpHeaders headers() {

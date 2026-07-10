@@ -28,6 +28,18 @@
         <div class="msg-body">
           <template v-if="msg.role === 'assistant'">
             <div class="md-body" v-html="renderMarkdown(msg.content)"></div>
+            <div v-if="getMessageEvidence(msg).length" class="evidence-sources">
+              <span>引用</span>
+              <a
+                v-for="source in getMessageEvidence(msg)"
+                :key="evidenceKey(source)"
+                :href="source.sourceUrl || undefined"
+                :target="source.sourceUrl ? '_blank' : undefined"
+                :rel="source.sourceUrl ? 'noreferrer' : undefined"
+              >
+                {{ source.title || source.sourceName || source.docType || '知识库证据' }}
+              </a>
+            </div>
           </template>
           <template v-else>
             <p class="msg-text">{{ msg.content }}</p>
@@ -121,6 +133,7 @@ function toolLabel(name) {
     searchPrograms: '搜索学校中',
     getDraftContext: '检查草稿状态',
     getProgramDetail: '查询学校详情',
+    getProgramEvidence: '检索推荐证据',
     comparePrograms: '对比学校',
     getRefillCandidates: '查找候选',
     addDraftCandidate: '添加到草稿',
@@ -131,6 +144,32 @@ function toolLabel(name) {
     confirmRefillCandidate: '确认候选'
   }
   return map[name] || '处理中'
+}
+
+function getMessageEvidence(message) {
+  const metadata = parseMetadata(message?.metadataJson || message?.metadata || message?.extra)
+  const evidence = metadata?.ragCitations || metadata?.citations || metadata?.evidence?.citations || []
+  return Array.isArray(evidence) ? evidence.filter(Boolean).slice(0, 3) : []
+}
+
+function parseMetadata(value) {
+  if (!value) return {}
+  if (typeof value === 'object') return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return {}
+  }
+}
+
+function evidenceKey(source) {
+  return [
+    source.programId,
+    source.contentHash,
+    source.title,
+    source.sourceName,
+    source.section
+  ].filter(Boolean).join(':')
 }
 </script>
 
@@ -336,6 +375,34 @@ function toolLabel(name) {
 }
 
 .msg--streaming .msg-body { min-height: 24px; }
+
+.evidence-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.evidence-sources span,
+.evidence-sources a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: var(--brand-soft-3);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.evidence-sources span {
+  background: var(--bg-soft);
+  color: var(--ink-3);
+}
 
 /* ── Tool call indicator ── */
 .tool-call-indicator {

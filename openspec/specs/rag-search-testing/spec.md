@@ -1,7 +1,8 @@
 # rag-search-testing Specification
 
 ## Purpose
-TBD - created by archiving change add-rag-search-test-and-trace. Update Purpose after archive.
+Define the administrator-facing capability for testing the current RAG retrieval pipeline with a plain query and inspecting the retrieved chunks, metadata, vector order, rerank order, and prompt-selection evidence without invoking the chat model.
+
 ## Requirements
 ### Requirement: Administrator can test RAG retrieval for a query
 The system SHALL provide an authenticated administrator endpoint that accepts a text query and returns the chunks retrieved by the current RAG pipeline without invoking the chat model.
@@ -46,4 +47,3 @@ The RAG management page SHALL allow administrators to run a query and inspect re
 #### Scenario: Search test fails
 - **WHEN** the backend search-test endpoint returns an error
 - **THEN** the page displays a clear error message without clearing the current RAG status cards
-

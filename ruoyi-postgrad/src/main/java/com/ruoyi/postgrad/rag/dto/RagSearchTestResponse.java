@@ -1,6 +1,7 @@
 package com.ruoyi.postgrad.rag.dto;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * RAG 检索测试响应。
@@ -14,6 +15,7 @@ public class RagSearchTestResponse {
     private boolean rerankEnabled;
     private boolean rerankFailed;
     private String errorSummary;
+    private Map<String, String> appliedFilters = Map.of();
 
     private RagSearchLatency latency = new RagSearchLatency();
     private List<RagChunkResult> chunks = List.of();
@@ -32,6 +34,10 @@ public class RagSearchTestResponse {
     public void setRerankFailed(boolean rerankFailed) { this.rerankFailed = rerankFailed; }
     public String getErrorSummary() { return errorSummary; }
     public void setErrorSummary(String errorSummary) { this.errorSummary = errorSummary; }
+    public Map<String, String> getAppliedFilters() { return appliedFilters; }
+    public void setAppliedFilters(Map<String, String> appliedFilters) {
+        this.appliedFilters = appliedFilters != null ? appliedFilters : Map.of();
+    }
     public RagSearchLatency getLatency() { return latency; }
     public void setLatency(RagSearchLatency latency) { this.latency = latency; }
     public List<RagChunkResult> getChunks() { return chunks; }

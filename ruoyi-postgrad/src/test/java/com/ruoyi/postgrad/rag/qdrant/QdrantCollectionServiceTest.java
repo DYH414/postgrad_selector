@@ -56,15 +56,18 @@ class QdrantCollectionServiceTest {
     }
 
     @Test
-    void shouldClearCollectionWithSelectorThatMatchesAllPoints() {
+    void shouldClearCollectionByDroppingAndRecreatingCollection() {
         RestTemplate restTemplate = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
         QdrantCollectionService service = new QdrantCollectionService(restTemplate,
             "http://localhost:6333", "", "postgrad_rag_main", 1024);
 
-        server.expect(requestTo("http://localhost:6333/collections/postgrad_rag_main/points/delete?wait=true"))
-            .andExpect(method(HttpMethod.POST))
-            .andExpect(content().json("{\"filter\":{}}"))
+        server.expect(requestTo("http://localhost:6333/collections/postgrad_rag_main"))
+            .andExpect(method(HttpMethod.DELETE))
+            .andRespond(withSuccess("{\"result\":true,\"status\":\"ok\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://localhost:6333/collections/postgrad_rag_main"))
+            .andExpect(method(HttpMethod.PUT))
+            .andExpect(content().json("{\"vectors\":{\"size\":1024,\"distance\":\"Cosine\"}}"))
             .andRespond(withSuccess("{\"result\":true,\"status\":\"ok\"}", MediaType.APPLICATION_JSON));
 
         service.clearCollection();

@@ -133,6 +133,7 @@ class AiChatServiceImplTest {
         assertFalse(prompt.contains("---ACTION---"));
         assertFalse(prompt.contains("\"type\":\"remove\""));
         assertTrue(prompt.contains("removeDraftCandidate(programId)"));
+        assertTrue(prompt.contains("getProgramEvidence(programId, question)"));
     }
 
     // ═══════════ H3: chat() 并发锁拒绝 ═══════════
