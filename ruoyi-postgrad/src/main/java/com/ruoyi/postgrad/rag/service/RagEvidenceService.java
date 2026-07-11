@@ -18,21 +18,21 @@ import org.springframework.stereotype.Service;
 @Service
 public class RagEvidenceService {
 
-    private final RagSearchTestService searchTestService;
+    private final RagRetrievalService ragRetrievalService;
     private final RagTraceRecorder traceRecorder;
 
     @Autowired
-    public RagEvidenceService(RagSearchTestService searchTestService, RagTraceRecorder traceRecorder) {
-        this.searchTestService = searchTestService;
+    public RagEvidenceService(RagRetrievalService ragRetrievalService, RagTraceRecorder traceRecorder) {
+        this.ragRetrievalService = ragRetrievalService;
         this.traceRecorder = traceRecorder;
     }
 
-    public RagEvidenceService(RagSearchTestService searchTestService) {
-        this(searchTestService, null);
+    public RagEvidenceService(RagRetrievalService ragRetrievalService) {
+        this(ragRetrievalService, null);
     }
 
     public RagEvidenceResponse retrieveProgramEvidence(RagEvidenceRequest request) {
-        RagSearchTestResponse strict = searchTestService.searchTest(toSearchRequest(request, false));
+        RagSearchTestResponse strict = retrieve(toSearchRequest(request, false));
         if (hasEvidence(strict)) {
             RagEvidenceResponse response = toEvidenceResponse(request, strict, false, null);
             recordTrace(request, strict, response);
@@ -40,7 +40,7 @@ public class RagEvidenceService {
         }
 
         if (shouldFallback(request)) {
-            RagSearchTestResponse fallback = searchTestService.searchTest(toSearchRequest(request, true));
+            RagSearchTestResponse fallback = retrieve(toSearchRequest(request, true));
             RagEvidenceResponse response = toEvidenceResponse(request, fallback, true, "program_broad");
             recordTrace(request, fallback, response);
             return response;
@@ -68,6 +68,10 @@ public class RagEvidenceService {
             search.setSection(request.getSection());
         }
         return search;
+    }
+
+    private RagSearchTestResponse retrieve(RagSearchTestRequest request) {
+        return ragRetrievalService.retrieve(request).response();
     }
 
     private RagEvidenceResponse toEvidenceResponse(RagEvidenceRequest request, RagSearchTestResponse search,

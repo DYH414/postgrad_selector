@@ -13,7 +13,8 @@ import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
 import com.ruoyi.postgrad.rag.service.RagEvidenceService;
-import com.ruoyi.postgrad.rag.service.RagSearchTestService;
+import com.ruoyi.postgrad.rag.service.RagRetrievalResult;
+import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
 import com.ruoyi.postgrad.recommend.domain.AgentRunContext;
 import com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver;
@@ -42,16 +43,17 @@ class AgentRuntimeFlowContractTest {
         assertFalse(AiChatServiceImpl.usesGenericRetrieval(riskRoute, augmentor));
 
         AgentRunContext run = AgentRunContext.start(7L);
-        RagSearchTestService search = mock(RagSearchTestService.class);
+        RagRetrievalService retrieval = mock(RagRetrievalService.class);
         RagSearchTestResponse searchResponse = new RagSearchTestResponse();
         searchResponse.setRetrievedCount(1);
         searchResponse.setSelectedCount(1);
         searchResponse.setAppliedFilters(Map.of("program_id", "202"));
         searchResponse.setChunks(List.of(selectedRiskChunk()));
-        when(search.searchTest(any(RagSearchTestRequest.class))).thenReturn(searchResponse);
+        when(retrieval.retrieve(any(RagSearchTestRequest.class)))
+            .thenReturn(new RagRetrievalResult(searchResponse, List.of()));
 
         RagTraceRecorder traces = new RagTraceRecorder();
-        RagEvidenceService evidence = new RagEvidenceService(search, traces);
+        RagEvidenceService evidence = new RagEvidenceService(retrieval, traces);
         V2ChatTools tools = new V2ChatTools();
         Field field = V2ChatTools.class.getDeclaredField("ragEvidenceService");
         field.setAccessible(true);

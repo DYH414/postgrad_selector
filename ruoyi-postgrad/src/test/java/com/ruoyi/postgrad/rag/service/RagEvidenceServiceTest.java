@@ -22,15 +22,15 @@ class RagEvidenceServiceTest {
 
     @Test
     void shouldSearchProgramEvidenceWithMetadataFilters() {
-        RagSearchTestService searchTestService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse searchResponse = new RagSearchTestResponse();
         searchResponse.setQuery("广州大学网络空间安全录取趋势");
         searchResponse.setRetrievedCount(1);
         searchResponse.setSelectedCount(1);
         searchResponse.setChunks(java.util.List.of(chunk("广州大学 网络空间安全 历年分数趋势", true)));
-        when(searchTestService.searchTest(any(RagSearchTestRequest.class))).thenReturn(searchResponse);
+        when(retrievalService.retrieve(any(RagSearchTestRequest.class))).thenReturn(result(searchResponse));
 
-        RagEvidenceService service = new RagEvidenceService(searchTestService);
+        RagEvidenceService service = new RagEvidenceService(retrievalService);
         RagEvidenceRequest request = new RagEvidenceRequest();
         request.setQuery("录取趋势");
         request.setProgramId(101L);
@@ -43,7 +43,7 @@ class RagEvidenceServiceTest {
         RagEvidenceResponse response = service.retrieveProgramEvidence(request);
 
         ArgumentCaptor<RagSearchTestRequest> captor = ArgumentCaptor.forClass(RagSearchTestRequest.class);
-        verify(searchTestService).searchTest(captor.capture());
+        verify(retrievalService).retrieve(captor.capture());
         RagSearchTestRequest actual = captor.getValue();
         assertEquals("录取趋势", actual.getQuery());
         assertEquals("101", actual.getProgramId());
@@ -62,7 +62,7 @@ class RagEvidenceServiceTest {
 
     @Test
     void shouldFallbackToBroaderProgramSearchWhenStrictSectionReturnsNothing() {
-        RagSearchTestService searchTestService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse empty = new RagSearchTestResponse();
         empty.setRetrievedCount(0);
         empty.setSelectedCount(0);
@@ -72,9 +72,9 @@ class RagEvidenceServiceTest {
         fallback.setRetrievedCount(1);
         fallback.setSelectedCount(1);
         fallback.setChunks(java.util.List.of(chunk("广州大学 网络空间安全 风险因素", true)));
-        when(searchTestService.searchTest(any(RagSearchTestRequest.class))).thenReturn(empty, fallback);
+        when(retrievalService.retrieve(any(RagSearchTestRequest.class))).thenReturn(result(empty), result(fallback));
 
-        RagEvidenceService service = new RagEvidenceService(searchTestService);
+        RagEvidenceService service = new RagEvidenceService(retrievalService);
         RagEvidenceRequest request = new RagEvidenceRequest();
         request.setQuery("有什么风险");
         request.setProgramId(101L);
@@ -91,7 +91,7 @@ class RagEvidenceServiceTest {
 
     @Test
     void shouldRecordRecommendationEvidenceTrace() {
-        RagSearchTestService searchTestService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse searchResponse = new RagSearchTestResponse();
         searchResponse.setRetrievedCount(1);
         searchResponse.setSelectedCount(1);
@@ -100,10 +100,10 @@ class RagEvidenceServiceTest {
             "doc_type", "program_history"
         ));
         searchResponse.setChunks(java.util.List.of(chunk("广州大学 网络空间安全 历年分数趋势", true)));
-        when(searchTestService.searchTest(any(RagSearchTestRequest.class))).thenReturn(searchResponse);
+        when(retrievalService.retrieve(any(RagSearchTestRequest.class))).thenReturn(result(searchResponse));
 
         RagTraceRecorder recorder = new RagTraceRecorder();
-        RagEvidenceService service = new RagEvidenceService(searchTestService, recorder);
+        RagEvidenceService service = new RagEvidenceService(retrievalService, recorder);
         RagEvidenceRequest request = new RagEvidenceRequest();
         request.setQuery("推荐依据");
         request.setRunId("run-1");
@@ -144,5 +144,9 @@ class RagEvidenceServiceTest {
         chunk.setVectorRank(1);
         chunk.setRerankRank(1);
         return chunk;
+    }
+
+    private static RagRetrievalResult result(RagSearchTestResponse response) {
+        return new RagRetrievalResult(response, java.util.List.of());
     }
 }
