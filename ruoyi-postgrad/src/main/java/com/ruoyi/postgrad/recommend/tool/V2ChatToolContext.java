@@ -31,8 +31,18 @@ public final class V2ChatToolContext {
      * @param redis  Redis 模板
      * @param mapper 推荐数据 Mapper
      */
+    public static Context init(Long userId, StringRedisTemplate redis, RecommendationMapper mapper, String runId) {
+        Context context = new Context(userId, redis, mapper, runId, false);
+        CURRENT.set(context);
+        return context;
+    }
+
+    public static Context confirmed(Long userId, StringRedisTemplate redis, RecommendationMapper mapper, String runId) {
+        return new Context(userId, redis, mapper, runId, true);
+    }
+
     public static Context init(Long userId, StringRedisTemplate redis, RecommendationMapper mapper) {
-        Context context = new Context(userId, redis, mapper);
+        Context context = confirmed(userId, redis, mapper, null);
         CURRENT.set(context);
         return context;
     }
@@ -83,25 +93,36 @@ public final class V2ChatToolContext {
         }
     }
 
+    public static void markProposal(String actionResultJson) {
+        Context ctx = CURRENT.get();
+        if (ctx != null) ctx.lastActionResultJson = actionResultJson;
+    }
+
     // ── 内部上下文对象 ──
 
     public static final class Context {
         private final Long userId;
         private final StringRedisTemplate redis;
         private final RecommendationMapper mapper;
+        private final String runId;
+        private final boolean confirmed;
         private boolean writeExecuted;
         private boolean draftChanged;
         private String lastActionResultJson;
 
-        Context(Long userId, StringRedisTemplate redis, RecommendationMapper mapper) {
+        Context(Long userId, StringRedisTemplate redis, RecommendationMapper mapper, String runId, boolean confirmed) {
             this.userId = userId;
             this.redis = redis;
             this.mapper = mapper;
+            this.runId = runId;
+            this.confirmed = confirmed;
         }
 
         Long userId() { return userId; }
         StringRedisTemplate redis() { return redis; }
         RecommendationMapper mapper() { return mapper; }
+        public String runId() { return runId; }
+        public boolean confirmed() { return confirmed; }
         boolean writeExecuted() { return writeExecuted; }
         public boolean draftChanged() { return draftChanged; }
         public String lastActionResultJson() { return lastActionResultJson; }

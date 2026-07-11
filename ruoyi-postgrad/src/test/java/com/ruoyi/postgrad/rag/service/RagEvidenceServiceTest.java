@@ -106,6 +106,7 @@ class RagEvidenceServiceTest {
         RagEvidenceService service = new RagEvidenceService(searchTestService, recorder);
         RagEvidenceRequest request = new RagEvidenceRequest();
         request.setQuery("推荐依据");
+        request.setRunId("run-1");
         request.setProgramId(101L);
         request.setDocType("program_history");
 
@@ -113,6 +114,8 @@ class RagEvidenceServiceTest {
 
         RagTrace trace = recorder.listRecent(1).get(0);
         assertEquals("recommendation-evidence", trace.getOperationKey());
+        assertEquals("run-1", trace.getRunId());
+        assertEquals("scoped-evidence", trace.getRetrievalRoute());
         assertEquals(RagTrace.Outcome.SUCCESS, trace.getOutcome());
         assertEquals(1, trace.getRetrievedCount());
         assertEquals(1, trace.getSelectedCount());

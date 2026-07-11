@@ -3,6 +3,7 @@ package com.ruoyi.postgrad.observe.domain;
 public class AiObserveLatestVO {
 
     private String operationKey;
+    private String runId;
     private String provider;
     private String model;
     private String outcome;
@@ -19,6 +20,8 @@ public class AiObserveLatestVO {
     public void setOperationKey(String operationKey) {
         this.operationKey = operationKey;
     }
+    public String getRunId() { return runId; }
+    public void setRunId(String runId) { this.runId = runId; }
 
     public String getProvider() {
         return provider;

@@ -36,6 +36,7 @@ import com.ruoyi.postgrad.recommend.service.IDraftGenerationTaskService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 import com.ruoyi.postgrad.recommend.service.IReportService;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
+import com.ruoyi.postgrad.recommend.service.AgentActionConfirmationService;
 
 /**
  * AI 推荐 v2 Controller —— 新 AI 推荐报告流程。
@@ -57,6 +58,9 @@ public class AppV2RecommendController {
 
     @Autowired
     private IAiChatService aiChatService;
+
+    @Autowired
+    private AgentActionConfirmationService agentActionConfirmationService;
 
     @Autowired
     private ThreadPoolTaskExecutor threadPoolTaskExecutor;
@@ -425,22 +429,28 @@ public class AppV2RecommendController {
             try {
                 aiChatService.chat(user.getUserId(), request.getMessage(), new ChatStreamCallback() {
                     @Override
+                    public void onRunStarted(String runId) {
+                        sendSseEvent(emitter, "run", Map.of("runId", runId));
+                    }
+                    @Override
                     public void onToken(String token) {
                         sendSseEvent(emitter, "token", Map.of("text", token));
                     }
 
                     @Override
-                    public void onToolCall(String toolName) {
-                        sendSseEvent(emitter, "tool_call", Map.of("tool", toolName));
+                    public void onToolCall(String toolName, String runId) {
+                        sendSseEvent(emitter, "tool_call", Map.of("tool", toolName, "runId", runId));
                     }
 
                     @Override
                     public void onDone(String fullMessage,
                                        boolean draftChanged,
-                                       String toolActionResultJson) {
+                                       String toolActionResultJson,
+                                       String runId) {
                         Map<String, Object> payload = new LinkedHashMap<>();
                         payload.put("message", fullMessage);
                         payload.put("draftChanged", draftChanged);
+                        payload.put("runId", runId);
                         if (toolActionResultJson != null && !toolActionResultJson.isBlank()) {
                             payload.put("toolActionResult", JSON.parseObject(toolActionResultJson));
                         }
@@ -455,6 +465,15 @@ public class AppV2RecommendController {
                         sendSseEvent(emitter, "error", payload);
                         emitter.complete();
                     }
+
+                    @Override
+                    public void onError(Throwable error, String runId) {
+                        Map<String, Object> payload = new LinkedHashMap<>();
+                        payload.put("message", error.getMessage());
+                        payload.put("runId", runId);
+                        sendSseEvent(emitter, "error", payload);
+                        emitter.complete();
+                    }
                 });
             } catch (Exception e) {
                 Map<String, Object> payload = new LinkedHashMap<>();
@@ -465,6 +484,17 @@ public class AppV2RecommendController {
         }, threadPoolTaskExecutor);
 
         return emitter;
+    }
+
+    @PostMapping("/chat/action/confirm")
+    public AjaxResult confirmAgentAction(@RequestBody Map<String, String> body) {
+        AppLoginUser user = requireLogin();
+        String token = body != null ? body.get("confirmationToken") : null;
+        if (token == null || token.isBlank()) return AjaxResult.error("缺少 confirmationToken");
+        Map<String, Object> result = agentActionConfirmationService.confirm(user.getUserId(), token);
+        return Boolean.TRUE.equals(result.get("ok"))
+            ? AjaxResult.success(result)
+            : AjaxResult.error(String.valueOf(result.get("error")));
     }
 
     /**

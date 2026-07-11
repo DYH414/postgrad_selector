@@ -110,6 +110,8 @@ public class RagEvidenceService {
         }
         RagTrace trace = new RagTrace();
         trace.setOperationKey("recommendation-evidence");
+        trace.setRunId(request != null ? request.getRunId() : null);
+        trace.setRetrievalRoute("scoped-evidence");
         trace.setQuery(request != null ? request.getQuery() : null);
         trace.setOutcome(search.getErrorSummary() == null ? RagTrace.Outcome.SUCCESS : RagTrace.Outcome.FAILURE);
         trace.setFailureStage(search.getErrorSummary() != null ? "retrieval" : null);

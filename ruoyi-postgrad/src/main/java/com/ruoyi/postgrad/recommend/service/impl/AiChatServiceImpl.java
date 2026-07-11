@@ -5,6 +5,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,11 +21,14 @@ import com.ruoyi.postgrad.mapper.AiChatMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
 import com.ruoyi.postgrad.recommend.domain.AiChatMessage;
+import com.ruoyi.postgrad.recommend.domain.AgentRunContext;
 import com.ruoyi.postgrad.recommend.domain.ChatMessageVO;
 import com.ruoyi.postgrad.recommend.domain.ChatStartResultVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
+import com.ruoyi.postgrad.recommend.service.ChatRunLockService;
+import com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 import com.ruoyi.postgrad.recommend.tool.V2BoundChatTools;
@@ -56,8 +61,6 @@ public class AiChatServiceImpl implements IAiChatService {
     private static final String CHAT_MSG_KEY_PREFIX = "ai:v2:chat:msg:";
     private static final int MAX_MESSAGES = 20;
     private static final Duration CHAT_TTL = Duration.ofMinutes(30);
-    private static final String CHAT_LOCK_KEY_PREFIX = "ai:v2:chat:lock:";
-    private static final Duration CHAT_LOCK_TTL = Duration.ofSeconds(60);
 
     @Value("classpath:prompts/v2/chat-system.txt")
     private org.springframework.core.io.Resource chatSystemPromptResource;
@@ -70,6 +73,12 @@ public class AiChatServiceImpl implements IAiChatService {
 
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    private ChatRunLockService chatRunLockService;
+
+    @Autowired
+    private ChatRagRouteResolver chatRagRouteResolver;
 
     @Autowired
     private V2ChatTools v2ChatTools;
@@ -134,16 +143,19 @@ public class AiChatServiceImpl implements IAiChatService {
     @Override
     public void chat(Long userId, String message, ChatStreamCallback callback) {
         // 并发锁：防止同一用户同时发多条消息导致历史覆盖
-        String lockKey = CHAT_LOCK_KEY_PREFIX + userId;
-        Boolean locked = redisTemplate.opsForValue()
-            .setIfAbsent(lockKey, "1", CHAT_LOCK_TTL);
-        if (Boolean.FALSE.equals(locked)) {
+        String lockOwner = UUID.randomUUID().toString();
+        if (!chatRunLockService.acquire(userId, lockOwner)) {
             callback.onError(new IllegalStateException("上一条消息仍在处理中，请稍候再发"));
             return;
         }
+        AtomicBoolean finished = new AtomicBoolean(false);
+        AgentRunContext runContext = AgentRunContext.start(userId);
+        String runId = runContext.getRunId();
+        callback.onRunStarted(runId);
         long t0 = System.currentTimeMillis();
         try {
             AiInvocationContext.setOperationKey("ai-chat");
+            AiInvocationContext.setRunId(runId);
             AiChatConversation conversation = getOrCreateActiveConversation(userId);
 
             // 1. 加载/初始化对话历史
@@ -175,19 +187,23 @@ public class AiChatServiceImpl implements IAiChatService {
             saveHistory(userId, history);
 
             final String finalSystemPrompt = systemPrompt;
+            final ChatRagRouteResolver.Route ragRoute = chatRagRouteResolver.resolve(message);
 
             // 5. 初始化工具上下文 + 创建流式 assistant
             try {
-                V2ChatToolContext.Context toolContext = V2ChatToolContext.init(userId, redisTemplate, recommendationMapper);
-            StreamAssistant assistant = AiServices.builder(StreamAssistant.class)
+                V2ChatToolContext.Context toolContext = V2ChatToolContext.init(userId, redisTemplate, recommendationMapper, runId);
+            AiServices<StreamAssistant> assistantBuilder = AiServices.builder(StreamAssistant.class)
                 .streamingChatModel(streamingChatModel)
                 .tools(
                     new V2BoundChatTools(v2ChatTools, toolContext),
                     new V2BoundDraftActionTools(v2DraftActionTools, toolContext))
                 .chatMemory(chatMemory)
-                .systemMessageProvider(ignored -> finalSystemPrompt)
-                .retrievalAugmentor(retrievalAugmentor)
-                .build();
+                .systemMessageProvider(ignored -> finalSystemPrompt);
+            final boolean generalRetrievalEnabled = usesGenericRetrieval(ragRoute, retrievalAugmentor);
+            if (generalRetrievalEnabled) {
+                assistantBuilder.retrievalAugmentor(retrievalAugmentor);
+            }
+            StreamAssistant assistant = assistantBuilder.build();
 
             StringBuilder fullResponse = new StringBuilder();
             assistant.chat("<user_input>" + message + "</user_input>")
@@ -201,7 +217,7 @@ public class AiChatServiceImpl implements IAiChatService {
                     String arguments = toolRequest != null && toolRequest.request() != null
                         ? toolRequest.request().arguments() : "";
                     log.info("[AiChat-Tool] before userId={} tool={} args={}", userId, toolName, arguments);
-                    callback.onToolCall(toolName);
+                    callback.onToolCall(toolName, runId);
                 })
                 .onToolExecuted(toolExecution -> {
                     String toolName = toolExecution != null && toolExecution.request() != null
@@ -227,41 +243,63 @@ public class AiChatServiceImpl implements IAiChatService {
 
                         boolean draftChanged = toolContext.draftChanged();
                         String toolActionResultJson = toolContext.lastActionResultJson();
-                        callback.onDone(aiText, draftChanged, toolActionResultJson);
-
-                        // Record RAG trace for observability
-                        if (retrievalAugmentor != null) {
-                            recordRagTrace(userId, message, RagTrace.Outcome.SUCCESS, null, null, t0);
+                        if (generalRetrievalEnabled) {
+                            recordRagTrace(userId, message, runId, ragRoute.traceValue(), RagTrace.Outcome.SUCCESS, null, null, t0);
                         }
+                        callback.onDone(aiText, draftChanged, toolActionResultJson, runId);
                     } catch (Exception e) {
                         log.error("[AiChat] Failed to complete stream for userId={}: {}", userId, e.getMessage());
-                        callback.onError(e);
+                        callback.onError(e, runId);
                     } finally {
                         V2ChatToolContext.clear();
                         AiInvocationContext.clear();
+                        finishChatRun(userId, lockOwner, finished);
                     }
                 })
                 .onError(error -> {
                     V2ChatToolContext.clear();
                     AiInvocationContext.clear();
                     log.error("[AiChat] Stream error for userId={}: {}", userId, error.getMessage());
-                    if (retrievalAugmentor != null) {
-                        recordRagTrace(userId, message, RagTrace.Outcome.FAILURE, "stream", error.getMessage(), t0);
+                    if (generalRetrievalEnabled) {
+                        recordRagTrace(userId, message, runId, ragRoute.traceValue(), RagTrace.Outcome.FAILURE, "stream", error.getMessage(), t0);
                     }
-                    callback.onError(error);
+                    notifyErrorAndFinish(callback, error, runId, userId, lockOwner, finished);
                 })
                 .start();
+            V2ChatToolContext.clear();
+            AiInvocationContext.clear();
             } catch (Exception e) {
                 V2ChatToolContext.clear();
                 AiInvocationContext.clear();
                 log.error("[AiChat] Failed to start stream for userId={}: {}", userId, e.getMessage());
-                callback.onError(e);
-            } finally {
-                V2ChatToolContext.clear();
-                AiInvocationContext.clear();
+                notifyErrorAndFinish(callback, e, runId, userId, lockOwner, finished);
             }
+        } catch (Exception e) {
+            V2ChatToolContext.clear();
+            AiInvocationContext.clear();
+            log.error("[AiChat] Failed to prepare stream for userId={}: {}", userId, e.getMessage());
+            notifyErrorAndFinish(callback, e, runId, userId, lockOwner, finished);
+        }
+    }
+
+    static boolean usesGenericRetrieval(ChatRagRouteResolver.Route route, RetrievalAugmentor augmentor) {
+        return route == ChatRagRouteResolver.Route.GENERAL && augmentor != null;
+    }
+
+    private void notifyErrorAndFinish(ChatStreamCallback callback, Throwable error, String runId,
+                                      Long userId, String lockOwner, AtomicBoolean finished) {
+        try {
+            callback.onError(error, runId);
+        } catch (Exception callbackError) {
+            log.warn("[AiChat] Error callback failed for runId={}: {}", runId, callbackError.getMessage());
         } finally {
-            redisTemplate.delete(lockKey);
+            finishChatRun(userId, lockOwner, finished);
+        }
+    }
+
+    private void finishChatRun(Long userId, String lockOwner, AtomicBoolean finished) {
+        if (finished.compareAndSet(false, true)) {
+            chatRunLockService.release(userId, lockOwner);
         }
     }
 
@@ -401,17 +439,23 @@ public class AiChatServiceImpl implements IAiChatService {
         }
     }
 
-    private void recordRagTrace(Long userId, String query, RagTrace.Outcome outcome,
+    private void recordRagTrace(Long userId, String query, String runId, String retrievalRoute, RagTrace.Outcome outcome,
                                  String failureStage, String errorSummary, long startMs) {
-        RagTrace trace = new RagTrace();
-        trace.setOperationKey("ai-chat");
-        trace.setUserId(userId);
-        trace.setQuery(query);
-        trace.setOutcome(outcome);
-        trace.setFailureStage(failureStage);
-        trace.setErrorSummary(errorSummary);
-        trace.setTotalLatencyMs(System.currentTimeMillis() - startMs);
-        ragTraceRecorder.record(trace);
+        try {
+            RagTrace trace = new RagTrace();
+            trace.setOperationKey("ai-chat");
+            trace.setRunId(runId);
+            trace.setRetrievalRoute(retrievalRoute);
+            trace.setUserId(userId);
+            trace.setQuery(query);
+            trace.setOutcome(outcome);
+            trace.setFailureStage(failureStage);
+            trace.setErrorSummary(errorSummary);
+            trace.setTotalLatencyMs(System.currentTimeMillis() - startMs);
+            ragTraceRecorder.record(trace);
+        } catch (Exception e) {
+            log.warn("[AiChat] Failed to record RAG trace for runId={}: {}", runId, e.getMessage());
+        }
     }
 
     static String buildDraftContextText(DraftVO draft) {

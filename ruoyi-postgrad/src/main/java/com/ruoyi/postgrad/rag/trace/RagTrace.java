@@ -14,6 +14,8 @@ public class RagTrace {
 
     private String traceId;
     private String operationKey;
+    private String runId;
+    private String retrievalRoute;
     private Long userId;
     private String query;
     private Outcome outcome;
@@ -44,6 +46,10 @@ public class RagTrace {
     public void setTraceId(String traceId) { this.traceId = traceId; }
     public String getOperationKey() { return operationKey; }
     public void setOperationKey(String operationKey) { this.operationKey = operationKey; }
+    public String getRunId() { return runId; }
+    public void setRunId(String runId) { this.runId = runId; }
+    public String getRetrievalRoute() { return retrievalRoute; }
+    public void setRetrievalRoute(String retrievalRoute) { this.retrievalRoute = retrievalRoute; }
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
     public String getQuery() { return query; }

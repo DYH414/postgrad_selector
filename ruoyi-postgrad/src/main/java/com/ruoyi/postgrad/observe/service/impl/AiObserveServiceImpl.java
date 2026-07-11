@@ -112,6 +112,7 @@ public class AiObserveServiceImpl implements AiObserveService {
             return latest;
         }
         latest.setOperationKey(snapshot.getOperationKey());
+        latest.setRunId(snapshot.getRunId());
         latest.setProvider(snapshot.getProvider());
         latest.setModel(snapshot.getModel());
         latest.setOutcome(snapshot.getOutcome());

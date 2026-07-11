@@ -76,7 +76,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { isDraftGenerating, getRestoredGenerationMessage } from './generationRecovery.mjs'
 import {
   getDraft, startGenerateDraft, openDraftGenerationStream, removeCandidate, replaceCandidate,
-  addBackCandidate, addFromWorkspace, generateReport, sendChatMessage, startChat, resumeChat
+  addBackCandidate, addFromWorkspace, generateReport, sendChatMessage, confirmAgentAction, startChat, resumeChat
 } from '@/api/recommend-v2'
 import { getProfile } from '@/api/profile'
 import { closeEventSource } from '@/utils/event-source'
@@ -526,6 +526,23 @@ async function handleChatSend(message) {
               chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message) })
               if (data.draftChanged) {
                 await loadDraftData()
+              }
+              const action = data.toolActionResult
+              if (action?.confirmationRequired && action?.confirmationToken) {
+                try {
+                  await ElMessageBox.confirm(
+                    action.summary || '确认执行这项草稿调整？',
+                    '确认草稿调整',
+                    { confirmButtonText: '确认执行', cancelButtonText: '暂不调整', type: 'warning' }
+                  )
+                  await confirmAgentAction(action.confirmationToken)
+                  await loadDraftData()
+                  ElMessage.success('草稿已更新')
+                } catch (confirmError) {
+                  if (confirmError !== 'cancel' && confirmError !== 'close') {
+                    ElMessage.error('操作未执行，提案可能已过期或草稿已变化')
+                  }
+                }
               }
             } else if (currentEvent === 'error') {
               currentToolCall.value = ''

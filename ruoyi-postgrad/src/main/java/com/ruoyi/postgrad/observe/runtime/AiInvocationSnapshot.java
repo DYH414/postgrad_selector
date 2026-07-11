@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 public class AiInvocationSnapshot {
 
     private String operationKey;
+    private String runId;
     private String provider;
     private String model;
     private String outcome;
@@ -21,6 +22,8 @@ public class AiInvocationSnapshot {
     public void setOperationKey(String operationKey) {
         this.operationKey = operationKey;
     }
+    public String getRunId() { return runId; }
+    public void setRunId(String runId) { this.runId = runId; }
 
     public String getProvider() {
         return provider;

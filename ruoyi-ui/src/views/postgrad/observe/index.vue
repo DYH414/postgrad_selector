@@ -59,6 +59,7 @@
           </div>
           <el-descriptions :column="2" border size="small" class="observe-desc">
             <el-descriptions-item label="入口">{{ latest.operationKey || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="Run ID">{{ latest.runId || '-' }}</el-descriptions-item>
             <el-descriptions-item label="结果">{{ latest.outcome || '-' }}</el-descriptions-item>
             <el-descriptions-item label="Provider">{{ latest.provider || '-' }}</el-descriptions-item>
             <el-descriptions-item label="模型">{{ latest.model || '-' }}</el-descriptions-item>

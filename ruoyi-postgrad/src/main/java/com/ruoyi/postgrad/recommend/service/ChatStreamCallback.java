@@ -21,6 +21,13 @@ public interface ChatStreamCallback {
     default void onToolCall(String toolName) {
     }
 
+    default void onToolCall(String toolName, String runId) {
+        onToolCall(toolName);
+    }
+
+    default void onRunStarted(String runId) {
+    }
+
     /**
      * 对话完成。
      *
@@ -40,10 +47,18 @@ public interface ChatStreamCallback {
         onDone(fullMessage);
     }
 
+    default void onDone(String fullMessage, boolean draftChanged, String toolActionResultJson, String runId) {
+        onDone(fullMessage, draftChanged, toolActionResultJson);
+    }
+
     /**
      * 对话出错。
      *
      * @param error 异常
      */
     void onError(Throwable error);
+
+    default void onError(Throwable error, String runId) {
+        onError(error);
+    }
 }

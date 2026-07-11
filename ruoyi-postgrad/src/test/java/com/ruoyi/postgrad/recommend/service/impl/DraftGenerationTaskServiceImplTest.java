@@ -40,10 +40,12 @@ class DraftGenerationTaskServiceImplTest {
         draftService = mock(IDraftService.class);
 
         // 同步执行器：CompletableFuture.runAsync 在同一线程执行，测试可预测
-        ThreadPoolTaskExecutor syncExecutor = new ThreadPoolTaskExecutor();
-        syncExecutor.setCorePoolSize(1);
-        syncExecutor.setMaxPoolSize(1);
-        syncExecutor.initialize();
+        ThreadPoolTaskExecutor syncExecutor = new ThreadPoolTaskExecutor() {
+            @Override
+            public void execute(Runnable task) {
+                task.run();
+            }
+        };
 
         service = new DraftGenerationTaskServiceImpl();
         service.setRedisTemplateForTest(redis);

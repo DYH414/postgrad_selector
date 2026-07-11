@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import org.mockito.ArgumentCaptor;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import com.ruoyi.postgrad.mapper.RecommendationMapper;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.rag.dto.RagEvidenceRequest;
@@ -61,10 +65,16 @@ class V2ChatToolsRagEvidenceTest {
         field.setAccessible(true);
         field.set(tools, evidenceService);
 
-        V2BoundChatTools boundTools = new V2BoundChatTools(tools, null);
+        var context = V2ChatToolContext.init(7L, mock(StringRedisTemplate.class),
+            mock(RecommendationMapper.class), "run-1");
+        V2BoundChatTools boundTools = new V2BoundChatTools(tools, context);
         String json = boundTools.getProgramEvidence(202L, "为什么推荐，有什么风险");
 
         assertTrue(json.contains("risk_factors"));
         assertTrue(json.contains("统考名额较少"));
+        assertTrue(json.contains("run-1"));
+        ArgumentCaptor<RagEvidenceRequest> captor = ArgumentCaptor.forClass(RagEvidenceRequest.class);
+        verify(evidenceService).retrieveProgramEvidence(captor.capture());
+        assertEquals("run-1", captor.getValue().getRunId());
     }
 }

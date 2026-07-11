@@ -32,6 +32,8 @@ class AiInvocationSnapshotListenerTest {
         Map<Object, Object> attributes = new HashMap<>();
         ChatModelRequestContext requestContext = mock(ChatModelRequestContext.class);
         when(requestContext.attributes()).thenReturn(attributes);
+        AiInvocationContext.setOperationKey("ai-chat");
+        AiInvocationContext.setRunId("run-1");
 
         ChatRequestParameters parameters = mock(ChatRequestParameters.class);
         when(parameters.modelName()).thenReturn("deepseek-v4-flash");
@@ -55,9 +57,10 @@ class AiInvocationSnapshotListenerTest {
 
         listener.onRequest(requestContext);
         listener.onResponse(responseContext);
+        AiInvocationContext.clear();
 
         Timer timer = meterRegistry.find("gen_ai.client.operation.duration")
-            .tag("postgrad.ai.operation", "unknown")
+            .tag("postgrad.ai.operation", "ai-chat")
             .tag("outcome", "SUCCESS")
             .tag("gen_ai.request.model", "deepseek-v4-flash")
             .timer();
@@ -65,6 +68,8 @@ class AiInvocationSnapshotListenerTest {
         assertTrue(timer != null);
         assertEquals(1L, timer.count());
         assertTrue(timer.totalTime(java.util.concurrent.TimeUnit.MILLISECONDS) >= 0L);
+        assertEquals("ai-chat", recorder.getLatest().getOperationKey());
+        assertEquals("run-1", recorder.getLatest().getRunId());
     }
 
     @Test

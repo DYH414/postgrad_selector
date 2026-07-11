@@ -258,6 +258,8 @@
               <span v-else>{{ scope.row.operationKey }}</span>
             </template>
           </el-table-column>
+          <el-table-column prop="runId" label="Run ID" width="105" show-overflow-tooltip />
+          <el-table-column prop="retrievalRoute" label="检索路由" width="115" />
           <el-table-column label="结果" width="70">
             <template slot-scope="scope">
               <el-tag v-if="scope.row.outcome === 'SUCCESS'" type="success" size="mini">成功</el-tag>

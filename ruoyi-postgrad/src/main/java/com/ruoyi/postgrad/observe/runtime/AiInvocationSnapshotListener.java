@@ -27,6 +27,12 @@ public class AiInvocationSnapshotListener implements ChatModelListener {
     @Override
     public void onRequest(ChatModelRequestContext requestContext) {
         requestContext.attributes().put(START_NANO, System.nanoTime());
+        String operationKey = AiInvocationContext.getOperationKey();
+        if (operationKey != null && !operationKey.isBlank()) {
+            requestContext.attributes().put(AiObserveAttributes.OPERATION_KEY, operationKey);
+        }
+        String runId = AiInvocationContext.getRunId();
+        if (runId != null && !runId.isBlank()) requestContext.attributes().put(AiObserveAttributes.RUN_ID, runId);
     }
 
     @Override
@@ -39,6 +45,7 @@ public class AiInvocationSnapshotListener implements ChatModelListener {
         recordDurationMetric(operationKey, provider, model, "SUCCESS", durationMs);
         recorder.recordSuccess(
             operationKey,
+            runId(responseContext.attributes()),
             provider,
             model,
             durationMs,
@@ -56,6 +63,7 @@ public class AiInvocationSnapshotListener implements ChatModelListener {
         recordDurationMetric(operationKey, provider, model, "ERROR", durationMs);
         recorder.recordError(
             operationKey,
+            runId(errorContext.attributes()),
             provider,
             model,
             summarize(errorContext.error())
@@ -89,6 +97,11 @@ public class AiInvocationSnapshotListener implements ChatModelListener {
             return str;
         }
         return AiInvocationContext.getOperationKey();
+    }
+
+    private String runId(Map<Object, Object> attributes) {
+        Object value = attributes.get(AiObserveAttributes.RUN_ID);
+        return value instanceof String str && !str.isBlank() ? str : null;
     }
 
     private String provider(ModelProvider provider) {

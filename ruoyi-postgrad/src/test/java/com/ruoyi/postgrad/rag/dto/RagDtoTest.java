@@ -112,9 +112,13 @@ class RagDtoTest {
     @DisplayName("RagTrace creates traceId and createdAt automatically")
     void traceAutoFields() {
         RagTrace trace = new RagTrace();
+        trace.setRunId("run-1");
+        trace.setRetrievalRoute("SCOPED_EVIDENCE");
         assertNotNull(trace.getTraceId());
         assertEquals(8, trace.getTraceId().length());
         assertNotNull(trace.getCreatedAt());
+        assertEquals("run-1", trace.getRunId());
+        assertEquals("SCOPED_EVIDENCE", trace.getRetrievalRoute());
     }
 
     @Test

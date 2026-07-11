@@ -27,4 +27,11 @@ class AiInvocationSnapshotRecorderTest {
         assertEquals("boom", error.getErrorSummary());
         assertNotNull(error.getOccurredAt());
     }
+
+    @Test
+    void latestSnapshotCarriesRunId() {
+        AiInvocationSnapshotRecorder recorder = new AiInvocationSnapshotRecorder();
+        recorder.recordSuccess("ai-chat", "run-1", "openai", "model", 10L, 1, 2);
+        assertEquals("run-1", recorder.getLatest().getRunId());
+    }
 }

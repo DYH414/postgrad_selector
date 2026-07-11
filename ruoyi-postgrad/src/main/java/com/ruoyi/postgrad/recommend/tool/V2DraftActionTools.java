@@ -22,8 +22,9 @@ import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.service.IDraftMutationService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
-
-import dev.langchain4j.agent.tool.Tool;
+import com.ruoyi.postgrad.recommend.service.AgentActionProposalService;
+import com.ruoyi.postgrad.recommend.service.AgentActionAuditRecorder;
+import com.ruoyi.postgrad.recommend.service.DraftVersionService;
 
 /**
  * AI 草稿写操作工具集 —— 移除、添加、替换、确认填充。
@@ -48,10 +49,20 @@ public class V2DraftActionTools {
     @Autowired
     private RecommendationMapper recommendationMapper;
 
-    @Tool("Remove one school from the current report draft. Returns refill info: auto-refill may add a replacement, confirm-refill returns candidates for the user to choose from.")
+    @Autowired
+    private AgentActionProposalService proposalService;
+
+    @Autowired
+    private DraftVersionService draftVersionService;
+
+    @Autowired
+    private AgentActionAuditRecorder actionAuditRecorder;
+
     public String removeDraftCandidate(long programId) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        String proposal = proposeIfNeeded(ctx, "remove", args("programId", programId), "确认从草稿中移除该候选");
+        if (proposal != null) return proposal;
         if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
 
         DraftVO before = draftService.getDraft(ctx.userId());
@@ -98,10 +109,11 @@ public class V2DraftActionTools {
         return json;
     }
 
-    @Tool("Add a candidate to the draft. Searches workspace first, falls back to national DB if not found (for schools outside profile regions). Requires programId and tier (reach/steady/safe).")
     public String addDraftCandidate(long programId, String tier) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        String proposal = proposeIfNeeded(ctx, "add", args("programId", programId, "tier", tier), "确认把该候选加入草稿");
+        if (proposal != null) return proposal;
         if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
 
         // 1. 先尝试从 Workspace 添加
@@ -136,10 +148,11 @@ public class V2DraftActionTools {
         return json;
     }
 
-    @Tool("Confirm a refill candidate. Use when the user picks one from the confirm-refill candidate list returned by removeDraftCandidate.")
     public String confirmRefillCandidate(long programId) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        String proposal = proposeIfNeeded(ctx, "confirm_refill", args("programId", programId), "确认补充该候选");
+        if (proposal != null) return proposal;
         if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
 
         // 1. 先在 workspace 中找 tier
@@ -169,10 +182,11 @@ public class V2DraftActionTools {
         return json;
     }
 
-    @Tool("Replace one draft school with another. Searches workspace first for the replacement, falls back to national DB if not found (for schools outside profile regions).")
     public String replaceDraftCandidate(long removeProgramId, long addProgramId) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        String proposal = proposeIfNeeded(ctx, "replace", args("removeProgramId", removeProgramId, "addProgramId", addProgramId), "确认执行候选替换");
+        if (proposal != null) return proposal;
         if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
 
         CandidateWorkspaceVO workspace = loadWorkspace(ctx.userId());
@@ -221,10 +235,11 @@ public class V2DraftActionTools {
         return json;
     }
 
-    @Tool("Fill one draft tier to its target count from workspace candidates. Use when a tier has fewer schools than its target. Backend handles candidate selection; AI only chooses the tier. tier must be reach/steady/safe.")
     public String fillTier(String tier) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        String proposal = proposeIfNeeded(ctx, "fill_tier", args("tier", tier), "确认填充该档位");
+        if (proposal != null) return proposal;
         if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
         if (tier == null || tier.isBlank()) return error("invalid_tier", "tier is required: reach/steady/safe");
 
@@ -246,10 +261,11 @@ public class V2DraftActionTools {
         return json;
     }
 
-    @Tool("Remove multiple schools from the draft at once. programIds must be from the draft context. Each removal triggers auto-refill or confirm-refill per tier rules.")
     public String batchRemoveDraftCandidates(List<Long> programIds) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        String proposal = proposeIfNeeded(ctx, "batch_remove", args("programIds", programIds), "确认批量移除所选候选");
+        if (proposal != null) return proposal;
         if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
         if (programIds == null || programIds.isEmpty()) return error("empty_ids", "programIds is empty.");
 
@@ -268,10 +284,11 @@ public class V2DraftActionTools {
         return json;
     }
 
-    @Tool("Batch replace multiple schools in the draft. Each entry maps a removeProgramId (must be in draft) to an addProgramId (must be in workspace or searchable in DB). At least one success triggers draftChanged refresh. Returns per-item ok/error details. Use when user says 'replace all / execute the plan / replace together' with explicit programId mappings.")
     public String batchReplaceDraftCandidates(java.util.List<DraftReplacementRequest> replacements) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         if (ctx == null) return error("no_tool_context", "Tool context is not initialized.");
+        String proposal = proposeIfNeeded(ctx, "batch_replace", args("replacements", replacements), "确认批量替换所选候选");
+        if (proposal != null) return proposal;
         if (V2ChatToolContext.writeExecuted()) return error("write_already_executed", "Write already executed this turn.");
         if (replacements == null || replacements.isEmpty()) return error("empty_replacements", "replacements is empty.");
 
@@ -306,6 +323,145 @@ public class V2DraftActionTools {
         result.put("error", code);
         result.put("message", message);
         return JSON.toJSONString(result);
+    }
+
+    private String proposeIfNeeded(V2ChatToolContext.Context ctx, String action,
+                                   Map<String, Object> arguments, String summary) {
+        if (ctx.confirmed()) return null;
+        String validationError = validateProposal(action, arguments);
+        if (validationError != null) return error("invalid_action", validationError);
+        DraftVO draft = draftService.getDraft(ctx.userId());
+        String proposalSummary = buildProposalSummary(ctx, draft, action, arguments, summary);
+        String draftHash = draftVersionService.hash(draft);
+        var proposal = proposalService.propose(ctx.userId(), ctx.runId(), action, arguments,
+            proposalSummary, draftHash);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ok", true);
+        result.put("confirmationRequired", true);
+        result.put("confirmationToken", proposal.getToken());
+        result.put("summary", proposalSummary);
+        result.put("action", action);
+        result.put("runId", ctx.runId());
+        String json = JSON.toJSONString(result);
+        V2ChatToolContext.markProposal(json);
+        actionAuditRecorder.record("PROPOSED", ctx.userId(), ctx.runId(), action, proposalSummary, draftHash);
+        Map<String, Object> modelResult = new LinkedHashMap<>(result);
+        modelResult.remove("confirmationToken");
+        return JSON.toJSONString(modelResult);
+    }
+
+    private String validateProposal(String action, Map<String, Object> arguments) {
+        if (List.of("remove", "add", "confirm_refill").contains(action)
+            && !positiveNumber(arguments.get("programId"))) return "programId must be positive";
+        if ("replace".equals(action)
+            && (!positiveNumber(arguments.get("removeProgramId")) || !positiveNumber(arguments.get("addProgramId")))) {
+            return "replacement program ids must be positive";
+        }
+        if (("add".equals(action) || "fill_tier".equals(action))) {
+            Object tier = arguments.get("tier");
+            if (!(tier instanceof String value) || !List.of("reach", "steady", "safe").contains(value)) {
+                return "tier must be reach/steady/safe";
+            }
+        }
+        if ("batch_remove".equals(action)) {
+            if (!(arguments.get("programIds") instanceof List<?> ids) || ids.isEmpty()
+                || ids.stream().anyMatch(id -> !positiveNumber(id))) {
+                return "programIds must contain positive ids";
+            }
+        }
+        if ("batch_replace".equals(action)) {
+            if (!(arguments.get("replacements") instanceof List<?> rows) || rows.isEmpty()
+                || rows.stream().anyMatch(row -> !(row instanceof DraftReplacementRequest replacement)
+                    || !positiveNumber(replacement.getRemoveProgramId())
+                    || !positiveNumber(replacement.getAddProgramId()))) {
+                return "replacements must contain positive program ids";
+            }
+        }
+        return null;
+    }
+
+    private boolean positiveNumber(Object value) {
+        return value instanceof Number number && number.longValue() > 0;
+    }
+
+    private String buildProposalSummary(V2ChatToolContext.Context ctx, DraftVO draft, String action,
+                                        Map<String, Object> arguments, String fallback) {
+        return switch (action) {
+            case "remove" -> "从草稿移除：" + candidateLabel(ctx, draft, numberArgument(arguments, "programId"));
+            case "add" -> "加入" + tierLabel(String.valueOf(arguments.get("tier"))) + "："
+                + candidateLabel(ctx, draft, numberArgument(arguments, "programId"));
+            case "confirm_refill" -> "确认补充：" + candidateLabel(ctx, draft, numberArgument(arguments, "programId"));
+            case "replace" -> "替换候选："
+                + candidateLabel(ctx, draft, numberArgument(arguments, "removeProgramId")) + " -> "
+                + candidateLabel(ctx, draft, numberArgument(arguments, "addProgramId"));
+            case "fill_tier" -> "填充" + tierLabel(String.valueOf(arguments.get("tier"))) + "至目标数量";
+            case "batch_remove" -> "批量移除：" + candidateLabels(ctx, draft, arguments.get("programIds"));
+            case "batch_replace" -> "批量替换 " + ((List<?>) arguments.get("replacements")).size() + " 组候选";
+            default -> fallback;
+        };
+    }
+
+    private long numberArgument(Map<String, Object> arguments, String key) {
+        return ((Number) arguments.get(key)).longValue();
+    }
+
+    private String candidateLabels(V2ChatToolContext.Context ctx, DraftVO draft, Object rawIds) {
+        List<?> ids = (List<?>) rawIds;
+        String joined = ids.stream().limit(4)
+            .map(id -> candidateLabel(ctx, draft, ((Number) id).longValue()))
+            .collect(java.util.stream.Collectors.joining("、"));
+        return ids.size() > 4 ? joined + "等 " + ids.size() + " 项" : joined;
+    }
+
+    private String candidateLabel(V2ChatToolContext.Context ctx, DraftVO draft, long programId) {
+        CandidateCardVO candidate = findCandidate(draft, programId);
+        if (candidate == null) candidate = findCandidate(loadWorkspace(ctx.userId()), programId);
+        if (candidate == null) {
+            try {
+                RowMap row = ctx.mapper().selectProgramForRecommendation(programId);
+                if (row != null) {
+                    SchoolFact fact = SchoolFact.fromRow(row);
+                    return factLabel(fact);
+                }
+            } catch (Exception e) {
+                log.debug("[DraftTool] Unable to resolve proposal label: {}", e.getMessage());
+            }
+        }
+        return candidate != null ? factLabel(candidate.getFact()) : "目标候选";
+    }
+
+    private CandidateCardVO findCandidate(CandidateWorkspaceVO workspace, long programId) {
+        if (workspace == null || workspace.getTiers() == null) return null;
+        for (var tier : workspace.getTiers()) {
+            if (tier.getCandidates() == null) continue;
+            for (CandidateCardVO candidate : tier.getCandidates()) {
+                if (candidate.getFact() != null && candidate.getFact().getProgramId() != null
+                    && candidate.getFact().getProgramId() == programId) return candidate;
+            }
+        }
+        return null;
+    }
+
+    private String factLabel(SchoolFact fact) {
+        if (fact == null) return "目标候选";
+        String school = fact.getSchoolName() == null ? "目标院校" : fact.getSchoolName();
+        String program = fact.getProgramName();
+        return program == null || program.isBlank() ? school : school + " - " + program;
+    }
+
+    private String tierLabel(String tier) {
+        return switch (tier) {
+            case "reach" -> "冲刺档";
+            case "steady" -> "稳妥档";
+            case "safe" -> "保底档";
+            default -> "目标档位";
+        };
+    }
+
+    private Map<String, Object> args(Object... values) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < values.length; i += 2) result.put(String.valueOf(values[i]), values[i + 1]);
+        return result;
     }
 
     private CandidateCardVO findCandidate(DraftVO draft, long programId) {

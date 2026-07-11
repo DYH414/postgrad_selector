@@ -79,8 +79,10 @@ public class V2ChatTools {
 
     @Tool("检索指定 programId 的 RAG 证据。回答某个学校为什么推荐、风险是什么、历年趋势如何时使用。参数 question 是用户具体问题。")
     public String getProgramEvidence(long programId, String question) {
+        V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("programId", programId);
+        if (ctx != null && ctx.runId() != null) result.put("runId", ctx.runId());
         if (ragEvidenceService == null) {
             result.put("ok", false);
             result.put("error", "rag_evidence_unavailable");
@@ -91,6 +93,7 @@ public class V2ChatTools {
         try {
             RagEvidenceRequest request = new RagEvidenceRequest();
             request.setProgramId(programId);
+            request.setRunId(ctx != null ? ctx.runId() : null);
             request.setQuery(question != null && !question.isBlank() ? question : "推荐依据 风险 历年趋势");
             request.setDocType("program_history");
             request.setMaxResults(6);

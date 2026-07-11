@@ -13,8 +13,12 @@ public class AiInvocationSnapshotRecorder {
     private final AtomicReference<AiInvocationSnapshot> latest = new AtomicReference<>(new AiInvocationSnapshot());
 
     public void recordSuccess(String operationKey, String provider, String model, long durationMs, int inputTokens, int outputTokens) {
+        recordSuccess(operationKey, null, provider, model, durationMs, inputTokens, outputTokens);
+    }
+    public void recordSuccess(String operationKey, String runId, String provider, String model, long durationMs, int inputTokens, int outputTokens) {
         AiInvocationSnapshot snapshot = new AiInvocationSnapshot();
         snapshot.setOperationKey(operationKey);
+        snapshot.setRunId(runId);
         snapshot.setProvider(provider);
         snapshot.setModel(model);
         snapshot.setOutcome(SUCCESS);
@@ -26,8 +30,12 @@ public class AiInvocationSnapshotRecorder {
     }
 
     public void recordError(String operationKey, String provider, String model, String errorSummary) {
+        recordError(operationKey, null, provider, model, errorSummary);
+    }
+    public void recordError(String operationKey, String runId, String provider, String model, String errorSummary) {
         AiInvocationSnapshot snapshot = new AiInvocationSnapshot();
         snapshot.setOperationKey(operationKey);
+        snapshot.setRunId(runId);
         snapshot.setProvider(provider);
         snapshot.setModel(model);
         snapshot.setOutcome(ERROR);

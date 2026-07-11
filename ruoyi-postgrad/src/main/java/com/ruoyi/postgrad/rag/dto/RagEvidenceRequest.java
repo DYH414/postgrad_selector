@@ -14,6 +14,7 @@ public class RagEvidenceRequest {
     private Integer maxResults = 5;
     private Double minScore = 0.0;
     private Integer rerankTopN = 3;
+    private String runId;
 
     public String getQuery() { return query; }
     public void setQuery(String query) { this.query = query; }
@@ -33,4 +34,6 @@ public class RagEvidenceRequest {
     public void setMinScore(Double minScore) { this.minScore = minScore; }
     public Integer getRerankTopN() { return rerankTopN; }
     public void setRerankTopN(Integer rerankTopN) { this.rerankTopN = rerankTopN; }
+    public String getRunId() { return runId; }
+    public void setRunId(String runId) { this.runId = runId; }
 }

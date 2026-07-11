@@ -125,6 +125,15 @@ export function sendChatMessage(message) {
   })
 }
 
+/** 确认并执行 Agent 提出的草稿操作 */
+export function confirmAgentAction(confirmationToken) {
+  return request({
+    url: '/app/ai-recommend-v2/chat/action/confirm',
+    method: 'post',
+    data: { confirmationToken }
+  })
+}
+
 /** 恢复对话 */
 export function resumeChat() {
   return request({

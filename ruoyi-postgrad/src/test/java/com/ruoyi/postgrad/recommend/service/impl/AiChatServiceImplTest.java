@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
@@ -18,10 +19,13 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+
+import dev.langchain4j.rag.RetrievalAugmentor;
 
 import com.ruoyi.postgrad.mapper.AiChatMapper;
 import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
@@ -30,6 +34,7 @@ import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
+import com.ruoyi.postgrad.recommend.service.ChatRunLockService;
 
 class AiChatServiceImplTest {
 
@@ -134,6 +139,7 @@ class AiChatServiceImplTest {
         assertFalse(prompt.contains("\"type\":\"remove\""));
         assertTrue(prompt.contains("removeDraftCandidate(programId)"));
         assertTrue(prompt.contains("getProgramEvidence(programId, question)"));
+        assertTrue(prompt.contains("必须先调用 getProgramEvidence"));
     }
 
     // ═══════════ H3: chat() 并发锁拒绝 ═══════════
@@ -157,6 +163,9 @@ class AiChatServiceImplTest {
         AiChatServiceImpl service = new AiChatServiceImpl();
         injectField(service, "redisTemplate", redis);
         injectField(service, "aiChatMapper", aiChatMapper);
+        ChatRunLockService chatRunLockService = mock(ChatRunLockService.class);
+        when(chatRunLockService.acquire(eq(1L), anyString())).thenReturn(false);
+        injectField(service, "chatRunLockService", chatRunLockService);
 
         AtomicReference<String> errorMsg = new AtomicReference<>();
         ChatStreamCallback callback = new ChatStreamCallback() {
@@ -173,6 +182,30 @@ class AiChatServiceImplTest {
         assertNotNull(errorMsg.get());
         assertTrue(errorMsg.get().contains("处理中"),
             "H3: concurrent chat should be rejected: " + errorMsg.get());
+    }
+
+    @Test
+    void terminalCompletionReleasesOwnedLockExactlyOnce() throws Exception {
+        AiChatServiceImpl service = new AiChatServiceImpl();
+        ChatRunLockService locks = mock(ChatRunLockService.class);
+        injectField(service, "chatRunLockService", locks);
+        var method = AiChatServiceImpl.class.getDeclaredMethod(
+            "finishChatRun", Long.class, String.class, AtomicBoolean.class);
+        method.setAccessible(true);
+        AtomicBoolean finished = new AtomicBoolean(false);
+        method.invoke(service, 7L, "owner", finished);
+        method.invoke(service, 7L, "owner", finished);
+        verify(locks, times(1)).release(7L, "owner");
+    }
+
+    @Test
+    void scopedEvidenceRouteCannotAttachGenericRetrieval() {
+        RetrievalAugmentor augmentor = mock(RetrievalAugmentor.class);
+
+        assertFalse(AiChatServiceImpl.usesGenericRetrieval(
+            com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.SCOPED_EVIDENCE, augmentor));
+        assertTrue(AiChatServiceImpl.usesGenericRetrieval(
+            com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.GENERAL, augmentor));
     }
 
     private static void injectField(Object target, String fieldName, Object value) throws Exception {
