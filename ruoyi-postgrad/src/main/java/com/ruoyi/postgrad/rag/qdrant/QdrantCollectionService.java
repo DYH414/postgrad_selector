@@ -50,6 +50,15 @@ public class QdrantCollectionService {
         createCollection();
     }
 
+    /**
+     * Deletes and recreates the configured collection.
+     *
+     * @deprecated Use {@link RagCollectionManager} for versioned collection
+     *             lifecycle management instead. This method is retained only
+     *             for the initial bootstrapping path and will be removed in a
+     *             future release.
+     */
+    @Deprecated
     public void clearCollection() {
         try {
             restTemplate.exchange(collectionUrl(), HttpMethod.DELETE, new HttpEntity<>(headers()), String.class);
