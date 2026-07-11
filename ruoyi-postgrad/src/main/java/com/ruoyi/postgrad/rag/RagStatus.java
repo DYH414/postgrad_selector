@@ -14,6 +14,11 @@ public class RagStatus {
     private String backend;
     private String collectionName;
     private boolean reachable;
+    private String activeCollection;
+    private String latestRunId;
+    private String latestRunStatus;
+    private Integer buildProgressPercent;
+    private String buildProgressStage;
 
     public boolean isIndexed() {
         return indexed;
@@ -93,6 +98,46 @@ public class RagStatus {
 
     public void setReachable(boolean reachable) {
         this.reachable = reachable;
+    }
+
+    public String getActiveCollection() {
+        return activeCollection;
+    }
+
+    public void setActiveCollection(String activeCollection) {
+        this.activeCollection = activeCollection;
+    }
+
+    public String getLatestRunId() {
+        return latestRunId;
+    }
+
+    public void setLatestRunId(String latestRunId) {
+        this.latestRunId = latestRunId;
+    }
+
+    public String getLatestRunStatus() {
+        return latestRunStatus;
+    }
+
+    public void setLatestRunStatus(String latestRunStatus) {
+        this.latestRunStatus = latestRunStatus;
+    }
+
+    public Integer getBuildProgressPercent() {
+        return buildProgressPercent;
+    }
+
+    public void setBuildProgressPercent(Integer buildProgressPercent) {
+        this.buildProgressPercent = buildProgressPercent;
+    }
+
+    public String getBuildProgressStage() {
+        return buildProgressStage;
+    }
+
+    public void setBuildProgressStage(String buildProgressStage) {
+        this.buildProgressStage = buildProgressStage;
     }
 
 }
