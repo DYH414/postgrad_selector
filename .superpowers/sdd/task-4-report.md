@@ -1,89 +1,34 @@
-# Task 4 Report: Add Stable Chunk Payload And Qdrant Reindex Flow
+# Task 4: RagCorpusAssembler — Unified Corpus Assembly
 
-## Changes Made
+## Files Created
 
-### 1. `RagDocumentService.java`
-- Added Qdrant bootstrap at the start of `reindex()` after the document-empty check:
-  - calls `qdrantCollectionService.ensureCollection()`
-  - calls `qdrantCollectionService.clearCollection()`
-  - sets status `backend=qdrant`, `collectionName`, and `reachable`
-- Added a guarded Qdrant failure path:
-  - sets `backend=qdrant`
-  - sets `collectionName`
-  - sets `reachable=false`
-  - sets `indexed=false`
-  - sets `lastError` to `Qdrant unavailable: <message>`
-  - returns `new RagIndexResult(0, 0)` without attempting ingestion
-- Replaced the old document ingestor path with explicit segment generation and upload:
-  - splits documents with `DocumentSplitters.recursive(chunkSize, chunkOverlap)`
-  - enriches each `TextSegment` with stable metadata payload fields
-  - embeds with `embeddingModel.embedAll(segments)`
-  - stores with `embeddingStore.addAll(ids, embeddings, segments)`
-- Added metadata/payload fields on every chunk:
-  - `school_id`
-  - `school_name`
-  - `major_id`
-  - `major_name`
-  - `doc_type`
-  - `year`
-  - `source_id`
-  - `source_name`
-  - `source_url`
-  - `chunk_index`
-  - `chunk_title`
-  - `content`
-  - `content_hash`
-  - `embedding_version`
-  - `updated_at`
-  - `tags`
-- Added helper methods:
-  - `splitWithMetadata(...)`
-  - `sourceName(...)`
-  - `inferDocType(...)`
-  - `sha256(...)`
-- Removed the old `countSegments(...)` helper.
+### Production Code
+- `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/build/AssembledCorpus.java` — record holding `List<TextSegment> chunks`, `int generalDocumentCount`, `int databaseDocumentCount`
+- `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/build/RagCorpusAssembler.java` — Spring `@Component` that assembles a unified corpus from:
+  - **General documents**: loaded from classpath `rag-documents/`, split via `DocumentSplitters.recursive(500, 50)`, metadata with `source_type=general` (no school/program fields)
+  - **Database evidence**: via `RagKnowledgeExportService` (histories, year facts, data quality) -> `StructuredRagChunkBuilder` -> `TextSegment` with `source_type=database` (includes school/program fields)
 
-### 2. `RagDocumentServiceTest.java`
-- Added `shouldEnsureAndClearQdrantBeforeIndexing()`
-- Added `shouldAttachStableMetadataToSplitSegments()`
-- Added `shouldExposeUsefulStatusWhenQdrantBootstrapFails()`
+### Test
+- `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/rag/build/RagCorpusAssemblerTest.java` — 5 TDD test cases from the plan's T2 section
 
-## Local API Verification
+## Test Results
 
-- Verified locally with `javap` that in this workspace's LangChain4j version:
-  - `Metadata` uses typed accessors such as `getString(...)` rather than a generic `get(...)`
-  - `EmbeddingStoreIngestor` does **not** provide `ingest(List<TextSegment>)`
-- Adapted implementation accordingly:
-  - used `document.metadata().getString(...)`
-  - used `embeddingModel.embedAll(segments).content()` plus `embeddingStore.addAll(...)`
+All 5 tests pass:
 
-## Verification
+| Test | Description | Status |
+|------|-------------|--------|
+| T2.1 | General docs assembled (sourceType=general, contentHash non-null) | PASS |
+| T2.2 | Database docs assembled (schoolId/programId/year non-null) | PASS |
+| T2.3 | General + database merged, sourceId unique across all chunks | PASS |
+| T2.4 | Empty corpus doesn't throw | PASS |
+| T2.5 | External Markdown written to `${RAG_DATA_DIR}/generated/` | PASS |
 
-- Red phase:
-  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest#shouldEnsureAndClearQdrantBeforeIndexing" test`
-  - Result: **FAIL** as expected before implementation (`ensureCollection()` not invoked)
-- Acceptance suite:
-  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest,QdrantCollectionServiceTest,RagInitializerTest" test`
-  - Result: **PASS** (15 tests, 0 failures, 0 errors)
+## Implementation Details
 
-## Review Fix: Stable Chunk IDs
-
-- Updated `RagDocumentService.reindex()` to call `embeddingStore.addAll(ids, embeddings, segments)` instead of the two-argument overload.
-- Added `segmentIds(...)` to derive deterministic point IDs from existing stable metadata using:
-  - `sha256(source_id + ":" + chunk_index + ":" + content_hash)`
-- Kept the chunk payload metadata unchanged; the ID is derived from metadata already attached during `splitWithMetadata(...)`.
-- Added `shouldWriteDeterministicChunkIdsToEmbeddingStore()` in `RagDocumentServiceTest` to capture IDs passed to the store and assert:
-  - the ID count matches the segment count
-  - each ID matches the deterministic SHA-256 formula above
-
-## Review Fix Verification
-
-- Red phase:
-  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest#shouldWriteDeterministicChunkIdsToEmbeddingStore" test`
-  - Result: **FAIL** before the fix because `RagDocumentService` invoked `embeddingStore.addAll(embeddings, segments)` and never supplied IDs.
-- Green phase:
-  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest#shouldWriteDeterministicChunkIdsToEmbeddingStore" test`
-  - Result: **PASS** after switching to `embeddingStore.addAll(ids, embeddings, segments)`.
-- Coverage suite:
-  - `mvn -pl ruoyi-postgrad "-Dtest=RagDocumentServiceTest,QdrantCollectionServiceTest,RagInitializerTest" test`
-  - Result: **PASS** (16 tests, 0 failures, 0 errors).
+- **Metadata schema**: Unified `source_type`, `source_id`, `source_name`, `doc_type`, `section`, `chunk_index`, `content`, `content_hash`, `document_version`, `embedding_version`, `indexed_at` for all chunks
+- **Database chunks additionally**: `school_id`, `school_name`, `program_id`, `program_name`, `year` (and all other metadata from `StructuredRagChunkBuilder`)
+- **General chunks omit**: school/program/year fields entirely (not set to empty strings)
+- **source_id generation**: General `general:fileName:index`, Database `chunk.getChunkId()` (e.g., `program_year:1:101:2025:admission_score:hash`)
+- **External Markdown**: Written to `${ragDataDir}/generated/` per chunk, using chunkId as filename
+- **Validation**: `Set<String>` check for source_id uniqueness, throws `IllegalStateException` on duplicates
+- **Limit**: Database queries use 1000 as default limit
