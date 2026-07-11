@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.ruoyi.postgrad.rag.RagDocumentService;
 import com.ruoyi.postgrad.rag.knowledge.RagDataQualityDocument;
 import com.ruoyi.postgrad.rag.knowledge.RagKnowledgeExportService;
 import com.ruoyi.postgrad.rag.knowledge.RagProgramHistoryDocument;
@@ -30,7 +29,6 @@ class RagCorpusAssemblerTest {
 
     @Test
     void shouldAssembleGeneralDocsWithSourceTypeGeneralAndContentHash() {
-        RagDocumentService ragDocService = mock(RagDocumentService.class);
         RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
         when(exportService.exportProgramHistoryDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of());
         when(exportService.exportProgramYearFacts(anyInt(), anyInt())).thenReturn(List.of());
@@ -38,7 +36,7 @@ class RagCorpusAssemblerTest {
         Path tempDir = createTempDir();
 
         RagCorpusAssembler assembler = new RagCorpusAssembler(
-            ragDocService, exportService, new StructuredRagChunkBuilder(), tempDir.toString());
+            exportService, new StructuredRagChunkBuilder(), tempDir.toString());
 
         AssembledCorpus corpus = assembler.assemble(START_YEAR, END_YEAR);
 
@@ -57,7 +55,6 @@ class RagCorpusAssemblerTest {
 
     @Test
     void shouldAssembleDatabaseDocsWithSchoolIdProgramIdAndYear() {
-        RagDocumentService ragDocService = mock(RagDocumentService.class);
         RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
         RagProgramYearFact fact = sampleFact();
         RagProgramHistoryDocument history = new RagProgramHistoryDocument(List.of(sampleFact()));
@@ -68,7 +65,7 @@ class RagCorpusAssemblerTest {
         Path tempDir = createTempDir();
 
         RagCorpusAssembler assembler = new RagCorpusAssembler(
-            ragDocService, exportService, new StructuredRagChunkBuilder(), tempDir.toString());
+            exportService, new StructuredRagChunkBuilder(), tempDir.toString());
 
         AssembledCorpus corpus = assembler.assemble(START_YEAR, END_YEAR);
 
@@ -93,7 +90,6 @@ class RagCorpusAssemblerTest {
 
     @Test
     void shouldHaveUniqueSourceIdsAcrossAllChunks() {
-        RagDocumentService ragDocService = mock(RagDocumentService.class);
         RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
         RagProgramYearFact fact = sampleFact();
         RagProgramHistoryDocument history = new RagProgramHistoryDocument(List.of(sampleFact()));
@@ -104,7 +100,7 @@ class RagCorpusAssemblerTest {
         Path tempDir = createTempDir();
 
         RagCorpusAssembler assembler = new RagCorpusAssembler(
-            ragDocService, exportService, new StructuredRagChunkBuilder(), tempDir.toString());
+            exportService, new StructuredRagChunkBuilder(), tempDir.toString());
 
         AssembledCorpus corpus = assembler.assemble(START_YEAR, END_YEAR);
 
@@ -118,7 +114,6 @@ class RagCorpusAssemblerTest {
 
     @Test
     void shouldHandleEmptyCorpusWithoutThrowing() {
-        RagDocumentService ragDocService = mock(RagDocumentService.class);
         RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
         when(exportService.exportProgramHistoryDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of());
         when(exportService.exportProgramYearFacts(anyInt(), anyInt())).thenReturn(List.of());
@@ -126,7 +121,7 @@ class RagCorpusAssemblerTest {
         Path tempDir = createTempDir();
 
         RagCorpusAssembler assembler = new RagCorpusAssembler(
-            ragDocService, exportService, new StructuredRagChunkBuilder(), tempDir.toString());
+            exportService, new StructuredRagChunkBuilder(), tempDir.toString());
         // Override documentsPath to point to a non-existent directory
         injectDocumentsPath(assembler, "nonexistent-empty-dir/");
 
@@ -142,7 +137,6 @@ class RagCorpusAssemblerTest {
 
     @Test
     void shouldWriteExternalMarkdownToGeneratedDirectory(@TempDir Path tempDir) {
-        RagDocumentService ragDocService = mock(RagDocumentService.class);
         RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
         RagProgramYearFact fact = sampleFact();
         RagProgramHistoryDocument history = new RagProgramHistoryDocument(List.of(sampleFact()));
@@ -152,7 +146,7 @@ class RagCorpusAssemblerTest {
         when(exportService.exportDataQualityDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of(quality));
 
         RagCorpusAssembler assembler = new RagCorpusAssembler(
-            ragDocService, exportService, new StructuredRagChunkBuilder(), tempDir.toString());
+            exportService, new StructuredRagChunkBuilder(), tempDir.toString());
 
         assembler.assemble(START_YEAR, END_YEAR);
 

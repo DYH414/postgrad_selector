@@ -7,8 +7,8 @@ import com.ruoyi.postgrad.observe.domain.RagQuickStatusVO;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshot;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotRecorder;
 import com.ruoyi.postgrad.observe.service.AiObserveService;
-import com.ruoyi.postgrad.rag.RagDocumentService;
 import com.ruoyi.postgrad.rag.RagStatus;
+import com.ruoyi.postgrad.rag.status.RagIndexStatusService;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -26,14 +26,14 @@ public class AiObserveServiceImpl implements AiObserveService {
     private static final String OPERATION_DURATION = "gen_ai.client.operation.duration";
 
     private final MeterRegistry meterRegistry;
-    private final RagDocumentService ragDocumentService;
+    private final RagIndexStatusService ragIndexStatusService;
     private final AiInvocationSnapshotRecorder snapshotRecorder;
 
     public AiObserveServiceImpl(MeterRegistry meterRegistry,
-                                RagDocumentService ragDocumentService,
+                                RagIndexStatusService ragIndexStatusService,
                                 AiInvocationSnapshotRecorder snapshotRecorder) {
         this.meterRegistry = meterRegistry;
-        this.ragDocumentService = ragDocumentService;
+        this.ragIndexStatusService = ragIndexStatusService;
         this.snapshotRecorder = snapshotRecorder;
     }
 
@@ -48,7 +48,7 @@ public class AiObserveServiceImpl implements AiObserveService {
         overview.setModelGroups(groupByTag("gen_ai.request.model"));
         overview.setOperationGroups(groupByTag("postgrad.ai.operation"));
         overview.setLatest(toLatest(snapshotRecorder.getLatest()));
-        overview.setRag(toRag(ragDocumentService.getStatus()));
+        overview.setRag(toRag(ragIndexStatusService.getStatus()));
         return overview;
     }
 

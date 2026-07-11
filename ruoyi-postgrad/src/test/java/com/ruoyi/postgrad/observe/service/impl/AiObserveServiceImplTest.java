@@ -2,28 +2,47 @@ package com.ruoyi.postgrad.observe.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.micrometer.core.instrument.Timer;
 import com.ruoyi.postgrad.observe.domain.AiObserveOverviewVO;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotRecorder;
-import com.ruoyi.postgrad.rag.RagDocumentService;
 import com.ruoyi.postgrad.rag.RagStatus;
+import com.ruoyi.postgrad.rag.status.RagIndexStatusService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 class AiObserveServiceImplTest {
 
     @Test
+    void overviewShouldExposePersistedRagIndexStatus() {
+        RagIndexStatusService statusService = mock(RagIndexStatusService.class);
+        RagStatus status = new RagStatus();
+        status.setEnabled(true);
+        status.setIndexed(true);
+        status.setDocumentCount(2090);
+        status.setChunkCount(12515);
+        when(statusService.getStatus()).thenReturn(status);
+
+        AiObserveOverviewVO overview = new AiObserveServiceImpl(
+            new SimpleMeterRegistry(), statusService, new AiInvocationSnapshotRecorder()).getOverview();
+
+        assertTrue(overview.getRag().isIndexed());
+        assertEquals(2090, overview.getRag().getDocumentCount());
+        assertEquals(12515, overview.getRag().getChunkCount());
+    }
+
+    @Test
     void overviewShouldDegradeGracefullyWhenNoMetricsExist() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        RagDocumentService ragDocumentService = mock(RagDocumentService.class);
-        when(ragDocumentService.getStatus()).thenReturn(new RagStatus());
+        RagIndexStatusService statusService = mock(RagIndexStatusService.class);
+        when(statusService.getStatus()).thenReturn(new RagStatus());
 
         AiObserveServiceImpl service = new AiObserveServiceImpl(
             meterRegistry,
-            ragDocumentService,
+            statusService,
             new AiInvocationSnapshotRecorder()
         );
 
@@ -58,12 +77,12 @@ class AiObserveServiceImplTest {
             "gen_ai.operation.name", "chat")
             .record(300, java.util.concurrent.TimeUnit.MILLISECONDS);
 
-        RagDocumentService ragDocumentService = mock(RagDocumentService.class);
-        when(ragDocumentService.getStatus()).thenReturn(new RagStatus());
+        RagIndexStatusService statusService = mock(RagIndexStatusService.class);
+        when(statusService.getStatus()).thenReturn(new RagStatus());
 
         AiObserveServiceImpl service = new AiObserveServiceImpl(
             meterRegistry,
-            ragDocumentService,
+            statusService,
             new AiInvocationSnapshotRecorder()
         );
 

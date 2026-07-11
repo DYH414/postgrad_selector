@@ -1,6 +1,5 @@
 package com.ruoyi.framework.config;
 
-import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
 import com.ruoyi.postgrad.rag.qdrant.RagCollectionManager;
 import com.ruoyi.postgrad.rag.build.RagEmbeddingStoreFactory;
 import com.ruoyi.postgrad.rag.reranker.SiliconFlowReranker;
@@ -26,15 +25,6 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 @Configuration
 public class RagConfig {
-
-    @Bean
-    public QdrantCollectionService qdrantCollectionService(
-        @Value("${app.ai.rag.qdrant.url:http://localhost:6333}") String url,
-        @Value("${app.ai.rag.qdrant.api-key:}") String apiKey,
-        @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_main}") String collectionName,
-        @Value("${app.ai.rag.qdrant.dimension:1024}") int dimension) {
-        return new QdrantCollectionService(new RestTemplate(), url, apiKey, collectionName, dimension);
-    }
 
     @Bean
     public RagCollectionManager ragCollectionManager(

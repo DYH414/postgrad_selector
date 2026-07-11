@@ -1,6 +1,5 @@
 package com.ruoyi.postgrad.rag.build;
 
-import com.ruoyi.postgrad.rag.RagDocumentService;
 import com.ruoyi.postgrad.rag.knowledge.RagDataQualityDocument;
 import com.ruoyi.postgrad.rag.knowledge.RagKnowledgeExportService;
 import com.ruoyi.postgrad.rag.knowledge.RagProgramHistoryDocument;
@@ -53,7 +52,6 @@ public class RagCorpusAssembler {
     private static final String SCHEMA_VERSION = "rag-doc-v2";
     private static final String EMBEDDING_VERSION = "bge-m3-v1";
 
-    private final RagDocumentService ragDocumentService;
     private final RagKnowledgeExportService ragKnowledgeExportService;
     private final StructuredRagChunkBuilder structuredChunkBuilder;
     private final String ragDataDir;
@@ -62,11 +60,9 @@ public class RagCorpusAssembler {
     String documentsPath = "rag-documents/";
 
     public RagCorpusAssembler(
-            RagDocumentService ragDocumentService,
             RagKnowledgeExportService ragKnowledgeExportService,
             StructuredRagChunkBuilder structuredChunkBuilder,
             @Value("${app.ai.rag.data-dir:./rag-data}") String ragDataDir) {
-        this.ragDocumentService = ragDocumentService;
         this.ragKnowledgeExportService = ragKnowledgeExportService;
         this.structuredChunkBuilder = structuredChunkBuilder;
         this.ragDataDir = ragDataDir;
@@ -233,7 +229,7 @@ public class RagCorpusAssembler {
         }
     }
 
-    // ---- Utilities (mirrored from RagDocumentService) ----
+    // ---- Utilities ----
 
     private String sourceName(Document document) {
         String fileName = document.metadata().getString("file_name");
