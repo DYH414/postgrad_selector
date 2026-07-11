@@ -8,17 +8,7 @@
           <p>查看索引、检索测试、最近 Trace 和配置参数，快速确认 AI 是否在用知识库。</p>
         </div>
         <div class="rag-actions">
-          <el-button size="mini" icon="el-icon-refresh" @click="loadStatus">刷新</el-button>
-          <el-button
-            v-if="hasReindexPerm"
-            size="mini"
-            type="primary"
-            icon="el-icon-refresh-right"
-            :loading="reindexing"
-            @click="handleReindex"
-          >
-            重建通用知识库
-          </el-button>
+          <el-button size="mini" icon="el-icon-refresh" @click="loadAll">刷新</el-button>
         </div>
       </div>
 
@@ -39,68 +29,53 @@
         class="rag-alert"
       />
 
-      <section class="rag-panel database-ops-panel">
+      <!-- 索引管理面板 -->
+      <section class="rag-panel" style="margin-bottom: 12px;">
         <div class="panel-heading">
-          <div>
-            <h3>数据库 RAG 管道</h3>
-            <span>从 MySQL 生成 rag-generated 文档，再索引为推荐证据</span>
-          </div>
+          <h3>索引管理</h3>
         </div>
-        <div class="database-ops-body">
-          <el-form :inline="true" :model="databaseForm" size="mini" class="database-form">
+        <div style="padding: 16px;">
+          <div class="index-status-line">
+            <span class="index-stat">状态: <el-tag :type="statusTag" size="mini">{{ statusText }}</el-tag></span>
+            <span class="index-stat">文档: {{ status.documentCount || 0 }}</span>
+            <span class="index-stat">切片: {{ status.chunkCount || 0 }}</span>
+          </div>
+          <div class="index-version-line">
+            活动版本: <code>{{ displayCollection }}</code>
+          </div>
+
+          <el-form :inline="true" :model="buildForm" size="mini" class="index-build-form">
             <el-form-item label="起始年份">
-              <el-input-number v-model="databaseForm.startYear" :min="2000" :max="2100" controls-position="right" />
+              <el-input-number v-model="buildForm.startYear" :min="2000" :max="2100" controls-position="right" />
             </el-form-item>
             <el-form-item label="结束年份">
-              <el-input-number v-model="databaseForm.endYear" :min="2000" :max="2100" controls-position="right" />
-            </el-form-item>
-            <el-form-item label="上限">
-              <el-input-number v-model="databaseForm.limit" :min="1" :max="10000" controls-position="right" />
+              <el-input-number v-model="buildForm.endYear" :min="2000" :max="2100" controls-position="right" />
             </el-form-item>
             <el-form-item>
               <el-button
                 type="primary"
-                icon="el-icon-document-add"
-                :loading="generatingDocuments"
-                :disabled="!hasReindexPerm"
-                @click="handleGenerateDatabaseDocuments"
+                icon="el-icon-refresh-right"
+                :loading="building"
+                :disabled="building || !hasReindexPerm"
+                @click="handleBuild"
               >
-                生成数据库文档
-              </el-button>
-              <el-button
-                type="success"
-                icon="el-icon-connection"
-                :loading="reindexingDatabase"
-                :disabled="!hasReindexPerm || generatingAndReindexing"
-                @click="handleReindexDatabase"
-              >
-                索引数据库 RAG
-              </el-button>
-              <el-button
-                type="warning"
-                icon="el-icon-finished"
-                :loading="generatingAndReindexing"
-                :disabled="!hasReindexPerm || generatingDocuments || reindexingDatabase"
-                @click="handleGenerateAndReindexDatabase"
-              >
-                生成并索引数据库 RAG
+                重建完整知识库
               </el-button>
             </el-form-item>
           </el-form>
-          <el-alert
-            v-if="databaseNeedsIndexing"
-            title="数据库 RAG 文档已生成，但 Qdrant 尚未更新。请继续点击“索引数据库 RAG”，或使用“生成并索引数据库 RAG”完成闭环。"
-            type="warning"
-            show-icon
-            :closable="false"
-            class="database-stage-alert"
-          />
-          <div v-if="databaseResult" class="database-result">
-            <span v-if="databaseOperationStage">{{ databaseOperationStage }}</span>
-            <span>{{ databaseResult.mode || 'database' }}</span>
-            <span>文档 {{ databaseResult.documentCount || 0 }}</span>
-            <span v-if="databaseResult.chunkCount != null">切片 {{ databaseResult.chunkCount }}</span>
-            <span v-if="databaseResult.writtenFileCount != null">写入 {{ databaseResult.writtenFileCount }} 个文件</span>
+
+          <div v-if="building && buildRun" class="index-progress-box">
+            <el-progress :percentage="buildRun.progressPercent || 0" :status="progressStatus" />
+            <p class="index-progress-msg">{{ progressMessage }}</p>
+          </div>
+
+          <div v-if="hasRecentRuns" class="index-recent-section">
+            <h4 class="index-recent-title">最近批次</h4>
+            <div v-for="run in recentRuns" :key="run.runId" class="index-recent-item">
+              <el-tag :type="runTagType(run)" size="mini">{{ run.status }}</el-tag>
+              <code class="index-run-id">{{ run.runId ? run.runId.slice(0, 8) : '-' }}</code>
+              <span class="index-run-desc">{{ ' — ' }}{{ formatRunDescription(run) }}</span>
+            </div>
           </div>
         </div>
       </section>
@@ -121,12 +96,6 @@
             <el-descriptions-item label="已索引">{{ boolText(status.indexed) }}</el-descriptions-item>
             <el-descriptions-item label="文档数">{{ status.documentCount || 0 }}</el-descriptions-item>
             <el-descriptions-item label="切片数">{{ status.chunkCount || 0 }}</el-descriptions-item>
-            <el-descriptions-item label="Embedding 模型">{{ status.embeddingModel || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="Rerank 模型">{{ status.rerankModel || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="分块大小">{{ status.chunkSize || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="分块重叠">{{ status.chunkOverlap || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="召回上限">{{ status.maxResults || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="Rerank 截断">{{ status.rerankTopN || '-' }}</el-descriptions-item>
             <el-descriptions-item label="最近索引">{{ formatTime(status.lastIndexedAt) }}</el-descriptions-item>
             <el-descriptions-item label="运行模式">{{ status.lastRunMode || '-' }}</el-descriptions-item>
           </el-descriptions>
@@ -314,9 +283,8 @@
 <script>
 import {
   getRagStatus,
-  reindexRag,
-  generateDatabaseDocuments,
-  reindexDatabaseRag,
+  startIndexBuild,
+  getIndexRun,
   searchTestRag,
   getRagTraces
 } from '@/api/postgrad/rag'
@@ -326,20 +294,17 @@ export default {
   data() {
     return {
       loading: false,
-      reindexing: false,
-      generatingDocuments: false,
-      reindexingDatabase: false,
-      generatingAndReindexing: false,
-      databaseOperationStage: '',
-      databaseNeedsIndexing: false,
       status: {},
       notice: '',
-      databaseForm: {
-        startYear: 2023,
-        endYear: 2025,
-        limit: 1000
+      buildForm: {
+        startYear: 2024,
+        endYear: 2025
       },
-      databaseResult: null,
+      building: false,
+      buildRunId: null,
+      buildRun: null,
+      latestRun: null,
+      pollTimer: null,
       searchQuery: '',
       searchFilters: {
         schoolId: '',
@@ -368,20 +333,81 @@ export default {
         { key: 'backend', label: '向量库后端', value: this.status.backend || 'Qdrant', hint: '当前使用的向量存储' },
         { key: 'reachable', label: '可连通', value: this.boolText(this.status.reachable), hint: 'Qdrant 是否可达' },
         { key: 'indexed', label: '索引状态', value: this.boolText(this.status.indexed), hint: '文档是否已加载' },
-        { key: 'docs', label: '文档数', value: this.status.documentCount || 0, hint: 'rag-generated 或 rag-documents 文档数' },
+        { key: 'docs', label: '文档数', value: this.status.documentCount || 0, hint: '总文档数' },
         { key: 'chunks', label: '切片数', value: this.status.chunkCount || 0, hint: '分块后的总片段数' },
-        { key: 'embedding', label: 'Embedding', value: this.status.embeddingModel || '-', hint: '向量化模型' }
+        { key: 'lastIndexed', label: '最近索引', value: this.relativeTime(this.status.lastIndexedAt), hint: '上次成功索引时间' }
       ]
+    },
+    statusText() {
+      return this.status.latestRunStatus || (this.status.indexed ? '已索引' : '未构建')
+    },
+    statusTag() {
+      const s = this.status.latestRunStatus
+      if (s === 'SUCCEEDED') return 'success'
+      if (s === 'FAILED') return 'danger'
+      if (s === 'RUNNING' || s === 'PENDING') return 'warning'
+      return 'info'
+    },
+    displayCollection() {
+      return this.status.activeCollection || this.status.collectionName || '-'
+    },
+    progressStatus() {
+      if (!this.buildRun) return undefined
+      if (this.buildRun.status === 'FAILED') return 'exception'
+      if (this.buildRun.status === 'SUCCEEDED') return 'success'
+      return undefined
+    },
+    progressMessage() {
+      if (!this.buildRun) return '正在启动...'
+      const run = this.buildRun
+      const stage = run.progressStage || 'init'
+      const pct = run.progressPercent || 0
+      switch (stage) {
+        case 'init':
+          return '正在初始化...'
+        case 'assembling':
+          return '正在组装语料库...'
+        case 'embedding': {
+          if (run.indexedChunkCount != null && run.chunkCount != null) {
+            return `正在向量化 ${pct}%（${run.indexedChunkCount}/${run.chunkCount} 切片）`
+          }
+          return `正在向量化 ${pct}%...`
+        }
+        case 'validating':
+          return '正在验证索引...'
+        case 'switching':
+          return '正在切换集合...'
+        default:
+          return `${stage} ${pct}%`
+      }
+    },
+    recentRuns() {
+      const map = new Map()
+      if (this.buildRun) map.set(this.buildRun.runId, this.buildRun)
+      if (this.latestRun) map.set(this.latestRun.runId, this.latestRun)
+      return Array.from(map.values())
+    },
+    hasRecentRuns() {
+      return this.recentRuns.length > 0
     }
   },
   created() {
-    this.loadStatus()
-    this.loadTraces()
+    this.loadAll()
+  },
+  beforeDestroy() {
+    this.stopPolling()
   },
   methods: {
+    async loadAll() {
+      this.notice = ''
+      await this.loadStatus()
+      this.loadTraces()
+      if (this.status.latestRunId) {
+        await this.loadLatestRun()
+      }
+    },
     async loadStatus() {
       this.loading = true
-      this.notice = ''
       try {
         const res = await getRagStatus()
         this.status = (res && res.data) || {}
@@ -389,6 +415,15 @@ export default {
         this.notice = 'RAG 状态请求失败，请检查后端接口是否启动。'
       } finally {
         this.loading = false
+      }
+    },
+    async loadLatestRun() {
+      if (!this.status.latestRunId) return
+      try {
+        const res = await getIndexRun(this.status.latestRunId)
+        this.latestRun = (res && res.data) || null
+      } catch (e) {
+        // latest run is non-critical, ignore silently
       }
     },
     async loadTraces() {
@@ -399,79 +434,62 @@ export default {
         // traces are non-critical, ignore silently
       }
     },
-    handleReindex() {
-      this.$confirm('确认重新索引通用 rag-documents 文档吗？这会重建 Qdrant 向量库。', '重建通用知识库').then(() => {
-        this.reindexing = true
-        reindexRag().then(res => {
-          this.$message.success((res && res.msg) || '重新索引完成')
-          this.loadStatus()
-        }).catch(() => {
-          this.$message.error('重新索引失败')
-        }).finally(() => {
-          this.reindexing = false
-        })
-      }).catch(() => {})
-    },
-    handleGenerateDatabaseDocuments() {
-      this.generatingDocuments = true
-      this.databaseOperationStage = '生成文档中'
-      generateDatabaseDocuments(this.databaseForm).then(res => {
-        this.databaseResult = (res && res.data) || {}
-        this.databaseOperationStage = '文档已生成，待索引'
-        this.databaseNeedsIndexing = true
-        this.$message.warning('数据库 RAG 文档生成完成，Qdrant 尚未更新，请继续索引数据库 RAG')
-        this.loadTraces()
-      }).catch(() => {
-        this.databaseOperationStage = '文档生成失败'
-        this.$message.error('数据库 RAG 文档生成失败')
-      }).finally(() => {
-        this.generatingDocuments = false
-      })
-    },
-    handleReindexDatabase() {
-      this.$confirm('确认索引数据库生成的 RAG 证据吗？这会重建 Qdrant 中的推荐证据。', '索引数据库 RAG').then(() => {
-        this.reindexingDatabase = true
-        reindexDatabaseRag(this.databaseForm).then(res => {
-          this.databaseResult = (res && res.data) || {}
-          this.databaseOperationStage = '索引完成'
-          this.databaseNeedsIndexing = false
-          this.$message.success('数据库 RAG 索引完成')
-          this.loadStatus()
-          this.loadTraces()
-        }).catch(() => {
-          this.$message.error('数据库 RAG 索引失败')
-        }).finally(() => {
-          this.reindexingDatabase = false
-        })
-      }).catch(() => {})
-    },
-    async handleGenerateAndReindexDatabase() {
-      this.$confirm('确认生成并索引数据库 RAG 吗？这会先写入 rag-generated 文档，再重建 Qdrant 推荐证据。', '生成并索引数据库 RAG').then(async () => {
-        this.generatingAndReindexing = true
-        this.databaseNeedsIndexing = false
-        this.databaseOperationStage = '生成文档中'
+    async handleBuild() {
+      this.$confirm('确认重建完整知识库吗？这会重新生成所有文档并重建 Qdrant 向量库。', '重建完整知识库').then(async () => {
         try {
-          const generateRes = await generateDatabaseDocuments(this.databaseForm)
-          this.databaseResult = (generateRes && generateRes.data) || {}
-          this.databaseOperationStage = '文档已生成，正在索引'
-          this.databaseNeedsIndexing = true
-          await this.loadTraces()
-          const reindexRes = await reindexDatabaseRag(this.databaseForm)
-          this.databaseResult = (reindexRes && reindexRes.data) || this.databaseResult
-          this.databaseOperationStage = '生成并索引完成'
-          this.databaseNeedsIndexing = false
-          this.$message.success('数据库 RAG 文档生成并索引完成')
-          await this.loadStatus()
-          await this.loadTraces()
+          const res = await startIndexBuild({
+            startYear: this.buildForm.startYear,
+            endYear: this.buildForm.endYear
+          })
+          const runId = (res && res.data && res.data.runId) || null
+          if (!runId) {
+            this.$message.error('启动索引构建失败：未获取到批次 ID')
+            return
+          }
+          this.buildRunId = runId
+          this.building = true
+          this.buildRun = null
+
+          // Fetch initial run state
+          try {
+            const runRes = await getIndexRun(runId)
+            this.buildRun = (runRes && runRes.data) || null
+          } catch (e) {
+            // initial fetch may fail if run not yet persisted; poll will catch up
+          }
+
+          // Start polling every 2 seconds
+          this.pollTimer = setInterval(() => this.pollBuildRun(), 2000)
         } catch (e) {
-          this.databaseOperationStage = this.databaseNeedsIndexing ? '索引失败，文档已保留' : '生成并索引失败'
-          this.$message.error(this.databaseNeedsIndexing ? '文档已生成，但数据库 RAG 索引失败' : '数据库 RAG 生成并索引失败')
-          this.loadStatus()
-          this.loadTraces()
-        } finally {
-          this.generatingAndReindexing = false
+          this.$message.error('启动索引构建失败')
         }
       }).catch(() => {})
+    },
+    async pollBuildRun() {
+      if (!this.buildRunId) return
+      try {
+        const res = await getIndexRun(this.buildRunId)
+        this.buildRun = (res && res.data) || null
+        if (!this.buildRun) return
+
+        const status = this.buildRun.status
+        if (status === 'SUCCEEDED' || status === 'FAILED' || status === 'INTERRUPTED') {
+          this.stopPolling()
+          this.$message({
+            type: status === 'SUCCEEDED' ? 'success' : 'error',
+            message: status === 'SUCCEEDED' ? '知识库重建完成' : `知识库重建失败：${this.buildRun.errorSummary || this.buildRun.errorCode || status}`
+          })
+          await this.loadAll()
+        }
+      } catch (e) {
+        // poll error, try again next interval
+      }
+    },
+    stopPolling() {
+      if (this.pollTimer) {
+        clearInterval(this.pollTimer)
+        this.pollTimer = null
+      }
     },
     async handleSearchTest() {
       const q = (this.searchQuery || '').trim()
@@ -491,7 +509,6 @@ export default {
         if (this.searchResult && this.searchResult.errorSummary) {
           this.searchError = this.searchResult.errorSummary
         }
-        // refresh traces to include this test
         this.loadTraces()
       } catch (e) {
         this.searchError = '检索测试失败，请检查后端是否正常'
@@ -505,6 +522,50 @@ export default {
     formatTime(value) {
       if (!value) return '-'
       return String(value)
+    },
+    relativeTime(value) {
+      if (!value) return '-'
+      const now = new Date()
+      const then = new Date(value)
+      const diffMs = now - then
+      if (diffMs < 0) return '刚刚'
+      const diffSec = Math.floor(diffMs / 1000)
+      if (diffSec < 60) return `${diffSec}秒前`
+      const diffMin = Math.floor(diffSec / 60)
+      if (diffMin < 60) return `${diffMin}分钟前`
+      const diffHour = Math.floor(diffMin / 60)
+      if (diffHour < 24) return `${diffHour}小时前`
+      return `${Math.floor(diffHour / 24)}天前`
+    },
+    formatRunDescription(run) {
+      if (!run) return ''
+      const status = run.status
+      if (status === 'RUNNING' || status === 'PENDING') {
+        const stage = run.progressStage || 'init'
+        const pct = run.progressPercent != null ? `${run.progressPercent}%` : ''
+        if (run.indexedChunkCount != null && run.chunkCount != null) {
+          return `${stage} ${pct} (${run.indexedChunkCount}/${run.chunkCount} chunks)`
+        }
+        return `${stage} ${pct}`
+      }
+      if (status === 'SUCCEEDED') {
+        const totalDocs = (run.generalDocumentCount || 0) + (run.databaseDocumentCount || 0)
+        const chunks = run.chunkCount || 0
+        const time = this.relativeTime(run.finishedAt)
+        return `${totalDocs} docs, ${chunks} chunks, ${time}`
+      }
+      if (status === 'FAILED') {
+        return `Error: ${run.errorSummary || run.errorCode || 'unknown'}`
+      }
+      return status
+    },
+    runTagType(run) {
+      if (!run) return 'info'
+      const s = run.status
+      if (s === 'SUCCEEDED') return 'success'
+      if (s === 'FAILED' || s === 'INTERRUPTED') return 'danger'
+      if (s === 'RUNNING' || s === 'PENDING') return 'warning'
+      return 'info'
     },
     compactFilters(filters) {
       const result = {}
@@ -601,36 +662,6 @@ export default {
 
 .rag-alert {
   margin-bottom: 12px;
-}
-
-.database-ops-panel {
-  min-height: auto;
-  margin-bottom: 12px;
-}
-
-.database-ops-body {
-  padding: 14px 16px;
-}
-
-.database-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  align-items: center;
-}
-
-.database-result,
-.active-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.database-stage-alert {
-  margin-top: 10px;
 }
 
 .rag-grid {
@@ -746,6 +777,79 @@ export default {
 
 .warn-text {
   color: #f59e0b;
+}
+
+/* 索引管理面板样式 */
+.index-status-line {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.index-stat {
+  color: #0f172a;
+}
+
+.index-version-line {
+  margin-bottom: 14px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.index-version-line code {
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #1d4ed8;
+}
+
+.index-build-form {
+  margin-bottom: 0;
+}
+
+.index-progress-box {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.index-progress-msg {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.index-recent-section {
+  margin-top: 14px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.index-recent-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.index-recent-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.index-run-id {
+  font-family: monospace;
+  color: #1d4ed8;
+  font-size: 12px;
+}
+
+.index-run-desc {
+  color: #475569;
 }
 
 @media (max-width: 1500px) {
