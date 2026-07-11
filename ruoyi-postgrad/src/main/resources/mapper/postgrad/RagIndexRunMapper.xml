@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.rag.mapper.RagIndexRunMapper">
+
+    <resultMap type="RagIndexRun" id="RagIndexRunResult">
+        <id property="runId" column="run_id"/>
+        <result property="status" column="status"/>
+        <result property="candidateCollection" column="candidate_collection"/>
+        <result property="previousCollection" column="previous_collection"/>
+        <result property="embeddingModel" column="embedding_model"/>
+        <result property="embeddingDimension" column="embedding_dimension"/>
+        <result property="startYear" column="start_year"/>
+        <result property="endYear" column="end_year"/>
+        <result property="generalDocumentCount" column="general_document_count"/>
+        <result property="databaseDocumentCount" column="database_document_count"/>
+        <result property="chunkCount" column="chunk_count"/>
+        <result property="indexedChunkCount" column="indexed_chunk_count"/>
+        <result property="progressStage" column="progress_stage"/>
+        <result property="progressPercent" column="progress_percent"/>
+        <result property="errorCode" column="error_code"/>
+        <result property="errorSummary" column="error_summary"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="selectRagIndexRunVo">
+        select run_id, status, candidate_collection, previous_collection,
+               embedding_model, embedding_dimension,
+               start_year, end_year,
+               general_document_count, database_document_count,
+               chunk_count, indexed_chunk_count,
+               progress_stage, progress_percent,
+               error_code, error_summary,
+               started_at, finished_at,
+               created_at, updated_at
+        from rag_index_run
+    </sql>
+
+    <insert id="insert" parameterType="RagIndexRun" useGeneratedKeys="false">
+        insert into rag_index_run (run_id, status, candidate_collection, previous_collection,
+                                   embedding_model, embedding_dimension,
+                                   start_year, end_year,
+                                   general_document_count, database_document_count,
+                                   chunk_count, indexed_chunk_count,
+                                   progress_stage, progress_percent,
+                                   error_code, error_summary,
+                                   started_at, finished_at)
+        values (#{runId}, #{status}, #{candidateCollection}, #{previousCollection},
+                #{embeddingModel}, #{embeddingDimension},
+                #{startYear}, #{endYear},
+                #{generalDocumentCount}, #{databaseDocumentCount},
+                #{chunkCount}, #{indexedChunkCount},
+                #{progressStage}, #{progressPercent},
+                #{errorCode}, #{errorSummary},
+                #{startedAt}, #{finishedAt})
+    </insert>
+
+    <update id="updateStatus">
+        update rag_index_run
+        set status = #{status},
+            indexed_chunk_count = #{indexedChunkCount},
+            progress_stage = #{progressStage},
+            progress_percent = #{progressPercent},
+            error_code = #{errorCode},
+            error_summary = #{errorSummary}
+        where run_id = #{runId}
+    </update>
+
+    <update id="updateCandidateCollection">
+        update rag_index_run
+        set candidate_collection = #{candidateCollection}
+        where run_id = #{runId}
+    </update>
+
+    <update id="switchToSucceeded">
+        update rag_index_run
+        set status = 'SUCCEEDED',
+            previous_collection = #{previousCollection},
+            finished_at = NOW()
+        where run_id = #{runId}
+    </update>
+
+    <select id="selectByRunId" parameterType="String" resultMap="RagIndexRunResult">
+        <include refid="selectRagIndexRunVo"/>
+        where run_id = #{runId}
+    </select>
+
+    <select id="selectLatest" resultMap="RagIndexRunResult">
+        <include refid="selectRagIndexRunVo"/>
+        order by created_at desc
+        limit 1
+    </select>
+
+    <select id="selectActive" resultMap="RagIndexRunResult">
+        <include refid="selectRagIndexRunVo"/>
+        where status = 'SUCCEEDED'
+          and candidate_collection is not null
+        order by finished_at desc
+        limit 1
+    </select>
+
+    <update id="markInterrupted">
+        update rag_index_run
+        set status = 'INTERRUPTED',
+            finished_at = NOW()
+        where status in
+        <foreach collection="statuses" item="item" open="(" separator="," close=")">
+            #{item}
+        </foreach>
+    </update>
+
+</mapper>
