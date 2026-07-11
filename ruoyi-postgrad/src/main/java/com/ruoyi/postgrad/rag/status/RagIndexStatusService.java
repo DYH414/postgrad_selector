@@ -12,8 +12,7 @@ import java.util.List;
 /**
  * Reads merged RAG index status from both MySQL (index run) and Qdrant (live alias).
  *
- * <p>Replaces the older {@code RagDocumentService.statusRef} AtomicReference approach
- * by querying the persisted {@code rag_index_run} table for the latest build state
+ * <p>Queries the persisted {@code rag_index_run} table for the latest build state
  * and the Qdrant alias API for the live collection.</p>
  */
 @Service
