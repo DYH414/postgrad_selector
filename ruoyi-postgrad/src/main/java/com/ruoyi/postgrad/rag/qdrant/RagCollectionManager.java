@@ -24,12 +24,18 @@ public class RagCollectionManager {
 
     private final RestTemplate restTemplate;
     private final String qdrantUrl;
+    private final String apiKey;
 
     public RagCollectionManager(RestTemplate restTemplate, String qdrantUrl) {
+        this(restTemplate, qdrantUrl, "");
+    }
+
+    public RagCollectionManager(RestTemplate restTemplate, String qdrantUrl, String apiKey) {
         this.restTemplate = restTemplate;
         this.qdrantUrl = qdrantUrl.endsWith("/")
             ? qdrantUrl.substring(0, qdrantUrl.length() - 1)
             : qdrantUrl;
+        this.apiKey = apiKey;
     }
 
     /**
@@ -69,7 +75,7 @@ public class RagCollectionManager {
         for (String field : INDEXED_FIELDS) {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("field_name", field);
-            body.put("field_type", "keyword");
+            body.put("field_schema", "keyword");
 
             restTemplate.put(qdrantUrl + "/collections/" + collectionName + "/index",
                 new HttpEntity<>(body, jsonHeaders()));
@@ -87,14 +93,24 @@ public class RagCollectionManager {
      * @param targetCollection collection the alias should point to
      */
     public void switchAlias(String aliasName, String targetCollection) {
+        List<Map<String, Object>> actions = new ArrayList<>();
+        if (resolveAlias(aliasName) != null) {
+            Map<String, Object> deleteAction = new LinkedHashMap<>();
+            Map<String, String> deleteConfig = new LinkedHashMap<>();
+            deleteConfig.put("alias_name", aliasName);
+            deleteAction.put("delete_alias", deleteConfig);
+            actions.add(deleteAction);
+        }
+
         Map<String, Object> createAction = new LinkedHashMap<>();
         Map<String, String> aliasConfig = new LinkedHashMap<>();
         aliasConfig.put("alias_name", aliasName);
         aliasConfig.put("collection_name", targetCollection);
         createAction.put("create_alias", aliasConfig);
+        actions.add(createAction);
 
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("actions", Collections.singletonList(createAction));
+        body.put("actions", actions);
 
         restTemplate.postForEntity(qdrantUrl + "/collections/aliases",
             new HttpEntity<>(body, jsonHeaders()), String.class);
@@ -196,6 +212,9 @@ public class RagCollectionManager {
     private HttpHeaders jsonHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        if (apiKey != null && !apiKey.isBlank()) {
+            headers.set("api-key", apiKey);
+        }
         return headers;
     }
 }

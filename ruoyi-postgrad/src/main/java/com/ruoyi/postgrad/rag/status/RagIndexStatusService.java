@@ -58,7 +58,7 @@ public class RagIndexStatusService {
         // 2. Read latest SUCCEEDED batch from MySQL
         RagIndexRun activeRun = indexRunMapper.selectActive();
 
-        if (activeRun != null) {
+        if (activeRun != null && activeCollection != null) {
             status.setIndexed(true);
             int docCount = (activeRun.getGeneralDocumentCount() != null
                     ? activeRun.getGeneralDocumentCount() : 0)
@@ -67,31 +67,27 @@ public class RagIndexStatusService {
             status.setDocumentCount(docCount);
             status.setLastIndexedAt(activeRun.getFinishedAt());
             status.setLastRunMode("auto");
-            status.setLatestRunId(activeRun.getRunId());
-            status.setLatestRunStatus(activeRun.getStatus());
-
             // 3. Get point count from active collection
-            if (activeCollection != null) {
-                long pointCount = collectionManager.getPointCount(activeCollection);
-                status.setChunkCount((int) pointCount);
-            }
+            long pointCount = collectionManager.getPointCount(activeCollection);
+            status.setChunkCount((int) Math.max(pointCount, 0));
         } else {
             status.setIndexed(false);
+        }
 
-            // 4. Fallback: check for in-progress build
-            RagIndexRun latestRun = indexRunMapper.selectLatest();
-            if (latestRun != null) {
-                status.setLatestRunId(latestRun.getRunId());
-                status.setLatestRunStatus(latestRun.getStatus());
-                status.setBuildProgressPercent(latestRun.getProgressPercent());
-                status.setBuildProgressStage(latestRun.getProgressStage());
+        // 4. The latest attempt is independent from the active successful version.
+        RagIndexRun latestRun = indexRunMapper.selectLatest();
+        if (latestRun != null) {
+            status.setLatestRunId(latestRun.getRunId());
+            status.setLatestRunStatus(latestRun.getStatus());
+            status.setBuildProgressPercent(latestRun.getProgressPercent());
+            status.setBuildProgressStage(latestRun.getProgressStage());
+            status.setLastError(latestRun.getErrorSummary());
 
-                // If there is a candidate collection, report its point count
-                if (latestRun.getCandidateCollection() != null) {
-                    long pointCount = collectionManager.getPointCount(
-                        latestRun.getCandidateCollection());
-                    status.setChunkCount((int) Math.max(pointCount, 0));
-                }
+            // Without an active version, expose candidate progress instead.
+            if (!status.isIndexed() && latestRun.getCandidateCollection() != null) {
+                long pointCount = collectionManager.getPointCount(
+                    latestRun.getCandidateCollection());
+                status.setChunkCount((int) Math.max(pointCount, 0));
             }
         }
 

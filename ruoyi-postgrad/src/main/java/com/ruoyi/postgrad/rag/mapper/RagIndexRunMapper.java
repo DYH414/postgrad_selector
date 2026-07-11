@@ -21,6 +21,11 @@ public interface RagIndexRunMapper {
     int updateCandidateCollection(@Param("runId") String runId,
                                   @Param("candidateCollection") String candidateCollection);
 
+    int updateCorpusStats(@Param("runId") String runId,
+                          @Param("generalDocumentCount") int generalDocumentCount,
+                          @Param("databaseDocumentCount") int databaseDocumentCount,
+                          @Param("chunkCount") int chunkCount);
+
     int switchToSucceeded(@Param("runId") String runId,
                           @Param("previousCollection") String previousCollection);
 

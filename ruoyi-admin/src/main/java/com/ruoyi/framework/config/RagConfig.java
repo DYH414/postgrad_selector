@@ -2,6 +2,7 @@ package com.ruoyi.framework.config;
 
 import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
 import com.ruoyi.postgrad.rag.qdrant.RagCollectionManager;
+import com.ruoyi.postgrad.rag.build.RagEmbeddingStoreFactory;
 import com.ruoyi.postgrad.rag.reranker.SiliconFlowReranker;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -37,23 +38,30 @@ public class RagConfig {
 
     @Bean
     public RagCollectionManager ragCollectionManager(
-            @Value("${app.ai.rag.qdrant.url:http://localhost:6333}") String url) {
-        return new RagCollectionManager(new RestTemplate(), url);
+            @Value("${app.ai.rag.qdrant.url:http://localhost:6333}") String url,
+            @Value("${app.ai.rag.qdrant.api-key:}") String apiKey) {
+        return new RagCollectionManager(new RestTemplate(), url, apiKey);
     }
 
     @Bean
-    public EmbeddingStore<TextSegment> embeddingStore(
+    public RagEmbeddingStoreFactory ragEmbeddingStoreFactory(
         @Value("${app.ai.rag.qdrant.host:localhost}") String host,
         @Value("${app.ai.rag.qdrant.grpc-port:6334}") int grpcPort,
-        @Value("${app.ai.rag.qdrant.api-key:}") String apiKey,
-        @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_active}") String collectionName) {
-        return QdrantEmbeddingStore.builder()
+        @Value("${app.ai.rag.qdrant.api-key:}") String apiKey) {
+        return collectionName -> QdrantEmbeddingStore.builder()
             .host(host)
             .port(grpcPort)
             .apiKey(apiKey)
             .collectionName(collectionName)
             .payloadTextKey("content")
             .build();
+    }
+
+    @Bean
+    public EmbeddingStore<TextSegment> embeddingStore(
+        RagEmbeddingStoreFactory embeddingStoreFactory,
+        @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_active}") String collectionName) {
+        return embeddingStoreFactory.create(collectionName);
     }
 
     @Bean

@@ -53,9 +53,13 @@ class RagIndexBuildServiceTest {
     @Mock
     private EmbeddingStore<TextSegment> embeddingStore;
     @Mock
+    private RagEmbeddingStoreFactory embeddingStoreFactory;
+    @Mock
     private StringRedisTemplate redisTemplate;
     @Mock
     private ValueOperations<String, String> valueOps;
+    @Mock
+    private RagIndexJobExecutor jobExecutor;
 
     @Captor
     private ArgumentCaptor<Integer> countCaptor;
@@ -69,15 +73,18 @@ class RagIndexBuildServiceTest {
             collectionManager,
             indexRunMapper,
             embeddingModelProvider,
-            embeddingStore,
+            embeddingStoreFactory,
             redisTemplate,
+            jobExecutor,
             BATCH_SIZE,
-            DIMENSION
+            DIMENSION,
+            "BAAI/bge-m3"
         );
 
         // Common stubs (lenient — not every test uses all of them)
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         lenient().when(indexRunMapper.insert(any())).thenReturn(1);
+        lenient().when(embeddingStoreFactory.create(anyString())).thenReturn(embeddingStore);
         lenient().when(redisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString())).thenReturn(1L);
     }
 
@@ -133,15 +140,17 @@ class RagIndexBuildServiceTest {
         inOrder.verify(indexRunMapper).updateStatus(eq(runId), eq("RUNNING"), isNull(), isNull(),
             isNull(), isNull(), isNull());
 
-        // Create candidate collection
-        inOrder.verify(collectionManager).createVersionCollection(DIMENSION);
-        inOrder.verify(indexRunMapper).updateCandidateCollection(runId, CANDIDATE_COLLECTION);
-        inOrder.verify(collectionManager).createPayloadIndexes(CANDIDATE_COLLECTION);
-
         // Assemble
         inOrder.verify(indexRunMapper).updateStatus(eq(runId), eq("RUNNING"), isNull(), eq("assembling"),
             eq(0), isNull(), isNull());
         inOrder.verify(corpusAssembler).assemble(START_YEAR, END_YEAR);
+        inOrder.verify(indexRunMapper).updateCorpusStats(runId, 2, 3, 5);
+
+        // Create candidate collection only after a non-empty corpus exists
+        inOrder.verify(collectionManager).createVersionCollection(DIMENSION);
+        inOrder.verify(indexRunMapper).updateCandidateCollection(runId, CANDIDATE_COLLECTION);
+        verify(embeddingStoreFactory).create(CANDIDATE_COLLECTION);
+        inOrder.verify(collectionManager).createPayloadIndexes(CANDIDATE_COLLECTION);
 
         // Embedding init
         inOrder.verify(indexRunMapper).updateStatus(eq(runId), eq("RUNNING"), eq(0), eq("embedding"),
@@ -174,6 +183,45 @@ class RagIndexBuildServiceTest {
     // ===== T3.2: Lock rejection returns existing runId =====
 
     @Test
+    void shouldInitializeRequiredFieldsBeforePersistingPendingRun() {
+        when(valueOps.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofSeconds(1800L))))
+            .thenReturn(true);
+
+        service.startBuild(START_YEAR, END_YEAR);
+
+        ArgumentCaptor<RagIndexRun> runCaptor = ArgumentCaptor.forClass(RagIndexRun.class);
+        verify(indexRunMapper).insert(runCaptor.capture());
+        RagIndexRun run = runCaptor.getValue();
+
+        assertAll(
+            () -> assertEquals("PENDING", run.getStatus()),
+            () -> assertEquals("BAAI/bge-m3", run.getEmbeddingModel()),
+            () -> assertEquals(DIMENSION, run.getEmbeddingDimension()),
+            () -> assertEquals(0, run.getGeneralDocumentCount()),
+            () -> assertEquals(0, run.getDatabaseDocumentCount()),
+            () -> assertEquals(0, run.getChunkCount()),
+            () -> assertEquals(0, run.getIndexedChunkCount()),
+            () -> assertEquals(0, run.getProgressPercent())
+        );
+        verify(jobExecutor).submit(eq(run.getRunId()), any(Runnable.class));
+    }
+
+    @Test
+    void shouldReleaseBuildLockWhenPendingRunCannotBePersisted() {
+        when(valueOps.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofSeconds(1800L))))
+            .thenReturn(true);
+        when(indexRunMapper.insert(any(RagIndexRun.class)))
+            .thenThrow(new IllegalStateException("database unavailable"));
+
+        assertThrows(IllegalStateException.class,
+            () -> service.startBuild(START_YEAR, END_YEAR));
+
+        verify(redisTemplate).execute(
+            any(DefaultRedisScript.class), anyList(), anyString());
+        verifyNoInteractions(jobExecutor);
+    }
+
+    @Test
     void shouldReturnExistingRunIdWhenLockAlreadyHeld() {
         // Arrange
         when(valueOps.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofSeconds(1800L))))
@@ -186,17 +234,48 @@ class RagIndexBuildServiceTest {
         // Assert
         assertEquals("existing-run-id", runId);
         verify(indexRunMapper, never()).insert(any());
+        verifyNoInteractions(jobExecutor);
+    }
+
+    @Test
+    void shouldFailInsteadOfReturningUnpersistedRunIdWhenLockStateRaces() {
+        when(valueOps.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofSeconds(1800L))))
+            .thenReturn(false);
+        when(valueOps.get(LOCK_KEY)).thenReturn(null);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> service.startBuild(START_YEAR, END_YEAR));
+
+        assertTrue(error.getMessage().contains("lock state changed"));
+        verify(indexRunMapper, never()).insert(any());
+        verifyNoInteractions(jobExecutor);
     }
 
     // ===== T3.3: Assembly failure → FAILED, no alias switch =====
+
+    @Test
+    void shouldRejectEmptyCorpusBeforeCreatingCandidateCollection() {
+        when(valueOps.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofSeconds(1800L))))
+            .thenReturn(true);
+        when(corpusAssembler.assemble(START_YEAR, END_YEAR))
+            .thenReturn(new AssembledCorpus(List.of(), 0, 0));
+
+        String runId = service.startBuild(START_YEAR, END_YEAR);
+        doReturn(runId).when(valueOps).get(LOCK_KEY);
+        service.executeBuild(runId, START_YEAR, END_YEAR);
+
+        verify(collectionManager, never()).createVersionCollection(anyInt());
+        verify(collectionManager, never()).switchAlias(anyString(), anyString());
+        verify(indexRunMapper).updateStatus(
+            eq(runId), eq("FAILED"), isNull(), isNull(), isNull(),
+            eq("ASSEMBLY_ERROR"), contains("empty"));
+    }
 
     @Test
     void shouldMarkFailedWhenAssemblyFails() {
         // Arrange — lock
         when(valueOps.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofSeconds(1800L))))
             .thenReturn(true);
-        when(collectionManager.createVersionCollection(DIMENSION))
-            .thenReturn(CANDIDATE_COLLECTION);
         when(corpusAssembler.assemble(START_YEAR, END_YEAR))
             .thenThrow(new RuntimeException("Assembly failed"));
 
@@ -420,10 +499,10 @@ class RagIndexBuildServiceTest {
             "'validating' should come before 'switching'");
     }
 
-    // ===== T3.9: Old version collection cleaned after success =====
+    // ===== T3.9: Previous successful version retained for rollback =====
 
     @Test
-    void shouldDeleteOldCollectionAfterSuccessfulBuild() {
+    void shouldRetainPreviousCollectionAfterSuccessfulBuild() {
         // Arrange — lock
         when(valueOps.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofSeconds(1800L))))
             .thenReturn(true);
@@ -450,8 +529,8 @@ class RagIndexBuildServiceTest {
         doReturn(runId).when(valueOps).get(LOCK_KEY);
         service.executeBuild(runId, START_YEAR, END_YEAR);
 
-        // Assert — old collection cleaned
-        verify(collectionManager).deleteCollection(OLD_COLLECTION);
+        // Assert — previous collection remains available for rollback
+        verify(collectionManager, never()).deleteCollection(OLD_COLLECTION);
         verify(indexRunMapper).switchToSucceeded(runId, OLD_COLLECTION);
     }
 

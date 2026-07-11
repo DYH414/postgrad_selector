@@ -38,6 +38,7 @@ class RagIndexStatusServiceTest {
         activeRun.setFinishedAt(LocalDateTime.of(2026, 7, 10, 12, 0, 0));
 
         when(indexRunMapper.selectActive()).thenReturn(activeRun);
+        when(indexRunMapper.selectLatest()).thenReturn(activeRun);
         when(collectionManager.resolveAlias(RagIndexStatusService.ACTIVE_ALIAS))
             .thenReturn("postgrad_rag_v2");
         when(collectionManager.getPointCount("postgrad_rag_v2")).thenReturn(200L);
@@ -59,6 +60,37 @@ class RagIndexStatusServiceTest {
         assertTrue(status.isReachable());
         assertTrue(status.isEnabled());
         assertNotNull(status.getLastIndexedAt());
+    }
+
+    @Test
+    void shouldKeepActiveIndexWhileReportingTheActualLatestFailedRun() {
+        RagIndexRun activeRun = new RagIndexRun();
+        activeRun.setRunId("run-active-1");
+        activeRun.setStatus("SUCCEEDED");
+        activeRun.setGeneralDocumentCount(5);
+        activeRun.setDatabaseDocumentCount(20);
+
+        RagIndexRun latestRun = new RagIndexRun();
+        latestRun.setRunId("run-failed-2");
+        latestRun.setStatus("FAILED");
+        latestRun.setProgressPercent(40);
+        latestRun.setProgressStage("embedding");
+        latestRun.setErrorSummary("Embedding provider unavailable");
+
+        when(indexRunMapper.selectActive()).thenReturn(activeRun);
+        when(indexRunMapper.selectLatest()).thenReturn(latestRun);
+        when(collectionManager.resolveAlias(RagIndexStatusService.ACTIVE_ALIAS))
+            .thenReturn("postgrad_rag_v1");
+        when(collectionManager.getPointCount("postgrad_rag_v1")).thenReturn(100L);
+
+        RagStatus status = new RagIndexStatusService(indexRunMapper, collectionManager).getStatus();
+
+        assertTrue(status.isIndexed());
+        assertEquals("run-failed-2", status.getLatestRunId());
+        assertEquals("FAILED", status.getLatestRunStatus());
+        assertEquals("Embedding provider unavailable", status.getLastError());
+        assertEquals(40, status.getBuildProgressPercent());
+        assertEquals("embedding", status.getBuildProgressStage());
     }
 
     // ===== T4.2: No active alias =====

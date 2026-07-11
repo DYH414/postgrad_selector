@@ -64,28 +64,34 @@ public class RagIndexBuildService {
     private final RagCollectionManager collectionManager;
     private final RagIndexRunMapper indexRunMapper;
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
-    private final EmbeddingStore<TextSegment> embeddingStore;
+    private final RagEmbeddingStoreFactory embeddingStoreFactory;
     private final StringRedisTemplate redisTemplate;
+    private final RagIndexJobExecutor jobExecutor;
     private final int batchSize;
     private final int embeddingDimension;
+    private final String embeddingModelName;
 
     public RagIndexBuildService(
             RagCorpusAssembler corpusAssembler,
             RagCollectionManager collectionManager,
             RagIndexRunMapper indexRunMapper,
             ObjectProvider<EmbeddingModel> embeddingModelProvider,
-            EmbeddingStore<TextSegment> embeddingStore,
+            RagEmbeddingStoreFactory embeddingStoreFactory,
             StringRedisTemplate redisTemplate,
+            RagIndexJobExecutor jobExecutor,
             @Value("${app.ai.rag.indexing.batch-size:100}") int batchSize,
-            @Value("${app.ai.rag.qdrant.dimension:1024}") int embeddingDimension) {
+            @Value("${app.ai.rag.qdrant.dimension:1024}") int embeddingDimension,
+            @Value("${app.ai.rag.embedding.model-name:BAAI/bge-m3}") String embeddingModelName) {
         this.corpusAssembler = corpusAssembler;
         this.collectionManager = collectionManager;
         this.indexRunMapper = indexRunMapper;
         this.embeddingModelProvider = embeddingModelProvider;
-        this.embeddingStore = embeddingStore;
+        this.embeddingStoreFactory = embeddingStoreFactory;
         this.redisTemplate = redisTemplate;
+        this.jobExecutor = jobExecutor;
         this.batchSize = batchSize;
         this.embeddingDimension = embeddingDimension;
+        this.embeddingModelName = embeddingModelName;
     }
 
     /**
@@ -110,7 +116,20 @@ public class RagIndexBuildService {
             run.setStatus("PENDING");
             run.setStartYear(startYear);
             run.setEndYear(endYear);
-            indexRunMapper.insert(run);
+            run.setEmbeddingModel(embeddingModelName);
+            run.setEmbeddingDimension(embeddingDimension);
+            run.setGeneralDocumentCount(0);
+            run.setDatabaseDocumentCount(0);
+            run.setChunkCount(0);
+            run.setIndexedChunkCount(0);
+            run.setProgressPercent(0);
+            try {
+                indexRunMapper.insert(run);
+                jobExecutor.submit(runId, () -> executeBuild(runId, startYear, endYear));
+            } catch (RuntimeException ex) {
+                releaseLock(runId);
+                throw ex;
+            }
             log.info("[RagIndexBuild] Lock acquired, build runId={} started (years={}-{})",
                 runId, startYear, endYear);
             return runId;
@@ -123,9 +142,7 @@ public class RagIndexBuildService {
             return existingRunId;
         }
 
-        // Lock expired but no value exists (race); return the generated ID anyway
-        log.warn("[RagIndexBuild] Lock acquisition failed but no existing lock value, returning {}", runId);
-        return runId;
+        throw new IllegalStateException("RAG build lock state changed; retry the request");
     }
 
     /**
@@ -141,6 +158,7 @@ public class RagIndexBuildService {
     public void executeBuild(String runId, int startYear, int endYear) {
         String currentStage = "init";
         String candidateCollection = null;
+        boolean aliasSwitched = false;
 
         try {
             // 1. Verify lock ownership
@@ -153,25 +171,31 @@ public class RagIndexBuildService {
             // 2. Update status to RUNNING
             indexRunMapper.updateStatus(runId, "RUNNING", null, null, null, null, null);
 
-            // 3. Create candidate collection
-            candidateCollection = collectionManager.createVersionCollection(embeddingDimension);
-            indexRunMapper.updateCandidateCollection(runId, candidateCollection);
-            log.info("[RagIndexBuild] Created candidate collection {}", candidateCollection);
-
-            // 4. Create payload indexes
-            collectionManager.createPayloadIndexes(candidateCollection);
-
-            // 5. Assemble corpus (progress: assembling)
+            // 3. Assemble corpus before creating any Qdrant artifacts
             currentStage = "ASSEMBLY";
             indexRunMapper.updateStatus(runId, "RUNNING", null, "assembling", 0, null, null);
             AssembledCorpus assembledCorpus = corpusAssembler.assemble(startYear, endYear);
             List<TextSegment> chunks = assembledCorpus.chunks();
             int totalChunks = chunks.size();
+            if (totalChunks == 0) {
+                throw new IllegalStateException("RAG corpus is empty");
+            }
+            indexRunMapper.updateCorpusStats(runId,
+                assembledCorpus.generalDocumentCount(),
+                assembledCorpus.databaseDocumentCount(),
+                totalChunks);
             log.info("[RagIndexBuild] Assembled corpus: {} chunks ({} general, {} database)",
                 totalChunks, assembledCorpus.generalDocumentCount(),
                 assembledCorpus.databaseDocumentCount());
 
-            // 6. Batch embed + upsert (progress: embedding)
+            // 4. Create the isolated candidate collection and its payload indexes
+            candidateCollection = collectionManager.createVersionCollection(embeddingDimension);
+            indexRunMapper.updateCandidateCollection(runId, candidateCollection);
+            EmbeddingStore<TextSegment> candidateStore = embeddingStoreFactory.create(candidateCollection);
+            collectionManager.createPayloadIndexes(candidateCollection);
+            log.info("[RagIndexBuild] Created candidate collection {}", candidateCollection);
+
+            // 5. Batch embed + upsert (progress: embedding)
             currentStage = "EMBEDDING";
             EmbeddingModel model = embeddingModelProvider.getIfAvailable();
             if (model == null) {
@@ -195,7 +219,7 @@ public class RagIndexBuildService {
                     ).toString())
                     .toList();
 
-                embeddingStore.addAll(ids, embeddings, batch);
+                candidateStore.addAll(ids, embeddings, batch);
 
                 indexedCount = end;
                 int percent = Math.min(indexedCount * 100 / totalChunks, 99);
@@ -223,17 +247,12 @@ public class RagIndexBuildService {
             indexRunMapper.updateStatus(runId, "RUNNING", indexedCount, "switching", 95, null, null);
             String oldCollection = collectionManager.resolveAlias(ACTIVE_ALIAS);
             collectionManager.switchAlias(ACTIVE_ALIAS, candidateCollection);
+            aliasSwitched = true;
             log.info("[RagIndexBuild] Switched alias '{}' -> '{}' (was: {})",
                 ACTIVE_ALIAS, candidateCollection, oldCollection);
 
             // 9. Update SUCCEEDED
             indexRunMapper.switchToSucceeded(runId, oldCollection);
-
-            // 10. Clean old collection (keep at least 1 previous version)
-            if (oldCollection != null && !oldCollection.isEmpty()) {
-                collectionManager.deleteCollection(oldCollection);
-                log.info("[RagIndexBuild] Cleaned up old collection {}", oldCollection);
-            }
 
             log.info("[RagIndexBuild] Build {} completed successfully: {} chunks indexed into {}",
                 runId, totalChunks, candidateCollection);
@@ -241,16 +260,38 @@ public class RagIndexBuildService {
         } catch (Exception e) {
             String errorCode = deriveErrorCode(currentStage, e);
             String errorSummary = e.getMessage() != null ? e.getMessage() : errorCode;
-            indexRunMapper.updateStatus(runId, "FAILED", null, null, null, errorCode, errorSummary);
+            if (!aliasSwitched) {
+                indexRunMapper.updateStatus(runId, "FAILED", null, null, null, errorCode, errorSummary);
+                cleanupFailedCandidate(candidateCollection);
+            } else {
+                log.error("[RagIndexBuild] Alias already switched for runId={}, control-plane reconciliation required",
+                    runId, e);
+            }
             log.error("[RagIndexBuild] Build {} failed at stage '{}' with code {}: {}",
                 runId, currentStage, errorCode, errorSummary, e);
         } finally {
             // 11. Release lock
-            try {
-                redisTemplate.execute(RELEASE_SCRIPT, List.of(LOCK_KEY), runId);
-            } catch (Exception e) {
-                log.warn("[RagIndexBuild] Failed to release lock for runId={}: {}", runId, e.getMessage());
-            }
+            releaseLock(runId);
+        }
+    }
+
+    private void releaseLock(String runId) {
+        try {
+            redisTemplate.execute(RELEASE_SCRIPT, List.of(LOCK_KEY), runId);
+        } catch (Exception e) {
+            log.warn("[RagIndexBuild] Failed to release lock for runId={}: {}", runId, e.getMessage());
+        }
+    }
+
+    private void cleanupFailedCandidate(String candidateCollection) {
+        if (candidateCollection == null || candidateCollection.isBlank()) {
+            return;
+        }
+        try {
+            collectionManager.deleteCollection(candidateCollection);
+        } catch (Exception cleanupError) {
+            log.warn("[RagIndexBuild] Failed to clean candidate collection {}: {}",
+                candidateCollection, cleanupError.getMessage());
         }
     }
 

@@ -305,6 +305,7 @@ export default {
       buildRun: null,
       latestRun: null,
       pollTimer: null,
+      pollFailures: 0,
       searchQuery: '',
       searchFilters: {
         schoolId: '',
@@ -422,8 +423,11 @@ export default {
       try {
         const res = await getIndexRun(this.status.latestRunId)
         this.latestRun = (res && res.data) || null
+        if (this.latestRun && !this.isTerminalBuildStatus(this.latestRun.status)) {
+          this.resumeBuildPolling(this.latestRun)
+        }
       } catch (e) {
-        // latest run is non-critical, ignore silently
+        this.notice = '最近索引批次加载失败，请刷新后重试。'
       }
     },
     async loadTraces() {
@@ -436,6 +440,11 @@ export default {
     },
     async handleBuild() {
       this.$confirm('确认重建完整知识库吗？这会重新生成所有文档并重建 Qdrant 向量库。', '重建完整知识库').then(async () => {
+        this.stopPolling()
+        this.building = true
+        this.buildRunId = null
+        this.buildRun = null
+        this.pollFailures = 0
         try {
           const res = await startIndexBuild({
             startYear: this.buildForm.startYear,
@@ -444,11 +453,10 @@ export default {
           const runId = (res && res.data && res.data.runId) || null
           if (!runId) {
             this.$message.error('启动索引构建失败：未获取到批次 ID')
+            this.resetBuildState()
             return
           }
           this.buildRunId = runId
-          this.building = true
-          this.buildRun = null
 
           // Fetch initial run state
           try {
@@ -458,9 +466,9 @@ export default {
             // initial fetch may fail if run not yet persisted; poll will catch up
           }
 
-          // Start polling every 2 seconds
-          this.pollTimer = setInterval(() => this.pollBuildRun(), 2000)
+          this.resumeBuildPolling(this.buildRun || { runId, status: 'PENDING', progressPercent: 0 })
         } catch (e) {
+          this.resetBuildState()
           this.$message.error('启动索引构建失败')
         }
       }).catch(() => {})
@@ -470,20 +478,58 @@ export default {
       try {
         const res = await getIndexRun(this.buildRunId)
         this.buildRun = (res && res.data) || null
+        this.pollFailures = 0
         if (!this.buildRun) return
 
         const status = this.buildRun.status
-        if (status === 'SUCCEEDED' || status === 'FAILED' || status === 'INTERRUPTED') {
-          this.stopPolling()
-          this.$message({
-            type: status === 'SUCCEEDED' ? 'success' : 'error',
-            message: status === 'SUCCEEDED' ? '知识库重建完成' : `知识库重建失败：${this.buildRun.errorSummary || this.buildRun.errorCode || status}`
-          })
-          await this.loadAll()
+        if (this.isTerminalBuildStatus(status)) {
+          await this.finishBuild(this.buildRun, true)
         }
       } catch (e) {
-        // poll error, try again next interval
+        this.pollFailures += 1
+        if (this.pollFailures >= 3) {
+          this.stopPolling()
+          this.building = false
+          this.notice = '索引批次状态连续请求失败，已停止自动轮询，请刷新页面重试。'
+          this.$message.error(this.notice)
+        }
       }
+    },
+    resumeBuildPolling(run) {
+      if (!run || !run.runId || this.isTerminalBuildStatus(run.status)) return
+      this.stopPolling()
+      this.buildRunId = run.runId
+      this.buildRun = run
+      this.building = true
+      this.pollFailures = 0
+      this.pollTimer = setInterval(() => this.pollBuildRun(), 2000)
+    },
+    async finishBuild(run, notify) {
+      this.stopPolling()
+      this.building = false
+      this.buildRunId = null
+      this.pollFailures = 0
+      this.buildRun = run
+      this.latestRun = run
+      if (notify) {
+        const succeeded = run.status === 'SUCCEEDED'
+        this.$message({
+          type: succeeded ? 'success' : 'error',
+          message: succeeded ? '知识库重建完成' : `知识库重建失败：${run.errorSummary || run.errorCode || run.status}`
+        })
+      }
+      await this.loadStatus()
+      this.loadTraces()
+    },
+    isTerminalBuildStatus(status) {
+      return status === 'SUCCEEDED' || status === 'FAILED' || status === 'INTERRUPTED'
+    },
+    resetBuildState() {
+      this.stopPolling()
+      this.building = false
+      this.buildRunId = null
+      this.buildRun = null
+      this.pollFailures = 0
     },
     stopPolling() {
       if (this.pollTimer) {

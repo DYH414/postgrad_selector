@@ -60,11 +60,19 @@
     <update id="updateStatus">
         update rag_index_run
         set status = #{status},
-            indexed_chunk_count = #{indexedChunkCount},
-            progress_stage = #{progressStage},
-            progress_percent = #{progressPercent},
+            indexed_chunk_count = COALESCE(#{indexedChunkCount}, indexed_chunk_count),
+            progress_stage = COALESCE(#{progressStage}, progress_stage),
+            progress_percent = COALESCE(#{progressPercent}, progress_percent),
             error_code = #{errorCode},
-            error_summary = #{errorSummary}
+            error_summary = #{errorSummary},
+            started_at = CASE
+                WHEN #{status} = 'RUNNING' THEN COALESCE(started_at, NOW())
+                ELSE started_at
+            END,
+            finished_at = CASE
+                WHEN #{status} IN ('FAILED', 'INTERRUPTED') THEN NOW()
+                ELSE finished_at
+            END
         where run_id = #{runId}
     </update>
 
@@ -74,10 +82,23 @@
         where run_id = #{runId}
     </update>
 
+    <update id="updateCorpusStats">
+        update rag_index_run
+        set general_document_count = #{generalDocumentCount},
+            database_document_count = #{databaseDocumentCount},
+            chunk_count = #{chunkCount}
+        where run_id = #{runId}
+    </update>
+
     <update id="switchToSucceeded">
         update rag_index_run
         set status = 'SUCCEEDED',
             previous_collection = #{previousCollection},
+            indexed_chunk_count = chunk_count,
+            progress_stage = 'completed',
+            progress_percent = 100,
+            error_code = NULL,
+            error_summary = NULL,
             finished_at = NOW()
         where run_id = #{runId}
     </update>
