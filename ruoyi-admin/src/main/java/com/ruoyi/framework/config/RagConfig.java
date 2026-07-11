@@ -1,6 +1,7 @@
 package com.ruoyi.framework.config;
 
 import com.ruoyi.postgrad.rag.qdrant.QdrantCollectionService;
+import com.ruoyi.postgrad.rag.qdrant.RagCollectionManager;
 import com.ruoyi.postgrad.rag.reranker.SiliconFlowReranker;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -32,6 +33,12 @@ public class RagConfig {
         @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_main}") String collectionName,
         @Value("${app.ai.rag.qdrant.dimension:1024}") int dimension) {
         return new QdrantCollectionService(new RestTemplate(), url, apiKey, collectionName, dimension);
+    }
+
+    @Bean
+    public RagCollectionManager ragCollectionManager(
+            @Value("${app.ai.rag.qdrant.url:http://localhost:6333}") String url) {
+        return new RagCollectionManager(new RestTemplate(), url);
     }
 
     @Bean
