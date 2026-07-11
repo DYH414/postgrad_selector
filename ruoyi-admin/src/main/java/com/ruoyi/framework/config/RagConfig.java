@@ -46,7 +46,7 @@ public class RagConfig {
         @Value("${app.ai.rag.qdrant.host:localhost}") String host,
         @Value("${app.ai.rag.qdrant.grpc-port:6334}") int grpcPort,
         @Value("${app.ai.rag.qdrant.api-key:}") String apiKey,
-        @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_main}") String collectionName) {
+        @Value("${app.ai.rag.qdrant.collection-name:postgrad_rag_active}") String collectionName) {
         return QdrantEmbeddingStore.builder()
             .host(host)
             .port(grpcPort)

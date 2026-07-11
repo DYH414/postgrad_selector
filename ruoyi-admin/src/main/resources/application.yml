@@ -124,7 +124,7 @@ app:
         host: ${QDRANT_HOST:localhost}
         grpc-port: ${QDRANT_GRPC_PORT:6334}
         api-key: ${QDRANT_API_KEY:}
-        collection-name: ${QDRANT_COLLECTION:postgrad_rag_main}
+        collection-name: ${QDRANT_COLLECTION:postgrad_rag_active}
         dimension: ${QDRANT_DIMENSION:1024}
       rerank:
         base-url: https://api.siliconflow.cn/v1
@@ -142,7 +142,10 @@ app:
         documents-path: rag-documents/
         chunk-size: 500
         chunk-overlap: 50
-        auto-index-on-startup: true
+        auto-index-on-startup: false
+        batch-size: 100
+        build-timeout-minutes: 30
+      data-dir: ${RAG_DATA_DIR:./rag-data}
 
 # token配置
 token:
