@@ -1,85 +1,89 @@
 package com.ruoyi.postgrad.domain.ai;
 
-public class AiToolBudget {
-    private final int maxTotalCalls;
-    private final int maxDetailCalls;
-    private final int maxExpandCalls;
-    private final int maxResultTokens;
-    private final int maxSearchCalls;
-    private final int maxWriteCalls;
+import java.util.EnumMap;
+import java.util.Map;
 
-    private int totalCalls;
-    private int detailCalls;
-    private int expandCalls;
-    private int searchCalls;
-    private int writeCalls;
+/** Per-run limits for governed Agent tool execution. */
+public class AiToolBudget {
+
+    public enum BudgetGroup {
+        SEARCH, DETAIL, RAG, CONTEXT, WRITE, OTHER
+    }
+
+    public record BudgetDecision(
+        boolean allowed,
+        String code,
+        int totalReadCalls,
+        int groupCalls,
+        int estimatedResultTokens
+    ) {
+    }
+
+    private static final String ALLOWED = "OK";
+    private static final String EXCEEDED = "TOOL_BUDGET_EXCEEDED";
+
+    private final int maxTotalReadCalls;
+    private final int maxResultTokens;
+    private final Map<BudgetGroup, Integer> groupLimits;
+    private final Map<BudgetGroup, Integer> groupCalls = new EnumMap<>(BudgetGroup.class);
+
+    private int totalReadCalls;
     private int resultTokens;
     private boolean explorationLimited;
 
-    public AiToolBudget(int maxTotalCalls, int maxDetailCalls, int maxExpandCalls,
-        int maxResultTokens,
-        int maxSearchCalls, int maxWriteCalls) {
-        this.maxTotalCalls = maxTotalCalls;
-        this.maxDetailCalls = maxDetailCalls;
-        this.maxExpandCalls = maxExpandCalls;
+    private AiToolBudget(int maxTotalReadCalls, int maxResultTokens,
+        Map<BudgetGroup, Integer> groupLimits) {
+        this.maxTotalReadCalls = maxTotalReadCalls;
         this.maxResultTokens = maxResultTokens;
-        this.maxSearchCalls = maxSearchCalls;
-        this.maxWriteCalls = maxWriteCalls;
+        this.groupLimits = new EnumMap<>(groupLimits);
+        for (BudgetGroup group : BudgetGroup.values()) {
+            this.groupCalls.put(group, 0);
+        }
     }
 
     public static AiToolBudget reportDefaults() {
-        return new AiToolBudget(20, 12, 3, 12000, 10, 20);
+        return new AiToolBudget(20, 12000, limits(10, 12, 6, 10, 20, 20));
     }
 
     public static AiToolBudget chatTurnDefaults() {
-        // totalCalls=6 (only counts query tools), detailCalls=1, searchCalls=3, writeCalls=10
-        return new AiToolBudget(6, 1, 2, 3000, 3, 10);
+        return new AiToolBudget(6, 3000, limits(3, 2, 2, 3, 1, 1));
     }
 
-    public boolean tryUse(String toolName, int estimatedResultTokens) {
-        boolean isWriteTool = isWriteTool(toolName);
+    public synchronized BudgetDecision tryUse(BudgetGroup group, int estimatedResultTokens) {
+        BudgetGroup effectiveGroup = group == null ? BudgetGroup.OTHER : group;
+        int tokenCost = Math.max(0, estimatedResultTokens);
+        int currentGroupCalls = groupCalls.get(effectiveGroup);
+        int groupLimit = groupLimits.getOrDefault(effectiveGroup, 0);
+        boolean readTool = effectiveGroup != BudgetGroup.WRITE;
 
-        // 查询工具受总预算限制；写入工具不占查询配额
-        if (!isWriteTool) {
-            if (totalCalls + 1 > maxTotalCalls || resultTokens + estimatedResultTokens > maxResultTokens) {
-                explorationLimited = true;
-                return false;
-            }
-        }
-        if ("getProgramDetail".equals(toolName) && detailCalls + 1 > maxDetailCalls) {
+        if (currentGroupCalls + 1 > groupLimit
+            || (readTool && totalReadCalls + 1 > maxTotalReadCalls)
+            || resultTokens + tokenCost > maxResultTokens) {
             explorationLimited = true;
-            return false;
+            return new BudgetDecision(false, EXCEEDED, totalReadCalls, currentGroupCalls, resultTokens);
         }
-        if ("searchPrograms".equals(toolName) && searchCalls + 1 > maxSearchCalls) {
-            explorationLimited = true;
-            return false;
+
+        groupCalls.put(effectiveGroup, currentGroupCalls + 1);
+        if (readTool) {
+            totalReadCalls++;
         }
-        if (isWriteTool && writeCalls + 1 > maxWriteCalls) {
-            explorationLimited = true;
-            return false;
-        }
-        if ("expandCandidatePool".equals(toolName) && expandCalls + 1 > maxExpandCalls) {
-            explorationLimited = true;
-            return false;
-        }
-        if (!isWriteTool) {
-            totalCalls++;
-            resultTokens += Math.max(0, estimatedResultTokens);
-        }
-        if ("getProgramDetail".equals(toolName)) detailCalls++;
-        if ("searchPrograms".equals(toolName)) searchCalls++;
-        if (isWriteTool) writeCalls++;
-        if ("expandCandidatePool".equals(toolName)) expandCalls++;
-        return true;
+        resultTokens += tokenCost;
+        return new BudgetDecision(true, ALLOWED, totalReadCalls, currentGroupCalls + 1, resultTokens);
     }
 
-    public boolean isExplorationLimited() {
+    public synchronized boolean isExplorationLimited() {
         return explorationLimited;
     }
 
-    private boolean isWriteTool(String toolName) {
-        return "removeDraftCandidate".equals(toolName)
-            || "replaceDraftCandidate".equals(toolName)
-            || "addBackDraftCandidate".equals(toolName);
+    private static Map<BudgetGroup, Integer> limits(int search, int detail, int rag,
+        int context, int write, int other) {
+        Map<BudgetGroup, Integer> limits = new EnumMap<>(BudgetGroup.class);
+        limits.put(BudgetGroup.SEARCH, search);
+        limits.put(BudgetGroup.DETAIL, detail);
+        limits.put(BudgetGroup.RAG, rag);
+        limits.put(BudgetGroup.CONTEXT, context);
+        limits.put(BudgetGroup.WRITE, write);
+        limits.put(BudgetGroup.OTHER, other);
+        return limits;
     }
 }
