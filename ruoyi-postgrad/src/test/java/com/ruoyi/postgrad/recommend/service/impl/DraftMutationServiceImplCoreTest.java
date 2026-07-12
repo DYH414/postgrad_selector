@@ -10,6 +10,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
@@ -160,6 +162,16 @@ class DraftMutationServiceImplCoreTest {
     // ═══════════ H2: replaceCandidate 双重添加 ═══════════
 
     @Test
+    void removeCandidateShouldReduceDraftWithoutImplicitRefill() {
+        draftState.set(JSON.toJSONString(draftWithReachCandidates(1001L, 1002L, 1003L)));
+
+        DraftMutationResultVO result = service.removeCandidate(USER_ID, 1001L, workspaceWithReachCandidates(2001L));
+
+        assertEquals(2, result.getDraftCount());
+        verify(refillPolicyService, never()).evaluate(any(), any(), anyString(), any());
+    }
+
+    @Test
     void replaceCandidateShouldNotExceedTargetCount() {
         // Given: draft 冲刺档 3/3 (1001, 1002, 1003), workspace 有替换候选 2001
         draftState.set(JSON.toJSONString(draftWithReachCandidates(1001L, 1002L, 1003L)));
@@ -177,6 +189,7 @@ class DraftMutationServiceImplCoreTest {
             .count();
         assertEquals(3, reachCount,
             "replaceCandidate should keep tier count at target (was H2 double-add bug)");
+        verify(refillPolicyService, never()).evaluate(any(), any(), anyString(), any());
     }
 
     @Test

@@ -6,6 +6,8 @@
 
 > **历史快照说明**：本文保留 2026-07-10 的审计结论，不是当前实现说明。后续已完成版本化 Index Run、Qdrant Alias 切换、Payload Index、统一检索入口和 AI Chat 真实 RAG Trace；当前链路以 [AI 推荐链路完整文档](./AI推荐链路完整文档.md) 与 [RAG / Qdrant 运维说明](./RAG-Qdrant-运维说明.md) 为准。
 
+> **治理更新（已通过代码与契约测试）**：Tool Catalog、分组预算、标准化错误、MySQL Tool Trace、SSE 生命周期事件和写操作确认/取消链路已接入。Trace 采用摘要存储并可按 `runId` 查看；完整 Prompt、原始 Tool 参数、确认 token 和异常堆栈不写入 Trace。真实 MySQL 重启持久化与浏览器端验收仍应按部署环境执行。
+
 ## 结论
 
 系统已经具备一个可信 AI 应用的核心骨架：**MySQL 规则决定候选范围，LLM 只在受限候选池中做选择和解释；写操作经过后端工具和草稿校验；RAG 已具备结构化 Chunk、Metadata、向量检索、Rerank、引用和评测雏形。**

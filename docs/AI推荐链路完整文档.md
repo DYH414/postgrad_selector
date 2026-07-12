@@ -4,6 +4,16 @@
 
 ---
 
+## Agent Tool 运行治理
+
+对话中的 16 个只读/写入 Tool 均通过 `AgentToolRuntime` 执行。每个调用都有 `callId` 和 `runId`，并按 `SEARCH`、`DETAIL`、`RAG`、`CONTEXT`、`WRITE` 分组消耗本轮预算；预算拒绝、未知 Tool、参数错误和执行异常均返回受控结果码，不向模型或 SSE 暴露原始异常。
+
+写操作采用两阶段协议：Tool 仅创建带草稿版本哈希的提案，前端收到 `confirmation_required` 后调用确认或取消接口。确认会产生关联父调用的子 Trace；取消会消费一次性提案并将父调用标为 `CANCELLED`，不会修改草稿。`done.toolActionResult` 保留供兼容 UI 使用的动作元数据，LLM 侧接收的是去除确认 token 的标准化结果。
+
+Tool Trace 持久化到 `ai_tool_call_trace`，只记录参数字段名、结果摘要、状态码、耗时、预算组和关联 ID。管理端提供最近调用与按 Run ID 查询的接口；保留策略由运维 SQL 定期清理 30 天前记录。
+
+---
+
 ## 架构总览
 
 系统维护四层数据结构，各司其职：
