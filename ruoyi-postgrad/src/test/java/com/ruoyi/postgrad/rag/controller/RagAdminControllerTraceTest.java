@@ -15,7 +15,8 @@ import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
 import com.ruoyi.postgrad.rag.mapper.RagIndexRunMapper;
-import com.ruoyi.postgrad.rag.service.RagSearchTestService;
+import com.ruoyi.postgrad.rag.service.RagRetrievalResult;
+import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import com.ruoyi.postgrad.rag.status.RagIndexStatusService;
 import com.ruoyi.postgrad.rag.trace.RagTrace;
 import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
@@ -28,7 +29,7 @@ class RagAdminControllerTraceTest {
 
     @Test
     void searchTestTraceIncludesFiltersLatencyAndSelectedChunks() {
-        RagSearchTestService searchService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = new RagSearchTestResponse();
         response.setRetrievedCount(2);
         response.setSelectedCount(1);
@@ -43,13 +44,13 @@ class RagAdminControllerTraceTest {
         chunk.setSourceName("N诺-杭州电子科技大学");
         chunk.setContentPreview("复试线: 260");
         response.setChunks(List.of(chunk));
-        when(searchService.searchTest(any())).thenReturn(response);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response, List.of()));
         RagTraceRecorder recorder = new RagTraceRecorder();
         RagAdminController controller = controller(
             mock(RagIndexBuildService.class),
             mock(RagIndexStatusService.class),
             mock(RagIndexRunMapper.class),
-            searchService,
+            retrievalService,
             recorder);
 
         RagSearchTestRequest request = new RagSearchTestRequest("杭州电子科技大学 复试线", 5, 0.5, 3);
@@ -75,7 +76,7 @@ class RagAdminControllerTraceTest {
             buildService,
             mock(RagIndexStatusService.class),
             mock(RagIndexRunMapper.class),
-            mock(RagSearchTestService.class),
+            mock(RagRetrievalService.class),
             new RagTraceRecorder());
 
         AjaxResult result = controller.startIndexRun(2025, 2025);
@@ -100,7 +101,7 @@ class RagAdminControllerTraceTest {
             mock(RagIndexBuildService.class),
             mock(RagIndexStatusService.class),
             runMapper,
-            mock(RagSearchTestService.class),
+            mock(RagRetrievalService.class),
             new RagTraceRecorder());
 
         AjaxResult result = controller.getIndexRun("test-run-id");
@@ -120,7 +121,7 @@ class RagAdminControllerTraceTest {
             mock(RagIndexBuildService.class),
             mock(RagIndexStatusService.class),
             runMapper,
-            mock(RagSearchTestService.class),
+            mock(RagRetrievalService.class),
             new RagTraceRecorder());
 
         AjaxResult result = controller.getIndexRun("nonexistent");
@@ -142,7 +143,7 @@ class RagAdminControllerTraceTest {
             mock(RagIndexBuildService.class),
             statusService,
             mock(RagIndexRunMapper.class),
-            mock(RagSearchTestService.class),
+            mock(RagRetrievalService.class),
             new RagTraceRecorder());
 
         AjaxResult result = controller.status();
@@ -173,8 +174,8 @@ class RagAdminControllerTraceTest {
     private static RagAdminController controller(RagIndexBuildService buildService,
                                                   RagIndexStatusService statusService,
                                                   RagIndexRunMapper runMapper,
-                                                  RagSearchTestService searchService,
+                                                  RagRetrievalService retrievalService,
                                                   RagTraceRecorder recorder) {
-        return new RagAdminController(buildService, statusService, runMapper, searchService, recorder);
+        return new RagAdminController(buildService, statusService, runMapper, retrievalService, recorder);
     }
 }

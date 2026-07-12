@@ -3,7 +3,7 @@ package com.ruoyi.postgrad.rag.eval;
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
-import com.ruoyi.postgrad.rag.service.RagSearchTestService;
+import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,10 +12,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class RagEvaluationService {
 
-    private final RagSearchTestService searchTestService;
+    private final RagRetrievalService retrievalService;
 
-    public RagEvaluationService(RagSearchTestService searchTestService) {
-        this.searchTestService = searchTestService;
+    public RagEvaluationService(RagRetrievalService retrievalService) {
+        this.retrievalService = retrievalService;
     }
 
     public RagEvaluationResult runDefault() {
@@ -29,7 +29,7 @@ public class RagEvaluationService {
         for (RagEvaluationCase testCase : cases) {
             RagSearchTestRequest request = new RagSearchTestRequest(testCase.getQuery(), 5, 0.5, 3);
             applyExpectedFilters(request, testCase.getExpectedMetadata());
-            RagSearchTestResponse response = searchTestService.searchTest(request);
+            RagSearchTestResponse response = retrievalService.retrieve(request).response();
             RagEvaluationResult.RagEvaluationCaseResult caseResult = evaluateCase(testCase, response);
             if (caseResult.isPassed()) {
                 passed++;

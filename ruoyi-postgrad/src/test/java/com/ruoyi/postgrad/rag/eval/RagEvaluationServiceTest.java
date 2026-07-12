@@ -12,7 +12,8 @@ import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
-import com.ruoyi.postgrad.rag.service.RagSearchTestService;
+import com.ruoyi.postgrad.rag.service.RagRetrievalResult;
+import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,7 @@ class RagEvaluationServiceTest {
 
     @Test
     void shouldPassCaseWhenRetrievedChunkMatchesExpectedMetadata() {
-        RagSearchTestService searchService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = new RagSearchTestResponse();
         RagChunkResult chunk = new RagChunkResult();
         chunk.setSchoolName("南京大学");
@@ -33,7 +34,7 @@ class RagEvaluationServiceTest {
         chunk.setSection("admission_score");
         chunk.setSelectedForPrompt(true);
         response.setChunks(List.of(chunk));
-        when(searchService.searchTest(any())).thenReturn(response);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response, List.of()));
 
         RagEvaluationCase testCase = new RagEvaluationCase(
             "case-1",
@@ -41,7 +42,7 @@ class RagEvaluationServiceTest {
             Map.of("school_id", "1", "program_id", "10", "year", "2025", "doc_type", "program_year", "section", "admission_score")
         );
 
-        RagEvaluationResult result = new RagEvaluationService(searchService).run(List.of(testCase));
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(testCase));
 
         assertEquals(1, result.getTotalCases());
         assertEquals(1, result.getPassedCases());
@@ -49,7 +50,7 @@ class RagEvaluationServiceTest {
         assertEquals(1.0, result.getPassRate());
         assertFalse(result.getCases().get(0).getEvidence().isEmpty());
         assertEquals("PASSED", result.getCases().get(0).getFailureReason());
-        verify(searchService).searchTest(argThat(req ->
+        verify(retrievalService).retrieve(argThat(req ->
             "1".equals(req.getSchoolId())
                 && "10".equals(req.getProgramId())
                 && "2025".equals(req.getYear())
@@ -60,7 +61,7 @@ class RagEvaluationServiceTest {
 
     @Test
     void shouldFailWithWrongScopeWhenSelectedChunkBelongsToAnotherProgram() {
-        RagSearchTestService searchService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = new RagSearchTestResponse();
         RagChunkResult chunk = new RagChunkResult();
         chunk.setSchoolId("56");
@@ -70,7 +71,7 @@ class RagEvaluationServiceTest {
         chunk.setSection("admission_score");
         chunk.setSelectedForPrompt(true);
         response.setChunks(List.of(chunk));
-        when(searchService.searchTest(any())).thenReturn(response);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response, List.of()));
 
         RagEvaluationCase testCase = new RagEvaluationCase(
             "wrong-scope",
@@ -78,7 +79,7 @@ class RagEvaluationServiceTest {
             Map.of("school_id", "56", "program_id", "2854", "year", "2025", "doc_type", "program_year", "section", "admission_score")
         );
 
-        RagEvaluationResult result = new RagEvaluationService(searchService).run(List.of(testCase));
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(testCase));
 
         assertEquals(0, result.getPassedCases());
         assertEquals("WRONG_SCOPE", result.getCases().get(0).getFailureReason());
@@ -86,7 +87,7 @@ class RagEvaluationServiceTest {
 
     @Test
     void shouldFailWithMissingSectionWhenCorrectProgramHasDifferentSection() {
-        RagSearchTestService searchService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = new RagSearchTestResponse();
         RagChunkResult chunk = new RagChunkResult();
         chunk.setSchoolId("56");
@@ -96,7 +97,7 @@ class RagEvaluationServiceTest {
         chunk.setSection("basic_info");
         chunk.setSelectedForPrompt(true);
         response.setChunks(List.of(chunk));
-        when(searchService.searchTest(any())).thenReturn(response);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response, List.of()));
 
         RagEvaluationCase testCase = new RagEvaluationCase(
             "missing-section",
@@ -104,17 +105,17 @@ class RagEvaluationServiceTest {
             Map.of("school_id", "56", "program_id", "2854", "year", "2025", "doc_type", "program_year", "section", "admission_score")
         );
 
-        RagEvaluationResult result = new RagEvaluationService(searchService).run(List.of(testCase));
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(testCase));
 
         assertEquals("MISSING_SECTION", result.getCases().get(0).getFailureReason());
     }
 
     @Test
     void shouldFailWithSourceDataMissingWhenCaseMarksExpectedSectionUnavailable() {
-        RagSearchTestService searchService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = new RagSearchTestResponse();
         response.setChunks(List.of());
-        when(searchService.searchTest(any())).thenReturn(response);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response, List.of()));
 
         RagEvaluationCase testCase = new RagEvaluationCase(
             "source-missing",
@@ -123,14 +124,14 @@ class RagEvaluationServiceTest {
         );
         testCase.setSourceDataAvailable(false);
 
-        RagEvaluationResult result = new RagEvaluationService(searchService).run(List.of(testCase));
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(testCase));
 
         assertEquals("SOURCE_DATA_MISSING", result.getCases().get(0).getFailureReason());
     }
 
     @Test
     void defaultCasesShouldUseConcreteKnownProgramMetadata() {
-        RagSearchTestService searchService = mock(RagSearchTestService.class);
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = new RagSearchTestResponse();
         RagChunkResult chunk = new RagChunkResult();
         chunk.setSchoolId("56");
@@ -140,12 +141,12 @@ class RagEvaluationServiceTest {
         chunk.setSection("admission_score");
         chunk.setSelectedForPrompt(true);
         response.setChunks(List.of(chunk));
-        when(searchService.searchTest(any())).thenReturn(response);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response, List.of()));
 
-        RagEvaluationResult result = new RagEvaluationService(searchService).runDefault();
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).runDefault();
 
         assertTrue(result.getCases().stream().anyMatch(c -> c.getQuery().contains("杭州电子科技大学")));
-        verify(searchService, atLeastOnce()).searchTest(argThat(req ->
+        verify(retrievalService, atLeastOnce()).retrieve(argThat(req ->
             "56".equals(req.getSchoolId())
                 && "2854".equals(req.getProgramId())
                 && "2025".equals(req.getYear())

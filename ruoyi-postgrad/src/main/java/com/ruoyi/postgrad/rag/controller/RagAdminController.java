@@ -7,7 +7,7 @@ import com.ruoyi.postgrad.rag.domain.RagIndexRun;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
 import com.ruoyi.postgrad.rag.mapper.RagIndexRunMapper;
-import com.ruoyi.postgrad.rag.service.RagSearchTestService;
+import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import com.ruoyi.postgrad.rag.status.RagIndexStatusService;
 import com.ruoyi.postgrad.rag.trace.RagTrace;
 import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
@@ -26,18 +26,18 @@ public class RagAdminController extends BaseController {
     private final RagIndexBuildService ragIndexBuildService;
     private final RagIndexStatusService ragIndexStatusService;
     private final RagIndexRunMapper ragIndexRunMapper;
-    private final RagSearchTestService ragSearchTestService;
+    private final RagRetrievalService ragRetrievalService;
     private final RagTraceRecorder ragTraceRecorder;
 
     public RagAdminController(RagIndexBuildService ragIndexBuildService,
                               RagIndexStatusService ragIndexStatusService,
                               RagIndexRunMapper ragIndexRunMapper,
-                              RagSearchTestService ragSearchTestService,
+                              RagRetrievalService ragRetrievalService,
                               RagTraceRecorder ragTraceRecorder) {
         this.ragIndexBuildService = ragIndexBuildService;
         this.ragIndexStatusService = ragIndexStatusService;
         this.ragIndexRunMapper = ragIndexRunMapper;
-        this.ragSearchTestService = ragSearchTestService;
+        this.ragRetrievalService = ragRetrievalService;
         this.ragTraceRecorder = ragTraceRecorder;
     }
 
@@ -70,7 +70,7 @@ public class RagAdminController extends BaseController {
     @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
     @PostMapping("/search-test")
     public AjaxResult searchTest(@Valid @RequestBody RagSearchTestRequest request) {
-        RagSearchTestResponse resp = ragSearchTestService.searchTest(request);
+        RagSearchTestResponse resp = ragRetrievalService.retrieve(request).response();
 
         // Record trace
         RagTrace trace = new RagTrace();

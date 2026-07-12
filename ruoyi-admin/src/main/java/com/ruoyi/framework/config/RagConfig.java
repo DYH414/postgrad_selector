@@ -2,19 +2,18 @@ package com.ruoyi.framework.config;
 
 import com.ruoyi.postgrad.rag.qdrant.RagCollectionManager;
 import com.ruoyi.postgrad.rag.build.RagEmbeddingStoreFactory;
+import com.ruoyi.postgrad.rag.service.RagRetrievalService;
+import com.ruoyi.postgrad.rag.service.UnifiedRagContentRetriever;
 import com.ruoyi.postgrad.rag.reranker.SiliconFlowReranker;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.rag.DefaultRetrievalAugmentor;
 import dev.langchain4j.rag.RetrievalAugmentor;
-import dev.langchain4j.rag.content.aggregator.ReRankingContentAggregator;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
-import dev.langchain4j.rag.content.retriever.EmbeddingStoreContentRetriever;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.qdrant.QdrantEmbeddingStore;
 import java.time.Duration;
 import java.util.concurrent.ThreadPoolExecutor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
@@ -56,16 +55,11 @@ public class RagConfig {
 
     @Bean
     @ConditionalOnBean(EmbeddingModel.class)
-    public ContentRetriever contentRetriever(EmbeddingStore<TextSegment> embeddingStore,
-                                             EmbeddingModel embeddingModel,
+    public ContentRetriever contentRetriever(RagRetrievalService retrievalService,
                                              @Value("${app.ai.rag.retrieval.max-results:5}") int maxResults,
-                                             @Value("${app.ai.rag.retrieval.min-score:0.6}") double minScore) {
-        return EmbeddingStoreContentRetriever.builder()
-            .embeddingStore(embeddingStore)
-            .embeddingModel(embeddingModel)
-            .maxResults(maxResults)
-            .minScore(minScore)
-            .build();
+                                             @Value("${app.ai.rag.retrieval.min-score:0.6}") double minScore,
+                                             @Value("${app.ai.rag.retrieval.rerank-top-n:3}") int rerankTopN) {
+        return new UnifiedRagContentRetriever(retrievalService, maxResults, minScore, rerankTopN);
     }
 
     @Bean
@@ -85,22 +79,10 @@ public class RagConfig {
 
     @Bean
     @ConditionalOnBean(ContentRetriever.class)
-    public RetrievalAugmentor retrievalAugmentor(ContentRetriever contentRetriever,
-                                                 ObjectProvider<SiliconFlowReranker> rerankerProvider,
-                                                 @Value("${app.ai.rag.retrieval.rerank-top-n:3}") int rerankTopN,
-                                                 @Value("${app.ai.rag.retrieval.rerank-min-score:0.0}") double rerankMinScore) {
-        DefaultRetrievalAugmentor.DefaultRetrievalAugmentorBuilder builder = DefaultRetrievalAugmentor.builder()
-            .contentRetriever(contentRetriever);
-
-        SiliconFlowReranker reranker = rerankerProvider.getIfAvailable();
-        if (reranker != null) {
-            builder.contentAggregator(ReRankingContentAggregator.builder()
-                .scoringModel(reranker)
-                .minScore(rerankMinScore)
-                .maxResults(rerankTopN)
-                .build());
-        }
-        return builder.build();
+    public RetrievalAugmentor retrievalAugmentor(ContentRetriever contentRetriever) {
+        return DefaultRetrievalAugmentor.builder()
+            .contentRetriever(contentRetriever)
+            .build();
     }
 
     @Bean
