@@ -7,6 +7,8 @@ import com.ruoyi.postgrad.observe.domain.RagQuickStatusVO;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshot;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotRecorder;
 import com.ruoyi.postgrad.observe.service.AiObserveService;
+import com.ruoyi.postgrad.observe.tool.domain.AiToolCallTrace;
+import com.ruoyi.postgrad.observe.tool.service.AiToolTraceService;
 import com.ruoyi.postgrad.rag.RagStatus;
 import com.ruoyi.postgrad.rag.status.RagIndexStatusService;
 import io.micrometer.core.instrument.DistributionSummary;
@@ -18,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class AiObserveServiceImpl implements AiObserveService {
@@ -28,13 +31,23 @@ public class AiObserveServiceImpl implements AiObserveService {
     private final MeterRegistry meterRegistry;
     private final RagIndexStatusService ragIndexStatusService;
     private final AiInvocationSnapshotRecorder snapshotRecorder;
+    private final AiToolTraceService toolTraceService;
 
     public AiObserveServiceImpl(MeterRegistry meterRegistry,
                                 RagIndexStatusService ragIndexStatusService,
                                 AiInvocationSnapshotRecorder snapshotRecorder) {
+        this(meterRegistry, ragIndexStatusService, snapshotRecorder, null);
+    }
+
+    @Autowired
+    public AiObserveServiceImpl(MeterRegistry meterRegistry,
+                                RagIndexStatusService ragIndexStatusService,
+                                AiInvocationSnapshotRecorder snapshotRecorder,
+                                AiToolTraceService toolTraceService) {
         this.meterRegistry = meterRegistry;
         this.ragIndexStatusService = ragIndexStatusService;
         this.snapshotRecorder = snapshotRecorder;
+        this.toolTraceService = toolTraceService;
     }
 
     @Override
@@ -50,6 +63,19 @@ public class AiObserveServiceImpl implements AiObserveService {
         overview.setLatest(toLatest(snapshotRecorder.getLatest()));
         overview.setRag(toRag(ragIndexStatusService.getStatus()));
         return overview;
+    }
+
+    @Override
+    public List<AiToolCallTrace> listRecentToolTraces(int limit) {
+        return toolTraceService == null ? List.of() : toolTraceService.listRecent(limit);
+    }
+
+    @Override
+    public List<AiToolCallTrace> listRunToolTraces(String runId) {
+        if (runId == null || runId.isBlank()) {
+            throw new IllegalArgumentException("runId is required");
+        }
+        return toolTraceService == null ? List.of() : toolTraceService.listByRunId(runId, 100);
     }
 
     private double totalTokenUsage(String tokenType) {

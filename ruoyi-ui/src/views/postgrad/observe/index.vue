@@ -87,19 +87,47 @@
           </div>
         </section>
       </div>
+
+      <section class="tool-trace-panel">
+        <div class="panel-heading"><h3>Agent Tool 调用</h3><span>仅展示摘要；点击 Run ID 查看同次运行的完整调用链</span></div>
+        <el-table :data="toolTraces" size="mini" v-loading="traceLoading">
+          <el-table-column prop="startedAt" label="开始时间" min-width="150" />
+          <el-table-column label="Run ID" min-width="150"><template slot-scope="scope"><el-button type="text" size="mini" @click="openRun(scope.row.runId)">{{ scope.row.runId }}</el-button></template></el-table-column>
+          <el-table-column prop="toolName" label="Tool" min-width="150" />
+          <el-table-column prop="toolCategory" label="类别" width="80" />
+          <el-table-column prop="status" label="状态" min-width="130" />
+          <el-table-column prop="resultCode" label="结果码" min-width="160" />
+          <el-table-column prop="durationMs" label="耗时" width="90"><template slot-scope="scope">{{ scope.row.durationMs == null ? '-' : scope.row.durationMs + ' ms' }}</template></el-table-column>
+          <el-table-column prop="budgetGroup" label="预算组" width="100" />
+        </el-table>
+      </section>
+
+      <el-drawer title="Run Tool 调用详情" :visible.sync="runDrawerVisible" size="52%">
+        <div class="run-trace-drawer"><el-table :data="runToolTraces" size="mini">
+          <el-table-column prop="toolName" label="Tool" min-width="140" />
+          <el-table-column prop="status" label="状态" min-width="120" />
+          <el-table-column prop="resultCode" label="结果码" min-width="150" />
+          <el-table-column prop="resultSummary" label="结果摘要" min-width="240" show-overflow-tooltip />
+          <el-table-column prop="durationMs" label="耗时" width="90" />
+        </el-table></div>
+      </el-drawer>
     </div>
   </div>
 </template>
 
 <script>
-import { getAiObserveOverview } from '@/api/postgrad/aiObserve'
+import { getAiObserveOverview, getRecentToolTraces, getRunToolTraces } from '@/api/postgrad/aiObserve'
 
 export default {
   name: 'PostgradAiObserve',
   data() {
     return {
       loading: false,
+      traceLoading: false,
       overview: {},
+      toolTraces: [],
+      runToolTraces: [],
+      runDrawerVisible: false,
       notice: ''
     }
   },
@@ -123,6 +151,7 @@ export default {
   },
   created() {
     this.loadOverview()
+    this.loadToolTraces()
   },
   methods: {
     loadOverview() {
@@ -134,6 +163,21 @@ export default {
         this.notice = 'AI 观测请求失败，请检查后端接口是否启动。'
       }).finally(() => {
         this.loading = false
+      })
+    },
+    loadToolTraces() {
+      this.traceLoading = true
+      getRecentToolTraces().then(res => {
+        this.toolTraces = (res && res.data) || []
+      }).finally(() => {
+        this.traceLoading = false
+      })
+    },
+    openRun(runId) {
+      if (!runId) return
+      getRunToolTraces(runId).then(res => {
+        this.runToolTraces = (res && res.data) || []
+        this.runDrawerVisible = true
       })
     }
   }
@@ -195,6 +239,18 @@ export default {
   border-radius: 10px;
   background: #fff;
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+}
+
+.tool-trace-panel {
+  border: 1px solid #dbe5f2;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.run-trace-drawer {
+  padding: 0 16px;
 }
 
 .observe-kpi {

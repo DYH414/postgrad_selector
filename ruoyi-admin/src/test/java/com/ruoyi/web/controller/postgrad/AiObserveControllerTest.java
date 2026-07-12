@@ -7,6 +7,8 @@ import static org.mockito.Mockito.when;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.postgrad.observe.domain.AiObserveOverviewVO;
 import com.ruoyi.postgrad.observe.service.AiObserveService;
+import com.ruoyi.postgrad.observe.tool.domain.AiToolCallTrace;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class AiObserveControllerTest {
@@ -23,5 +25,18 @@ class AiObserveControllerTest {
 
         assertEquals(200, result.get(AjaxResult.CODE_TAG));
         assertEquals(7L, ((AiObserveOverviewVO) result.get(AjaxResult.DATA_TAG)).getTotalCalls());
+    }
+
+    @Test
+    void toolTraceEndpointsShouldWrapRecentAndRunResults() {
+        AiObserveService service = mock(AiObserveService.class);
+        AiToolCallTrace trace = new AiToolCallTrace();
+        trace.setRunId("run-1");
+        when(service.listRecentToolTraces(50)).thenReturn(List.of(trace));
+        when(service.listRunToolTraces("run-1")).thenReturn(List.of(trace));
+        AiObserveController controller = new AiObserveController(service);
+
+        assertEquals(200, controller.toolTraces(50).get(AjaxResult.CODE_TAG));
+        assertEquals(200, controller.runToolTraces("run-1").get(AjaxResult.CODE_TAG));
     }
 }
