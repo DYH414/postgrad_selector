@@ -3,6 +3,7 @@ package com.ruoyi.postgrad.recommend.service;
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.recommend.domain.AgentActionProposal;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -20,13 +21,14 @@ public class AgentActionProposalService {
         String.class);
     private final StringRedisTemplate redis;
     public AgentActionProposalService(StringRedisTemplate redis) { this.redis = redis; }
-    public AgentActionProposal propose(Long userId, String runId, String action,
+    public AgentActionProposal propose(Long userId, String runId, String parentCallId, String action,
                                        Map<String, Object> arguments, String summary, String draftHash) {
         AgentActionProposal proposal = new AgentActionProposal();
         proposal.setToken(UUID.randomUUID().toString().replace("-", ""));
-        proposal.setUserId(userId); proposal.setRunId(runId); proposal.setAction(action);
+        proposal.setUserId(userId); proposal.setRunId(runId); proposal.setParentCallId(parentCallId); proposal.setAction(action);
         proposal.setArguments(arguments); proposal.setSummary(summary);
         proposal.setDraftHash(draftHash);
+        proposal.setExpiresAt(LocalDateTime.now().plus(TTL));
         redis.opsForValue().set(PREFIX + proposal.getToken(), JSON.toJSONString(proposal), TTL);
         return proposal;
     }

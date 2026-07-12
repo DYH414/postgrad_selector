@@ -456,7 +456,7 @@ public class AppV2RecommendController {
                         String summary, String confirmationToken) {
                         sendSseEvent(emitter, "confirmation_required", Map.of(
                             "callId", callId, "runId", runId, "summary", summary,
-                            "confirmationToken", confirmationToken));
+                            "confirmationToken", confirmationToken, "confirmationRequired", true));
                     }
 
                     @Override
@@ -511,6 +511,16 @@ public class AppV2RecommendController {
         Map<String, Object> result = agentActionConfirmationService.confirm(user.getUserId(), token);
         return Boolean.TRUE.equals(result.get("ok"))
             ? AjaxResult.success(result)
+            : AjaxResult.error(String.valueOf(result.get("error")));
+    }
+
+    @PostMapping("/chat/action/cancel")
+    public AjaxResult cancelAgentAction(@RequestBody Map<String, String> body) {
+        AppLoginUser user = requireLogin();
+        String token = body != null ? body.get("confirmationToken") : null;
+        if (token == null || token.isBlank()) return AjaxResult.error("缺少 confirmationToken");
+        Map<String, Object> result = agentActionConfirmationService.cancel(user.getUserId(), token);
+        return Boolean.TRUE.equals(result.get("ok")) ? AjaxResult.success(result)
             : AjaxResult.error(String.valueOf(result.get("error")));
     }
 

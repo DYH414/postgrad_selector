@@ -134,6 +134,14 @@ export function confirmAgentAction(confirmationToken) {
   })
 }
 
+export function cancelAgentAction(confirmationToken) {
+  return request({
+    url: '/app/ai-recommend-v2/chat/action/cancel',
+    method: 'post',
+    data: { confirmationToken }
+  })
+}
+
 /** 恢复对话 */
 export function resumeChat() {
   return request({

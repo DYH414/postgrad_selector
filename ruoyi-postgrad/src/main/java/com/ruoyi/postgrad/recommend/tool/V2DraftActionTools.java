@@ -333,7 +333,7 @@ public class V2DraftActionTools {
         DraftVO draft = draftService.getDraft(ctx.userId());
         String proposalSummary = buildProposalSummary(ctx, draft, action, arguments, summary);
         String draftHash = draftVersionService.hash(draft);
-        var proposal = proposalService.propose(ctx.userId(), ctx.runId(), action, arguments,
+        var proposal = proposalService.propose(ctx.userId(), ctx.runId(), V2ChatToolContext.currentCallId(), action, arguments,
             proposalSummary, draftHash);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ok", true);

@@ -18,10 +18,12 @@ class AgentActionProposalServiceTest {
         ValueOperations<String, String> values = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
         AgentActionProposalService service = new AgentActionProposalService(redis);
-        AgentActionProposal result = service.propose(7L, "run-1", "remove",
+        AgentActionProposal result = service.propose(7L, "run-1", "call-parent", "remove",
             Map.of("programId", 12L), "移除候选", "hash-1");
         assertEquals(7L, result.getUserId());
         assertEquals("run-1", result.getRunId());
+        assertEquals("call-parent", result.getParentCallId());
+        assertNotNull(result.getExpiresAt());
         assertEquals("hash-1", result.getDraftHash());
         assertNotNull(result.getToken());
         verify(values).set(startsWith("ai:v2:action:proposal:"), anyString(), any());

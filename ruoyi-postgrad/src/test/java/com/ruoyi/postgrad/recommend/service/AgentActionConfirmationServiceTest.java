@@ -7,6 +7,7 @@ import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.AgentActionProposal;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.tool.V2DraftActionTools;
+import com.ruoyi.postgrad.observe.tool.service.AiToolTraceService;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -43,6 +44,20 @@ class AgentActionConfirmationServiceTest {
         verify(f.tools, times(1)).removeDraftCandidate(12L);
     }
 
+    @Test
+    void cancelConsumesProposalAndCancelsParentTraceWithoutExecutingTool() {
+        Fixture f = new Fixture();
+        AgentActionProposal p = proposal("remove", Map.of("programId", 12L), "same");
+        p.setParentCallId("call-parent");
+        when(f.proposals.consume(7L, "token")).thenReturn(p);
+
+        Map<String, Object> cancelled = f.service.cancel(7L, "token");
+
+        assertEquals(true, cancelled.get("ok"));
+        verify(f.traces).cancel("call-parent");
+        verifyNoInteractions(f.tools);
+    }
+
     private static AgentActionProposal proposal(String action, Map<String, Object> args, String hash) {
         AgentActionProposal p = new AgentActionProposal();
         p.setUserId(7L); p.setRunId("run-1"); p.setAction(action); p.setArguments(args);
@@ -57,7 +72,8 @@ class AgentActionConfirmationServiceTest {
         final StringRedisTemplate redis = mock(StringRedisTemplate.class);
         final RecommendationMapper mapper = mock(RecommendationMapper.class);
         final AgentActionAuditRecorder audit = mock(AgentActionAuditRecorder.class);
+        final AiToolTraceService traces = mock(AiToolTraceService.class);
         final AgentActionConfirmationService service = new AgentActionConfirmationService(
-            proposals, versions, drafts, tools, redis, mapper, audit);
+            proposals, versions, drafts, tools, redis, mapper, audit, traces);
     }
 }

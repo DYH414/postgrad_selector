@@ -1,11 +1,14 @@
 package com.ruoyi.postgrad.recommend.domain;
 
 import java.util.Map;
+import java.time.LocalDateTime;
 
 public class AgentActionProposal {
     private String token;
     private Long userId;
     private String runId;
+    private String parentCallId;
+    private LocalDateTime expiresAt;
     private String action;
     private Map<String, Object> arguments;
     private String summary;
@@ -16,6 +19,10 @@ public class AgentActionProposal {
     public void setUserId(Long userId) { this.userId = userId; }
     public String getRunId() { return runId; }
     public void setRunId(String runId) { this.runId = runId; }
+    public String getParentCallId() { return parentCallId; }
+    public void setParentCallId(String parentCallId) { this.parentCallId = parentCallId; }
+    public LocalDateTime getExpiresAt() { return expiresAt; }
+    public void setExpiresAt(LocalDateTime expiresAt) { this.expiresAt = expiresAt; }
     public String getAction() { return action; }
     public void setAction(String action) { this.action = action; }
     public Map<String, Object> getArguments() { return arguments; }

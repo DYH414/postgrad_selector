@@ -44,7 +44,7 @@ class V2DraftActionProposalTest {
         when(drafts.getDraft(7L)).thenReturn(draft);
         when(versions.hash(any())).thenReturn("hash");
         AgentActionProposal proposal = new AgentActionProposal(); proposal.setToken("secret-token");
-        when(proposals.propose(eq(7L), eq("run-1"), eq("remove"), anyMap(), anyString(), eq("hash")))
+        when(proposals.propose(eq(7L), eq("run-1"), any(), eq("remove"), anyMap(), anyString(), eq("hash")))
             .thenReturn(proposal);
         inject(tools, "draftService", drafts); inject(tools, "proposalService", proposals);
         inject(tools, "draftVersionService", versions); inject(tools, "actionAuditRecorder", audit);

@@ -76,7 +76,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { isDraftGenerating, getRestoredGenerationMessage } from './generationRecovery.mjs'
 import {
   getDraft, startGenerateDraft, openDraftGenerationStream, removeCandidate, replaceCandidate,
-  addBackCandidate, addFromWorkspace, generateReport, sendChatMessage, confirmAgentAction, startChat, resumeChat
+  addBackCandidate, addFromWorkspace, generateReport, sendChatMessage, confirmAgentAction, cancelAgentAction, startChat, resumeChat
 } from '@/api/recommend-v2'
 import { getProfile } from '@/api/profile'
 import { closeEventSource } from '@/utils/event-source'
@@ -129,6 +129,7 @@ const chatMessages = ref([])
 const chatStreaming = ref(false)
 const chatStreamingText = ref('')
 const currentToolCall = ref('')
+const pendingAction = ref(null)
 const generationBubbleQueue = ref([])
 const generationBubbleKeys = new Set()
 let generationBubbleTimer = null
@@ -516,6 +517,8 @@ async function handleChatSend(message) {
             const data = JSON.parse(line.slice(5))
             if (currentEvent === 'tool_call') {
               currentToolCall.value = data.tool || ''
+            } else if (currentEvent === 'confirmation_required') {
+              pendingAction.value = data
             } else if (currentEvent === 'token') {
               currentToolCall.value = ''
               assistantText += data.text
@@ -527,7 +530,7 @@ async function handleChatSend(message) {
               if (data.draftChanged) {
                 await loadDraftData()
               }
-              const action = data.toolActionResult
+              const action = pendingAction.value || data.toolActionResult
               if (action?.confirmationRequired && action?.confirmationToken) {
                 try {
                   await ElMessageBox.confirm(
@@ -539,9 +542,13 @@ async function handleChatSend(message) {
                   await loadDraftData()
                   ElMessage.success('草稿已更新')
                 } catch (confirmError) {
-                  if (confirmError !== 'cancel' && confirmError !== 'close') {
+                  if (confirmError === 'cancel' || confirmError === 'close') {
+                    await cancelAgentAction(action.confirmationToken)
+                  } else {
                     ElMessage.error('操作未执行，提案可能已过期或草稿已变化')
                   }
+                } finally {
+                  pendingAction.value = null
                 }
               }
             } else if (currentEvent === 'error') {
