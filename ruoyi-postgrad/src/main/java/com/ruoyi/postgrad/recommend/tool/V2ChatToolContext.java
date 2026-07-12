@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.recommend.tool;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
 
+import com.ruoyi.postgrad.domain.ai.AiToolBudget;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import java.util.function.Supplier;
 
@@ -21,6 +22,8 @@ import java.util.function.Supplier;
 public final class V2ChatToolContext {
 
     private static final ThreadLocal<Context> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<String> CURRENT_CALL_ID = new ThreadLocal<>();
+    private static final ToolLifecycleListener NO_OP_LISTENER = new ToolLifecycleListener() { };
 
     private V2ChatToolContext() {}
 
@@ -32,13 +35,18 @@ public final class V2ChatToolContext {
      * @param mapper 推荐数据 Mapper
      */
     public static Context init(Long userId, StringRedisTemplate redis, RecommendationMapper mapper, String runId) {
-        Context context = new Context(userId, redis, mapper, runId, false);
+        return init(userId, redis, mapper, runId, AiToolBudget.chatTurnDefaults(), NO_OP_LISTENER);
+    }
+
+    public static Context init(Long userId, StringRedisTemplate redis, RecommendationMapper mapper, String runId,
+        AiToolBudget budget, ToolLifecycleListener listener) {
+        Context context = new Context(userId, redis, mapper, runId, false, budget, listener);
         CURRENT.set(context);
         return context;
     }
 
     public static Context confirmed(Long userId, StringRedisTemplate redis, RecommendationMapper mapper, String runId) {
-        return new Context(userId, redis, mapper, runId, true);
+        return new Context(userId, redis, mapper, runId, true, AiToolBudget.chatTurnDefaults(), NO_OP_LISTENER);
     }
 
     public static Context init(Long userId, StringRedisTemplate redis, RecommendationMapper mapper) {
@@ -50,6 +58,7 @@ public final class V2ChatToolContext {
     /** 清除当前线程的上下文。 */
     public static void clear() {
         CURRENT.remove();
+        CURRENT_CALL_ID.remove();
     }
 
     /** @return 当前上下文，未初始化时返回 null */
@@ -58,8 +67,18 @@ public final class V2ChatToolContext {
     }
 
     public static <T> T callWith(Context context, Supplier<T> supplier) {
+        return callWith(context, null, supplier);
+    }
+
+    public static <T> T callWith(Context context, String callId, Supplier<T> supplier) {
         Context previous = CURRENT.get();
+        String previousCallId = CURRENT_CALL_ID.get();
         CURRENT.set(context);
+        if (callId == null) {
+            CURRENT_CALL_ID.remove();
+        } else {
+            CURRENT_CALL_ID.set(callId);
+        }
         try {
             return supplier.get();
         } finally {
@@ -68,7 +87,16 @@ public final class V2ChatToolContext {
             } else {
                 CURRENT.set(previous);
             }
+            if (previousCallId == null) {
+                CURRENT_CALL_ID.remove();
+            } else {
+                CURRENT_CALL_ID.set(previousCallId);
+            }
         }
+    }
+
+    public static String currentCallId() {
+        return CURRENT_CALL_ID.get();
     }
 
     public static boolean writeExecuted() {
@@ -106,19 +134,24 @@ public final class V2ChatToolContext {
         private final RecommendationMapper mapper;
         private final String runId;
         private final boolean confirmed;
+        private final AiToolBudget toolBudget;
+        private final ToolLifecycleListener toolLifecycleListener;
         private boolean writeExecuted;
         private boolean draftChanged;
         private String lastActionResultJson;
 
-        Context(Long userId, StringRedisTemplate redis, RecommendationMapper mapper, String runId, boolean confirmed) {
+        Context(Long userId, StringRedisTemplate redis, RecommendationMapper mapper, String runId, boolean confirmed,
+            AiToolBudget toolBudget, ToolLifecycleListener toolLifecycleListener) {
             this.userId = userId;
             this.redis = redis;
             this.mapper = mapper;
             this.runId = runId;
             this.confirmed = confirmed;
+            this.toolBudget = toolBudget == null ? AiToolBudget.chatTurnDefaults() : toolBudget;
+            this.toolLifecycleListener = toolLifecycleListener == null ? NO_OP_LISTENER : toolLifecycleListener;
         }
 
-        Long userId() { return userId; }
+        public Long userId() { return userId; }
         StringRedisTemplate redis() { return redis; }
         RecommendationMapper mapper() { return mapper; }
         public String runId() { return runId; }
@@ -126,11 +159,21 @@ public final class V2ChatToolContext {
         boolean writeExecuted() { return writeExecuted; }
         public boolean draftChanged() { return draftChanged; }
         public String lastActionResultJson() { return lastActionResultJson; }
+        public AiToolBudget toolBudget() { return toolBudget; }
+        public ToolLifecycleListener toolLifecycleListener() { return toolLifecycleListener; }
 
         void markWriteExecuted(String actionResultJson) {
             this.writeExecuted = true;
             this.draftChanged = true;
             this.lastActionResultJson = actionResultJson;
         }
+    }
+
+    public interface ToolLifecycleListener {
+        default void onStarted(String runId, String callId, String toolName, String category) { }
+        default void onCompleted(String runId, String callId, String toolName, String status,
+            String code, long durationMs) { }
+        default void onConfirmationRequired(String runId, String callId, String summary,
+            String confirmationToken) { }
     }
 }
