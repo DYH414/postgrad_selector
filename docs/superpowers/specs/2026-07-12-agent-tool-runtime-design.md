@@ -341,6 +341,9 @@ sql/ai_tool_call_trace.sql
 - `AiObserveController.java`
 - `ruoyi-ui/src/api/postgrad/aiObserve.js`
 - `ruoyi-ui/src/views/postgrad/observe/index.vue`
+- `user-ui/src/api/recommend-v2.js`
+- `user-ui/src/views/ai-recommend-v2/AiRecommendV2Workspace.vue`
+- `user-ui/tests/agentActionConfirmation.contract.test.mjs`
 
 ## 12. 测试策略
 
@@ -359,6 +362,7 @@ sql/ai_tool_call_trace.sql
 11. 服务重启后 MySQL Trace 仍可查询。
 12. 管理端可按 `runId` 查询同一轮的 Tool 记录。
 13. 删除操作只减少一所，替换操作前后总数一致，不发生隐式补位。
+14. 用户取消确认后，提案 Token 被消费、父 Trace 变为 `CANCELLED`，草稿不发生变化。
 
 ## 13. 验收标准
 
