@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.observe.tool.service.AiToolTraceService;
+import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.rag.dto.RagEvidenceRequest;
@@ -68,7 +70,8 @@ class V2ChatToolsRagEvidenceTest {
 
         var context = V2ChatToolContext.init(7L, mock(StringRedisTemplate.class),
             mock(RecommendationMapper.class), "run-1");
-        V2BoundChatTools boundTools = new V2BoundChatTools(tools, context);
+        V2BoundChatTools boundTools = new V2BoundChatTools(tools, context,
+            new AgentToolRuntime(mock(AiToolTraceService.class)));
         String json = boundTools.getProgramEvidence(202L, "为什么推荐，有什么风险");
 
         assertTrue(json.contains("risk_factors"));

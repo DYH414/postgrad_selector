@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.observe.tool.service.AiToolTraceService;
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
@@ -22,6 +23,7 @@ import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.tool.V2BoundChatTools;
 import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
 import com.ruoyi.postgrad.recommend.tool.V2ChatTools;
+import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
 import dev.langchain4j.rag.RetrievalAugmentor;
 import java.lang.reflect.Field;
 import java.util.List;
@@ -61,7 +63,8 @@ class AgentRuntimeFlowContractTest {
         var toolContext = V2ChatToolContext.init(7L, mock(StringRedisTemplate.class),
             mock(RecommendationMapper.class), run.getRunId());
 
-        String toolResult = new V2BoundChatTools(tools, toolContext)
+        String toolResult = new V2BoundChatTools(tools, toolContext,
+            new AgentToolRuntime(mock(AiToolTraceService.class)))
             .getProgramEvidence(202L, riskQuestion);
         Map<String, Object> parsed = JSON.parseObject(toolResult);
         assertEquals(run.getRunId(), parsed.get("runId"));

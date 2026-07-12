@@ -438,8 +438,25 @@ public class AppV2RecommendController {
                     }
 
                     @Override
-                    public void onToolCall(String toolName, String runId) {
-                        sendSseEvent(emitter, "tool_call", Map.of("tool", toolName, "runId", runId));
+                    public void onToolCall(String toolName, String callId, String runId, String category) {
+                        sendSseEvent(emitter, "tool_call", Map.of(
+                            "tool", toolName, "callId", callId, "runId", runId, "category", category));
+                    }
+
+                    @Override
+                    public void onToolResult(String toolName, String callId, String runId,
+                        String status, String code, long durationMs) {
+                        sendSseEvent(emitter, "tool_result", Map.of(
+                            "tool", toolName, "callId", callId, "runId", runId,
+                            "status", status, "code", code, "durationMs", durationMs));
+                    }
+
+                    @Override
+                    public void onConfirmationRequired(String callId, String runId,
+                        String summary, String confirmationToken) {
+                        sendSseEvent(emitter, "confirmation_required", Map.of(
+                            "callId", callId, "runId", runId, "summary", summary,
+                            "confirmationToken", confirmationToken));
                     }
 
                     @Override

@@ -25,6 +25,18 @@ public interface ChatStreamCallback {
         onToolCall(toolName);
     }
 
+    default void onToolCall(String toolName, String callId, String runId, String category) {
+        onToolCall(toolName, runId);
+    }
+
+    default void onToolResult(String toolName, String callId, String runId,
+        String status, String code, long durationMs) {
+    }
+
+    default void onConfirmationRequired(String callId, String runId,
+        String summary, String confirmationToken) {
+    }
+
     default void onRunStarted(String runId) {
     }
 

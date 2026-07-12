@@ -36,6 +36,7 @@ import com.ruoyi.postgrad.recommend.tool.V2BoundDraftActionTools;
 import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
 import com.ruoyi.postgrad.recommend.tool.V2ChatTools;
 import com.ruoyi.postgrad.recommend.tool.V2DraftActionTools;
+import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationContext;
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
@@ -45,6 +46,7 @@ import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import com.ruoyi.postgrad.rag.trace.RagTrace;
 
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -55,6 +57,7 @@ import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.Content;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.tool.ToolErrorHandlerResult;
 
 /**
  * AI 对话服务实现：编排会话、流式输出和 LangChain4j tool calling。
@@ -93,6 +96,9 @@ public class AiChatServiceImpl implements IAiChatService {
 
     @Autowired
     private V2DraftActionTools v2DraftActionTools;
+
+    @Autowired
+    private AgentToolRuntime agentToolRuntime;
 
     @Autowired
     private RecommendationMapper recommendationMapper;
@@ -211,12 +217,41 @@ public class AiChatServiceImpl implements IAiChatService {
 
             // 5. 初始化工具上下文 + 创建流式 assistant
             try {
-                V2ChatToolContext.Context toolContext = V2ChatToolContext.init(userId, redisTemplate, recommendationMapper, runId);
+                V2ChatToolContext.Context toolContext = V2ChatToolContext.init(userId, redisTemplate,
+                    recommendationMapper, runId, runContext.getToolBudget(), new V2ChatToolContext.ToolLifecycleListener() {
+                        @Override
+                        public void onStarted(String lifecycleRunId, String callId, String toolName, String category) {
+                            callback.onToolCall(toolName, callId, lifecycleRunId, category);
+                        }
+
+                        @Override
+                        public void onCompleted(String lifecycleRunId, String callId, String toolName,
+                            String status, String code, long durationMs) {
+                            callback.onToolResult(toolName, callId, lifecycleRunId, status, code, durationMs);
+                        }
+
+                        @Override
+                        public void onConfirmationRequired(String lifecycleRunId, String callId,
+                            String summary, String confirmationToken) {
+                            callback.onConfirmationRequired(callId, lifecycleRunId, summary, confirmationToken);
+                        }
+                    });
             AiServices<StreamAssistant> assistantBuilder = AiServices.builder(StreamAssistant.class)
                 .streamingChatModel(streamingChatModel)
                 .tools(
-                    new V2BoundChatTools(v2ChatTools, toolContext),
-                    new V2BoundDraftActionTools(v2DraftActionTools, toolContext))
+                    new V2BoundChatTools(v2ChatTools, toolContext, agentToolRuntime),
+                    new V2BoundDraftActionTools(v2DraftActionTools, toolContext, agentToolRuntime))
+                .hallucinatedToolNameStrategy(request -> ToolExecutionResultMessage.from(request,
+                    agentToolRuntime.rejectWithoutExecution(toolContext, request.name(), "TOOL_NOT_FOUND",
+                        "请求的工具不存在，请选择已提供的工具。", true)))
+                .toolArgumentsErrorHandler((error, errorContext) -> ToolErrorHandlerResult.text(
+                    agentToolRuntime.rejectWithoutExecution(toolContext,
+                        errorContext.toolExecutionRequest().name(), "INVALID_ARGUMENTS",
+                        "工具参数无效，请修正参数后重试。", true)))
+                .toolExecutionErrorHandler((error, errorContext) -> ToolErrorHandlerResult.text(
+                    agentToolRuntime.rejectWithoutExecution(toolContext,
+                        errorContext.toolExecutionRequest().name(), "TOOL_EXECUTION_FAILED",
+                        "工具执行失败，请基于已有信息继续。", false)))
                 .chatMemory(chatMemory)
                 .systemMessageProvider(ignored -> finalSystemPrompt);
             final boolean generalRetrievalEnabled = usesGenericRetrieval(ragRoute, retrievalAugmentor);
@@ -230,25 +265,8 @@ public class AiChatServiceImpl implements IAiChatService {
 
             StringBuilder fullResponse = new StringBuilder();
             assistant.chat("<user_input>" + message + "</user_input>")
-                .onPartialToolCall(toolCall -> {
-                    log.info("[AiChat-Tool] partial userId={} name={} args={}",
-                        userId, toolCall.name(), toolCall.partialArguments());
-                })
-                .beforeToolExecution(toolRequest -> {
-                    String toolName = toolRequest != null && toolRequest.request() != null
-                        ? toolRequest.request().name() : "";
-                    String arguments = toolRequest != null && toolRequest.request() != null
-                        ? toolRequest.request().arguments() : "";
-                    log.info("[AiChat-Tool] before userId={} tool={} args={}", userId, toolName, arguments);
-                    callback.onToolCall(toolName, runId);
-                })
-                .onToolExecuted(toolExecution -> {
-                    String toolName = toolExecution != null && toolExecution.request() != null
-                        ? toolExecution.request().name() : "";
-                    String result = toolExecution != null ? toolExecution.result() : "";
-                    log.info("[AiChat-Tool] executed userId={} tool={} failed={} result={}",
-                        userId, toolName, toolExecution != null && toolExecution.hasFailed(), result);
-                })
+                .onPartialToolCall(toolCall -> log.debug("[AiChat-Tool] partial userId={} name={}",
+                    userId, toolCall.name()))
                 .onPartialResponse(token -> {
                     fullResponse.append(token);
                     callback.onToken(token);

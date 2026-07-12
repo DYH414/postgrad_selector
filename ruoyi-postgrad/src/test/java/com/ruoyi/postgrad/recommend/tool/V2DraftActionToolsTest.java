@@ -206,13 +206,17 @@ class V2DraftActionToolsTest {
         mutation.setDraftCount(0);
         when(mutationService.removeCandidate(eq(1L), eq(1764L), any())).thenReturn(mutation);
 
-        V2BoundDraftActionTools boundTools = new V2BoundDraftActionTools(tools, context);
+        V2BoundDraftActionTools boundTools = new V2BoundDraftActionTools(tools, context,
+            new com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime(
+                mock(com.ruoyi.postgrad.observe.tool.service.AiToolTraceService.class)));
         String json = CompletableFuture.supplyAsync(() -> boundTools.removeDraftCandidate(1764L)).get();
         Map<String, Object> result = JSON.parseObject(json, Map.class);
 
         assertEquals(true, result.get("ok"));
         assertTrue(context.draftChanged());
-        assertEquals(json, context.lastActionResultJson());
+        assertTrue(json.contains("\"callId\""));
+        assertFalse(context.lastActionResultJson().contains("\"callId\""));
+        assertTrue(context.lastActionResultJson().contains("\"action\":\"remove\""));
         verify(mutationService).removeCandidate(eq(1L), eq(1764L), any());
     }
 
