@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.observe.tool.mapper.AiToolCallTraceMapper">
+
+    <resultMap type="AiToolCallTrace" id="AiToolCallTraceResult">
+        <id property="id" column="id"/>
+        <result property="callId" column="call_id"/>
+        <result property="parentCallId" column="parent_call_id"/>
+        <result property="runId" column="run_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="operationKey" column="operation_key"/>
+        <result property="toolName" column="tool_name"/>
+        <result property="toolCategory" column="tool_category"/>
+        <result property="budgetGroup" column="budget_group"/>
+        <result property="status" column="status"/>
+        <result property="resultCode" column="result_code"/>
+        <result property="retryable" column="retryable"/>
+        <result property="confirmationRequired" column="confirmation_required"/>
+        <result property="argumentsSummary" column="arguments_summary"/>
+        <result property="resultSummary" column="result_summary"/>
+        <result property="resultTokenEstimate" column="result_token_estimate"/>
+        <result property="durationMs" column="duration_ms"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="completedAt" column="completed_at"/>
+        <result property="confirmationExpiresAt" column="confirmation_expires_at"/>
+    </resultMap>
+
+    <sql id="selectAiToolCallTraceVo">
+        select id, call_id, parent_call_id, run_id, user_id, operation_key, tool_name,
+               tool_category, budget_group, status, result_code, retryable,
+               confirmation_required, arguments_summary, result_summary,
+               result_token_estimate, duration_ms, started_at, completed_at,
+               confirmation_expires_at
+        from ai_tool_call_trace
+    </sql>
+
+    <insert id="insert" parameterType="AiToolCallTrace" useGeneratedKeys="true" keyProperty="id">
+        insert into ai_tool_call_trace (call_id, parent_call_id, run_id, user_id, operation_key,
+                                        tool_name, tool_category, budget_group, status, result_code,
+                                        retryable, confirmation_required, arguments_summary,
+                                        result_summary, result_token_estimate, duration_ms, started_at,
+                                        completed_at, confirmation_expires_at)
+        values (#{callId}, #{parentCallId}, #{runId}, #{userId}, #{operationKey},
+                #{toolName}, #{toolCategory}, #{budgetGroup}, #{status}, #{resultCode},
+                #{retryable}, #{confirmationRequired}, #{argumentsSummary},
+                #{resultSummary}, #{resultTokenEstimate}, #{durationMs}, #{startedAt},
+                #{completedAt}, #{confirmationExpiresAt})
+    </insert>
+
+    <update id="complete">
+        update ai_tool_call_trace
+        set status = #{status},
+            result_code = #{resultCode},
+            retryable = #{retryable},
+            result_summary = #{resultSummary},
+            result_token_estimate = #{resultTokenEstimate},
+            duration_ms = #{durationMs},
+            confirmation_expires_at = #{confirmationExpiresAt},
+            completed_at = CASE WHEN #{status} = 'WAITING_CONFIRMATION' THEN NULL ELSE NOW(3) END
+        where call_id = #{callId}
+    </update>
+
+    <update id="updateStatus">
+        update ai_tool_call_trace
+        set status = #{status},
+            completed_at = NOW(3)
+        where call_id = #{callId}
+    </update>
+
+    <select id="selectRecent" resultMap="AiToolCallTraceResult">
+        <include refid="selectAiToolCallTraceVo"/>
+        order by started_at desc
+        limit LEAST(#{limit}, 100)
+    </select>
+
+    <select id="selectByRunId" resultMap="AiToolCallTraceResult">
+        <include refid="selectAiToolCallTraceVo"/>
+        where run_id = #{runId}
+        order by started_at desc
+        limit LEAST(#{limit}, 100)
+    </select>
+</mapper>
