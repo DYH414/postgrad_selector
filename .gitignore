@@ -5555,3 +5555,5 @@ node_modules/
 /rag-documents/
 /rag-generated/
 **/rag-generated/
+/rag-data/
+**/rag-data/

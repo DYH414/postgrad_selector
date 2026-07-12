@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -37,6 +38,17 @@ public class RagKnowledgeExportService {
         return facts;
     }
 
+    /**
+     * Returns one current fact per program, choosing the latest available year
+     * within the requested range rather than requiring every program to have
+     * data in the range end year.
+     */
+    public List<RagProgramYearFact> exportLatestProgramYearFacts(Integer startYear, Integer endYear, int limit) {
+        return exportProgramHistoryDocuments(startYear, endYear, limit).stream()
+            .map(RagProgramHistoryDocument::getPrimaryFact)
+            .collect(Collectors.toList());
+    }
+
     public List<RagProgramHistoryDocument> exportProgramHistoryDocuments(Integer startYear, Integer endYear, int limit) {
         List<RowMap> rows = mapper.selectProgramHistoryFacts(startYear, endYear, limit);
         Map<Long, List<RagProgramYearFact>> grouped = new LinkedHashMap<>();
@@ -45,11 +57,10 @@ public class RagKnowledgeExportService {
             if (fact.getProgramId() == null) continue;
             grouped.computeIfAbsent(fact.getProgramId(), ignored -> new ArrayList<>()).add(fact);
         }
-        List<RagProgramHistoryDocument> documents = new ArrayList<>();
-        for (List<RagProgramYearFact> facts : grouped.values()) {
-            documents.add(new RagProgramHistoryDocument(facts));
-        }
-        return documents;
+        return grouped.values().stream()
+            .map(RagProgramHistoryDocument::new)
+            .limit(Math.max(0, limit))
+            .collect(Collectors.toList());
     }
 
     public List<RagDataQualityDocument> exportDataQualityDocuments(Integer startYear, Integer endYear, int limit) {

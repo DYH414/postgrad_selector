@@ -48,6 +48,42 @@ class RagKnowledgeExportServiceTest {
         assertEquals(2, qualityDocs.size());
     }
 
+    @Test
+    void exportProgramHistoryDocumentsAppliesLimitAfterGroupingPrograms() {
+        RagKnowledgeExportMapper mapper = mock(RagKnowledgeExportMapper.class);
+        when(mapper.selectProgramHistoryFacts(2022, 2026, 2)).thenReturn(List.of(
+            row(1L, 148L, 2022, 305),
+            row(1L, 148L, 2025, 320),
+            row(2L, 200L, 2025, 315),
+            row(3L, 300L, 2025, 325)
+        ));
+
+        RagKnowledgeExportService service = new RagKnowledgeExportService(mapper, new StructuredRagChunkBuilder());
+
+        List<RagProgramHistoryDocument> docs = service.exportProgramHistoryDocuments(2022, 2026, 2);
+
+        assertEquals(2, docs.size(), "limit should cap canonical program documents, not raw year rows");
+        assertEquals(148L, docs.get(0).getPrimaryFact().getProgramId());
+        assertEquals(200L, docs.get(1).getPrimaryFact().getProgramId());
+    }
+
+    @Test
+    void exportLatestProgramYearFactsUsesLatestAvailableFactWithinRange() {
+        RagKnowledgeExportMapper mapper = mock(RagKnowledgeExportMapper.class);
+        when(mapper.selectProgramHistoryFacts(2022, 2026, 1000)).thenReturn(List.of(
+            row(1L, 148L, 2022, 305),
+            row(1L, 148L, 2025, 320),
+            row(2L, 200L, 2024, 315)
+        ));
+        RagKnowledgeExportService service = new RagKnowledgeExportService(mapper, new StructuredRagChunkBuilder());
+
+        List<RagProgramYearFact> latestFacts = service.exportLatestProgramYearFacts(2022, 2026, 1000);
+
+        assertEquals(2, latestFacts.size());
+        assertEquals(2025, latestFacts.get(0).getYear());
+        assertEquals(2024, latestFacts.get(1).getYear());
+    }
+
     private static RowMap row(Long schoolId, Long programId, Integer year, Integer avgScore) {
         RowMap row = new RowMap();
         row.put("schoolId", schoolId);

@@ -48,7 +48,11 @@ public class RagCorpusAssembler {
 
     private static final int CHUNK_SIZE = 500;
     private static final int CHUNK_OVERLAP = 50;
-    private static final int DEFAULT_DB_LIMIT = 1000;
+    /**
+     * A complete knowledge-base build must not silently depend on sort order.
+     * The current corpus is small enough to export every eligible program.
+     */
+    private static final int ALL_PROGRAMS_LIMIT = Integer.MAX_VALUE;
     private static final String SCHEMA_VERSION = "rag-doc-v2";
     private static final String EMBEDDING_VERSION = "bge-m3-v1";
 
@@ -89,21 +93,21 @@ public class RagCorpusAssembler {
         int databaseDocCount = 0;
 
         List<RagProgramHistoryDocument> histories =
-            ragKnowledgeExportService.exportProgramHistoryDocuments(startYear, endYear, DEFAULT_DB_LIMIT);
+            ragKnowledgeExportService.exportProgramHistoryDocuments(startYear, endYear, ALL_PROGRAMS_LIMIT);
         for (RagProgramHistoryDocument history : histories) {
             dbChunks.addAll(structuredChunkBuilder.buildProgramHistoryChunks(history));
             databaseDocCount++;
         }
 
         List<RagProgramYearFact> facts =
-            ragKnowledgeExportService.exportProgramYearFacts(endYear, DEFAULT_DB_LIMIT);
+            ragKnowledgeExportService.exportLatestProgramYearFacts(startYear, endYear, ALL_PROGRAMS_LIMIT);
         for (RagProgramYearFact fact : facts) {
             dbChunks.addAll(structuredChunkBuilder.buildProgramYearChunks(fact));
             databaseDocCount++;
         }
 
         List<RagDataQualityDocument> qualities =
-            ragKnowledgeExportService.exportDataQualityDocuments(startYear, endYear, DEFAULT_DB_LIMIT);
+            ragKnowledgeExportService.exportDataQualityDocuments(startYear, endYear, ALL_PROGRAMS_LIMIT);
         for (RagDataQualityDocument quality : qualities) {
             dbChunks.addAll(structuredChunkBuilder.buildDataQualityChunks(quality));
             databaseDocCount++;

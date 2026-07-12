@@ -3,6 +3,8 @@ package com.ruoyi.postgrad.rag.build;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.rag.knowledge.RagDataQualityDocument;
@@ -31,7 +33,7 @@ class RagCorpusAssemblerTest {
     void shouldAssembleGeneralDocsWithSourceTypeGeneralAndContentHash() {
         RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
         when(exportService.exportProgramHistoryDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of());
-        when(exportService.exportProgramYearFacts(anyInt(), anyInt())).thenReturn(List.of());
+        when(exportService.exportLatestProgramYearFacts(anyInt(), anyInt(), anyInt())).thenReturn(List.of());
         when(exportService.exportDataQualityDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of());
         Path tempDir = createTempDir();
 
@@ -60,7 +62,7 @@ class RagCorpusAssemblerTest {
         RagProgramHistoryDocument history = new RagProgramHistoryDocument(List.of(sampleFact()));
         RagDataQualityDocument quality = new RagDataQualityDocument(history);
         when(exportService.exportProgramHistoryDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of(history));
-        when(exportService.exportProgramYearFacts(anyInt(), anyInt())).thenReturn(List.of(fact));
+        when(exportService.exportLatestProgramYearFacts(anyInt(), anyInt(), anyInt())).thenReturn(List.of(fact));
         when(exportService.exportDataQualityDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of(quality));
         Path tempDir = createTempDir();
 
@@ -89,13 +91,33 @@ class RagCorpusAssemblerTest {
     }
 
     @Test
+    void shouldUseLatestAvailableYearWithinRequestedRangeForYearFacts() {
+        RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
+        RagProgramYearFact fact = sampleFact();
+        fact.setYear(2025);
+        when(exportService.exportProgramHistoryDocuments(2022, 2026, Integer.MAX_VALUE)).thenReturn(List.of());
+        when(exportService.exportLatestProgramYearFacts(2022, 2026, Integer.MAX_VALUE)).thenReturn(List.of(fact));
+        when(exportService.exportDataQualityDocuments(2022, 2026, Integer.MAX_VALUE)).thenReturn(List.of());
+        Path tempDir = createTempDir();
+
+        RagCorpusAssembler assembler = new RagCorpusAssembler(
+            exportService, new StructuredRagChunkBuilder(), tempDir.toString());
+
+        assembler.assemble(2022, 2026);
+
+        verify(exportService).exportLatestProgramYearFacts(2022, 2026, Integer.MAX_VALUE);
+        verify(exportService, never()).exportProgramYearFacts(2026, Integer.MAX_VALUE);
+        cleanTempDir(tempDir);
+    }
+
+    @Test
     void shouldHaveUniqueSourceIdsAcrossAllChunks() {
         RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
         RagProgramYearFact fact = sampleFact();
         RagProgramHistoryDocument history = new RagProgramHistoryDocument(List.of(sampleFact()));
         RagDataQualityDocument quality = new RagDataQualityDocument(history);
         when(exportService.exportProgramHistoryDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of(history));
-        when(exportService.exportProgramYearFacts(anyInt(), anyInt())).thenReturn(List.of(fact));
+        when(exportService.exportLatestProgramYearFacts(anyInt(), anyInt(), anyInt())).thenReturn(List.of(fact));
         when(exportService.exportDataQualityDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of(quality));
         Path tempDir = createTempDir();
 
@@ -116,7 +138,7 @@ class RagCorpusAssemblerTest {
     void shouldHandleEmptyCorpusWithoutThrowing() {
         RagKnowledgeExportService exportService = mock(RagKnowledgeExportService.class);
         when(exportService.exportProgramHistoryDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of());
-        when(exportService.exportProgramYearFacts(anyInt(), anyInt())).thenReturn(List.of());
+        when(exportService.exportLatestProgramYearFacts(anyInt(), anyInt(), anyInt())).thenReturn(List.of());
         when(exportService.exportDataQualityDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of());
         Path tempDir = createTempDir();
 
@@ -142,7 +164,7 @@ class RagCorpusAssemblerTest {
         RagProgramHistoryDocument history = new RagProgramHistoryDocument(List.of(sampleFact()));
         RagDataQualityDocument quality = new RagDataQualityDocument(history);
         when(exportService.exportProgramHistoryDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of(history));
-        when(exportService.exportProgramYearFacts(anyInt(), anyInt())).thenReturn(List.of(fact));
+        when(exportService.exportLatestProgramYearFacts(anyInt(), anyInt(), anyInt())).thenReturn(List.of(fact));
         when(exportService.exportDataQualityDocuments(anyInt(), anyInt(), anyInt())).thenReturn(List.of(quality));
 
         RagCorpusAssembler assembler = new RagCorpusAssembler(

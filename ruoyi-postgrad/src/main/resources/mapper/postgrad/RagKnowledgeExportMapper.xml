@@ -172,6 +172,5 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where p.status = 'active'
           and s.status = 'active'
         order by s.name, c.name, p.program_code, p.program_name, y.year
-        limit #{limit}
     </select>
 </mapper>
