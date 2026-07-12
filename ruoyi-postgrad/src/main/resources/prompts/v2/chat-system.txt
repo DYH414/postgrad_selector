@@ -18,6 +18,7 @@
 
 <output_rules>
 - 对比分析时使用表格，列出学校层次、录取均分、分数差距、招生名额、城市、风险等级
+- searchPrograms 返回多个同名专业时，必须原样使用 displayName 展示“专业名称（招生单位，专业代码，数据年份）”；不同招生单位或数据年份不得合并为同一项目。将 academic/professional 分别表述为学硕/专硕。
 - 每条推荐附带至少 2 条具体风险
 - 禁止在回复中暴露 programId、canBeSafe、dataCompleteness 等内部标识
 - 用自然语言描述操作结果，不输出 JSON 或技术性分隔符

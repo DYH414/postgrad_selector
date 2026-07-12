@@ -35,6 +35,11 @@ import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.ChatRunLockService;
+import com.ruoyi.postgrad.rag.dto.RagChunkResult;
+import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
+import com.ruoyi.postgrad.rag.trace.RagTrace;
+import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
+import java.util.Map;
 
 class AiChatServiceImplTest {
 
@@ -206,6 +211,44 @@ class AiChatServiceImplTest {
             com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.SCOPED_EVIDENCE, augmentor));
         assertTrue(AiChatServiceImpl.usesGenericRetrieval(
             com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.GENERAL, augmentor));
+    }
+
+    @Test
+    void genericRagTraceShouldIncludeActualRetrievalDetails() throws Exception {
+        AiChatServiceImpl service = new AiChatServiceImpl();
+        RagTraceRecorder recorder = new RagTraceRecorder();
+        injectField(service, "ragTraceRecorder", recorder);
+
+        RagChunkResult selected = new RagChunkResult();
+        selected.setSelectedForPrompt(true);
+        selected.setSourceName("深圳大学 电子信息 历年趋势");
+        selected.setContentPreview("2025 年均分 307 分");
+        RagSearchTestResponse retrieval = new RagSearchTestResponse();
+        retrieval.setRetrievedCount(5);
+        retrieval.setSelectedCount(3);
+        retrieval.setAppliedFilters(Map.of("school_id", "15"));
+        retrieval.setChunks(List.of(selected));
+        retrieval.getLatency().setEmbeddingMs(120L);
+        retrieval.getLatency().setRetrievalMs(35L);
+        retrieval.getLatency().setRerankMs(80L);
+
+        var method = AiChatServiceImpl.class.getDeclaredMethod("recordRagTrace",
+            Long.class, String.class, String.class,
+            com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.class,
+            RagSearchTestResponse.class, long.class);
+        method.setAccessible(true);
+        method.invoke(service, 1L, "深圳大学 300 分左右有什么专业", "run-1",
+            com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.GENERAL,
+            retrieval, System.currentTimeMillis() - 10);
+
+        RagTrace trace = recorder.listRecent(1).get(0);
+        assertEquals(5, trace.getRetrievedCount());
+        assertEquals(3, trace.getSelectedCount());
+        assertEquals("15", trace.getMetadataFilters().get("school_id"));
+        assertEquals(List.of("深圳大学 电子信息 历年趋势"), trace.getTopSources());
+        assertEquals(120L, trace.getEmbeddingLatencyMs());
+        assertEquals(35L, trace.getRetrievalLatencyMs());
+        assertEquals(80L, trace.getRerankLatencyMs());
     }
 
     private static void injectField(Object target, String fieldName, Object value) throws Exception {

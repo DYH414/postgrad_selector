@@ -16,6 +16,7 @@ import com.ruoyi.postgrad.rag.dto.RagEvidenceResponse;
 import com.ruoyi.postgrad.rag.knowledge.RagCitation;
 import com.ruoyi.postgrad.rag.service.RagEvidenceService;
 import java.util.Map;
+import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import org.junit.jupiter.api.Test;
 
 class V2ChatToolsRagEvidenceTest {
@@ -76,5 +77,28 @@ class V2ChatToolsRagEvidenceTest {
         ArgumentCaptor<RagEvidenceRequest> captor = ArgumentCaptor.forClass(RagEvidenceRequest.class);
         verify(evidenceService).retrieveProgramEvidence(captor.capture());
         assertEquals("run-1", captor.getValue().getRunId());
+    }
+
+    @Test
+    void searchProgramResultShouldExposeRecruitmentUnitAndDataYear() throws Exception {
+        SchoolFact fact = new SchoolFact();
+        fact.setProgramId(3122L);
+        fact.setSchoolName("深圳大学");
+        fact.setCollegeName("教育学部");
+        fact.setProgramName("电子信息-人工智能");
+        fact.setProgramCode("085410");
+        fact.setDegreeType("professional");
+        fact.setDataYear(2025);
+
+        V2ChatTools tools = new V2ChatTools();
+        var method = V2ChatTools.class.getDeclaredMethod("toSearchItem", SchoolFact.class);
+        method.setAccessible(true);
+        Map<String, Object> result = (Map<String, Object>) method.invoke(tools, fact);
+
+        assertEquals("教育学部", result.get("collegeName"));
+        assertEquals("085410", result.get("programCode"));
+        assertEquals("professional", result.get("degreeType"));
+        assertEquals(2025, result.get("dataYear"));
+        assertEquals("电子信息-人工智能（教育学部，085410，2025）", result.get("displayName"));
     }
 }

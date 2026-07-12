@@ -14,6 +14,7 @@ import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
+import com.ruoyi.postgrad.recommend.domain.ProfileBasisVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.impl.DraftServiceImpl;
@@ -173,7 +174,12 @@ public class V2ChatTools {
         java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
         item.put("programId", f.getProgramId());
         item.put("schoolName", f.getSchoolName());
+        item.put("collegeName", f.getCollegeName());
         item.put("programName", f.getProgramName());
+        item.put("programCode", f.getProgramCode());
+        item.put("degreeType", f.getDegreeType());
+        item.put("dataYear", f.getDataYear());
+        item.put("displayName", displayName(f));
         String inferredTier = f.inferTier();
         item.put("tier", inferredTier != null ? inferredTier : "far_reach");
         item.put("city", f.getCity());
@@ -189,6 +195,21 @@ public class V2ChatTools {
         item.put("quotaLabel", quotaLabel(quota));
         item.put("canBeSafe", Boolean.TRUE.equals(f.getCanBeSafe()));
         return item;
+    }
+
+    private String displayName(SchoolFact fact) {
+        List<String> details = new ArrayList<>();
+        if (fact.getCollegeName() != null && !fact.getCollegeName().isBlank()) {
+            details.add(fact.getCollegeName());
+        }
+        if (fact.getProgramCode() != null && !fact.getProgramCode().isBlank()) {
+            details.add(fact.getProgramCode());
+        }
+        if (fact.getDataYear() != null) {
+            details.add(String.valueOf(fact.getDataYear()));
+        }
+        String programName = fact.getProgramName() != null ? fact.getProgramName() : "未命名专业";
+        return details.isEmpty() ? programName : programName + "（" + String.join("，", details) + "）";
     }
 
     private String quotaLabel(int quota) {
@@ -324,6 +345,205 @@ public class V2ChatTools {
         sb.append(String.format("%-20s %-30s %-30s\n", "数据完整度", val(c1, f -> f.getDataCompleteness()), val(c2, f -> f.getDataCompleteness())));
 
         return sb.toString();
+    }
+
+    @Tool("不限定学校的 RAG 知识库检索，用于回答考研通识问题（如 408 考什么、国家线多少、调剂政策）。" +
+          "参数 question 是用户的具体问题。返回相关文档片段及来源引用。")
+    public String searchKnowledgeBase(String question) {
+        V2ChatToolContext.Context ctx = V2ChatToolContext.current();
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        if (ragEvidenceService == null) {
+            result.put("ok", false);
+            result.put("error", "rag_evidence_unavailable");
+            result.put("message", "RAG 知识库服务不可用。");
+            return JSON.toJSONString(result);
+        }
+
+        try {
+            RagEvidenceRequest request = new RagEvidenceRequest();
+            request.setRunId(ctx != null ? ctx.runId() : null);
+            request.setQuery(question != null && !question.isBlank() ? question : "考研通识");
+            request.setMaxResults(8);
+            request.setRerankTopN(4);
+            RagEvidenceResponse evidence = ragEvidenceService.retrieveProgramEvidence(request);
+
+            result.put("ok", evidence.getErrorSummary() == null);
+            result.put("fallbackUsed", evidence.isFallbackUsed());
+            result.put("citations", evidence.getCitations());
+            result.put("selectedChunks", evidence.getSelectedChunks());
+            if (evidence.getErrorSummary() != null) {
+                result.put("error", evidence.getErrorSummary());
+            }
+            return JSON.toJSONString(result);
+        } catch (Exception e) {
+            result.put("ok", false);
+            result.put("error", "rag_knowledge_search_failed");
+            result.put("message", e.getMessage());
+            return JSON.toJSONString(result);
+        }
+    }
+
+    @Tool("获取当前用户的择校画像信息，包括预估分数、目标地区、学校层次偏好。AI 在首次分析或用户询问自身情况时调用。")
+    public String getUserProfile() {
+        V2ChatToolContext.Context ctx = V2ChatToolContext.current();
+        if (ctx == null) return "{\"ok\":false,\"error\":\"no_context\"}";
+
+        try {
+            String json = ctx.redis().opsForValue()
+                .get(DraftServiceImpl.DRAFT_KEY_PREFIX + ctx.userId());
+            if (json == null || json.isBlank()) {
+                return "{\"ok\":false,\"message\":\"尚未生成草稿，用户画像未初始化。\"}";
+            }
+            DraftVO draft = JSON.parseObject(json, DraftVO.class);
+            ProfileBasisVO profile = draft.getProfileBasis();
+            if (profile == null) {
+                return "{\"ok\":false,\"message\":\"草稿中无画像数据。\"}";
+            }
+            java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+            result.put("ok", true);
+            result.put("estimatedScore", profile.getEstimatedScore());
+            result.put("targetRegions", profile.getTargetRegions());
+            result.put("schoolTierPreference", profile.getSchoolTierPreference());
+            result.put("candidateScope", profile.getCandidateScope());
+            if (draft.getWorkspaceSummary() != null) {
+                result.put("workspaceSummary", draft.getWorkspaceSummary());
+            }
+            return JSON.toJSONString(result);
+        } catch (Exception e) {
+            return "{\"ok\":false,\"error\":\"profile_read_failed\",\"message\":\"" + e.getMessage() + "\"}";
+        }
+    }
+
+    @Tool("分析当前草稿的健康度：档位均衡性、风险分布、地区集中度、名额告警。在用户询问方案合理性时调用。")
+    public String analyzeDraftHealth() {
+        V2ChatToolContext.Context ctx = V2ChatToolContext.current();
+        if (ctx == null) return "{\"ok\":false,\"error\":\"no_context\"}";
+
+        try {
+            String json = ctx.redis().opsForValue()
+                .get(DraftServiceImpl.DRAFT_KEY_PREFIX + ctx.userId());
+            if (json == null || json.isBlank()) {
+                return "{\"ok\":false,\"message\":\"尚未生成草稿，无法分析。\"}";
+            }
+            DraftVO draft = JSON.parseObject(json, DraftVO.class);
+            if (draft.getTiers() == null || draft.getTiers().isEmpty()) {
+                return "{\"ok\":false,\"message\":\"草稿中没有候选学校，无法分析。\"}";
+            }
+
+            java.util.Map<String, Object> report = new java.util.LinkedHashMap<>();
+            report.put("ok", true);
+
+            // 1. Tier balance
+            java.util.List<java.util.Map<String, Object>> tierAnalysis = new ArrayList<>();
+            int totalSchools = 0;
+            for (TierCandidates tier : draft.getTiers()) {
+                java.util.Map<String, Object> t = new java.util.LinkedHashMap<>();
+                int count = tier.getCandidates() != null ? tier.getCandidates().size() : 0;
+                totalSchools += count;
+                t.put("level", tier.getLevel());
+                t.put("label", tier.getLabel());
+                t.put("current", count);
+                t.put("target", tier.getTargetCount());
+                int gap = count - tier.getTargetCount();
+                t.put("gap", gap);
+                if (gap > 0) t.put("status", "overfilled");
+                else if (gap < 0) t.put("status", "underfilled");
+                else t.put("status", "balanced");
+                tierAnalysis.add(t);
+            }
+            report.put("tierAnalysis", tierAnalysis);
+            report.put("totalSchools", totalSchools);
+
+            // 2. Risk distribution
+            java.util.Map<String, Integer> riskDist = new java.util.LinkedHashMap<>();
+            riskDist.put("very_high", 0); riskDist.put("high", 0);
+            riskDist.put("medium", 0); riskDist.put("normal", 0); riskDist.put("unknown", 0);
+            java.util.List<java.util.Map<String, Object>> riskWarnings = new ArrayList<>();
+
+            // 3. Region concentration
+            java.util.Map<String, java.util.List<String>> regionMap = new java.util.LinkedHashMap<>();
+
+            // Iterate all candidates
+            for (TierCandidates tier : draft.getTiers()) {
+                if (tier.getCandidates() == null) continue;
+                for (CandidateCardVO c : tier.getCandidates()) {
+                    SchoolFact f = c.getFact();
+                    if (f == null) continue;
+
+                    // Risk
+                    int quota = f.getUnifiedExamQuota() != null ? f.getUnifiedExamQuota()
+                        : (f.getPlanCount() != null ? f.getPlanCount() : 0);
+                    String risk = quotaRisk(quota);
+                    riskDist.merge(risk, 1, Integer::sum);
+
+                    if ("very_high".equals(risk) || "high".equals(risk) || "unknown".equals(risk)) {
+                        java.util.Map<String, Object> warn = new java.util.LinkedHashMap<>();
+                        warn.put("schoolName", f.getSchoolName());
+                        warn.put("programName", f.getProgramName());
+                        warn.put("programId", f.getProgramId());
+                        warn.put("quota", quota);
+                        warn.put("riskLevel", risk);
+                        warn.put("tier", tier.getLevel());
+                        riskWarnings.add(warn);
+                    }
+
+                    // Region
+                    String region = f.getProvince() != null ? f.getProvince() : "未知";
+                    regionMap.computeIfAbsent(region, k -> new ArrayList<>())
+                        .add(f.getSchoolName());
+                }
+            }
+            report.put("riskDistribution", riskDist);
+            report.put("riskWarnings", riskWarnings);
+            report.put("riskWarningCount", riskWarnings.size());
+
+            // 4. Region concentration
+            java.util.Map<String, Object> regionAnalysis = new java.util.LinkedHashMap<>();
+            String dominantRegion = null;
+            int dominantCount = 0;
+            for (var entry : regionMap.entrySet()) {
+                int cnt = entry.getValue().size();
+                double pct = totalSchools > 0 ? cnt * 100.0 / totalSchools : 0;
+                if (cnt > dominantCount) { dominantRegion = entry.getKey(); dominantCount = cnt; }
+            }
+            if (dominantRegion != null && totalSchools > 0) {
+                double domPct = dominantCount * 100.0 / totalSchools;
+                regionAnalysis.put("dominantRegion", dominantRegion);
+                regionAnalysis.put("dominantCount", dominantCount);
+                regionAnalysis.put("dominantPercent", Math.round(domPct));
+                regionAnalysis.put("overlyConcentrated", domPct > 50);
+                regionAnalysis.put("regions", regionMap.keySet().size());
+            }
+            report.put("regionAnalysis", regionAnalysis);
+
+            // 5. Overall verdict
+            int underfilledTiers = 0;
+            int overfilledTiers = 0;
+            for (java.util.Map<String, Object> t : tierAnalysis) {
+                if ("underfilled".equals(t.get("status"))) underfilledTiers++;
+                if ("overfilled".equals(t.get("status"))) overfilledTiers++;
+            }
+            int totalRiskFlags = riskDist.get("very_high") + riskDist.get("high");
+            boolean regionIssue = regionAnalysis.get("overlyConcentrated") == Boolean.TRUE;
+
+            String verdict;
+            java.util.List<String> issues = new ArrayList<>();
+            if (underfilledTiers > 0) issues.add(underfilledTiers + "个档位未填满");
+            if (overfilledTiers > 0) issues.add(overfilledTiers + "个档位超填");
+            if (totalRiskFlags > 0) issues.add(totalRiskFlags + "所高风险学校");
+            if (regionIssue) issues.add("地区过度集中（" + regionAnalysis.get("dominantRegion") + "占" + regionAnalysis.get("dominantPercent") + "%）");
+
+            if (issues.isEmpty()) verdict = "healthy";
+            else if (totalRiskFlags >= 3 || issues.size() >= 3) verdict = "unbalanced";
+            else verdict = "needs_attention";
+
+            report.put("verdict", verdict);
+            report.put("issues", issues);
+
+            return JSON.toJSONString(report);
+        } catch (Exception e) {
+            return "{\"ok\":false,\"error\":\"health_analysis_failed\",\"message\":\"" + e.getMessage() + "\"}";
+        }
     }
 
     @Tool("查看当前报告草稿的状态——已选了几所、分别在哪些档位、每所学校的关键信息。")

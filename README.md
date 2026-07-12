@@ -281,7 +281,7 @@ pom.xml (root, packaging=pom)
 - **📝 用户画像**：填写预估分数、目标地区、本科层次、跨考情况、风险偏好、学校层次偏好
 - **🤖 AI 智能推荐**：四阶段流水线自动生成冲刺/稳妥/保底三档择校方案（共 10 所）
 - **💬 AI 对话调整**：通过自然语言对话对推荐结果进行增删替换，Tool 支持查询/搜索/对比/写操作，并可检索专业级 RAG 证据
-- **📚 RAG 知识库增强**：`rag-documents/` 承载通用考研知识，`rag-generated/` 由 MySQL 结构化数据生成专业证据文档，统一写入 Qdrant
+- **📚 版本化 RAG 知识库**：MySQL 招生数据生成结构化 section Chunk，与 `rag-documents/` 通用知识统一检索；使用 Metadata Filter、向量召回、BGE Rerank、引用溯源和 RAG Trace
 - **📊 推荐报告**：生成包含执行摘要、画像基础、档位分析、数据透明度的完整择校报告
 - **⭐ 收藏管理**：收藏感兴趣的专业方向，支持批量操作
 - **📈 历史记录**：查看历史推荐记录和 AI 对话历史
@@ -292,7 +292,7 @@ pom.xml (root, packaging=pom)
 - **📊 录取数据管理**：复试线、录取最低分/平均分、招生计划、录取结果
 - **🔍 数据质量管控**：每条数据完整度评级（A/B/C）+ 数据来源追溯
 - **📝 审核系统**：对入库数据进行审核确认
-- **📚 RAG 观测台**：查看 RAG 是否启用、Qdrant collection、数据库文档生成、metadata 检索测试、最近 RAG Trace、最新错误，并支持手工/数据库两种重新索引
+- **📚 RAG 观测台**：启动并轮询 Index Run、查看活动 Alias/版本集合、检索测试、最近 RAG Trace 与构建错误
 - **📈 AI 调用观测台**：聚合 LangChain4j/Micrometer 指标，展示 token、耗时、成功率、最新调用和 RAG 快照
 - **👤 系统管理**：用户、角色、菜单、权限、字典、参数、日志、在线用户监控
 - **🔧 代码生成器**：Velocity 模板一键生成前后端 CRUD 代码
@@ -344,7 +344,7 @@ export SILICONFLOW_API_KEY=sk-your-siliconflow-api-key
 export QDRANT_URL=http://localhost:6333
 export QDRANT_HOST=localhost
 export QDRANT_GRPC_PORT=6334
-export QDRANT_COLLECTION=postgrad_rag_main
+# 运行时统一使用 Qdrant Alias: postgrad_rag_active
 ```
 
 ### 3. 启动 Qdrant
@@ -368,12 +368,7 @@ java -jar ruoyi-admin/target/ruoyi-admin.jar
 
 后端启动后访问 `http://localhost:8080`，Swagger 文档在 `http://localhost:8080/swagger-ui/index.html`。
 
-RAG 初始化成功时日志会出现：
-
-```text
-[RagQdrant] Collection postgrad_rag_main created or updated
-[RagInit] Index complete
-```
+后端启动不会自动重建或清空知识库。首次使用或数据更新后，在管理端“RAG 观测台”启动 Index Run；构建完成后才会原子切换活动 Alias。
 
 ### 5. 启动前端
 
@@ -399,15 +394,17 @@ npm run dev
 ### 6. 登录验证
 
 打开 `http://localhost:8081`，使用 `admin / admin123` 登录管理后台，确认功能正常。
-RAG 管理页为 `/postgrad/rag`，可查看状态、生成数据库 RAG 文档、执行 metadata 检索测试、查看最近 RAG Trace、重新索引；AI 观测页为 `/postgrad/observe`。
+RAG 管理页为 `/postgrad/rag`，可查看活动 Alias、启动并跟踪 Index Run、执行 metadata 检索测试、查看最近 RAG Trace；AI 观测页为 `/postgrad/observe`。
 
 推荐链路中的 RAG 使用边界：
 
 | 数据源 | 作用 | 使用阶段 |
 |--------|------|----------|
 | MySQL 结构化表 | 学校、专业、分数、计划、录取结果等确定性事实 | 候选池、工作集、AI 选择、最终报告事实快照 |
-| `rag-generated/` | 从 MySQL 生成的专业历年趋势、风险、数据质量证据 | AI 对话解释、报告 `ragCitations`、引用溯源 |
+| `rag-data/generated/` | 从 MySQL 生成的结构化 Markdown 镜像（派生产物） | 排查文档生成；运行时实际检索 Qdrant 活动 Alias |
 | `rag-documents/` | 考研术语、政策、择校方法等通用知识 | 通用问答、方法解释、辅助上下文 |
+
+构建流程采用 `Candidate Collection -> 校验 -> Qdrant Alias`：构建失败不会影响在线检索；成功后 `postgrad_rag_active` 才切换到新版本。用户端“按分数找专业”由 MySQL Tool 完成确定性筛选，“为什么推荐/有什么风险”使用 `programId` 精确 RAG 证据；管理端 `ai-chat` Trace 可查看真实召回/选中、过滤条件、Top 来源和 E/Q/R 耗时。
 
 完整验收流程见 [RAG 全链路验收清单](./docs/RAG-全链路验收清单.md)。
 

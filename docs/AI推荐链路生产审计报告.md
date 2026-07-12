@@ -4,6 +4,8 @@
 审计范围：用户端推荐生成、AI 对话、Tool Calling、Redis 状态与记忆、SSE、RAG/Qdrant、性能并发和管理端观测。  
 审计方式：静态代码审计、已有单元测试盘点、RAG 管理端真实检索观察，以及公开工程规范对照。未对生产流量、数据库容量、模型供应商 SLA 做压测，因此这份报告不把“代码存在”表述为“线上已验证”。
 
+> **历史快照说明**：本文保留 2026-07-10 的审计结论，不是当前实现说明。后续已完成版本化 Index Run、Qdrant Alias 切换、Payload Index、统一检索入口和 AI Chat 真实 RAG Trace；当前链路以 [AI 推荐链路完整文档](./AI推荐链路完整文档.md) 与 [RAG / Qdrant 运维说明](./RAG-Qdrant-运维说明.md) 为准。
+
 ## 结论
 
 系统已经具备一个可信 AI 应用的核心骨架：**MySQL 规则决定候选范围，LLM 只在受限候选池中做选择和解释；写操作经过后端工具和草稿校验；RAG 已具备结构化 Chunk、Metadata、向量检索、Rerank、引用和评测雏形。**
@@ -181,4 +183,3 @@ RAG Trace 仅保留本 JVM 最近 200 条，AI 调用快照仅保留 `AtomicRefe
 - [Qdrant Filtering 与 Payload Index](https://qdrant.tech/documentation/search/filtering/)
 - [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 - [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/)
-

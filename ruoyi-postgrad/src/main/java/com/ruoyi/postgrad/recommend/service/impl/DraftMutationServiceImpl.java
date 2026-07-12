@@ -77,27 +77,7 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         excluded.setCreatedAt(LocalDateTime.now());
         saveExcluded(userId, excluded);
 
-        // 4. 执行填充策略
-        if (removedTier != null && workspace != null) {
-            List<ExcludedCandidateVO> allExcluded = loadExcluded(userId);
-            Set<Long> draftIds = collectDraftIds(draft);
-            RefillResultVO refill = refillPolicyService.evaluate(
-                workspace, allExcluded, removedTier, draftIds);
-            result.setRefill(refill);
-
-            // 自动填充：直接添加
-            if ("auto".equals(refill.getPolicy()) && refill.getFilled() != null) {
-                CandidateCardVO filled = refill.getFilled();
-                draft = addToDraft(draft, filled, removedTier);
-                result.setDraft(draft);
-                result.setDraftCount(countDraft(draft));
-                logDecision(userId, "auto_refill", filled.getFact().getProgramId(),
-                    filled.getFact().getSchoolName(), removedTier, "system",
-                    "同档位自动填充");
-            }
-        }
-
-        // 5. 决策日志
+        // 4. 决策日志
         logDecision(userId, "remove", programId, schoolName, removedTier, "user",
             "用户移除" + (schoolName != null ? " " + schoolName : ""));
         return result;
@@ -166,9 +146,16 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
     public DraftMutationResultVO replaceCandidate(Long userId, Long removeProgramId,
                                                    Long addProgramId, String tier,
                                                    CandidateWorkspaceVO workspace) {
-        // 先移除，再添加
-        DraftMutationResultVO removeResult = removeCandidate(userId, removeProgramId, workspace);
-        if (!removeResult.isOk()) return removeResult;
+        // 原子替换：先直接从草稿移除，再添加替换候选，不触发任何补位逻辑
+        DraftVO before = readDraft(userId);
+        String removedTier = findCandidateTier(before, removeProgramId);
+        if (removedTier == null) {
+            DraftMutationResultVO fail = new DraftMutationResultVO();
+            fail.setOk(false);
+            fail.setAction("replace");
+            return fail;
+        }
+        String removedSchoolName = findCandidateName(before, removeProgramId);
 
         CandidateCardVO replacement = findInWorkspace(workspace, addProgramId, tier);
         if (replacement == null) {
@@ -178,18 +165,32 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
             return fail;
         }
 
-        DraftVO draft = removeResult.getDraft();
+        // 直接操作 draft 对象，只写一次 Redis
+        DraftVO draft = removeFromDraft(userId, removeProgramId);
         draft = addToDraft(draft, replacement, tier);
         writeDraft(userId, draft);
+
+        // 记录排除
+        ExcludedCandidateVO excluded = new ExcludedCandidateVO();
+        excluded.setProgramId(removeProgramId);
+        excluded.setSchoolName(removedSchoolName);
+        excluded.setReasonType("replaced");
+        excluded.setTierAtRemoval(removedTier);
+        excluded.setCreatedAt(LocalDateTime.now());
+        saveExcluded(userId, excluded);
 
         DraftMutationResultVO result = new DraftMutationResultVO();
         result.setOk(true);
         result.setAction("replace");
         result.setDraft(draft);
         result.setDraftCount(countDraft(draft));
-        logDecision(userId, "replace", addProgramId,
-            replacement.getFact().getSchoolName(), tier, "user",
-            "替换自 programId=" + removeProgramId);
+
+        String addedSchoolName = replacement.getFact() != null ? replacement.getFact().getSchoolName() : "unknown";
+        logDecision(userId, "replace", addProgramId, addedSchoolName, tier, "user",
+            "替换自 programId=" + removeProgramId + " (" + removedSchoolName + ")");
+
+        log.info("[Mutation] replace userId={} removeProgramId={} ({} -> {}) draftCount={}",
+            userId, removeProgramId, removedSchoolName, addedSchoolName, result.getDraftCount());
         return result;
     }
 

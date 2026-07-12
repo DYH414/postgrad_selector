@@ -37,6 +37,11 @@ import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
 import com.ruoyi.postgrad.recommend.tool.V2ChatTools;
 import com.ruoyi.postgrad.recommend.tool.V2DraftActionTools;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationContext;
+import com.ruoyi.postgrad.rag.dto.RagChunkResult;
+import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
+import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
+import com.ruoyi.postgrad.rag.service.RagRetrievalResult;
+import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import com.ruoyi.postgrad.rag.trace.RagTrace;
 
 import dev.langchain4j.data.message.AiMessage;
@@ -45,7 +50,10 @@ import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import dev.langchain4j.rag.DefaultRetrievalAugmentor;
 import dev.langchain4j.rag.RetrievalAugmentor;
+import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.service.AiServices;
 
 /**
@@ -98,8 +106,20 @@ public class AiChatServiceImpl implements IAiChatService {
     @Autowired(required = false)
     private RetrievalAugmentor retrievalAugmentor;
 
+    @Autowired(required = false)
+    private RagRetrievalService ragRetrievalService;
+
     @Autowired
     private com.ruoyi.postgrad.rag.trace.RagTraceRecorder ragTraceRecorder;
+
+    @Value("${app.ai.rag.retrieval.max-results:5}")
+    private int ragMaxResults = 5;
+
+    @Value("${app.ai.rag.retrieval.min-score:0.6}")
+    private double ragMinScore = 0.6;
+
+    @Value("${app.ai.rag.retrieval.rerank-top-n:3}")
+    private int ragRerankTopN = 3;
 
     private interface StreamAssistant {
         dev.langchain4j.service.TokenStream chat(String message);
@@ -200,8 +220,11 @@ public class AiChatServiceImpl implements IAiChatService {
                 .chatMemory(chatMemory)
                 .systemMessageProvider(ignored -> finalSystemPrompt);
             final boolean generalRetrievalEnabled = usesGenericRetrieval(ragRoute, retrievalAugmentor);
+            final GenericRagRetrieval genericRag = generalRetrievalEnabled
+                ? prepareGenericRagRetrieval(message) : null;
             if (generalRetrievalEnabled) {
-                assistantBuilder.retrievalAugmentor(retrievalAugmentor);
+                assistantBuilder.retrievalAugmentor(genericRag != null
+                    ? genericRag.augmentor() : retrievalAugmentor);
             }
             StreamAssistant assistant = assistantBuilder.build();
 
@@ -244,7 +267,11 @@ public class AiChatServiceImpl implements IAiChatService {
                         boolean draftChanged = toolContext.draftChanged();
                         String toolActionResultJson = toolContext.lastActionResultJson();
                         if (generalRetrievalEnabled) {
-                            recordRagTrace(userId, message, runId, ragRoute.traceValue(), RagTrace.Outcome.SUCCESS, null, null, t0);
+                            if (genericRag != null) {
+                                recordRagTrace(userId, message, runId, ragRoute, genericRag.response(), t0);
+                            } else {
+                                recordRagTrace(userId, message, runId, ragRoute.traceValue(), RagTrace.Outcome.SUCCESS, null, null, t0);
+                            }
                         }
                         callback.onDone(aiText, draftChanged, toolActionResultJson, runId);
                     } catch (Exception e) {
@@ -284,6 +311,21 @@ public class AiChatServiceImpl implements IAiChatService {
 
     static boolean usesGenericRetrieval(ChatRagRouteResolver.Route route, RetrievalAugmentor augmentor) {
         return route == ChatRagRouteResolver.Route.GENERAL && augmentor != null;
+    }
+
+    private GenericRagRetrieval prepareGenericRagRetrieval(String message) {
+        if (ragRetrievalService == null) {
+            return null;
+        }
+        RagSearchTestRequest request = new RagSearchTestRequest(message, ragMaxResults, ragMinScore, ragRerankTopN);
+        RagRetrievalResult result = ragRetrievalService.retrieve(request);
+        ContentRetriever fixedRetriever = ignored -> result.selectedSegments().stream()
+            .map(Content::from)
+            .toList();
+        RetrievalAugmentor augmentor = DefaultRetrievalAugmentor.builder()
+            .contentRetriever(fixedRetriever)
+            .build();
+        return new GenericRagRetrieval(result.response(), augmentor);
     }
 
     private void notifyErrorAndFinish(ChatStreamCallback callback, Throwable error, String runId,
@@ -456,6 +498,49 @@ public class AiChatServiceImpl implements IAiChatService {
         } catch (Exception e) {
             log.warn("[AiChat] Failed to record RAG trace for runId={}: {}", runId, e.getMessage());
         }
+    }
+
+    private void recordRagTrace(Long userId, String query, String runId, ChatRagRouteResolver.Route route,
+                                RagSearchTestResponse retrieval, long startMs) {
+        RagTrace.Outcome outcome = retrieval != null && retrieval.getErrorSummary() == null
+            ? RagTrace.Outcome.SUCCESS : RagTrace.Outcome.FAILURE;
+        try {
+            RagTrace trace = new RagTrace();
+            trace.setOperationKey("ai-chat");
+            trace.setRunId(runId);
+            trace.setRetrievalRoute(route.traceValue());
+            trace.setUserId(userId);
+            trace.setQuery(query);
+            trace.setOutcome(outcome);
+            trace.setFailureStage(outcome == RagTrace.Outcome.FAILURE ? "retrieval" : null);
+            trace.setErrorSummary(retrieval != null ? retrieval.getErrorSummary() : "RAG retrieval unavailable");
+            if (retrieval != null) {
+                trace.setRetrievedCount(retrieval.getRetrievedCount());
+                trace.setSelectedCount(retrieval.getSelectedCount());
+                trace.setMetadataFilters(retrieval.getAppliedFilters());
+                trace.setEmbeddingLatencyMs(retrieval.getLatency().getEmbeddingMs());
+                trace.setRetrievalLatencyMs(retrieval.getLatency().getRetrievalMs());
+                trace.setRerankLatencyMs(retrieval.getLatency().getRerankMs());
+                List<RagChunkResult> selected = retrieval.getChunks().stream()
+                    .filter(RagChunkResult::isSelectedForPrompt)
+                    .toList();
+                trace.setTopSources(selected.stream()
+                    .map(RagChunkResult::getSourceName)
+                    .filter(name -> name != null && !name.isBlank())
+                    .distinct()
+                    .toList());
+                trace.setSelectedChunks(selected.stream()
+                    .map(chunk -> new RagTrace.SelectedChunk(chunk.getSourceName(), chunk.getContentPreview()))
+                    .toList());
+            }
+            trace.setTotalLatencyMs(System.currentTimeMillis() - startMs);
+            ragTraceRecorder.record(trace);
+        } catch (Exception e) {
+            log.warn("[AiChat] Failed to record generic RAG trace for runId={}: {}", runId, e.getMessage());
+        }
+    }
+
+    private record GenericRagRetrieval(RagSearchTestResponse response, RetrievalAugmentor augmentor) {
     }
 
     static String buildDraftContextText(DraftVO draft) {

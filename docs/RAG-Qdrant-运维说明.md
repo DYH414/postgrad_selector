@@ -1,230 +1,150 @@
 # RAG / Qdrant 运维说明
 
-本文是本地开发和演示环境的 RAG 速查手册。当前项目有两条知识路径：
+本文描述当前生效的 RAG 运行方式。MySQL 是招生事实的唯一来源；Qdrant 提供语义召回、重排、证据引用和检索观测，不参与候选池的确定性排序。
 
-| 路径 | 目录 | 作用 |
-|------|------|------|
-| 通用知识 | `ruoyi-postgrad/src/main/resources/rag-documents/` | 考研术语、政策、择校方法等通用问答 |
-| 数据库证据 | `ruoyi-postgrad/src/main/resources/rag-generated/` | 从 MySQL 学校、专业、复试线、录取结果、招生计划、数据质量生成的推荐证据 |
+## 架构与数据流
 
-MySQL 仍然是学校、专业、分数、计划、年份、来源 URL 的事实源；Qdrant 负责语义召回、rerank 和引用溯源，不替代确定性查询。
+```text
+MySQL 招生数据                 通用 Markdown
+       |                            |
+       v                            v
+程序历史 / 最新事实 / 数据质量  rag-documents/
+       \                            /
+        -> 结构化 section Chunk + Metadata
+        -> Embedding (BAAI/bge-m3)
+        -> Candidate Collection
+        -> point-count 校验
+        -> Qdrant Alias 原子切换
+        -> postgrad_rag_active
 
-## 组件
+查询 -> Metadata 解析/过滤 -> Vector Retrieval -> BGE Rerank -> Top-K 证据
+```
 
-| 组件 | 作用 | 默认值 |
-|------|------|--------|
-| Qdrant | RAG 向量库 | `http://localhost:6333` / gRPC `6334` |
-| Collection | RAG 文档集合 | `postgrad_rag_main` |
-| Embedding | 文档与查询向量化 | SiliconFlow `BAAI/bge-m3` |
-| Rerank | 检索片段重排 | SiliconFlow `BAAI/bge-reranker-v2-m3` |
-| 通用文档目录 | 手工知识来源 | `rag-documents/` |
-| 数据库文档目录 | MySQL 生成证据来源 | `rag-generated/` |
+数据库数据每个专业项目生成三类逻辑文档：
 
-## 启动 Qdrant
+| 文档类型 | 用途 | 典型章节 |
+|---|---|---|
+| `program_history` | 范围内历年趋势与风险 | `score_trend`、`admission_trend`、`risk_factors` |
+| `program_year` | 范围内最新可用年份的事实快照 | `admission_score`、`admission_plan`、`admission_result` |
+| `data_quality` | 覆盖度、缺失字段与来源冲突 | `coverage_summary`、`missing_years`、`source_conflicts` |
+
+`program_year` 不是机械取结束年份：对每个专业选取查询范围内最新有数据的年份。批量构建会覆盖全部有效专业项目，不依赖按字母排序的隐式上限。
+
+## 关键组件
+
+| 组件 | 当前约定 |
+|---|---|
+| Qdrant | REST `http://localhost:6333`，gRPC `6334` |
+| 活动别名 | `postgrad_rag_active` |
+| 版本集合 | `postgrad_rag_<timestamp>_<suffix>`，由构建任务创建 |
+| Embedding | SiliconFlow `BAAI/bge-m3` |
+| Rerank | SiliconFlow `BAAI/bge-reranker-v2-m3` |
+| 通用知识 | `ruoyi-postgrad/src/main/resources/rag-documents/` |
+| 数据库 Markdown 镜像 | `./rag-data/generated/`，派生产物，不提交 Git |
+| 构建记录 | MySQL `rag_index_run` |
+
+常用 Payload 字段：`school_id`、`program_id`、`year`、`doc_type`、`section`、`source_type`。候选集合创建时会为常用过滤字段建立 Qdrant Payload Index。
+
+## 本地启动
 
 ```powershell
 docker compose up -d qdrant
-curl http://localhost:6333/collections
+Invoke-RestMethod http://localhost:6333/collections | ConvertTo-Json -Depth 8
 ```
 
-Qdrant Web UI:
+Qdrant Dashboard：`http://localhost:6333/dashboard`
 
-```text
-http://localhost:6333/dashboard
-```
-
-## 后端环境变量
+后端需要配置：
 
 ```powershell
 $env:SILICONFLOW_API_KEY="sk-..."
 $env:QDRANT_URL="http://localhost:6333"
 $env:QDRANT_HOST="localhost"
 $env:QDRANT_GRPC_PORT="6334"
-$env:QDRANT_COLLECTION="postgrad_rag_main"
 ```
 
-`QDRANT_API_KEY` 仅在 Qdrant 开启鉴权时设置；本地 Docker 默认不需要。
+本地默认不需要 `QDRANT_API_KEY`。不要把版本集合名称写死在配置中；运行时统一通过 `postgrad_rag_active` 访问活动知识库。
 
-## 判断 RAG 是否启用
+## 创建或重建知识库
 
-日志出现以下内容表示 collection 和索引流程正常：
+后端启动不会清空或自动重建知识库。管理员从管理端“RAG 观测台”启动一次 Index Run，或调用接口：
 
 ```text
-[RagQdrant] Collection postgrad_rag_main created or updated
-[RagInit] Index complete
+POST /postgrad/rag/index-runs?startYear=2022&endYear=2026
+GET  /postgrad/rag/index-runs/{runId}
+GET  /postgrad/rag/status
 ```
 
-接口检查：
+构建状态依次为：`ASSEMBLY -> EMBEDDING -> VALIDATION -> ALIAS_SWITCH -> SUCCEEDED`。`FAILED` 时旧 Alias 保持不变，候选集合会被清理；`SUCCEEDED` 后 Alias 才切到新集合，因此在线检索不会读到半成品。
+
+本地一次 `2022-2026` 的已验证构建示例为 `3,581` 份逻辑文档、`21,461` 个 Chunk。实际数量随数据库有效项目和数据覆盖变化。
+
+确认 Alias：
 
 ```powershell
-curl http://localhost:6333/collections
-curl http://localhost:6333/collections/postgrad_rag_main
+Invoke-RestMethod http://localhost:6333/aliases | ConvertTo-Json -Depth 8
 ```
 
-管理后台页面：
+预期能看到：
 
 ```text
-/postgrad/rag
+postgrad_rag_active -> postgrad_rag_<version>
 ```
 
-关键状态：
+## 检索测试与验收
 
-| 字段 | 期望 |
-|------|------|
-| `enabled` | `true` |
-| `indexed` | `true` |
-| `reachable` | `true` |
-| `backend` | `qdrant` |
-| `documentCount` / `chunkCount` | 大于 0 |
-| `lastError` | 空 |
-
-## 数据库 RAG 文档生成
-
-第一波推荐证据优先从 MySQL 生成，而不是手工写 Markdown。管理端 `/postgrad/rag` 提供参数：
-
-| 参数 | 建议首跑值 | 说明 |
-|------|------------|------|
-| `startYear` | `2023` | 生成数据起始年份 |
-| `endYear` | `2025` | 生成数据结束年份 |
-| `limit` | `1000` | 限制导出的专业数量，防止首跑过慢 |
-
-后端接口：
+管理端 `/postgrad/rag` 的“检索测试”不经过 LLM，直接验证：
 
 ```text
-POST /postgrad/rag/generate-documents
+Embedding -> Metadata Filter -> Qdrant -> Rerank -> Top-K
 ```
 
-返回值重点看：
+例如输入 `深圳大学 300 分左右有什么专业`，系统应解析并应用 `school_id=15`。检查：
 
-| 字段 | 含义 |
-|------|------|
-| `documentCount` | 生成的数据库 RAG 文档数 |
-| `writtenFileCount` | 写入资源目录的文件数 |
-| `outputDirectory` | 输出目录，通常是 `rag-generated/` |
-| `mode` | `database` |
+- `retrievedCount > 0`、`selectedCount > 0`；
+- 返回结果的 `schoolId`、`programId`、`docType`、`section` 与查询范围一致；
+- `vectorRank` 与 `rerankRank` 均可见；
+- Trace 中有 Embedding/Retrieval/Rerank 分阶段耗时和 Top 来源。
 
-数据库 RAG 文档应该带有稳定 metadata，例如：
+精确证据问题使用 `program_id` 限定。例如“杭州电子科技大学某专业为什么被推荐、有什么风险”会使用 `program_history`，优先召回 `risk_factors`、`score_trend`、`source_quality`。严格过滤无结果时，只允许在同一 `program_id` 内按受控规则放宽，并在 Trace 标记 `fallbackUsed` 与原因。
 
-| metadata | 用途 |
-|----------|------|
-| `school_id` / `program_id` | 推荐报告和聊天按候选专业精确检索 |
-| `school_name` / `program_name` | 用户可读展示 |
-| `year` | 历年分数线、录取结果、招生计划过滤 |
-| `doc_type` | 区分 `program_history`、`program_year_summary`、`data_quality` 等 |
-| `section` | 区分分数趋势、招生计划、风险、数据质量 |
-| `source_url` / `source_owner` | 引用溯源 |
-| `content_hash` | 生成文档和 chunk 的稳定追踪 |
+## AI 推荐与聊天中的使用边界
 
-## 重新索引
+| 场景 | 事实主源 | RAG 作用 |
+|---|---|---|
+| 候选池、分档、排序 | MySQL + 规则 | 不参与排序 |
+| “300 分有什么专业” | `searchPrograms` MySQL Tool | 通用 RAG 可提供辅助上下文，不能取代分数筛选 |
+| “为什么推荐/风险/趋势” | 候选 `programId` + MySQL | `getProgramEvidence` 精确召回可引用证据 |
+| 报告生成 | MySQL 事实快照 | 生成 `ragCitations` 追溯来源 |
+| 通用政策、408 科目 | `rag-documents/` | 通用检索与回答来源 |
 
-手工通用知识重新索引：
+AI Chat 的通用问题会在流式模型调用前执行一次请求级检索，并将同一份结果注入上下文与 `ai-chat` Trace。因此 Trace 的召回数、选中数、过滤条件、Top 来源和 E/Q/R 耗时与该次聊天一致，不依赖异步线程的临时状态。
+
+## 观测与故障排查
+
+接口：
 
 ```text
-POST /postgrad/rag/reindex
-```
-
-数据库推荐证据重新索引：
-
-```text
-POST /postgrad/rag/reindex-database
-```
-
-两者都会写入同一个 Qdrant collection，但用途不同。演示推荐证据时，优先执行：
-
-1. 生成数据库文档
-2. 索引数据库 RAG
-3. 用 metadata 检索测试验证指定学校/专业
-
-## Metadata 检索测试
-
-管理页“检索测试”支持查询文本加 metadata filter。它不经过 LLM，用于直接验证：
-
-```text
-Embedding -> Qdrant -> Rerank -> TopN
-```
-
-请求示例：
-
-```json
-{
-  "query": "广州大学 网络空间安全 录取趋势",
-  "programId": "101",
-  "schoolId": "22",
-  "year": "2025",
-  "docType": "program_history",
-  "section": "score_trend",
-  "maxResults": 5,
-  "rerankTopN": 3
-}
-```
-
-返回结果重点看：
-
-| 字段 | 含义 |
-|------|------|
-| `appliedFilters` | 实际生效的 metadata filter |
-| `results[].sourceName` | 命中的文档来源 |
-| `results[].schoolId` / `programId` | 是否命中目标学校/专业 |
-| `results[].docType` / `section` | 是否命中目标文档类型和语义章节 |
-| `results[].contentPreview` | 命中的切片内容预览 |
-| `results[].vectorRank` | Qdrant 向量召回排序 |
-| `results[].rerankRank` | rerank 后排序 |
-| `results[].selectedForPrompt` | 是否进入最终上下文候选 |
-
-## 推荐链路如何使用 RAG
-
-RAG 不参与候选池排序，也不替代 MySQL。推荐链路里它只做证据层：
-
-| 阶段 | 是否使用 RAG | 说明 |
-|------|--------------|------|
-| CandidatePool / Workspace | 否 | 使用 MySQL 结构化数据和规则打分 |
-| AI 选择 | 间接 | Prompt 仍以结构化 facts 为主 |
-| AI 对话解释 | 是 | `getProgramEvidence(programId, question)` 检索专业证据 |
-| 报告生成 | 是 | `ragCitations` 来自选中 chunk，前端展示引用 |
-| 管理观测 | 是 | Trace 记录 filters、fallback、召回数、选中数、top sources |
-
-## Trace 观测
-
-最近 Trace 接口：
-
-```text
+GET /postgrad/rag/status
 GET /postgrad/rag/traces?limit=20
+POST /postgrad/rag/search-test
 ```
 
-Trace 只保存在后端进程内存中，重启后会清空；它用于演示和排查最近请求，不作为长期审计日志。
+常见 `operationKey`：
 
-重点 operation key：
+| operationKey | 说明 |
+|---|---|
+| `search-test` | 管理端直接检索测试 |
+| `ai-chat` | 用户聊天的通用 RAG 预检索 |
+| `recommendation-evidence` | `getProgramEvidence` 或报告的专业级证据检索 |
 
-| operationKey | 含义 |
-|--------------|------|
-| `search-test` | 管理端检索测试 |
-| `recommendation-evidence` | 推荐报告或聊天获取专业证据 |
-| `database-generate` | 生成数据库 RAG 文档 |
-| `database-reindex` | 索引数据库 RAG 文档 |
-| `ai-chat` | AI 对话中发生的 RAG 检索 |
+`RagTraceRecorder` 是单实例内存环形缓冲，重启后清空；它用于开发、演示和最近问题排查，不作为长期审计存储。
 
-推荐证据 Trace 应重点确认：
-
-- `metadataFilters` 包含预期的 `program_id`、`school_id`、`doc_type` 或 `section`
-- `retrievedCount` 大于 0
-- `selectedCount` 大于 0
-- `fallbackUsed` 可解释，且 fallback 模式不会悄悄扩大到无关学校
-- `topSources` 能对应到 `rag-generated/` 文件
-
-## 已知限制
-
-- 数据稀疏时，部分专业没有历年录取结果或复试线，RAG 会返回数据质量说明或触发受控 fallback。
-- `RagTraceRecorder` 是内存环形缓冲，不是长期审计系统。
-- 批量生成的 Markdown 属于派生产物；默认只保留少量样例或按需求提交，避免把大量数据库快照混进代码提交。
-- Qdrant collection 清空重建会影响当前检索结果，演示前应确认索引完成。
-
-## 常见问题
-
-| 现象 | 处理 |
-|------|------|
-| `Embedding API key not configured` | 检查 `SILICONFLOW_API_KEY` 是否被后端进程读取 |
-| `Qdrant unavailable` | 确认 `docker ps` 中 `postgrad-qdrant` 正在运行，并检查 `curl http://localhost:6333/collections` |
-| IDEA Docker 插件报 API `1.24` 太旧 | 不用 IDEA 启动 Docker，直接命令行 `docker compose up -d qdrant` |
-| Qdrant dashboard 无 collection | 后端还未完成 RAG 初始化，或 `SILICONFLOW_API_KEY` 缺失 |
-| 检索测试有结果但推荐报告无引用 | 确认报告候选的 `programId` 有对应 metadata，且 `recommendation-evidence` Trace 无错误 |
-| 严格 filter 返回空 | 放宽 `section` 或 `year`，再看 Trace 中的 fallback 记录 |
+| 现象 | 排查方式 |
+|---|---|
+| `reachable=false` | 检查 Qdrant 容器和 `QDRANT_URL` |
+| `indexed=false` | 启动新的 Index Run，查看该 `runId` 的失败阶段与错误摘要 |
+| 构建中检索仍正常 | 正常，Alias 仍指向旧活动集合 |
+| 搜索无结果 | 先确认 Alias、文档/Chunk 数，再检查 `school_id`、`program_id`、`year`、`doc_type` 过滤是否过窄 |
+| AI Chat Trace 为 0/0 | 确认后端已加载请求级预检索版本；成功聊天应记录真实 `retrievedCount/selectedCount` |
+| 同名专业分数不同 | 比较 `collegeName`、`programCode`、`degreeType`、`dataYear`；不同招生单位或年份是独立项目 |
