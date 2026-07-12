@@ -76,6 +76,33 @@ class RagRetrievalServiceTest {
         assertNotNull(response.getChunks().get(0).getContentPreview());
     }
 
+    @Test
+    void retrieveShouldKeepSelectedChunksAndFullSegmentsInRerankOrder() {
+        ObjectProvider<EmbeddingModel> embeddingProvider = embeddingProvider("深圳大学风险");
+        TextSegment vectorFirst = segment("向量第一条", "source-a");
+        TextSegment vectorSecond = segment("向量第二条", "source-b");
+        EmbeddingStore<TextSegment> embeddingStore = embeddingStore(List.of(vectorFirst, vectorSecond));
+        SiliconFlowReranker reranker = mock(SiliconFlowReranker.class);
+        when(reranker.scoreAll(anyList(), eq("深圳大学风险")))
+            .thenReturn(Response.from(List.of(0.2D, 0.9D)));
+
+        RagRetrievalService service = new RagRetrievalService(
+            embeddingProvider, embeddingStore, provider(reranker), provider(null));
+
+        RagRetrievalResult result = service.retrieve(
+            new RagSearchTestRequest("深圳大学风险", 2, 0.0, 2));
+
+        assertEquals(List.of("source-b", "source-a"), result.response().getChunks().stream()
+            .filter(chunk -> chunk.isSelectedForPrompt())
+            .map(chunk -> chunk.getSourceId())
+            .toList());
+        assertEquals(List.of("source-b", "source-a"), result.selectedSegments().stream()
+            .map(segment -> segment.metadata().getString("source_id"))
+            .toList());
+        assertEquals(2, result.response().getChunks().get(0).getVectorRank());
+        assertEquals(1, result.response().getChunks().get(1).getVectorRank());
+    }
+
     private static ObjectProvider<EmbeddingModel> embeddingProvider(String query) {
         EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
         when(embeddingModel.embed(query)).thenReturn(Response.from(Embedding.from(new float[]{0.1f, 0.2f})));
@@ -93,7 +120,13 @@ class RagRetrievalServiceTest {
     }
 
     private static TextSegment segment(String text) {
-        return TextSegment.from(text, new Metadata().put("source_name", "深圳大学招生数据"));
+        return segment(text, "source-" + text);
+    }
+
+    private static TextSegment segment(String text, String sourceId) {
+        return TextSegment.from(text, new Metadata()
+            .put("source_name", "深圳大学招生数据")
+            .put("source_id", sourceId));
     }
 
     @SuppressWarnings("unchecked")

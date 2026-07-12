@@ -118,10 +118,11 @@ public class RagRetrievalService {
 
         List<ChunkSelection> selections = buildChunkSelections(
             retrievedSegments, rerankScores, defaultValue(request.getRerankTopN(), 3), rerankFailed);
-        response.setChunks(selections.stream().map(ChunkSelection::chunk).toList());
-        response.setSelectedCount((int) selections.stream().filter(ChunkSelection::selected).count());
+        List<ChunkSelection> orderedSelections = orderForResponse(selections);
+        response.setChunks(orderedSelections.stream().map(ChunkSelection::chunk).toList());
+        response.setSelectedCount((int) orderedSelections.stream().filter(ChunkSelection::selected).count());
         response.getLatency().setTotalMs(System.currentTimeMillis() - t0);
-        return result(response, selectedSegments(selections));
+        return result(response, selectedSegments(orderedSelections));
     }
 
     private List<ChunkSelection> buildChunkSelections(List<TextSegment> segments,
@@ -186,9 +187,14 @@ public class RagRetrievalService {
     private List<TextSegment> selectedSegments(List<ChunkSelection> selections) {
         return selections.stream()
             .filter(ChunkSelection::selected)
+            .map(ChunkSelection::segment)
+            .toList();
+    }
+
+    private static List<ChunkSelection> orderForResponse(List<ChunkSelection> selections) {
+        return selections.stream()
             .sorted(Comparator.comparing(selection -> selection.chunk().getRerankRank(),
                 Comparator.nullsLast(Comparator.naturalOrder())))
-            .map(ChunkSelection::segment)
             .toList();
     }
 
