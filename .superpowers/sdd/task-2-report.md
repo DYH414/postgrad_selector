@@ -73,3 +73,32 @@ Commands and results:
 
 The broader service/dataset files remain integrated feature prerequisites and
 were not reverted to artificially narrow the commit.
+
+## Retrieval Guard Review Fix
+
+Root cause: the working-tree `RagRetrievalService` already contained the
+necessary `request.isSkipRerank() ? null : rerankerProvider.getIfAvailable()`
+guard, but that pre-existing change was not included in the Task2 commit.
+
+The guard and its focused regression test are now intentionally owned in:
+
+- `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/service/RagRetrievalService.java`
+- `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/rag/service/RagRetrievalServiceTest.java`
+
+TDD evidence:
+
+1. RED: temporarily reverted only the working-tree guard, then ran
+   `mvn -pl ruoyi-postgrad -Dtest=RagRetrievalServiceTest#retrieveShouldSkipRerankerAndPreserveVectorOrderWhenRequested test`.
+   It failed at `verifyNoInteractions(reranker)` because the reranker was
+   invoked.
+2. GREEN: restored the existing guard without changing its behavior. The same
+   focused test passed with 1 test, 0 failures, and 0 errors.
+3. Full focused class passed with
+   `mvn -pl ruoyi-postgrad -Dtest=RagRetrievalServiceTest test`: 4 tests,
+   0 failures, and 0 errors.
+
+Commit: `735866a0` - `test(rag): cover vector-only rerank bypass`.
+
+The new test proves `skipRerank=true` does not invoke
+`SiliconFlowReranker` and preserves vector order in selected segments. No
+controller, UI, or other uncommitted evaluation files were modified.
