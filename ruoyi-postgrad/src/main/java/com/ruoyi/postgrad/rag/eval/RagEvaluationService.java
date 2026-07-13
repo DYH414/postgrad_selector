@@ -69,6 +69,8 @@ public class RagEvaluationService {
         int hit1 = 0, hit3 = 0, hit5 = 0;
         double recallSum = 0.0;
         double ndcgSum = 0.0;
+        int positiveCases = 0;
+        int noAnswerTotal = 0, noAnswerCorrect = 0, falsePositive = 0;
 
         // 系统级指标计数器
         int filterOk = 0, filterTotal = 0;
@@ -88,11 +90,25 @@ public class RagEvaluationService {
             cr.setDifficulty(tc.getDifficulty());
             cr.setTags(tc.getTags());
 
+            if (tc.isNoAnswer()) {
+                noAnswerTotal++;
+                if (cr.isPassed()) {
+                    noAnswerCorrect++;
+                    passed++;
+                } else {
+                    falsePositive++;
+                }
+                caseResults.add(cr);
+                continue;
+            }
+
+            positiveCases++;
+
             // ── 检索排序指标 ──
             int firstRank = findFirstRelevantRank(tc, response);
-            int[] relCounts = countRelevantPerRank(tc, response, FINAL_TOP_K);
+            int relevantInTopK = countRelevantInTopK(tc, response, FINAL_TOP_K);
             cr.setFirstRelevantRank(firstRank);
-            cr.setRelevantInTopK(relCounts[FINAL_TOP_K - 1]); // cumulative top-K
+            cr.setRelevantInTopK(relevantInTopK);
 
             if (firstRank > 0) {
                 mrrSum += 1.0 / firstRank;
@@ -101,22 +117,23 @@ public class RagEvaluationService {
             if (firstRank > 0 && firstRank <= 3) hit3++;
             if (firstRank > 0 && firstRank <= 5) hit5++;
 
-            // Recall@5 = relevant_found_in_K / total_relevant
-            int totalRelevant = countTotalRelevantMatches(tc, response);
-            recallSum += totalRelevant > 0 ? (double) relCounts[FINAL_TOP_K - 1] / totalRelevant : 0;
+            int expectedRelevant = expectedRelevantCount(tc);
+            recallSum += expectedRelevant > 0 ? (double) relevantInTopK / expectedRelevant : 0;
 
             // nDCG@5 — DCG / IDCG
             double dcg = 0.0;
-            for (int i = 0; i < FINAL_TOP_K; i++) {
-                if (relCounts[i] > 0) dcg += 1.0 / (Math.log(i + 2) / Math.log(2));
+            for (int rank = 1; rank <= FINAL_TOP_K; rank++) {
+                if (isRelevantAtRank(tc, response, rank)) {
+                    dcg += 1.0 / log2(rank + 1);
+                }
             }
-            double idcg = 1.0; // ideal: first position
+            double idcg = idealDcg(Math.min(expectedRelevant, FINAL_TOP_K));
             ndcgSum += idcg > 0 ? dcg / idcg : 0;
 
             // ── Filter Accuracy ──
-            boolean filterPass = checkFilterAccuracy(tc, response);
-            cr.setFilterMatch(filterPass);
-            if (hasFilterConstraint(tc)) {
+            if (response.getChunks() != null && !response.getChunks().isEmpty()) {
+                boolean filterPass = checkFilterAccuracy(tc, response);
+                cr.setFilterMatch(filterPass);
                 filterTotal++;
                 if (filterPass) filterOk++;
             }
@@ -154,16 +171,20 @@ public class RagEvaluationService {
         result.setPassedCases(passed);
         result.setFailedCases(n - passed);
         result.setPassRate(n == 0 ? 0.0 : (double) passed / n);
-        result.setMrr(n == 0 ? 0.0 : mrrSum / n);
-        result.setHitAt1(n == 0 ? 0.0 : (double) hit1 / n);
-        result.setHitAt3(n == 0 ? 0.0 : (double) hit3 / n);
-        result.setHitAt5(n == 0 ? 0.0 : (double) hit5 / n);
-        result.setRecallAt5(n == 0 ? 0.0 : recallSum / n);
-        result.setNdcg5(n == 0 ? 0.0 : ndcgSum / n);
+        result.setPositiveCases(positiveCases);
+        result.setNoAnswerCases(noAnswerTotal);
+        result.setNoAnswerAccuracy(noAnswerTotal == 0 ? 0.0 : (double) noAnswerCorrect / noAnswerTotal);
+        result.setFalsePositiveRate(noAnswerTotal == 0 ? 0.0 : (double) falsePositive / noAnswerTotal);
+        result.setMrr(positiveCases == 0 ? 0.0 : mrrSum / positiveCases);
+        result.setHitAt1(positiveCases == 0 ? 0.0 : (double) hit1 / positiveCases);
+        result.setHitAt3(positiveCases == 0 ? 0.0 : (double) hit3 / positiveCases);
+        result.setHitAt5(positiveCases == 0 ? 0.0 : (double) hit5 / positiveCases);
+        result.setRecallAt5(positiveCases == 0 ? 0.0 : recallSum / positiveCases);
+        result.setNdcg5(positiveCases == 0 ? 0.0 : ndcgSum / positiveCases);
         result.setEvalK(FINAL_TOP_K);
 
         result.setFilterAccuracy(filterTotal == 0 ? 0.0 : (double) filterOk / filterTotal);
-        result.setRouteAccuracy(n == 0 ? 0.0 : (double) routeOk / n);
+        result.setRouteAccuracy(positiveCases == 0 ? 0.0 : (double) routeOk / positiveCases);
         result.setFallbackAccuracy(fallbackTotal == 0 ? 1.0 : (double) fallbackOk / fallbackTotal);
 
         result.setByCategory(buildBreakdown(catGroups));
@@ -191,28 +212,35 @@ public class RagEvaluationService {
         return -1;
     }
 
-    /** 每层 rank 累积的相关数量 */
-    private int[] countRelevantPerRank(RagEvaluationCase tc, RagSearchTestResponse resp, int k) {
-        var chunks = resp.getChunks();
-        int[] counts = new int[Math.max(k, 1)];
-        if (chunks == null) return counts;
-        int cum = 0;
-        for (int i = 0; i < Math.min(chunks.size(), k); i++) {
-            if (isRelevant(tc, chunks.get(i))) cum++;
-            counts[i] = cum;
-        }
-        return counts;
-    }
-
-    /** 总计有多少相关 Chunk（扫描全部返回结果） */
-    private int countTotalRelevantMatches(RagEvaluationCase tc, RagSearchTestResponse resp) {
+    private int countRelevantInTopK(RagEvaluationCase tc, RagSearchTestResponse resp, int k) {
         var chunks = resp.getChunks();
         if (chunks == null) return 0;
-        int c = 0;
-        for (RagChunkResult r : chunks) {
-            if (isRelevant(tc, r)) c++;
+        int count = 0;
+        for (int i = 0; i < Math.min(chunks.size(), k); i++) {
+            if (isRelevant(tc, chunks.get(i))) count++;
         }
-        return c;
+        return count;
+    }
+
+    private boolean isRelevantAtRank(RagEvaluationCase tc, RagSearchTestResponse resp, int rank) {
+        var chunks = resp.getChunks();
+        return chunks != null && rank > 0 && rank <= chunks.size() && isRelevant(tc, chunks.get(rank - 1));
+    }
+
+    private int expectedRelevantCount(RagEvaluationCase tc) {
+        return tc.getRelevantConditions().size() + tc.getRelevantSources().size();
+    }
+
+    private double idealDcg(int relevantCount) {
+        double idcg = 0.0;
+        for (int rank = 1; rank <= relevantCount; rank++) {
+            idcg += 1.0 / log2(rank + 1);
+        }
+        return idcg;
+    }
+
+    private double log2(int value) {
+        return Math.log(value) / Math.log(2);
     }
 
     /**
@@ -250,19 +278,14 @@ public class RagEvaluationService {
 
     // ── Filter Accuracy ──
 
-    private boolean hasFilterConstraint(RagEvaluationCase tc) {
-        Map<String, String> m = tc.getExpectedMetadata();
-        return m.containsKey("school_id") || m.containsKey("program_id")
-            || m.containsKey("year") || m.containsKey("doc_type");
-    }
-
     /** 检查所有返回的 chunk 是否都满足 metadata 约束 */
     private boolean checkFilterAccuracy(RagEvaluationCase tc, RagSearchTestResponse resp) {
         var chunks = resp.getChunks();
-        if (chunks == null || chunks.isEmpty()) return true; // 无结果的 fallback 算通过
+        if (chunks == null || chunks.isEmpty()) return false;
         Map<String, String> expected = tc.getExpectedMetadata();
+        if (expected == null || expected.isEmpty()) return true;
         for (RagChunkResult c : chunks) {
-            if (!matchesScope(expected, c)) return false;
+            if (!matchesMetadata(expected, c)) return false;
         }
         return true;
     }
@@ -332,6 +355,13 @@ public class RagEvaluationService {
         cr.setId(tc.getId());
         cr.setQuery(tc.getQuery());
 
+        if (tc.isNoAnswer()) {
+            boolean hasSelectedEvidence = hasUsableSelectedEvidence(resp);
+            cr.setPassed(!hasSelectedEvidence);
+            cr.setFailureReason(hasSelectedEvidence ? "FALSE_POSITIVE_EVIDENCE" : "CORRECT_ABSTENTION");
+            return cr;
+        }
+
         if (!tc.isSourceDataAvailable() && resp.getChunks().isEmpty()) {
             cr.setPassed(tc.isExpectedFallback());
             cr.setFailureReason("SOURCE_DATA_MISSING");
@@ -356,6 +386,11 @@ public class RagEvaluationService {
             cr.setFailureReason(resolveFailureReason(tc, resp));
         }
         return cr;
+    }
+
+    private boolean hasUsableSelectedEvidence(RagSearchTestResponse resp) {
+        return resp.getChunks() != null && resp.getChunks().stream()
+            .anyMatch(RagChunkResult::isSelectedForPrompt);
     }
 
     // ── Metadata helpers ──

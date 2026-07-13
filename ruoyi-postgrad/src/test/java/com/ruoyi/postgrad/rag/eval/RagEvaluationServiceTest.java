@@ -179,6 +179,100 @@ class RagEvaluationServiceTest {
         ));
     }
 
+    @Test
+    void noAnswerCorrectAbstentionDoesNotReducePositiveMetrics() {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        RagSearchTestResponse relevantResponse = response(chunk("1", "10", "2025", "program_year", "admission_score"));
+        RagSearchTestResponse abstentionResponse = response();
+        when(retrievalService.retrieve(any())).thenReturn(
+            new RagRetrievalResult(relevantResponse, List.of()),
+            new RagRetrievalResult(abstentionResponse, List.of()));
+
+        RagEvaluationCase relevantCase = relevantCase("positive");
+        RagEvaluationCase noAnswerCase = new RagEvaluationCase("safety", "不存在的学校", Map.of());
+        noAnswerCase.setNoAnswer(true);
+
+        RagEvaluationResult result = new RagEvaluationService(retrievalService)
+            .run(List.of(relevantCase, noAnswerCase));
+
+        assertEquals(1, result.getPositiveCases());
+        assertEquals(1, result.getNoAnswerCases());
+        assertEquals(1.0, result.getMrr());
+        assertEquals(1.0, result.getNoAnswerAccuracy());
+        assertEquals(0.0, result.getFalsePositiveRate());
+    }
+
+    @Test
+    void noAnswerSelectedEvidenceCountsAsFalsePositive() {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(
+            response(chunk("1", "10", "2025", "program_year", "admission_score")), List.of()));
+
+        RagEvaluationCase noAnswerCase = new RagEvaluationCase("safety", "不存在的学校", Map.of());
+        noAnswerCase.setNoAnswer(true);
+
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(noAnswerCase));
+
+        assertEquals(0, result.getPositiveCases());
+        assertEquals(0.0, result.getNoAnswerAccuracy());
+        assertEquals(1.0, result.getFalsePositiveRate());
+        assertFalse(result.getCases().get(0).isPassed());
+    }
+
+    @Test
+    void ndcgAtFiveUsesPerPositionRelevanceAndNeverExceedsOne() {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        RagChunkResult first = chunk("1", "10", "2025", "program_year", "admission_score");
+        RagChunkResult second = chunk("1", "10", "2025", "program_year", "admission_plan");
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response(first, second), List.of()));
+
+        RagEvaluationCase testCase = relevantCase("two-relevant");
+        testCase.setRelevantConditions(List.of(
+            RagEvaluationCase.RelevantCondition.of("10", "program_year", "admission_score", "2025"),
+            RagEvaluationCase.RelevantCondition.of("10", "program_year", "admission_plan", "2025")));
+
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(testCase));
+
+        assertEquals(1.0, result.getNdcg5());
+        assertTrue(result.getNdcg5() >= 0.0 && result.getNdcg5() <= 1.0);
+    }
+
+    @Test
+    void filterAccuracyIncludesOnlyPositiveCasesWithReturnedChunks() {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        RagSearchTestResponse matchingPositive = response(chunk("1", "10", "2025", "program_year", "admission_score"));
+        RagSearchTestResponse emptyPositive = response();
+        RagSearchTestResponse noAnswerEvidence = response(chunk("999", "10", "2025", "program_year", "admission_score"));
+        when(retrievalService.retrieve(any())).thenReturn(
+            new RagRetrievalResult(matchingPositive, List.of()),
+            new RagRetrievalResult(emptyPositive, List.of()),
+            new RagRetrievalResult(noAnswerEvidence, List.of()));
+
+        RagEvaluationCase noAnswerCase = new RagEvaluationCase(
+            "safety", "不存在的学校", Map.of("school_id", "99999"));
+        noAnswerCase.setNoAnswer(true);
+
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(
+            relevantCase("matching"), relevantCase("empty"), noAnswerCase));
+
+        assertEquals(1.0, result.getFilterAccuracy());
+    }
+
+    private static RagEvaluationCase relevantCase(String id) {
+        RagEvaluationCase testCase = new RagEvaluationCase(
+            id, "南京大学软件工程 2025 复试线",
+            Map.of("school_id", "1", "program_id", "10", "year", "2025", "doc_type", "program_year"));
+        testCase.setRelevantConditions(List.of(
+            RagEvaluationCase.RelevantCondition.of("10", "program_year", "admission_score", "2025")));
+        return testCase;
+    }
+
+    private static RagSearchTestResponse response(RagChunkResult... chunks) {
+        RagSearchTestResponse response = new RagSearchTestResponse();
+        response.setChunks(List.of(chunks));
+        return response;
+    }
+
     private static RagChunkResult chunk(String sid, String pid, String yr, String dt, String sec) {
         RagChunkResult c = new RagChunkResult();
         c.setSchoolId(sid);
