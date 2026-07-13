@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
 class RagEvaluationDatasetLoaderTest {
@@ -79,5 +80,21 @@ class RagEvaluationDatasetLoaderTest {
             "rag-eval/frozen-v1.jsonl", "rag-eval/safety-v1.manifest.json");
 
         assertThrows(IllegalStateException.class, mismatchedLoader::verifyFrozenV1Checksum);
+    }
+
+    @Test
+    void countMismatchThrowsForFrozenAndSafetyFixtures() {
+        byte[] frozenFixture = jsonLines(17);
+        byte[] safetyFixture = jsonLines(3);
+
+        assertThrows(IllegalStateException.class,
+            () -> loader.readJsonLines(frozenFixture, "frozen-fixture", 18));
+        assertThrows(IllegalStateException.class,
+            () -> loader.readJsonLines(safetyFixture, "safety-fixture", 4));
+    }
+
+    private static byte[] jsonLines(int count) {
+        return ("{\"id\":\"fixture\",\"query\":\"fixture\"}\n").repeat(count)
+            .getBytes(StandardCharsets.UTF_8);
     }
 }

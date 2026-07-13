@@ -47,13 +47,17 @@ public class RagEvaluationDatasetLoader {
 
     private List<RagEvaluationCase> readJsonLines(String defaultResource, int expectedCount) {
         String path = resourcePath == null ? defaultResource : resourcePath;
-        List<RagEvaluationCase> cases = Arrays.stream(new String(readBytes(path), StandardCharsets.UTF_8)
+        return readJsonLines(readBytes(path), path, expectedCount);
+    }
+
+    List<RagEvaluationCase> readJsonLines(byte[] bytes, String sourceName, int expectedCount) {
+        List<RagEvaluationCase> cases = Arrays.stream(new String(bytes, StandardCharsets.UTF_8)
                 .split("\\R"))
             .filter(line -> !line.isBlank())
             .map(line -> JSON.parseObject(line, RagEvaluationCase.class))
             .toList();
         if (cases.size() != expectedCount) {
-            throw new IllegalStateException(path + " expected " + expectedCount
+            throw new IllegalStateException(sourceName + " expected " + expectedCount
                 + " cases but found " + cases.size());
         }
         return cases;
