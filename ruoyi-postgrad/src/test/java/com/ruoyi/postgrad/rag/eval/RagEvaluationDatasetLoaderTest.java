@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.rag.eval;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -60,6 +61,16 @@ class RagEvaluationDatasetLoaderTest {
             && !testCase.isSourceDataAvailable()));
         assertEquals("99999", safety.get(0).getExpectedMetadata().get("school_id"));
         assertTrue(new HashSet<>(safety.get(0).getTags()).contains("nonexistent-school"));
+
+        RagEvaluationCase ambiguous = safety.stream()
+            .filter(testCase -> "safety-004".equals(testCase.getId()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals("请查一下那个学校那个专业去年的那个数据，是多少？", ambiguous.getQuery());
+        assertTrue(ambiguous.getExpectedMetadata().isEmpty());
+        assertTrue(ambiguous.isExpectedFallback());
+        assertFalse(ambiguous.isSourceDataAvailable());
+        assertTrue(safety.stream().noneMatch(testCase -> "我想了解计算机考研".equals(testCase.getQuery())));
     }
 
     @Test
