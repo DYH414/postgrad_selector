@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import com.ruoyi.postgrad.observe.tool.domain.AiToolCallTrace;
@@ -40,5 +41,16 @@ class AiToolTraceServiceTest {
 
         assertEquals("EXPIRED", result.get(0).getStatus());
         verify(mapper, never()).updateStatus(anyString(), anyString());
+    }
+
+    @Test
+    void mapperUsesMysqlCompatibleParameterizedLimit() throws Exception {
+        try (var stream = getClass().getClassLoader()
+            .getResourceAsStream("mapper/postgrad/AiToolCallTraceMapper.xml")) {
+            String mapperXml = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+
+            assertEquals(false, mapperXml.contains("LIMIT LEAST("));
+            assertEquals(true, mapperXml.contains("limit #{limit}"));
+        }
     }
 }

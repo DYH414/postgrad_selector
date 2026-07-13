@@ -70,13 +70,13 @@
     <select id="selectRecent" resultMap="AiToolCallTraceResult">
         <include refid="selectAiToolCallTraceVo"/>
         order by started_at desc
-        limit LEAST(#{limit}, 100)
+        limit #{limit}
     </select>
 
     <select id="selectByRunId" resultMap="AiToolCallTraceResult">
         <include refid="selectAiToolCallTraceVo"/>
         where run_id = #{runId}
         order by started_at desc
-        limit LEAST(#{limit}, 100)
+        limit #{limit}
     </select>
 </mapper>
