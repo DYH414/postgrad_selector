@@ -19,8 +19,16 @@ import com.ruoyi.postgrad.domain.ai.AiToolBudget.BudgetGroup;
 import com.ruoyi.postgrad.observe.tool.service.AiToolTraceService;
 import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 class AgentToolRuntimeTest {
+
+    @Test
+    void productionConstructorIsExplicitlyAutowired() throws NoSuchMethodException {
+        assertTrue(AgentToolRuntime.class
+            .getConstructor(AiToolTraceService.class)
+            .isAnnotationPresent(Autowired.class));
+    }
 
     @Test
     void budgetRejectionDoesNotInvokeDelegate() {

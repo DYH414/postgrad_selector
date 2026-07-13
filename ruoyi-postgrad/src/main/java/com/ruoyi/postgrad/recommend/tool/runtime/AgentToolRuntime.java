@@ -12,6 +12,7 @@ import com.ruoyi.postgrad.domain.ai.AiToolBudget.BudgetGroup;
 import com.ruoyi.postgrad.observe.tool.domain.AiToolCallTrace;
 import com.ruoyi.postgrad.observe.tool.service.AiToolTraceService;
 import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -20,6 +21,7 @@ public class AgentToolRuntime {
     private final AgentToolCatalog catalog;
     private final AiToolTraceService traceService;
 
+    @Autowired
     public AgentToolRuntime(AiToolTraceService traceService) {
         this(new AgentToolCatalog(), traceService);
     }
