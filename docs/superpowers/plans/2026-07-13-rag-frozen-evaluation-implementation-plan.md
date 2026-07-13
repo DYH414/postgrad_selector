@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 为现有 RAG 检索增加可冻结的 18 条测试集、Vector Only 与 Vector + BGE Rerank 消融结果、No-answer 安全指标和可复现报告。
+**Goal:** 为现有 RAG 检索增加可冻结的 18 条排序测试集、独立 4 条 No-answer 安全集、Vector Only 与 Vector + BGE Rerank 消融结果和可复现报告。
 
 **Architecture:** 保留 `RagRetrievalService` 作为唯一在线/离线检索入口。评测层从资源文件加载 case，在相同 `recallTopN=20`、`finalTopK=5` 和 Metadata Filter 下分别调用 `skipRerank=true/false`；指标和运行元数据由独立报告 DTO 汇总并写入 JSON。
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 63 条 dev 集只能用于调参，当前 18 条 test 用例冻结为 `frozen-v1`。
+- 63 条 dev 集只能用于调参，当前 18 条 test 用例冻结为 `frozen-v1`；4 条 No-answer 用例单独冻结为 `safety-v1`。
 - 评测不得经过 LLM、Agent、SSE 或用户会话。
 - 两种消融模式共享同一 Alias/Collection、Embedding 模型、Metadata Filter、`recallTopN=20`、`finalTopK=5` 和最小向量分数。
 - No-answer 不进入 MRR、Hit@K、Recall@K 和 nDCG 的分母；空结果不能计为 Filter Accuracy 正确。
@@ -21,7 +21,7 @@
 ## File Structure
 
 - Create: `ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.jsonl` - 当前 18 条冻结用例。
-- Create: `ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.manifest.json` - 数据集版本、case 数、SHA-256。
+- Create: `ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.manifest.json`、`ruoyi-postgrad/src/test/resources/rag-eval/safety-v1.jsonl`、`ruoyi-postgrad/src/test/resources/rag-eval/safety-v1.manifest.json` - 两套数据集的版本、case 数、SHA-256。
 - Create: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoader.java` - JSONL 加载、manifest hash 校验。
 - Create: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/eval/RagEvaluationMode.java` - `VECTOR_ONLY`、`VECTOR_RERANK`。
 - Create: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/eval/RagEvaluationRunReport.java` - 双模式报告、环境元数据和分位延迟。
@@ -33,10 +33,12 @@
 **Files:**
 - Create: `ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.jsonl`
 - Create: `ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.manifest.json`
+- Create: `ruoyi-postgrad/src/test/resources/rag-eval/safety-v1.jsonl`
+- Create: `ruoyi-postgrad/src/test/resources/rag-eval/safety-v1.manifest.json`
 - Create: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoader.java`
 - Test: `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoaderTest.java`
 
-**Interfaces:** `List<RagEvaluationCase> loadFrozenV1()` 加载 18 条；`String verifyFrozenV1Checksum()` 返回 SHA-256，checksum 不一致时抛 `IllegalStateException`。
+**Interfaces:** `List<RagEvaluationCase> loadFrozenV1()` 加载 18 条；`List<RagEvaluationCase> loadSafetyV1()` 加载 4 条；两个 `verify...Checksum()` 方法返回 SHA-256，checksum 不一致时抛 `IllegalStateException`。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -45,6 +47,8 @@
 void frozenV1LoadsExactlyEighteenCasesAndMatchesManifest() {
     assertEquals(18, loader.loadFrozenV1().size());
     assertDoesNotThrow(loader::verifyFrozenV1Checksum);
+    assertEquals(4, loader.loadSafetyV1().size());
+    assertDoesNotThrow(loader::verifySafetyV1Checksum);
 }
 ```
 
@@ -56,7 +60,7 @@ Expected: FAIL，资源和加载器不存在。
 
 - [ ] **Step 3: 最小实现**
 
-迁移当前 `RagEvaluationDataset.testSet()` 的 18 条，不改 query、相关性条件或 Metadata；JSONL 每行一条。manifest 包含 `version`、`caseCount`、`sha256`。加载器读取 Classpath JSONL，用 SHA-256 对源字节校验 manifest；加载数不为 18 也抛异常。
+迁移当前 `RagEvaluationDataset.testSet()` 的 18 条到 `frozen-v1`，不改 query、相关性条件或 Metadata；新增 `safety-v1` 四条：不存在学校、库外学校、库外年份、无法唯一定位意图。JSONL 每行一条，manifest 包含 `version`、`caseCount`、`sha256`。加载器读取 Classpath JSONL，用 SHA-256 对源字节校验 manifest；加载数不是 18 或 4 均抛异常。
 
 ```java
 public List<RagEvaluationCase> loadFrozenV1() { return readJsonLines("rag-eval/frozen-v1.jsonl"); }
@@ -76,7 +80,7 @@ Expected: PASS，加载数为 18 且 hash 匹配。
 - [ ] **Step 5: 提交**
 
 ```bash
-git add ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.jsonl ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.manifest.json ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoader.java ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoaderTest.java
+git add ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.jsonl ruoyi-postgrad/src/test/resources/rag-eval/frozen-v1.manifest.json ruoyi-postgrad/src/test/resources/rag-eval/safety-v1.jsonl ruoyi-postgrad/src/test/resources/rag-eval/safety-v1.manifest.json ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoader.java ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoaderTest.java
 git commit -m "test(rag): freeze v1 evaluation set"
 ```
 
@@ -309,4 +313,3 @@ git commit -m "feat(rag): expose frozen evaluation summary"
 - Spec coverage: Task 1 完成冻结版本；Task 2 保证公平候选池；Task 3 完成正确指标与拒答；Task 4 生成可复现消融报告；Task 5 提供不修改冻结数据的管理端验收入口。
 - No placeholders: 每个任务包含确定的路径、接口、测试、命令与预期。
 - Type consistency: 所有新流程只经 `RagEvaluationCase`、`RagEvaluationResult`、`RagEvaluationMode`、`RagEvaluationRunReport` 和既有 `RagRetrievalService`。
-

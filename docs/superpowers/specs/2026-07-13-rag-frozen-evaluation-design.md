@@ -12,7 +12,7 @@
 ## 边界
 
 - 保留 63 条开发集用于检索参数、Chunk 和 Metadata 策略调优。
-- 当前 18 条 test 用例冻结为 `frozen-v1`，不在本次扩充为 20 条。
+- 当前 18 条 test 用例冻结为 `frozen-v1`，不在本次扩充为 20 条；新增独立 `safety-v1` 的 4 条 No-answer 用例。
 - 评测只调用已有 `RagRetrievalService`，不经过 LLM、Agent 或用户会话。
 - 本次不改变线上默认 TopK、路由和回答文案；拒答指标首先评测检索层是否错误给出证据。
 
@@ -95,7 +95,7 @@ Filter Accuracy = 所有返回 Chunk 均符合预期 Metadata 的 case 数 / 被
 
 ## No-answer 与错误回答
 
-冻结集显式标记 No-answer，用例类型至少覆盖：不存在学校、库外学校、库外年份、无法唯一定位意图。推荐在 18 条中保留当前 edge 用例，并将其中符合条件的用例标记为 `isNoAnswer=true`；若数量不足，创建 `frozen-v2` 再补充，不修改 v1。
+No-answer 用例不混入 `frozen-v1`。新增独立 `safety-v1`，固定 4 条并覆盖：不存在学校、库外学校、库外年份、无法唯一定位意图。`frozen-v1` 只用于正样本排序、Filter 与 Rerank 消融；`safety-v1` 只用于拒答安全指标，两个集合都不得在调参过程中原地修改。
 
 检索层的“可回答”定义为：最终选中 Chunk 中至少有一个满足有效 Metadata 约束并达到既有最小分数阈值的 Chunk；否则为“应拒答”。
 
@@ -119,7 +119,7 @@ target/rag-eval/2026-07-13T20-00-00-frozen-v1.json
 
 验收条件：
 
-1. 18 条冻结集可独立加载，manifest 的 hash 校验通过。
+1. 18 条 `frozen-v1` 与 4 条 `safety-v1` 可独立加载，manifest 的 hash 校验通过。
 2. 同一次运行能对 frozen-v1 输出 Vector Only 与 Vector + Rerank 的完整对比。
 3. 报告将 No-answer 与正样本分开计数，并输出 No-answer Accuracy 与 False Positive Rate。
 4. nDCG@5 始终在 0 到 1 之间。
