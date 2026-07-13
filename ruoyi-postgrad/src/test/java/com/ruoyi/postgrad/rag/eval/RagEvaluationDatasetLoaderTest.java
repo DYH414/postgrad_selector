@@ -3,8 +3,11 @@ package com.ruoyi.postgrad.rag.eval;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class RagEvaluationDatasetLoaderTest {
@@ -35,6 +38,28 @@ class RagEvaluationDatasetLoaderTest {
             .orElseThrow();
         assertEquals("408 统考考哪些科目？每门占多少？", general.getQuery());
         assertEquals("01-408考试介绍", general.getRelevantSources().get(0));
+    }
+
+    @Test
+    void frozenAndSafetySetsHaveUniqueIdentityAndExplicitNoAnswerSemantics() {
+        List<RagEvaluationCase> frozen = loader.loadFrozenV1();
+        List<RagEvaluationCase> safety = loader.loadSafetyV1();
+
+        Set<String> frozenIds = frozen.stream().map(RagEvaluationCase::getId).collect(java.util.stream.Collectors.toSet());
+        Set<String> frozenQueries = frozen.stream().map(RagEvaluationCase::getQuery).collect(java.util.stream.Collectors.toSet());
+        Set<String> safetyIds = safety.stream().map(RagEvaluationCase::getId).collect(java.util.stream.Collectors.toSet());
+        Set<String> safetyQueries = safety.stream().map(RagEvaluationCase::getQuery).collect(java.util.stream.Collectors.toSet());
+
+        assertEquals(18, frozenIds.size());
+        assertEquals(4, safety.size());
+        assertEquals(4, safetyIds.size());
+        assertEquals(4, safetyQueries.size());
+        assertTrue(java.util.Collections.disjoint(frozenIds, safetyIds));
+        assertTrue(java.util.Collections.disjoint(frozenQueries, safetyQueries));
+        assertTrue(safety.stream().allMatch(testCase -> testCase.isExpectedFallback()
+            && !testCase.isSourceDataAvailable()));
+        assertEquals("99999", safety.get(0).getExpectedMetadata().get("school_id"));
+        assertTrue(new HashSet<>(safety.get(0).getTags()).contains("nonexistent-school"));
     }
 
     @Test
