@@ -14,6 +14,8 @@ import com.ruoyi.postgrad.rag.domain.RagIndexRun;
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
+import com.ruoyi.postgrad.rag.eval.RagEvaluationService;
+import com.ruoyi.postgrad.rag.eval.RagEvaluationRunReport;
 import com.ruoyi.postgrad.rag.mapper.RagIndexRunMapper;
 import com.ruoyi.postgrad.rag.service.RagRetrievalResult;
 import com.ruoyi.postgrad.rag.service.RagRetrievalService;
@@ -171,11 +173,28 @@ class RagAdminControllerTraceTest {
             "Old reindex/generate-documents/reindex-database endpoints must be removed from RagAdminController");
     }
 
+    @Test
+    void frozenEvaluationReturnsAblationReport() {
+        RagEvaluationService evalService = mock(RagEvaluationService.class);
+        RagEvaluationRunReport report = new RagEvaluationRunReport();
+        when(evalService.runFrozenV1Ablation()).thenReturn(report);
+        RagAdminController controller = new RagAdminController(
+            mock(RagIndexBuildService.class), mock(RagIndexStatusService.class),
+            mock(RagIndexRunMapper.class), mock(RagRetrievalService.class),
+            new RagTraceRecorder(), evalService);
+
+        AjaxResult result = controller.runFrozenEvaluation();
+
+        assertTrue(result.isSuccess());
+        assertEquals(report, result.get("data"));
+    }
+
     private static RagAdminController controller(RagIndexBuildService buildService,
                                                   RagIndexStatusService statusService,
                                                   RagIndexRunMapper runMapper,
                                                   RagRetrievalService retrievalService,
                                                   RagTraceRecorder recorder) {
-        return new RagAdminController(buildService, statusService, runMapper, retrievalService, recorder);
+        RagEvaluationService evalService = mock(RagEvaluationService.class);
+        return new RagAdminController(buildService, statusService, runMapper, retrievalService, recorder, evalService);
     }
 }

@@ -9,6 +9,8 @@ import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
 import com.ruoyi.postgrad.rag.mapper.RagIndexRunMapper;
 import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import com.ruoyi.postgrad.rag.status.RagIndexStatusService;
+import com.ruoyi.postgrad.rag.eval.RagEvaluationResult;
+import com.ruoyi.postgrad.rag.eval.RagEvaluationService;
 import com.ruoyi.postgrad.rag.trace.RagTrace;
 import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
 import jakarta.validation.Valid;
@@ -28,17 +30,20 @@ public class RagAdminController extends BaseController {
     private final RagIndexRunMapper ragIndexRunMapper;
     private final RagRetrievalService ragRetrievalService;
     private final RagTraceRecorder ragTraceRecorder;
+    private final RagEvaluationService ragEvaluationService;
 
     public RagAdminController(RagIndexBuildService ragIndexBuildService,
                               RagIndexStatusService ragIndexStatusService,
                               RagIndexRunMapper ragIndexRunMapper,
                               RagRetrievalService ragRetrievalService,
-                              RagTraceRecorder ragTraceRecorder) {
+                              RagTraceRecorder ragTraceRecorder,
+                              RagEvaluationService ragEvaluationService) {
         this.ragIndexBuildService = ragIndexBuildService;
         this.ragIndexStatusService = ragIndexStatusService;
         this.ragIndexRunMapper = ragIndexRunMapper;
         this.ragRetrievalService = ragRetrievalService;
         this.ragTraceRecorder = ragTraceRecorder;
+        this.ragEvaluationService = ragEvaluationService;
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
@@ -109,5 +114,35 @@ public class RagAdminController extends BaseController {
     public AjaxResult traces(@RequestParam(defaultValue = "20") int limit) {
         List<RagTrace> traces = ragTraceRecorder.listRecent(limit);
         return success(traces);
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PostMapping("/eval/run")
+    public AjaxResult runEval() {
+        return success(ragEvaluationService.runDev());
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PostMapping("/eval/dev")
+    public AjaxResult runEvalDev() {
+        return success(ragEvaluationService.runDev());
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PostMapping("/eval/test")
+    public AjaxResult runEvalTest() {
+        return success(ragEvaluationService.runTest());
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PostMapping("/eval/frozen-v1")
+    public AjaxResult runFrozenEvaluation() {
+        return success(ragEvaluationService.runFrozenV1Ablation());
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PostMapping("/eval/full")
+    public AjaxResult runEvalFull() {
+        return success(ragEvaluationService.runFull());
     }
 }
