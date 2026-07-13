@@ -102,7 +102,7 @@ public class RagRetrievalService {
 
         boolean rerankFailed = false;
         List<Double> rerankScores = null;
-        SiliconFlowReranker reranker = rerankerProvider.getIfAvailable();
+        SiliconFlowReranker reranker = request.isSkipRerank() ? null : rerankerProvider.getIfAvailable();
         if (reranker != null) {
             try {
                 long tRerank = System.currentTimeMillis();

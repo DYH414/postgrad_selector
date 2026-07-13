@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
@@ -74,6 +75,27 @@ class RagRetrievalServiceTest {
         assertEquals(2, response.getSelectedCount());
         assertEquals(1, response.getChunks().get(0).getVectorRank());
         assertNotNull(response.getChunks().get(0).getContentPreview());
+    }
+
+    @Test
+    void retrieveShouldSkipRerankerAndPreserveVectorOrderWhenRequested() {
+        ObjectProvider<EmbeddingModel> embeddingProvider = embeddingProvider("深圳大学");
+        TextSegment first = segment("第一条完整内容", "source-a");
+        TextSegment second = segment("第二条完整内容", "source-b");
+        EmbeddingStore<TextSegment> embeddingStore = embeddingStore(List.of(first, second));
+        SiliconFlowReranker reranker = mock(SiliconFlowReranker.class);
+
+        RagRetrievalService service = new RagRetrievalService(
+            embeddingProvider, embeddingStore, provider(reranker), provider(null));
+        RagSearchTestRequest request = new RagSearchTestRequest("深圳大学", 2, 0.0, 2);
+        request.setSkipRerank(true);
+
+        RagRetrievalResult result = service.retrieve(request);
+
+        assertEquals(List.of("source-a", "source-b"), result.selectedSegments().stream()
+            .map(segment -> segment.metadata().getString("source_id"))
+            .toList());
+        verifyNoInteractions(reranker);
     }
 
     @Test
