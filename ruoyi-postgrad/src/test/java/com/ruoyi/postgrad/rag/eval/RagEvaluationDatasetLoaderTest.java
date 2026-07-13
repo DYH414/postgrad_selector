@@ -10,6 +10,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import org.junit.jupiter.api.Test;
 
 class RagEvaluationDatasetLoaderTest {
@@ -93,8 +95,31 @@ class RagEvaluationDatasetLoaderTest {
             () -> loader.readJsonLines(safetyFixture, "safety-fixture", 4));
     }
 
+    @Test
+    void manifestCaseCountMismatchIsRejectedEvenWhenChecksumIsValid() {
+        byte[] fixture = jsonLines(4);
+        RagEvaluationDatasetLoader.Manifest manifest = new RagEvaluationDatasetLoader.Manifest();
+        manifest.caseCount = 3;
+        manifest.sha256 = sha256Hex(fixture);
+
+        assertThrows(IllegalStateException.class,
+            () -> loader.verifyChecksum(fixture, manifest, "manifest-fixture", 4));
+    }
+
     private static byte[] jsonLines(int count) {
         return ("{\"id\":\"fixture\",\"query\":\"fixture\"}\n").repeat(count)
             .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String sha256Hex(byte[] bytes) {
+        try {
+            StringBuilder hex = new StringBuilder();
+            for (byte value : MessageDigest.getInstance("SHA-256").digest(bytes)) {
+                hex.append(String.format("%02x", value));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
     }
 }

@@ -38,11 +38,11 @@ public class RagEvaluationDatasetLoader {
     }
 
     public String verifyFrozenV1Checksum() {
-        return verifyChecksum(FROZEN_RESOURCE, FROZEN_MANIFEST);
+        return verifyChecksum(FROZEN_RESOURCE, FROZEN_MANIFEST, 18);
     }
 
     public String verifySafetyV1Checksum() {
-        return verifyChecksum(SAFETY_RESOURCE, SAFETY_MANIFEST);
+        return verifyChecksum(SAFETY_RESOURCE, SAFETY_MANIFEST, 4);
     }
 
     private List<RagEvaluationCase> readJsonLines(String defaultResource, int expectedCount) {
@@ -63,14 +63,22 @@ public class RagEvaluationDatasetLoader {
         return cases;
     }
 
-    private String verifyChecksum(String defaultResource, String defaultManifest) {
+    private String verifyChecksum(String defaultResource, String defaultManifest, int expectedCount) {
         String dataPath = resourcePath == null ? defaultResource : resourcePath;
         String manifestPathToRead = manifestPath == null ? defaultManifest : manifestPath;
         byte[] bytes = readBytes(dataPath);
         Manifest manifest = JSON.parseObject(readBytes(manifestPathToRead), Manifest.class);
+        return verifyChecksum(bytes, manifest, dataPath, expectedCount);
+    }
+
+    String verifyChecksum(byte[] bytes, Manifest manifest, String sourceName, int expectedCount) {
+        if (manifest.caseCount != expectedCount) {
+            throw new IllegalStateException(sourceName + " manifest caseCount mismatch");
+        }
+        readJsonLines(bytes, sourceName, expectedCount);
         String actual = sha256Hex(bytes);
         if (!Objects.equals(actual, manifest.sha256)) {
-            throw new IllegalStateException(dataPath + " checksum mismatch");
+            throw new IllegalStateException(sourceName + " checksum mismatch");
         }
         return actual;
     }
