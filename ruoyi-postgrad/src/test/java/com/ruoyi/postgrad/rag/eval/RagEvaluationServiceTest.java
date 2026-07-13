@@ -7,18 +7,58 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
+import com.ruoyi.postgrad.rag.qdrant.RagCollectionManager;
 import com.ruoyi.postgrad.rag.service.RagRetrievalResult;
 import com.ruoyi.postgrad.rag.service.RagRetrievalService;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class RagEvaluationServiceTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void frozenAblationSeparatesRankingAndAbstentionIntoJsonReport() throws Exception {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        RagSearchTestResponse response = response();
+        response.getLatency().setTotalMs(12L);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response, List.of()));
+        RagCollectionManager collectionManager = mock(RagCollectionManager.class);
+        when(collectionManager.resolveAlias("postgrad_rag_active")).thenReturn("postgrad_rag_20260713");
+
+        RagEvaluationRunReport report = new RagEvaluationService(
+            retrievalService, new RagEvaluationDatasetLoader(), collectionManager, tempDir)
+            .runFrozenV1Ablation();
+
+        assertEquals(18, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
+        assertEquals(18, report.getResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
+        assertEquals(0, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getNoAnswerCases());
+        assertEquals(4, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
+        assertEquals(4, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
+        assertEquals(12L, report.getLatencyMetrics().get(RagEvaluationMode.VECTOR_ONLY).getP50Ms());
+        assertEquals("postgrad_rag_20260713", report.getRunMetadata().get("qdrantCollection"));
+        assertTrue(Files.isRegularFile(Path.of(report.getReportPath())));
+
+        JSONObject json = JSON.parseObject(Files.readString(Path.of(report.getReportPath())));
+        assertEquals(18, json.getJSONObject("results").getJSONObject("VECTOR_ONLY").getIntValue("totalCases"));
+        assertEquals(4, json.getJSONObject("abstentionMetrics").getJSONObject("VECTOR_RERANK").getIntValue("totalCases"));
+
+        verify(retrievalService, times(22)).retrieve(argThat(request -> request.isSkipRerank()));
+        verify(retrievalService, times(22)).retrieve(argThat(request -> !request.isSkipRerank()));
+    }
 
     @Test
     void shouldPassCaseWhenRetrievedChunkMatchesExpectedMetadata() {

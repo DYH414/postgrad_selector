@@ -1,13 +1,26 @@
 package com.ruoyi.postgrad.rag.eval;
 
+import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
+import com.ruoyi.postgrad.rag.qdrant.RagCollectionManager;
 import com.ruoyi.postgrad.rag.service.RagRetrievalService;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,11 +31,70 @@ public class RagEvaluationService {
     private static final Logger log = LoggerFactory.getLogger(RagEvaluationService.class);
     private static final int RECALL_TOP_N = 20;
     private static final int FINAL_TOP_K = 5;
+    private static final String ACTIVE_ALIAS = "postgrad_rag_active";
+    private static final Path DEFAULT_REPORT_DIRECTORY = Path.of("target", "rag-eval");
+    private static final DateTimeFormatter REPORT_TIMESTAMP = DateTimeFormatter
+        .ofPattern("yyyyMMdd'T'HHmmss.SSS'Z'")
+        .withZone(ZoneOffset.UTC);
 
     private final RagRetrievalService retrievalService;
+    private final RagEvaluationDatasetLoader datasetLoader;
+    private final RagCollectionManager collectionManager;
+    private final Path reportDirectory;
 
     public RagEvaluationService(RagRetrievalService retrievalService) {
+        this(retrievalService, new RagEvaluationDatasetLoader(), null, DEFAULT_REPORT_DIRECTORY);
+    }
+
+    @Autowired
+    public RagEvaluationService(RagRetrievalService retrievalService, RagCollectionManager collectionManager) {
+        this(retrievalService, new RagEvaluationDatasetLoader(), collectionManager, DEFAULT_REPORT_DIRECTORY);
+    }
+
+    RagEvaluationService(RagRetrievalService retrievalService,
+                         RagEvaluationDatasetLoader datasetLoader,
+                         RagCollectionManager collectionManager,
+                         Path reportDirectory) {
         this.retrievalService = retrievalService;
+        this.datasetLoader = datasetLoader;
+        this.collectionManager = collectionManager;
+        this.reportDirectory = reportDirectory;
+    }
+
+    /**
+     * Runs the frozen ranking set in vector-only and vector-rerank modes, while
+     * calculating abstention separately from the safety set.
+     */
+    public RagEvaluationRunReport runFrozenV1Ablation() {
+        List<RagEvaluationCase> frozenCases = datasetLoader.loadFrozenV1();
+        List<RagEvaluationCase> safetyCases = datasetLoader.loadSafetyV1();
+        Map<RagEvaluationMode, RagEvaluationResult> results = new EnumMap<>(RagEvaluationMode.class);
+        Map<RagEvaluationMode, RagEvaluationRunReport.AbstentionMetrics> abstention =
+            new EnumMap<>(RagEvaluationMode.class);
+        Map<RagEvaluationMode, RagEvaluationRunReport.LatencyMetrics> latencies =
+            new EnumMap<>(RagEvaluationMode.class);
+
+        for (RagEvaluationMode mode : RagEvaluationMode.values()) {
+            List<Long> modeLatencies = new ArrayList<>();
+            RagEvaluationResult rankingResult = run("frozen-v1-" + mode.name().toLowerCase(),
+                frozenCases, mode.isSkipRerank(), modeLatencies);
+            RagEvaluationResult safetyResult = run("safety-v1-" + mode.name().toLowerCase(),
+                safetyCases, mode.isSkipRerank(), modeLatencies);
+            results.put(mode, rankingResult);
+            abstention.put(mode, new RagEvaluationRunReport.AbstentionMetrics(
+                safetyResult.getNoAnswerCases(), safetyResult.getPassedCases(),
+                safetyResult.getNoAnswerAccuracy(), safetyResult.getFalsePositiveRate()));
+            latencies.put(mode, latencyMetrics(modeLatencies));
+        }
+
+        RagEvaluationRunReport report = new RagEvaluationRunReport();
+        report.setResults(results);
+        report.setAbstentionMetrics(abstention);
+        report.setLatencyMetrics(latencies);
+        report.setRunMetadata(buildRuntimeMetadata(
+            datasetLoader.verifyFrozenV1Checksum(), datasetLoader.verifySafetyV1Checksum()));
+        writeReport(report);
+        return report;
     }
 
     /** 保留旧接口 — 跑 dev set */
@@ -60,6 +132,11 @@ public class RagEvaluationService {
     }
 
     private RagEvaluationResult run(String setName, List<RagEvaluationCase> cases) {
+        return run(setName, cases, true, null);
+    }
+
+    private RagEvaluationResult run(String setName, List<RagEvaluationCase> cases,
+                                    boolean skipRerank, List<Long> latencies) {
         RagEvaluationResult result = new RagEvaluationResult();
         result.setSetName(setName);
         List<RagEvaluationResult.RagEvaluationCaseResult> caseResults = new ArrayList<>();
@@ -82,8 +159,11 @@ public class RagEvaluationService {
         Map<String, List<RagEvaluationResult.RagEvaluationCaseResult>> diffGroups = new LinkedHashMap<>();
 
         for (RagEvaluationCase tc : cases) {
-            RagSearchTestRequest req = requestFor(tc, true);
+            RagSearchTestRequest req = requestFor(tc, skipRerank);
             RagSearchTestResponse response = retrievalService.retrieve(req).response();
+            if (latencies != null && response.getLatency() != null) {
+                latencies.add(response.getLatency().getTotalMs());
+            }
 
             RagEvaluationResult.RagEvaluationCaseResult cr = evaluateCase(tc, response);
             cr.setCategory(tc.getCategory());
@@ -198,6 +278,105 @@ public class RagEvaluationService {
         result.setCases(caseResults);
 
         return result;
+    }
+
+    private RagEvaluationRunReport.LatencyMetrics latencyMetrics(List<Long> latencies) {
+        if (latencies.isEmpty()) {
+            return new RagEvaluationRunReport.LatencyMetrics(0, 0, 0);
+        }
+        List<Long> sorted = new ArrayList<>(latencies);
+        sorted.sort(Long::compareTo);
+        return new RagEvaluationRunReport.LatencyMetrics(sorted.size(),
+            nearestRank(sorted, 0.50), nearestRank(sorted, 0.95));
+    }
+
+    private long nearestRank(List<Long> sortedValues, double percentile) {
+        int index = (int) Math.ceil(percentile * sortedValues.size()) - 1;
+        return sortedValues.get(Math.max(0, index));
+    }
+
+    private Map<String, String> buildRuntimeMetadata(String frozenChecksum, String safetyChecksum) {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("runAtUtc", Instant.now().toString());
+        metadata.put("frozenDataset", "frozen-v1");
+        metadata.put("frozenCaseCount", "18");
+        metadata.put("frozenChecksum", frozenChecksum);
+        metadata.put("safetyDataset", "safety-v1");
+        metadata.put("safetyCaseCount", "4");
+        metadata.put("safetyChecksum", safetyChecksum);
+        metadata.put("qdrantAlias", ACTIVE_ALIAS);
+        appendQdrantMetadata(metadata);
+        appendGitMetadata(metadata);
+        return metadata;
+    }
+
+    private void appendQdrantMetadata(Map<String, String> metadata) {
+        if (collectionManager == null) {
+            metadata.put("qdrantCollection", "unknown");
+            metadata.put("qdrantCollectionReason", "RagCollectionManager is unavailable");
+            return;
+        }
+        try {
+            String collection = collectionManager.resolveAlias(ACTIVE_ALIAS);
+            if (collection == null || collection.isBlank()) {
+                metadata.put("qdrantCollection", "unknown");
+                metadata.put("qdrantCollectionReason", "Alias could not be resolved");
+                return;
+            }
+            metadata.put("qdrantCollection", collection);
+        } catch (RuntimeException e) {
+            metadata.put("qdrantCollection", "unknown");
+            metadata.put("qdrantCollectionReason", e.getMessage());
+        }
+    }
+
+    private void appendGitMetadata(Map<String, String> metadata) {
+        try {
+            Process process = new ProcessBuilder("git", "rev-parse", "HEAD")
+                .redirectErrorStream(true)
+                .start();
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                metadata.put("gitCommit", "unknown");
+                metadata.put("gitCommitReason", "git rev-parse timed out");
+                return;
+            }
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (process.exitValue() == 0 && !output.isBlank()) {
+                metadata.put("gitCommit", output);
+            } else {
+                metadata.put("gitCommit", "unknown");
+                metadata.put("gitCommitReason", output.isBlank() ? "git rev-parse failed" : output);
+            }
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            metadata.put("gitCommit", "unknown");
+            metadata.put("gitCommitReason", e.getMessage());
+        }
+    }
+
+    private void writeReport(RagEvaluationRunReport report) {
+        try {
+            Files.createDirectories(reportDirectory);
+            Path reportPath = createReportPath();
+            report.setReportPath(reportPath.toString());
+            Files.writeString(reportPath, JSON.toJSONString(report), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Unable to write RAG evaluation report", e);
+        }
+    }
+
+    private Path createReportPath() throws IOException {
+        String baseName = REPORT_TIMESTAMP.format(Instant.now()) + "-frozen-v1";
+        for (int suffix = 0; ; suffix++) {
+            String filename = baseName + (suffix == 0 ? "" : "-" + suffix) + ".json";
+            Path candidate = reportDirectory.resolve(filename);
+            try {
+                return Files.createFile(candidate);
+            } catch (FileAlreadyExistsException ignored) {
+                // Keep an immutable report for every run, even within the same millisecond.
+            }
+        }
     }
 
     // ── 检索指标辅助 ──
