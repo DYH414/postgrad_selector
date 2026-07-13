@@ -15,6 +15,7 @@ public class RagSearchTestRequest {
     private Integer maxResults = 5;
     private Double minScore = 0.6;
     private Integer rerankTopN = 3;
+    private boolean skipRerank = false;
     private String schoolId;
     private String programId;
     private String year;
@@ -38,6 +39,8 @@ public class RagSearchTestRequest {
     public void setMinScore(Double minScore) { this.minScore = minScore; }
     public Integer getRerankTopN() { return rerankTopN; }
     public void setRerankTopN(Integer rerankTopN) { this.rerankTopN = rerankTopN; }
+    public boolean isSkipRerank() { return skipRerank; }
+    public void setSkipRerank(boolean skipRerank) { this.skipRerank = skipRerank; }
     public String getSchoolId() { return schoolId; }
     public void setSchoolId(String schoolId) { this.schoolId = schoolId; }
     public String getProgramId() { return programId; }
