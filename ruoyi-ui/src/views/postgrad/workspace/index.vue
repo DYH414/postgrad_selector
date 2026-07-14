@@ -3,9 +3,8 @@
     <div class="workspace-shell">
       <div class="workspace-header">
         <div>
-          <div class="workspace-eyebrow">N诺 Data Ops</div>
           <h2>学校数据工作台</h2>
-          <p>按学校统一查看 N诺来源的学院、专业方向、年份数据完整度和待审核状态。</p>
+          <p>按学校查看学院、专业方向、年份数据完整度和审核状态。</p>
         </div>
         <div class="workspace-header__actions">
           <el-button size="mini" icon="el-icon-refresh" @click="loadWorkspace">刷新</el-button>
@@ -74,7 +73,7 @@
         <section class="workspace-panel viz-panel">
           <div class="panel-heading">
             <div>
-              <h3>N诺完整度分布</h3>
+              <h3>数据完整度分布</h3>
               <span>A/B/C/D 专业方向占比</span>
             </div>
           </div>
@@ -83,7 +82,7 @@
         <section class="workspace-panel viz-panel">
           <div class="panel-heading">
             <div>
-              <h3>N诺覆盖率</h3>
+              <h3>数据覆盖率</h3>
               <span>复试线 / 招生计划 / 拟录取</span>
             </div>
           </div>
@@ -210,7 +209,7 @@
               <el-table-column label="完整度" width="90" align="center">
                 <template slot-scope="scope">
                   <el-tag :type="qualityType(scope.row.completenessLevel)" size="mini">
-                    {{ scope.row.completenessLevel || '待接入' }}
+                    {{ scope.row.completenessLevel || '暂无数据' }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -301,10 +300,10 @@ export default {
     kpiItems() {
       const stats = this.stats || {}
       return [
-        { key: 'school', label: 'N诺学校数', value: this.formatStat(stats.schoolCount, this.schoolList.length), hint: '当前筛选范围', tone: 'blue' },
+        { key: 'school', label: '学校数', value: this.formatStat(stats.schoolCount, this.schoolList.length), hint: '当前筛选范围', tone: 'blue' },
         { key: 'college', label: '学院数', value: this.formatStat(stats.collegeCount), hint: '按学校聚合', tone: 'slate' },
         { key: 'program', label: '专业方向', value: this.formatStat(stats.programCount), hint: '按学院汇总', tone: 'slate' },
-        { key: 'quality', label: 'N诺 A 级完整度', value: this.formatPercent(stats.aLevelRate), hint: 'N诺完整度分布', tone: 'green' },
+        { key: 'quality', label: 'A 级完整度', value: this.formatPercent(stats.aLevelRate), hint: '数据完整度分布', tone: 'green' },
         { key: 'review', label: '待审核', value: this.formatStat(stats.pendingReviewCount), hint: '审核中心联动', tone: 'amber' },
         { key: 'task', label: '缺失任务', value: this.formatStat(stats.missingTaskCount), hint: '采集任务联动', tone: 'red' }
       ]
@@ -345,7 +344,7 @@ export default {
     },
     matrixEmptyTip() {
       if (!this.selectedSchool) return '从左侧选择学校后查看学院和专业方向矩阵。'
-      return '当前筛选条件下没有可展示的专业方向，或接口返回为空。'
+      return '当前筛选条件下没有可展示的专业方向。'
     }
   },
   created() {
@@ -383,7 +382,7 @@ export default {
         this.$nextTick(this.renderCharts)
       }).catch(() => {
         this.stats = null
-        this.statsNotice = '工作台聚合统计请求失败，当前页面使用学校列表兜底展示。'
+        this.statsNotice = '聚合统计加载失败，当前仅展示学校列表数据。'
       }).finally(() => {
         this.statsLoading = false
       })

@@ -1,5 +1,5 @@
 <template>
-  <div class="prototype-page">
+  <div class="app-page">
     <AppHeader :current-page="currentHeader" />
 
     <main class="result-layout" :class="{ 'result-layout--compare': activeTab === 'compare' }">
@@ -55,7 +55,7 @@
           <div class="tip-box">
             <i class="el-icon-info"></i>
             <strong>小贴士</strong>
-            <p>筛选结果不是唯一可报范围，复试线也不是最低录取分；N诺数据可能遗漏或错误，请结合院校官网复核。</p>
+            <p>筛选结果不是唯一可报范围，复试线也不是最低录取分。数据来源为第三方公开信息整理，请以院校官网为准。</p>
           </div>
         </template>
 
@@ -115,7 +115,7 @@
 
         <div class="data-alert">
           <i class="el-icon-warning"></i>
-          复试线不是最低录取分；筛选学校不代表只有这些学校可以报。当前数据主要来源于 N诺（第三方整理），可能存在遗漏或错误，请以院校官网为准。
+          复试线不是最低录取分；筛选学校不代表只有这些学校可以报。数据来源为第三方公开信息整理，可能存在遗漏或错误，请以院校官网为准。
           <button type="button" @click="showCompareTab">查看说明 <i class="el-icon-info"></i></button>
         </div>
 
@@ -162,7 +162,7 @@
                       </span>
                     </template>
                     <template v-else-if="row.type === 'source'">
-                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="school.sourceUrl" target="_blank" rel="noopener noreferrer">N诺来源</a>
+                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="school.sourceUrl" target="_blank" rel="noopener noreferrer">查看来源</a>
                       <span v-else>-</span>
                     </template>
                     <template v-else-if="row.type === 'action'"><button class="detail-link" type="button" @click="openDetail(school.programId)">查看详情</button></template>
@@ -329,10 +329,10 @@
                   :href="school.sourceUrl"
                   target="_blank"
                   rel="noopener noreferrer">
-                  <i class="el-icon-link"></i> N诺来源
+                  <i class="el-icon-link"></i> 来源链接
                 </a>
                 <span v-else class="source-link source-missing">
-                  <i class="el-icon-link"></i> N诺数据（来源待补）
+                  <i class="el-icon-link"></i> 来源待补充
                 </span>
                 <div class="card-actions">
                   <button class="detail-link" type="button" @click="openDetail(school.programId)">查看详情</button>
@@ -405,7 +405,7 @@
             :href="detail.source.sourceUrl"
             target="_blank"
             rel="noopener noreferrer">
-            <i class="el-icon-link"></i> 查看 N诺来源
+            <i class="el-icon-link"></i> 查看来源
           </a>
           <table class="trend-table">
             <thead>
@@ -494,8 +494,8 @@ const compareRows = [
   { label: '拟录取均分', key: 'avgScore' },
   { label: '与拟录取均分差距', type: 'diff', key: 'avgScoreGap' },
   { label: '招生人数（含推免）', key: 'quota' },
-  { label: 'N诺数据完整度', type: 'confidence' },
-  { label: 'N诺来源', type: 'source' },
+  { label: '数据完整度', type: 'confidence' },
+  { label: '数据来源', type: 'source' },
   { label: '操作', type: 'action' }
 ]
 const compareSchools = ref([])
@@ -1304,7 +1304,7 @@ if (activeTab.value === 'compare') {
 </script>
 
 <style scoped>
-.prototype-page {
+.app-page {
   min-height: 100vh;
   background: linear-gradient(180deg, #f6f9ff 0, #f8fbff 100%);
   color: #111827;

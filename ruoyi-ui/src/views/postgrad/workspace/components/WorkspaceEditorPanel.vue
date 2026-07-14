@@ -18,7 +18,7 @@
           <el-tag size="mini">{{ selectedProgram.programCode }}</el-tag>
           <el-tag v-if="Number(selectedProgram.is408) === 1" size="mini" type="success">408</el-tag>
           <el-tag size="mini" :type="qualityType(selectedProgram.completenessLevel)">
-            {{ selectedProgram.completenessLevel || '待体检' }}
+            {{ selectedProgram.completenessLevel || '暂无数据' }}
           </el-tag>
         </div>
       </div>

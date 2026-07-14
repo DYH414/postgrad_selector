@@ -1,7 +1,7 @@
 <template>
   <section v-if="hasCitations" class="rag-citation-section">
     <div class="section-heading">
-      <p>Evidence</p>
+      <p>引用来源</p>
       <h2>推荐证据引用</h2>
       <span>来自知识库检索和重排后的候选证据，用于支撑报告解释。</span>
     </div>
@@ -14,7 +14,6 @@
       >
         <header>
           <strong>{{ groupTitle(group) }}</strong>
-          <span>programId: {{ group.programId }}</span>
         </header>
         <ul>
           <li v-for="citation in group.items" :key="citationKey(citation)">

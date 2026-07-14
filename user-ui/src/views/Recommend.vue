@@ -1,5 +1,5 @@
 <template>
-  <div class="prototype-page">
+  <div class="app-page">
     <AppHeader :current-page="headerPage" />
 
     <main class="home-wrap">
@@ -111,7 +111,7 @@
               </svg>
             </div>
             <div>
-              <h4>当前数据来源：N诺（第三方整理）</h4>
+              <h4>数据来源说明</h4>
               <p>数据可能遗漏或错误，最终请以院校官网和招生公告为准。</p>
               <span>第三方数据</span>
             </div>
@@ -232,7 +232,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.prototype-page {
+.app-page {
   min-height: 100vh;
   background:
     radial-gradient(circle at 12% 8%, rgba(37, 99, 235, 0.18), transparent 30%),

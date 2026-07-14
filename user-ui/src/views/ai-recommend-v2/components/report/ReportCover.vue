@@ -6,8 +6,7 @@
       <p class="subtitle">基于当前画像与候选池生成的最终推荐快照</p>
       <div class="cover-seal">
         <span>AI 生成</span>
-        <span>只读报告</span>
-        <span>候选池快照</span>
+        <span>历史报告</span>
       </div>
     </div>
     <dl class="meta-grid">

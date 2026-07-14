@@ -3,9 +3,8 @@
     <div class="observe-shell">
       <div class="observe-header">
         <div>
-          <div class="observe-eyebrow">Postgrad AI</div>
-          <h2>AI 观测台</h2>
-          <p>查看官方指标聚合后的 AI 调用情况，确认推荐和对话是否真的在工作。</p>
+          <h2>AI 调用监控</h2>
+          <p>查看 AI 调用的成功率、延迟和 Token 消耗，监控推荐与对话服务状态。</p>
         </div>
         <div class="observe-actions">
           <el-button size="mini" icon="el-icon-refresh" :loading="loading" @click="loadOverview">刷新</el-button>
@@ -25,7 +24,7 @@
         <section class="observe-panel">
           <div class="panel-heading">
             <h3>按模型分组</h3>
-            <span>基于官方 metrics 标签聚合</span>
+            <span>基于 metrics 标签分组统计</span>
           </div>
           <div class="group-list">
             <div v-for="item in overview.modelGroups || []" :key="item.key" class="group-item">
@@ -39,7 +38,7 @@
         <section class="observe-panel">
           <div class="panel-heading">
             <h3>按入口分组</h3>
-            <span>推荐、聊天等业务入口</span>
+            <span>推荐、聊天等业务入口调用量</span>
           </div>
           <div class="group-list">
             <div v-for="item in overview.operationGroups || []" :key="item.key" class="group-item">
@@ -73,7 +72,7 @@
         <section class="observe-panel">
           <div class="panel-heading">
             <h3>最近错误</h3>
-            <span>如果有失败，这里只展示摘要</span>
+            <span>最近一次错误摘要</span>
           </div>
           <div class="error-box" :class="{ 'is-empty': !latest.errorSummary }">
             <strong>{{ latest.errorSummary ? '失败摘要' : '暂无错误' }}</strong>
@@ -89,7 +88,7 @@
       </div>
 
       <section class="tool-trace-panel">
-        <div class="panel-heading"><h3>Agent Tool 调用</h3><span>仅展示摘要；点击 Run ID 查看同次运行的完整调用链</span></div>
+        <div class="panel-heading"><h3>Agent Tool 调用</h3><span>点击 Run ID 可查看该次运行的全部工具调用链</span></div>
         <el-table :data="toolTraces" size="mini" v-loading="traceLoading">
           <el-table-column prop="startedAt" label="开始时间" min-width="150" />
           <el-table-column label="Run ID" min-width="150"><template slot-scope="scope"><el-button type="text" size="mini" @click="openRun(scope.row.runId)">{{ scope.row.runId }}</el-button></template></el-table-column>
@@ -140,9 +139,9 @@ export default {
     },
     kpis() {
       return [
-        { key: 'calls', label: '总调用数', value: this.overview.totalCalls || 0, hint: '官方调用计数' },
+        { key: 'calls', label: '总调用数', value: this.overview.totalCalls || 0, hint: '累计 AI 调用次数' },
         { key: 'succ', label: '成功率', value: `${(this.overview.successRate || 0).toFixed(1)}%`, hint: '成功/总调用' },
-        { key: 'dur', label: '平均耗时', value: `${(this.overview.averageDurationMs || 0).toFixed(0)} ms`, hint: '按官方 duration 聚合' },
+        { key: 'dur', label: '平均耗时', value: `${(this.overview.averageDurationMs || 0).toFixed(0)} ms`, hint: '所有调用平均响应时间' },
         { key: 'in', label: '输入 token', value: this.overview.inputTokens || 0, hint: '所有输入 token 汇总' },
         { key: 'out', label: '输出 token', value: this.overview.outputTokens || 0, hint: '所有输出 token 汇总' },
         { key: 'rag', label: 'RAG 状态', value: this.rag.indexed ? '已索引' : '未索引', hint: '知识库健康快照' }

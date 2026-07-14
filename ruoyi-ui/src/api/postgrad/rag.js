@@ -37,3 +37,10 @@ export function getRagTraces(limit) {
     params: { limit: limit || 20 }
   })
 }
+
+export function runRagEval() {
+  return request({
+    url: '/postgrad/rag/eval/run',
+    method: 'post'
+  })
+}

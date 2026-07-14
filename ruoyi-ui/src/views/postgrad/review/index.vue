@@ -33,7 +33,7 @@
         <el-select v-model="queryParams.sourceType" placeholder="来源" clearable>
           <el-option label="研招网" value="YZ_CHSI" />
           <el-option label="HTML表格" value="OFFICIAL_HTML" />
-          <el-option label="N诺" value="THIRD_PARTY" />
+          <el-option label="第三方数据" value="THIRD_PARTY" />
           <el-option label="人工录入" value="MANUAL" />
         </el-select>
       </el-form-item>
@@ -51,7 +51,7 @@
       <el-form-item>
         <el-button type="primary" icon="el-icon-search" @click="handleQuery">搜索</el-button>
         <el-button icon="el-icon-refresh" @click="resetQuery">重置</el-button>
-        <el-button type="warning" icon="el-icon-download" @click="quickFilterNoob">N诺数据速查</el-button>
+        <el-button type="primary" icon="el-icon-download" @click="quickFilterThirdParty">第三方数据速查</el-button>
       </el-form-item>
     </el-form>
 
@@ -294,7 +294,7 @@ export default {
         }).finally(() => { this.autoApproving = false })
       }).catch(() => {})
     },
-    quickFilterNoob() {
+    quickFilterThirdParty() {
       this.queryParams = { sourceType: 'THIRD_PARTY', is408: '1', pageNum: 1, pageSize: 10 }
       this.getList()
     },

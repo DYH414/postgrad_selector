@@ -3,9 +3,8 @@
     <div class="rag-shell">
       <div class="rag-header">
         <div>
-          <div class="rag-eyebrow">Postgrad RAG</div>
-          <h2>知识库观测台</h2>
-          <p>查看索引、检索测试、最近 Trace 和配置参数，快速确认 AI 是否在用知识库。</p>
+          <h2>知识库管理</h2>
+          <p>查看索引状态、检索测试、调用记录和配置参数，监控 RAG 管道运行状态。</p>
         </div>
         <div class="rag-actions">
           <el-button size="mini" icon="el-icon-refresh" @click="loadAll">刷新</el-button>
@@ -110,7 +109,7 @@
           <div class="panel-heading">
             <div>
               <h3>检索测试</h3>
-              <span>不经过 LLM，直接测试 Embedding → Qdrant → Rerank 管道</span>
+              <span>直接测试检索管道（跳过 LLM），验证 Embedding → 检索 → 重排序环节</span>
             </div>
           </div>
           <div class="search-test-box">
@@ -205,6 +204,97 @@
         </section>
       </div>
 
+      <!-- RAG 评测 -->
+      <section class="rag-panel eval-section" style="margin-top:12px">
+        <div class="panel-heading">
+          <div>
+            <h3>RAG 评测</h3>
+            <span>基于 Metadata 匹配的检索排序质量评测，验证 Embedding → Qdrant → Rerank 管道精度</span>
+          </div>
+          <el-button
+            size="mini"
+            type="primary"
+            icon="el-icon-s-data"
+            :loading="evalRunning"
+            @click="handleRunEval"
+          >
+            运行评测
+          </el-button>
+        </div>
+
+        <div v-if="evalResult" style="padding: 16px;">
+          <!-- 指标卡片 -->
+          <div class="eval-metrics">
+            <div class="eval-metric-card">
+              <div class="eval-metric__value">{{ (evalResult.passRate * 100).toFixed(1) }}%</div>
+              <div class="eval-metric__label">Metadata 匹配率</div>
+              <div class="eval-metric__hint">{{ evalResult.passedCases }}/{{ evalResult.totalCases }} 用例通过</div>
+            </div>
+            <div class="eval-metric-card">
+              <div class="eval-metric__value">{{ evalResult.mrr != null ? evalResult.mrr.toFixed(3) : '-' }}</div>
+              <div class="eval-metric__label">MRR</div>
+              <div class="eval-metric__hint">Mean Reciprocal Rank</div>
+            </div>
+            <div class="eval-metric-card">
+              <div class="eval-metric__value">{{ evalResult.hitAt5 != null ? (evalResult.hitAt5 * 100).toFixed(1) + '%' : '-' }}</div>
+              <div class="eval-metric__label">Hit@{{ evalResult.evalK || 5 }}</div>
+              <div class="eval-metric__hint">第一个相关 Chunk 在 Top-K 中的比例</div>
+            </div>
+            <div class="eval-metric-card">
+              <div class="eval-metric__value">{{ evalResult.precisionAt5 != null ? (evalResult.precisionAt5 * 100).toFixed(1) + '%' : '-' }}</div>
+              <div class="eval-metric__label">Precision@{{ evalResult.evalK || 5 }}</div>
+              <div class="eval-metric__hint">Top-K 中相关 Chunk 的平均占比</div>
+            </div>
+          </div>
+
+          <!-- 用例详情表 -->
+          <div v-if="evalResult.cases && evalResult.cases.length" style="margin-top: 16px;">
+            <h4 class="eval-table-title">用例详情</h4>
+            <el-table :data="evalResult.cases" size="mini" stripe class="eval-table">
+              <el-table-column prop="id" label="用例 ID" width="160" show-overflow-tooltip />
+              <el-table-column prop="query" label="查询" min-width="180" show-overflow-tooltip />
+              <el-table-column label="结果" width="80">
+                <template slot-scope="scope">
+                  <el-tag v-if="scope.row.passed" type="success" size="mini">通过</el-tag>
+                  <el-tag v-else type="danger" size="mini">失败</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="firstRelevantRank" label="首个匹配排名" width="110">
+                <template slot-scope="scope">
+                  <span v-if="scope.row.firstRelevantRank > 0">{{ scope.row.firstRelevantRank }}</span>
+                  <span v-else class="warn-text">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="relevantInTopK" label="Top-{{ evalResult.evalK || 5 }} 命中数" width="120" />
+              <el-table-column prop="failureReason" label="失败原因" min-width="140">
+                <template slot-scope="scope">
+                  <span v-if="!scope.row.passed && scope.row.failureReason" class="warn-text">
+                    {{ scope.row.failureReason }}
+                  </span>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="匹配证据" min-width="200">
+                <template slot-scope="scope">
+                  <el-tag
+                    v-for="(e, i) in (scope.row.evidence || []).slice(0, 3)"
+                    :key="i"
+                    size="mini"
+                    type="info"
+                    style="margin: 2px"
+                  >{{ e }}</el-tag>
+                  <span v-if="(scope.row.evidence || []).length === 0">-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+
+        <div v-else-if="!evalRunning" class="trace-empty" style="margin: 14px;">
+          点击"运行评测"对当前知识库执行检索排序质量评测。
+        </div>
+      </section>
+
       <!-- 最近 Trace -->
       <section class="rag-panel trace-section" style="margin-top:12px">
         <div class="panel-heading">
@@ -286,7 +376,8 @@ import {
   startIndexBuild,
   getIndexRun,
   searchTestRag,
-  getRagTraces
+  getRagTraces,
+  runRagEval
 } from '@/api/postgrad/rag'
 
 export default {
@@ -317,7 +408,10 @@ export default {
       searchTesting: false,
       searchResult: null,
       searchError: '',
-      traces: []
+      traces: [],
+      evalRunning: false,
+      evalResult: null,
+      evalError: ''
     }
   },
   computed: {
@@ -436,6 +530,20 @@ export default {
         this.traces = (res && res.data) || []
       } catch (e) {
         // traces are non-critical, ignore silently
+      }
+    },
+    async handleRunEval() {
+      this.evalRunning = true
+      this.evalError = ''
+      this.evalResult = null
+      try {
+        const res = await runRagEval()
+        this.evalResult = (res && res.data) || null
+        this.loadTraces()
+      } catch (e) {
+        this.evalError = '评测请求失败，请检查后端是否正常'
+      } finally {
+        this.evalRunning = false
       }
     },
     async handleBuild() {
@@ -908,7 +1016,56 @@ export default {
   }
 }
 
-@media (max-width: 900px) {
+/* 评测面板 */
+.eval-section {
+  min-height: auto;
+}
+
+.eval-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.eval-metric-card {
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.eval-metric__value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.eval-metric__label {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.eval-metric__hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.eval-table-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.eval-table {
+  font-size: 12px;
+}
+
+@media (max-width: 1500px) {
   .rag-header {
     flex-direction: column;
   }

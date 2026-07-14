@@ -225,7 +225,7 @@ function handleRegister() {
       activeTab.value = 'login'
       loginForm.account = registerForm.phone || registerForm.email
     }).catch(error => {
-      ElMessage.error(error?.message || '暂时未开放测试通道')
+      ElMessage.error(error?.message || '服务暂不可用，请稍后重试')
     }).finally(() => { loading.value = false })
   })
 }

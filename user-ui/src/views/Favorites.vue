@@ -2,7 +2,7 @@
   <div class="app-page">
     <AppHeader current-page="favorites" />
     <div class="app-body">
-      <h3>我的收藏</h3>
+      <h3>我的备选</h3>
       <div class="toolbar">
         <el-button type="primary" size="small" :disabled="selectedRows.length < 2" @click="compareSelected">
           对比所选
@@ -100,12 +100,12 @@
       </div>
 
       <div v-if="!loading && favorites.length === 0" style="text-align:center;padding:60px;color:#909399">
-        暂无收藏，去推荐结果页收藏意向专业吧
+        暂无备选，去推荐结果页将感兴趣的学校加入备选
         <br /><br />
         <el-button type="primary" @click="$router.push('/recommend')">去生成推荐</el-button>
       </div>
     </div>
-    <el-drawer title="收藏专业详情" :visible.sync="detailVisible" size="520px" append-to-body>
+    <el-drawer title="备选专业详情" :visible.sync="detailVisible" size="520px" append-to-body>
       <div class="detail-drawer" v-loading="detailLoading">
         <template v-if="detail">
           <h2>{{ detail.basic.schoolName }}</h2>

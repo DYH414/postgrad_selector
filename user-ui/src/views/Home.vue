@@ -2,9 +2,9 @@
   <div class="app-page">
     <AppHeader current-page="home" />
     <div class="home-body">
-      <h2>欢迎使用考研择校决策平台</h2>
-      <p>智能分析，精准匹配你的目标院校</p>
-      <el-button type="primary" size="large" @click="$router.push('/recommend')">开始智能推荐</el-button>
+      <h2>用数据择校</h2>
+      <p>基于历年录取分数、招生计划和数据完整度，筛选目标院校</p>
+      <el-button type="primary" size="large" @click="$router.push('/recommend')">开始筛选</el-button>
     </div>
   </div>
 </template>

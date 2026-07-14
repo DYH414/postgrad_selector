@@ -6,8 +6,8 @@
       <section class="mine-hero">
         <div>
           <span class="eyebrow">我的</span>
-          <h1>个人择校中心</h1>
-          <p>统一管理你的考研画像、备选学校和 AI 推荐记录。画像只展示摘要，具体内容放到 Tab 里，避免重复打扰。</p>
+          <h1>我的</h1>
+          <p>考研画像、备选学校和推荐记录都在这里。</p>
         </div>
         <div class="summary-strip">
           <div>
@@ -26,12 +26,12 @@
       </section>
 
       <el-tabs v-model="activeTab" class="mine-tabs" @tab-change="handleTabChange">
-        <el-tab-pane label="我的画像" name="profile">
+        <el-tab-pane label="考研画像" name="profile">
           <section class="tab-panel profile-panel">
             <div class="panel-head">
               <div>
-                <h2>我的考研画像</h2>
-                <p>这些信息会作为规则筛选和 AI 推荐的基础。只保留必要字段，目标变化时再更新。</p>
+                <h2>考研画像</h2>
+                <p>填写预估分数和目标地区后，即可使用筛选和 AI 推荐功能。</p>
               </div>
               <el-button type="primary" icon="el-icon-edit" @click="startEdit">
                 {{ isEmpty ? '填写画像' : '编辑画像' }}
@@ -41,7 +41,7 @@
             <div v-if="!editing" v-loading="profileLoading">
               <div v-if="isEmpty" class="empty-state compact">
                 <h3>还没有填写画像</h3>
-                <p>先填预估分和目标地区，系统才能生成更可解释的候选学校。</p>
+                <p>填写预估分数和目标地区后，系统会为你推荐匹配的学校。</p>
                 <el-button type="primary" @click="startEdit">开始填写</el-button>
               </div>
 
@@ -79,7 +79,7 @@
               </el-form-item>
               <section class="preference-form-band">
                 <h3>择校偏好</h3>
-                <p class="preference-help">选择 AI 推荐时最优先考虑的方向。</p>
+                <p>告诉 AI 你更看重哪个方面。</p>
                 <el-form-item label="推荐优先级">
                   <el-radio-group v-model="form.schoolTierPreference">
                     <el-radio-button label="developed_region_priority">发达地区优先</el-radio-button>
@@ -96,13 +96,13 @@
           </section>
         </el-tab-pane>
 
-        <el-tab-pane label="我的备选" name="favorites">
+        <el-tab-pane label="备选学校" name="favorites">
           <section class="tab-panel shortlist-panel">
             <div class="panel-head shortlist-head">
               <div>
                 <span class="section-kicker">备选池</span>
                 <h2>我的备选方案</h2>
-                <p>把感兴趣的学校和专业放进备选池，勾选 2 个以上即可进入对比，后续再按风险和匹配度筛掉。</p>
+                <p>加入备选后可在对比页比较录取数据、名额风险和完整度，做出最终决定。</p>
               </div>
               <div class="panel-actions">
                 <span>已选择 {{ shortlistSelectedIds.length }} 项</span>
@@ -153,7 +153,7 @@
                       <h3>{{ item.schoolName }}</h3>
                       <span class="tier-pill">{{ item.tier || '未标注' }}</span>
                     </div>
-                    <p>{{ item.collegeName || '学院待补充' }} / {{ item.programName || '专业待补充' }}</p>
+                    <p>{{ item.collegeName || '学院信息缺失' }} / {{ item.programName || '专业信息缺失' }}</p>
                     <div class="shortlist-meta">
                       <span>{{ item.programCode || '暂无代码' }}</span>
                       <span>{{ degreeTypeLabel(item.degreeType) }}</span>
@@ -179,12 +179,12 @@
           </section>
         </el-tab-pane>
 
-        <el-tab-pane label="AI 推荐记录" name="ai">
+        <el-tab-pane label="推荐记录" name="ai">
           <section class="tab-panel">
             <div class="panel-head">
               <div>
                 <h2>AI 推荐记录</h2>
-                <p>保存每次 AI 择校分析，便于回看推荐理由和冲稳保分层。</p>
+                <p>查看每次择校分析报告，回顾推荐理由和冲刺/稳妥/保底分层。</p>
               </div>
               <el-button type="primary" icon="el-icon-plus" @click="router.push('/ai-recommend')">新建推荐</el-button>
             </div>
@@ -198,7 +198,7 @@
 
               <button v-for="report in reports" :key="report.id" type="button" class="report-card" @click="router.push(report.route)">
                 <span>
-                  <strong>{{ report.summary || 'AI 择校推荐报告' }}</strong>
+                  <strong>{{ report.summary || '择校推荐报告' }}</strong>
                   <em>{{ report.createdAt || '-' }}</em>
                 </span>
                 <i class="el-icon-arrow-right"></i>

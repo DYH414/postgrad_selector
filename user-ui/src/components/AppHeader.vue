@@ -5,8 +5,8 @@
         <strong>408</strong>
       </span>
       <span class="brand-text">
-        <strong>408 考研筛选平台</strong>
-        <em>智能择校 · 精准筛选</em>
+        <strong>408 考研数据筛选</strong>
+        <em>录取数据 · 招生计划 · AI 分析</em>
       </span>
     </div>
 
@@ -34,8 +34,8 @@
       </div>
       <button v-if="!hasToken" class="login-entry" type="button" @click="goLogin">登录/注册</button>
       <div v-else class="user-chip" @click="router.push('/profile')">
-        <span class="avatar">408</span>
-        <span>我的账号</span>
+        <span class="avatar">{{ (userStore.nickname || '我').charAt(0) }}</span>
+        <span>{{ userStore.nickname || '我的' }}</span>
         <i class="el-icon-arrow-down"></i>
       </div>
       <button v-if="hasToken" class="logout-entry" type="button" @click="logout">退出</button>
