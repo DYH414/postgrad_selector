@@ -266,14 +266,14 @@ public class AppV2RecommendController {
                     @Override
                     public void onError(Throwable error) {
                         Map<String, Object> payload = new LinkedHashMap<>();
-                        payload.put("message", error.getMessage());
+                        payload.put("message", userFacingSseError(error));
                         sendSseEvent(emitter, "error", payload);
                         emitter.complete();
                     }
                 });
             } catch (Exception e) {
                 Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("message", e.getMessage());
+                payload.put("message", userFacingSseError(e));
                 sendSseEvent(emitter, "error", payload);
                 emitter.complete();
             }
@@ -419,7 +419,8 @@ public class AppV2RecommendController {
         AppLoginUser user = requireLogin();
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             SseEmitter err = new SseEmitter();
-            err.completeWithError(new IllegalArgumentException("消息不能为空"));
+            sendSseEvent(err, "error", Map.of("message", "消息不能为空"));
+            err.complete();
             return err;
         }
 
@@ -478,7 +479,7 @@ public class AppV2RecommendController {
                     @Override
                     public void onError(Throwable error) {
                         Map<String, Object> payload = new LinkedHashMap<>();
-                        payload.put("message", error.getMessage());
+                        payload.put("message", userFacingSseError(error));
                         sendSseEvent(emitter, "error", payload);
                         emitter.complete();
                     }
@@ -486,7 +487,7 @@ public class AppV2RecommendController {
                     @Override
                     public void onError(Throwable error, String runId) {
                         Map<String, Object> payload = new LinkedHashMap<>();
-                        payload.put("message", error.getMessage());
+                        payload.put("message", userFacingSseError(error));
                         payload.put("runId", runId);
                         sendSseEvent(emitter, "error", payload);
                         emitter.complete();
@@ -494,7 +495,7 @@ public class AppV2RecommendController {
                 });
             } catch (Exception e) {
                 Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("message", e.getMessage());
+                payload.put("message", userFacingSseError(e));
                 sendSseEvent(emitter, "error", payload);
                 emitter.complete();
             }
@@ -587,6 +588,16 @@ public class AppV2RecommendController {
             closed.set(true);
             return false;
         }
+    }
+
+    private String userFacingSseError(Throwable error) {
+        if (error instanceof SecurityException) {
+            return "登录已过期，请重新登录";
+        }
+        if (error instanceof IllegalArgumentException) {
+            return "请求参数不正确，请检查后重试";
+        }
+        return "AI 服务暂时不可用，请稍后重试";
     }
 
     @SuppressWarnings("unchecked")

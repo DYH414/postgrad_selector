@@ -116,31 +116,31 @@ public class RagAdminController extends BaseController {
         return success(traces);
     }
 
-    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
     @PostMapping("/eval/run")
     public AjaxResult runEval() {
         return success(ragEvaluationService.runDev());
     }
 
-    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
     @PostMapping("/eval/dev")
     public AjaxResult runEvalDev() {
         return success(ragEvaluationService.runDev());
     }
 
-    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
     @PostMapping("/eval/test")
     public AjaxResult runEvalTest() {
         return success(ragEvaluationService.runTest());
     }
 
-    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
     @PostMapping("/eval/frozen-v1")
     public AjaxResult runFrozenEvaluation() {
         return success(ragEvaluationService.runFrozenV1Ablation());
     }
 
-    @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
     @PostMapping("/eval/full")
     public AjaxResult runEvalFull() {
         return success(ragEvaluationService.runFull());

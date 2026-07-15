@@ -13,9 +13,8 @@
     <nav class="nav">
       <router-link to="/" class="nav-link" :class="{ active: currentPage === 'home' }">首页</router-link>
       <router-link to="/results" class="nav-link" :class="{ active: currentPage === 'results' }">筛选结果</router-link>
-      <router-link to="/results?tab=compare" class="nav-link" :class="{ active: currentPage === 'compare' }">对比与备选</router-link>
-      <router-link to="/ai-recommend" class="nav-link" :class="{ active: currentPage === 'ai' }">AI 推荐</router-link>
-      <router-link to="/profile" class="nav-link" :class="{ active: currentPage === 'profile' }">我的</router-link>
+      <button class="nav-link nav-button" :class="{ active: currentPage === 'ai' }" type="button" @click="goProtected('/ai-recommend')">AI 推荐</button>
+      <button class="nav-link nav-button" :class="{ active: currentPage === 'profile' }" type="button" @click="goProtected('/profile')">我的</button>
     </nav>
 
     <div class="header-actions">
@@ -48,8 +47,7 @@ import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { getToken } from '@/api/request'
-import { removeToken } from '@/api/request'
+import { getToken, removeToken, requireLoginPrompt } from '@/api/request'
 
 const router = useRouter()
 const route = useRoute()
@@ -91,6 +89,14 @@ function goLogin() {
     path: '/login',
     query: { redirect: route.fullPath }
   })
+}
+
+function goProtected(path) {
+  if (!getToken()) {
+    requireLoginPrompt(path)
+    return
+  }
+  router.push(path)
 }
 
 function logout() {
@@ -184,6 +190,16 @@ function logout() {
   text-decoration: none;
   border-bottom: 3px solid transparent;
   transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+
+.nav-button {
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
 }
 
 .nav-link:hover {

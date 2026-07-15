@@ -6,6 +6,7 @@
  * 非 SSE 端点使用项目统一的 axios request 实例。
  */
 import request, { getToken } from './request'
+import { apiUrl } from './base-url'
 import { buildEventSourceUrl } from '@/utils/event-source'
 
 // ── 草稿 ──
@@ -114,7 +115,7 @@ export function startChat() {
 
 /** SSE 流式对话（返回 fetch Response） */
 export function sendChatMessage(message) {
-  return fetch('/dev-api/app/ai-recommend-v2/chat/send', {
+  return fetch(apiUrl('/app/ai-recommend-v2/chat/send'), {
     method: 'POST',
     headers: {
       'Authorization': 'Bearer ' + (getToken() || ''),

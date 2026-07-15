@@ -36,7 +36,7 @@ AI Chat 的 16 个 Tool 统一经过运行时治理层：按 `SEARCH / DETAIL / 
 
 - **用户端**: [https://408lab.site](https://408lab.site)
 - **管理后台**: `https://408lab.site/admin`
-- 演示账号：`admin` / `admin123`
+- 管理账号请在部署环境中单独创建并妥善保管。
 
 ---
 
@@ -81,7 +81,7 @@ graph TB
     Browser --> Nginx
     Nginx -->|"/"| UserUI
     Nginx -->|"/admin"| AdminUI
-    Nginx -->|"/api /app"| AdminModule
+    Nginx -->|"/dev-api"| AdminModule
     AdminModule --> Framework
     AdminModule --> Postgrad
     AdminModule --> SystemModule
@@ -397,7 +397,7 @@ npm run dev
 
 ### 6. 登录验证
 
-打开 `http://localhost:8081`，使用 `admin / admin123` 登录管理后台，确认功能正常。
+打开 `http://localhost:8081`，使用部署环境中的管理账号登录后台，确认功能正常。
 RAG 管理页为 `/postgrad/rag`，可查看活动 Alias、启动并跟踪 Index Run、执行 metadata 检索测试、查看最近 RAG Trace；AI 观测页为 `/postgrad/observe`。
 
 推荐链路中的 RAG 使用边界：
@@ -467,23 +467,17 @@ server {
     }
 
     # 管理后台
-    location /admin {
-        alias /path/to/ruoyi-ui/dist;
+    location /admin/ {
+        alias /path/to/ruoyi-ui/dist/;
         index index.html;
         try_files $uri $uri/ /admin/index.html;
     }
 
     # 后端 API
-    location /api/ {
+    location /dev-api/ {
         proxy_pass http://localhost:8080/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    # App 端 API
-    location /app/ {
-        proxy_pass http://localhost:8080/app/;
-        proxy_set_header Host $host;
     }
 }
 ```

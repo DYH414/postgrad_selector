@@ -9,9 +9,9 @@ export function register(data) {
 }
 
 export function logout() {
-  return request({ url: '/app/auth/logout', method: 'post' })
+  return request({ url: '/app/auth/logout', method: 'post', suppressUnauthorizedPrompt: true })
 }
 
 export function me() {
-  return request({ url: '/app/auth/me', method: 'get' })
+  return request({ url: '/app/auth/me', method: 'get', suppressUnauthorizedPrompt: true })
 }

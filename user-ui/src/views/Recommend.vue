@@ -7,7 +7,7 @@
         <div class="hero-copy">
           <span class="hero-kicker">408 统考择校工作台</span>
           <h1>用 <span>408</span> 数据，快速圈定目标院校</h1>
-          <p>先用规则筛出候选范围，再结合数据完整度和个人目标继续对比。</p>
+          <p>输入预估分和考试组合后，生成可对比的院校专业列表，再加入备选、查看详情或继续做 AI 分析。</p>
         </div>
         <div class="hero-metrics">
           <div class="metric-card">
@@ -98,6 +98,13 @@
           <el-button class="primary-cta" type="primary" :loading="generating" @click="startRecommend">
             <i class="el-icon-magic-stick"></i> 开始筛选
           </el-button>
+          <div class="result-preview">
+            <div>
+              <strong>生成结果包含</strong>
+              <span>候选专业、分数差距、招生人数、数据完整度和风险提示</span>
+            </div>
+            <em>登录后可保存筛选记录、备选学校和 AI 分析</em>
+          </div>
         </div>
 
         <aside class="notice-panel">
@@ -162,13 +169,12 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useUserStore } from '@/stores/user'
 import AppHeader from '@/components/AppHeader.vue'
+import { getToken, requireLoginPrompt } from '@/api/request'
 import { generateRecommendation, getRecommendationOptions } from '@/api/recommendation'
 
 const router = useRouter()
 const route = useRoute()
-const userStore = useUserStore()
 
 const generating = ref(false)
 const loadingOptions = ref(false)
@@ -204,6 +210,10 @@ function showScoreHelp() {
 function startRecommend() {
   if (!form.score) {
     ElMessage.warning('请输入预计初试总分')
+    return
+  }
+  if (!getToken()) {
+    requireLoginPrompt(route.fullPath)
     return
   }
   generating.value = true
@@ -550,6 +560,41 @@ onMounted(() => {
   filter: saturate(1.05);
 }
 
+.result-preview {
+  margin-top: 12px;
+  border: 1px solid #dfe9f8;
+  border-radius: 13px;
+  padding: 12px 14px;
+  background: #f8fbff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.result-preview strong,
+.result-preview span {
+  display: block;
+}
+
+.result-preview strong {
+  color: #253044;
+  font-size: 14px;
+}
+
+.result-preview span,
+.result-preview em {
+  color: #718096;
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.result-preview em {
+  flex: 0 0 220px;
+  text-align: right;
+}
+
 .privacy-note {
   margin-top: 10px;
   text-align: center;
@@ -769,6 +814,17 @@ onMounted(() => {
   .segmented.five {
     grid-template-columns: 1fr;
     padding-top: 12px;
+  }
+
+  .result-preview {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .result-preview em {
+    flex: none;
+    text-align: left;
   }
 
 }

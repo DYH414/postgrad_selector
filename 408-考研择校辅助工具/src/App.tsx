@@ -27,8 +27,9 @@ export default function App() {
   const [cardsVisible, setCardsVisible] = useState(false);
   const cardsRef = React.useRef<HTMLDivElement>(null);
 
-  const [footerVisible, setFooterVisible] = useState(false);
-  const footerRef = React.useRef<HTMLElement>(null);
+const [footerVisible, setFooterVisible] = useState(false);
+const footerRef = React.useRef<HTMLElement>(null);
+  const mainAppUrl = import.meta.env.VITE_MAIN_APP_URL || 'https://408lab.site';
 
   useEffect(() => {
     if (page !== 3) {
@@ -56,8 +57,8 @@ export default function App() {
     setLaunchState('connecting');
     setLaunchProgress(15);
     setLaunchLogs([
-      '⚡ [SYS_CONN] 正在与 408 统考主数据池建立专属 TLS 加密安全通道...',
-      '📡 [PORT_3000] 反向代理静态路由层握手成功：已连接 Cloud Run 分布式服务器。'
+      '正在读取你的估分画像和目标地区...',
+      '正在匹配可报考的 408 院校专业数据。'
     ]);
 
     setTimeout(() => {
@@ -65,9 +66,8 @@ export default function App() {
       setLaunchProgress(45);
       setLaunchLogs(prev => [
         ...prev,
-        '📥 [RECALL] 自主抓取当前所设考生分数学科特征 (N=180 个拓扑节点已调回)。',
-        '📊 [INTEGRITY] 数据完整度自动校验：数据可信等级 AAA 级，无遗漏样本。',
-        '🔑 [SECURE] 自动通过 OAuth 安全签名沙盒，同步当前登录会话...'
+        '正在召回符合分数、地区和培养方式的候选项目。',
+        '正在检查复试线、录取分和招生名额的数据完整度。'
       ]);
     }, 900);
 
@@ -76,9 +76,8 @@ export default function App() {
       setLaunchProgress(80);
       setLaunchLogs(prev => [
         ...prev,
-        '🧠 [AI_COGNITIVE] 暖机启动：正在唤醒 Gemini AI 大脑与考研研招专有知识图谱。',
-        '🎯 [CALIBRATE] 根据您输入的估分表现，完成 21 所推荐院校起伏地形的加权演算。',
-        '✨ [SYS_STATUS] 预加载校验通过，终端系统启动就绪。'
+        '正在结合冲稳保分层生成择校建议。',
+        '正在准备推荐理由、风险提示和候选对比。'
       ]);
     }, 2000);
 
@@ -87,7 +86,7 @@ export default function App() {
       setLaunchProgress(100);
       setLaunchLogs(prev => [
         ...prev,
-        '🚀 [READY] 专业版决策终端启动完成！已成功载入完整正式用户端控制面板。'
+        '准备完成，登录后即可开始择校分析。'
       ]);
     }, 2900);
   };
@@ -762,13 +761,13 @@ export default function App() {
                     className="flex flex-col sm:flex-row items-center justify-center gap-4 z-10 w-full"
                   >
                     <a
-                      href={import.meta.env.VITE_MAIN_APP_URL || `http://localhost:8081/app/recommend`}
+                      href={mainAppUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="w-full sm:w-auto px-10 py-4.5 bg-[#2563eb] text-white text-sm font-semibold rounded-full shadow-[0_4px_16px_rgba(37,99,235,0.25)] hover:shadow-[0_0_24px_2px_rgba(37,99,235,0.6)] hover:bg-[#1d4ed8] hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 inline-flex items-center justify-center gap-2.5 cursor-pointer text-center group tracking-wide z-10"
                     >
                       <LogIn className="w-4 h-4 text-white group-hover:translate-x-0.5 transition-transform duration-150" />
-                      <span>进入正式客户端</span>
+                      <span>开始择校分析</span>
                     </a>
 
                     <button

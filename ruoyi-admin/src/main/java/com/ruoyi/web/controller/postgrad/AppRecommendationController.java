@@ -46,7 +46,7 @@ public class AppRecommendationController
         }
         catch (IllegalArgumentException e)
         {
-            return AjaxResult.error(e.getMessage());
+            return AjaxResult.error("推荐参数不正确，请检查后重试");
         }
     }
 

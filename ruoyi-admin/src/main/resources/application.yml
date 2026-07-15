@@ -71,7 +71,7 @@ spring:
   devtools:
     restart:
       # 热部署开关
-      enabled: true
+      enabled: false
   data:
     # redis 配置
     redis:
@@ -152,7 +152,7 @@ token:
   # 令牌自定义标识
   header: Authorization
   # 令牌密钥
-  secret: ${JWT_SECRET:postgrad-selector-demo-fallback-key}  # Demo fallback key，生产环境务必通过环境变量设置
+  secret: ${JWT_SECRET}
   # 令牌有效期（默认30分钟）
   expireTime: 30
 
@@ -192,7 +192,7 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when_authorized
   health:
     rabbit:
       enabled: false
@@ -211,6 +211,6 @@ xss:
   # 排除链接（多个用逗号分隔）
   excludes: /system/notice
   # 匹配链接
-  urlPatterns: /system/*,/monitor/*,/tool/*
+  urlPatterns: /system/*,/monitor/*,/tool/*,/app/*,/postgrad/*
 
 

@@ -9,12 +9,17 @@ import java.util.Map;
  */
 public class RagSearchTestRequest {
 
+    private static final int DEFAULT_MAX_RESULTS = 5;
+    private static final int MAX_RESULTS_CAP = 20;
+    private static final int DEFAULT_RERANK_TOP_N = 3;
+    private static final int RERANK_TOP_N_CAP = 10;
+
     @NotBlank(message = "查询内容不能为空")
     private String query;
 
-    private Integer maxResults = 5;
+    private Integer maxResults = DEFAULT_MAX_RESULTS;
     private Double minScore = 0.6;
-    private Integer rerankTopN = 3;
+    private Integer rerankTopN = DEFAULT_RERANK_TOP_N;
     private boolean skipRerank = false;
     private String schoolId;
     private String programId;
@@ -26,19 +31,19 @@ public class RagSearchTestRequest {
 
     public RagSearchTestRequest(String query, Integer maxResults, Double minScore, Integer rerankTopN) {
         this.query = query;
-        this.maxResults = maxResults;
+        setMaxResults(maxResults);
         this.minScore = minScore;
-        this.rerankTopN = rerankTopN;
+        setRerankTopN(rerankTopN);
     }
 
     public String getQuery() { return query; }
     public void setQuery(String query) { this.query = query; }
     public Integer getMaxResults() { return maxResults; }
-    public void setMaxResults(Integer maxResults) { this.maxResults = maxResults; }
+    public void setMaxResults(Integer maxResults) { this.maxResults = clamp(maxResults, DEFAULT_MAX_RESULTS, MAX_RESULTS_CAP); }
     public Double getMinScore() { return minScore; }
     public void setMinScore(Double minScore) { this.minScore = minScore; }
     public Integer getRerankTopN() { return rerankTopN; }
-    public void setRerankTopN(Integer rerankTopN) { this.rerankTopN = rerankTopN; }
+    public void setRerankTopN(Integer rerankTopN) { this.rerankTopN = clamp(rerankTopN, DEFAULT_RERANK_TOP_N, RERANK_TOP_N_CAP); }
     public boolean isSkipRerank() { return skipRerank; }
     public void setSkipRerank(boolean skipRerank) { this.skipRerank = skipRerank; }
     public String getSchoolId() { return schoolId; }
@@ -66,5 +71,12 @@ public class RagSearchTestRequest {
         if (value != null && !value.isBlank()) {
             filters.put(key, value.trim());
         }
+    }
+
+    private static int clamp(Integer value, int defaultValue, int maxValue) {
+        if (value == null || value < 1) {
+            return defaultValue;
+        }
+        return Math.min(value, maxValue);
     }
 }

@@ -4,22 +4,22 @@
       <section class="login-intro">
         <div class="brand-mark">408</div>
         <h1>考研择校决策平台</h1>
-        <p>登录后先建立你的考研画像，系统会基于预估分、目标地区和报考偏好，帮你完成筛选、对比和 AI 分析。</p>
+        <p>登录后保存你的考研画像、筛选记录和备选学校，继续生成 AI 分析与择校报告。</p>
         <div class="intro-steps">
           <div>
             <span>1</span>
-            <b>填写画像</b>
-            <em>让平台知道你的分数与目标</em>
+            <b>保存画像</b>
+            <em>记录分数、地区和择校偏好</em>
           </div>
           <div>
             <span>2</span>
-            <b>规则筛选</b>
-            <em>快速得到可比较的院校列表</em>
+            <b>管理备选</b>
+            <em>把候选专业沉淀成对比清单</em>
           </div>
           <div>
             <span>3</span>
             <b>AI 推荐</b>
-            <em>解释为什么这些学校值得关注</em>
+            <em>基于画像和备选生成分析</em>
           </div>
         </div>
       </section>
@@ -27,7 +27,7 @@
       <div class="login-card">
         <div class="login-card-title">
           <h2>{{ activeTab === 'login' ? '欢迎回来' : '创建账号' }}</h2>
-          <p>{{ activeTab === 'login' ? '登录后将进入你的考研画像页' : '注册后即可保存画像和备选学校' }}</p>
+          <p>{{ activeTab === 'login' ? '登录后回到刚才的页面继续操作' : '注册后即可保存画像、备选和 AI 分析' }}</p>
         </div>
         <el-tabs v-model="activeTab" stretch>
           <el-tab-pane label="登录" name="login">
@@ -58,13 +58,15 @@
           </el-tab-pane>
           <el-tab-pane label="注册" name="register">
             <el-form ref="registerFormRef" :model="registerForm" :rules="registerRules" label-position="top">
+              <p class="identity-hint"><span>*</span> 手机号或邮箱至少填写一项，均可用于登录</p>
               <el-form-item label="手机号" prop="phone">
                 <el-input
                   v-model="registerForm.phone"
                   name="phone"
                   autocomplete="tel"
-                  placeholder="请输入手机号（选填）"
+                  placeholder="请输入手机号"
                   size="large"
+                  @input="revalidateIdentity('email')"
                 />
               </el-form-item>
               <el-form-item label="邮箱" prop="email">
@@ -72,8 +74,9 @@
                   v-model="registerForm.email"
                   name="email"
                   autocomplete="email"
-                  placeholder="请输入邮箱（选填）"
+                  placeholder="请输入邮箱"
                   size="large"
+                  @input="revalidateIdentity('phone')"
                 />
               </el-form-item>
               <el-form-item label="密码" prop="password">
@@ -135,12 +138,34 @@ const validateConfirm = (rule, value, callback) => {
   }
 }
 
-const validateAccount = (rule, value, callback) => {
-  if (!registerForm.phone && !registerForm.email) {
+const normalized = value => String(value || '').trim()
+
+const validatePhone = (rule, value, callback) => {
+  const phone = normalized(value)
+  const email = normalized(registerForm.email)
+  if (!phone && !email) {
     callback(new Error('手机号或邮箱至少填写一项'))
-  } else {
-    callback()
+    return
   }
+  if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
+    callback(new Error('手机号格式不正确'))
+    return
+  }
+  callback()
+}
+
+const validateEmail = (rule, value, callback) => {
+  const email = normalized(value)
+  const phone = normalized(registerForm.phone)
+  if (!phone && !email) {
+    callback(new Error('手机号或邮箱至少填写一项'))
+    return
+  }
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    callback(new Error('邮箱格式不正确'))
+    return
+  }
+  callback()
 }
 
 const loginRules = {
@@ -149,10 +174,16 @@ const loginRules = {
 }
 
 const registerRules = {
-  phone: [{ validator: validateAccount, trigger: 'blur' }],
-  email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
+  phone: [{ validator: validatePhone, trigger: 'blur' }],
+  email: [{ validator: validateEmail, trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }, { min: 6, message: '密码至少6位', trigger: 'blur' }],
   confirmPassword: [{ required: true, message: '请确认密码', trigger: 'blur' }, { validator: validateConfirm, trigger: 'blur' }]
+}
+
+function revalidateIdentity(field) {
+  nextTick(() => {
+    registerFormRef.value?.validateField(field).catch(() => {})
+  })
 }
 
 const REMEMBERED_ACCOUNT_KEY = 'App-Remembered-Account'
@@ -376,6 +407,17 @@ function handleRegister() {
 .submit-button {
   width: 100%;
   margin-top: 4px;
+}
+
+.identity-hint {
+  margin: 0 0 12px;
+  color: #718097;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.identity-hint span {
+  color: var(--el-color-danger);
 }
 
 .login-card :deep(.el-tabs__item) {

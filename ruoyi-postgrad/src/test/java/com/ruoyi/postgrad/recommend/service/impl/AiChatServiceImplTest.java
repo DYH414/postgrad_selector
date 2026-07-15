@@ -35,11 +35,6 @@ import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.ChatRunLockService;
-import com.ruoyi.postgrad.rag.dto.RagChunkResult;
-import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
-import com.ruoyi.postgrad.rag.trace.RagTrace;
-import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
-import java.util.Map;
 
 class AiChatServiceImplTest {
 
@@ -204,51 +199,26 @@ class AiChatServiceImplTest {
     }
 
     @Test
-    void scopedEvidenceRouteCannotAttachGenericRetrieval() {
+    void chatServiceNeverAttachesAutomaticGenericRetrieval() {
         RetrievalAugmentor augmentor = mock(RetrievalAugmentor.class);
 
-        assertFalse(AiChatServiceImpl.usesGenericRetrieval(
-            com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.SCOPED_EVIDENCE, augmentor));
-        assertTrue(AiChatServiceImpl.usesGenericRetrieval(
-            com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.GENERAL, augmentor));
+        assertFalse(AiChatServiceImpl.usesGenericRetrieval("scoped-evidence", augmentor));
+        assertFalse(AiChatServiceImpl.usesGenericRetrieval("general", augmentor));
+        assertFalse(AiChatServiceImpl.usesGenericRetrieval(null, augmentor));
     }
 
     @Test
-    void genericRagTraceShouldIncludeActualRetrievalDetails() throws Exception {
-        AiChatServiceImpl service = new AiChatServiceImpl();
-        RagTraceRecorder recorder = new RagTraceRecorder();
-        injectField(service, "ragTraceRecorder", recorder);
+    void promptDelegatesRagDecisionsToTools() throws Exception {
+        String prompt = Files.readString(
+            Path.of("src/main/resources/prompts/v2/chat-system.txt"),
+            StandardCharsets.UTF_8);
 
-        RagChunkResult selected = new RagChunkResult();
-        selected.setSelectedForPrompt(true);
-        selected.setSourceName("深圳大学 电子信息 历年趋势");
-        selected.setContentPreview("2025 年均分 307 分");
-        RagSearchTestResponse retrieval = new RagSearchTestResponse();
-        retrieval.setRetrievedCount(5);
-        retrieval.setSelectedCount(3);
-        retrieval.setAppliedFilters(Map.of("school_id", "15"));
-        retrieval.setChunks(List.of(selected));
-        retrieval.getLatency().setEmbeddingMs(120L);
-        retrieval.getLatency().setRetrievalMs(35L);
-        retrieval.getLatency().setRerankMs(80L);
-
-        var method = AiChatServiceImpl.class.getDeclaredMethod("recordRagTrace",
-            Long.class, String.class, String.class,
-            com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.class,
-            RagSearchTestResponse.class, long.class);
-        method.setAccessible(true);
-        method.invoke(service, 1L, "深圳大学 300 分左右有什么专业", "run-1",
-            com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver.Route.GENERAL,
-            retrieval, System.currentTimeMillis() - 10);
-
-        RagTrace trace = recorder.listRecent(1).get(0);
-        assertEquals(5, trace.getRetrievedCount());
-        assertEquals(3, trace.getSelectedCount());
-        assertEquals("15", trace.getMetadataFilters().get("school_id"));
-        assertEquals(List.of("深圳大学 电子信息 历年趋势"), trace.getTopSources());
-        assertEquals(120L, trace.getEmbeddingLatencyMs());
-        assertEquals(35L, trace.getRetrievalLatencyMs());
-        assertEquals(80L, trace.getRerankLatencyMs());
+        assertTrue(prompt.contains("searchKnowledgeBase"),
+            "通用知识检索必须通过 searchKnowledgeBase Tool 触发");
+        assertTrue(prompt.contains("getProgramEvidence"),
+            "具体学校/专业证据检索必须通过 getProgramEvidence Tool 触发");
+        assertTrue(prompt.contains("不得依赖自动注入的通用 RAG 上下文"),
+            "Prompt 应明确禁止依赖后端自动 general RAG 注入");
     }
 
     private static void injectField(Object target, String fieldName, Object value) throws Exception {

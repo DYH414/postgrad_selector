@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getToken, removeToken } from '@/api/request'
+import { getToken } from '@/api/request'
 
 const ONBOARDED_KEY = 'App-Onboarded'
 
@@ -87,7 +87,7 @@ router.beforeEach(async (to, from, next) => {
 
   const token = getToken()
   if (!token) {
-    return next({ path: '/login', query: { redirect: to.fullPath } })
+    return next()
   }
 
   // 登录用户首次访问时检测画像 → 无画像自动引导
@@ -110,8 +110,8 @@ router.beforeEach(async (to, from, next) => {
       localStorage.removeItem(ONBOARDED_KEY)
     }
   } catch {
-    removeToken()
-    return next({ path: '/login' })
+    const userStoreModule = await import('@/stores/user')
+    userStoreModule.useUserStore().clearSession()
   }
 
   next()

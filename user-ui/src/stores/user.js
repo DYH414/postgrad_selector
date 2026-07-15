@@ -35,8 +35,7 @@ export const useUserStore = defineStore('user', () => {
     profile.value = p
   }
 
-  async function logoutAction() {
-    try { await logout() } catch (e) { /* ignore */ }
+  function clearSession() {
     token.value = null
     userId.value = null
     role.value = null
@@ -44,8 +43,13 @@ export const useUserStore = defineStore('user', () => {
     removeToken()
   }
 
+  async function logoutAction() {
+    try { await logout() } catch (e) { /* ignore */ }
+    clearSession()
+  }
+
   return {
     token, userId, role, profile, isLoggedIn,
-    loginAction, registerAction, fetchMe, setProfile, logoutAction
+    loginAction, registerAction, fetchMe, setProfile, clearSession, logoutAction
   }
 })

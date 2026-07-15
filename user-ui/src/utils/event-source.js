@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '@/api/base-url'
+
 export function buildEventSourceUrl(path, params = {}) {
   const query = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
@@ -7,7 +9,7 @@ export function buildEventSourceUrl(path, params = {}) {
   })
 
   const queryString = query.toString()
-  return `/dev-api${path}${queryString ? `?${queryString}` : ''}`
+  return `${API_BASE_URL}${path}${queryString ? `?${queryString}` : ''}`
 }
 
 export function closeEventSource(sourceRef) {

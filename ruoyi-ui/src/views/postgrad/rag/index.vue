@@ -265,7 +265,7 @@
                   <span v-else class="warn-text">-</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="relevantInTopK" label="Top-{{ evalResult.evalK || 5 }} 命中数" width="120" />
+              <el-table-column prop="relevantInTopK" :label="`Top-${evalResult.evalK || 5} 命中数`" width="120" />
               <el-table-column prop="failureReason" label="失败原因" min-width="140">
                 <template slot-scope="scope">
                   <span v-if="!scope.row.passed && scope.row.failureReason" class="warn-text">

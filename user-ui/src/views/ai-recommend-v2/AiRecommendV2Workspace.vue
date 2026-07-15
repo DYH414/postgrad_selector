@@ -403,15 +403,15 @@ async function handleGenerate() {
       if (data.fallbackTiers && data.fallbackTiers.length > 0) {
         ElMessage.warning('以下档位 AI 分析暂时不可用，已按数据匹配度自动选择：' + data.fallbackTiers.join('、'))
       }
-      closeEventSource(draftEventSource)
-      await completeGenerationWhenRevealSettles()
-    })
+    closeEventSource(draftEventSource)
+    await completeGenerationWhenRevealSettles()
+  })
 
-    source.addEventListener('error', event => {
-      let message = '生成草稿连接中断'
+  source.addEventListener('error', event => {
+      let message = '生成草稿连接中断，请稍后重试'
       if (event?.data) {
         try {
-          message = JSON.parse(event.data).message || message
+          message = safeUserError(JSON.parse(event.data).message, message)
         } catch (_) {}
       }
       applyProgress({ phase: 'error', message })
@@ -427,9 +427,9 @@ async function handleGenerate() {
     if (msg.includes('正在生成')) {
       ElMessage.warning('已有草稿正在生成，请稍候')
     } else {
-      ElMessage.error('生成草稿失败：' + msg)
+      ElMessage.error('生成草稿失败，请稍后重试')
     }
-    applyProgress({ phase: 'error', message: msg })
+    applyProgress({ phase: 'error', message: safeUserError(msg, '生成草稿失败，请稍后重试') })
     generating.value = false
     stopProgress()
     clearRevealTimers()
@@ -454,7 +454,7 @@ async function handleReplace({ removeProgramId, tier, preference }) {
     draft.value = res.data.draft
     ElMessage.success('已替换')
   } catch (e) {
-    ElMessage.error('替换失败：' + (e.response?.data?.msg || e.message))
+    ElMessage.error('替换失败，请稍后重试')
   }
 }
 
@@ -464,7 +464,7 @@ async function handleAddFromWorkspace({ tier, preference }) {
     draft.value = res.data
     ElMessage.success('已补充候选')
   } catch (e) {
-    ElMessage.error('补充失败：' + (e.response?.data?.msg || e.message))
+    ElMessage.error('补充失败，请稍后重试')
   }
 }
 
@@ -554,7 +554,7 @@ async function handleChatSend(message) {
             } else if (currentEvent === 'error') {
               currentToolCall.value = ''
               chatStreamingText.value = ''
-              ElMessage.error(data.message || '对话失败')
+              ElMessage.error(safeUserError(data.message, '对话失败，请稍后重试'))
             }
           } catch (e) { /* skip */ }
         }
@@ -563,7 +563,7 @@ async function handleChatSend(message) {
   } catch (e) {
     currentToolCall.value = ''
     chatStreamingText.value = ''
-    ElMessage.error('对话失败：' + (e.message || '网络错误'))
+    ElMessage.error('对话失败，请稍后重试')
   } finally {
     currentToolCall.value = ''
     chatStreaming.value = false
@@ -596,8 +596,17 @@ async function handleGenerateReport() {
       ElMessage.success('报告已生成')
     }
   } catch (e) {
-    ElMessage.error('生成报告失败：' + (e.response?.data?.msg || e.message))
+    ElMessage.error('生成报告失败，请稍后重试')
   }
+}
+
+function safeUserError(message, fallback) {
+  if (!message) return fallback
+  const text = String(message)
+  if (/Exception|java\.|org\.|com\.ruoyi|SQL|Redis|Qdrant|stack|timeout|502|500/i.test(text)) {
+    return fallback
+  }
+  return text
 }
 
 function revealTierCandidates(tierData) {

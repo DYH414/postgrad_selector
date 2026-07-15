@@ -18,7 +18,6 @@ import com.ruoyi.postgrad.rag.service.RagRetrievalResult;
 import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
 import com.ruoyi.postgrad.recommend.domain.AgentRunContext;
-import com.ruoyi.postgrad.recommend.service.ChatRagRouteResolver;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.tool.V2BoundChatTools;
 import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
@@ -35,15 +34,11 @@ class AgentRuntimeFlowContractTest {
 
     @Test
     void policyAndProgramRiskRunsPreserveRouteEvidenceAndRunId() throws Exception {
-        ChatRagRouteResolver resolver = new ChatRagRouteResolver();
         RetrievalAugmentor augmentor = mock(RetrievalAugmentor.class);
-        assertTrue(AiChatServiceImpl.usesGenericRetrieval(resolver.resolve("408 考什么科目"), augmentor));
+        assertFalse(AiChatServiceImpl.usesGenericRetrieval("408 考什么科目", augmentor));
+        assertFalse(AiChatServiceImpl.usesGenericRetrieval("杭州电子科技大学为什么推荐，有什么风险", augmentor));
 
         String riskQuestion = "杭州电子科技大学为什么推荐，有什么风险";
-        ChatRagRouteResolver.Route riskRoute = resolver.resolve(riskQuestion);
-        assertEquals(ChatRagRouteResolver.Route.SCOPED_EVIDENCE, riskRoute);
-        assertFalse(AiChatServiceImpl.usesGenericRetrieval(riskRoute, augmentor));
-
         AgentRunContext run = AgentRunContext.start(7L);
         RagRetrievalService retrieval = mock(RagRetrievalService.class);
         RagSearchTestResponse searchResponse = new RagSearchTestResponse();

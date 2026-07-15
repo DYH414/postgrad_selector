@@ -3,6 +3,7 @@ package com.ruoyi.web.controller.postgrad;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Date;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -47,7 +48,51 @@ public class AppAuthController
     @PostMapping("/register")
     public AjaxResult register(@RequestBody Map<String, String> body)
     {
-        return AjaxResult.error("暂时未开放测试通道");
+        String phone = normalize(body.get("phone"));
+        String email = normalize(body.get("email"));
+        String password = body.get("password");
+        String confirmPassword = body.get("confirmPassword");
+
+        if (phone == null && email == null)
+        {
+            return AjaxResult.error("手机号或邮箱至少填写一项");
+        }
+        if (password == null || password.length() < 6)
+        {
+            return AjaxResult.error("密码至少需要 6 位");
+        }
+        if (confirmPassword != null && !confirmPassword.equals(password))
+        {
+            return AjaxResult.error("两次密码不一致");
+        }
+        if (phone != null && !phone.matches("^1[3-9]\\d{9}$"))
+        {
+            return AjaxResult.error("手机号格式不正确");
+        }
+        if (email != null && !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))
+        {
+            return AjaxResult.error("邮箱格式不正确");
+        }
+
+        String phoneHash = phone != null ? sha256(phone) : null;
+        String emailHash = email != null ? sha256(email.toLowerCase()) : null;
+        if (phoneHash != null && appUserService.selectCountByPhoneHash(phoneHash) > 0)
+        {
+            return AjaxResult.error("该手机号已注册");
+        }
+        if (emailHash != null && appUserService.selectCountByEmailHash(emailHash) > 0)
+        {
+            return AjaxResult.error("该邮箱已注册");
+        }
+
+        AppUser user = new AppUser();
+        user.setPhoneHash(phoneHash);
+        user.setEmailHash(emailHash);
+        user.setPasswordHash(bCryptPasswordEncoder.encode(password));
+        user.setRole("user");
+        user.setConsentAt(new Date());
+        appUserService.insertAppUser(user);
+        return AjaxResult.success("注册成功，请登录");
     }
 
     @RateLimiter(count = 10, time = 60, limitType = LimitType.IP)
@@ -161,5 +206,15 @@ public class AppAuthController
         {
             throw new RuntimeException(e);
         }
+    }
+
+    private static String normalize(String value)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }

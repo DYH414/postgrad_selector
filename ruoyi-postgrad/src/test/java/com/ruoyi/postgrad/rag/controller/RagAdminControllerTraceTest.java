@@ -26,6 +26,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 class RagAdminControllerTraceTest {
 
@@ -187,6 +188,25 @@ class RagAdminControllerTraceTest {
 
         assertTrue(result.isSuccess());
         assertEquals(report, result.get("data"));
+    }
+
+    @Test
+    void expensiveEvaluationEndpointsRequireExecutePermission() throws Exception {
+        for (String methodName : List.of("runEval", "runEvalDev", "runEvalTest", "runFrozenEvaluation", "runEvalFull")) {
+            Method method = RagAdminController.class.getMethod(methodName);
+            PreAuthorize annotation = method.getAnnotation(PreAuthorize.class);
+            assertTrue(annotation != null, methodName + " must declare PreAuthorize");
+            assertTrue(annotation.value().contains("postgrad:rag:eval"),
+                methodName + " must require postgrad:rag:eval instead of view-only permission");
+        }
+    }
+
+    @Test
+    void searchRequestCapsExpensiveRetrievalParameters() {
+        RagSearchTestRequest request = new RagSearchTestRequest("深圳大学", 10_000, 0.5, 10_000);
+
+        assertEquals(20, request.getMaxResults());
+        assertEquals(10, request.getRerankTopN());
     }
 
     private static RagAdminController controller(RagIndexBuildService buildService,
