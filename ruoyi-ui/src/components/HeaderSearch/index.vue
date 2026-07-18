@@ -79,6 +79,10 @@ import Fuse from 'fuse.js/dist/fuse.min.js'
 import path from 'path'
 import { isHttp } from '@/utils/validate'
 
+function normalizeRoutePath(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 export default {
   name: 'HeaderSearch',
   data() {
@@ -165,10 +169,16 @@ export default {
     },
     generateRoutes(routes, basePath = '/', prefixTitle = []) {
       let res = []
-      for (const router of routes) {
+      const normalizedBasePath = normalizeRoutePath(basePath) || '/'
+      for (const router of Array.isArray(routes) ? routes : []) {
+        const routePath = normalizeRoutePath(router && router.path)
+        if (!routePath) {
+          if (process.env.NODE_ENV === 'development') console.warn('[HeaderSearch] skipped invalid route', router && router.name)
+          continue
+        }
         if (router.hidden) { continue }
         const data = {
-          path: !isHttp(router.path) ? path.resolve(basePath, router.path) : router.path,
+          path: !isHttp(routePath) ? path.resolve(normalizedBasePath, routePath) : routePath,
           title: [...prefixTitle],
           icon: ''
         }
@@ -182,7 +192,7 @@ export default {
         if (router.query) {
           data.query = router.query
         }
-        if (router.children) {
+        if (Array.isArray(router.children) && normalizeRoutePath(data.path)) {
           const tempRoutes = this.generateRoutes(router.children, data.path, data.title)
           if (tempRoutes.length >= 1) {
             res = [...res, ...tempRoutes]

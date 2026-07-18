@@ -31,6 +31,10 @@ import Item from './Item'
 import AppLink from './Link'
 import FixiOSBug from './FixiOSBug'
 
+function normalizeRoutePath(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 export default {
   name: 'SidebarItem',
   components: { Item, AppLink },
@@ -82,17 +86,27 @@ export default {
       return false
     },
     resolvePath(routePath, routeQuery) {
-      if (isExternal(routePath)) {
-        return routePath
+      const normalizedPath = normalizeRoutePath(routePath)
+      const normalizedBasePath = normalizeRoutePath(this.basePath)
+      if (!normalizedPath) {
+        if (process.env.NODE_ENV === 'development') console.warn('[SidebarItem] skipped invalid route path', this.item && this.item.name)
+        return normalizedBasePath || '/'
       }
-      if (isExternal(this.basePath)) {
-        return this.basePath
+      if (isExternal(normalizedPath)) {
+        return normalizedPath
+      }
+      if (normalizedBasePath && isExternal(normalizedBasePath)) {
+        return normalizedBasePath
       }
       if (routeQuery) {
-        let query = JSON.parse(routeQuery)
-        return { path: path.resolve(this.basePath, routePath), query: query }
+        try {
+          const query = JSON.parse(routeQuery)
+          return { path: path.resolve(normalizedBasePath || '/', normalizedPath), query: query }
+        } catch (error) {
+          return path.resolve(normalizedBasePath || '/', normalizedPath)
+        }
       }
-      return path.resolve(this.basePath, routePath)
+      return path.resolve(normalizedBasePath || '/', normalizedPath)
     }
   }
 }
