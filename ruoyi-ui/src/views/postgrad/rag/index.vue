@@ -27,6 +27,14 @@
         :closable="false"
         class="rag-alert"
       />
+      <el-alert
+        v-if="consistencyWarning"
+        :title="consistencyWarning"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="rag-alert"
+      />
 
       <!-- 索引管理面板 -->
       <section class="rag-panel" style="margin-bottom: 12px;">
@@ -36,8 +44,8 @@
         <div style="padding: 16px;">
           <div class="index-status-line">
             <span class="index-stat">状态: <el-tag :type="statusTag" size="mini">{{ statusText }}</el-tag></span>
-            <span class="index-stat">文档: {{ status.documentCount || 0 }}</span>
-            <span class="index-stat">切片: {{ status.chunkCount || 0 }}</span>
+            <span class="index-stat">文档: {{ displayDocumentCount }}</span>
+            <span class="index-stat">Qdrant Points: {{ displayActualPointCount }}</span>
           </div>
           <div class="index-version-line">
             活动版本: <code>{{ displayCollection }}</code>
@@ -93,8 +101,10 @@
             <el-descriptions-item label="集合名称">{{ status.collectionName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="可连通">{{ boolText(status.reachable) }}</el-descriptions-item>
             <el-descriptions-item label="已索引">{{ boolText(status.indexed) }}</el-descriptions-item>
-            <el-descriptions-item label="文档数">{{ status.documentCount || 0 }}</el-descriptions-item>
-            <el-descriptions-item label="切片数">{{ status.chunkCount || 0 }}</el-descriptions-item>
+            <el-descriptions-item label="构建文档数">{{ displayDocumentCount }}</el-descriptions-item>
+            <el-descriptions-item label="预期 Chunk">{{ valueOrDash(status.expectedChunkCount) }}</el-descriptions-item>
+            <el-descriptions-item label="实际 Point">{{ displayActualPointCount }}</el-descriptions-item>
+            <el-descriptions-item label="一致性">{{ consistencyText }}</el-descriptions-item>
             <el-descriptions-item label="最近索引">{{ formatTime(status.lastIndexedAt) }}</el-descriptions-item>
             <el-descriptions-item label="运行模式">{{ status.lastRunMode || '-' }}</el-descriptions-item>
           </el-descriptions>
@@ -325,7 +335,7 @@
               <el-tag v-else type="danger" size="mini">失败</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="query" label="查询" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="querySummary" label="查询" min-width="160" show-overflow-tooltip />
           <el-table-column label="召回/选中" width="90">
             <template slot-scope="scope">
               {{ scope.row.retrievedCount }}/{{ scope.row.selectedCount }}
@@ -362,6 +372,11 @@
             <template slot-scope="scope">
               <span v-if="scope.row.errorSummary" class="warn-text">{{ scope.row.errorSummary }}</span>
               <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="评测" width="90" fixed="right">
+            <template slot-scope="scope">
+              <el-button v-if="scope.row.id" v-hasPermi="['postgrad:ragEval:edit']" type="text" @click="addTraceToEval(scope.row)">加入用例</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -428,8 +443,8 @@ export default {
         { key: 'backend', label: '向量库后端', value: this.status.backend || 'Qdrant', hint: '当前使用的向量存储' },
         { key: 'reachable', label: '可连通', value: this.boolText(this.status.reachable), hint: 'Qdrant 是否可达' },
         { key: 'indexed', label: '索引状态', value: this.boolText(this.status.indexed), hint: '文档是否已加载' },
-        { key: 'docs', label: '文档数', value: this.status.documentCount || 0, hint: '总文档数' },
-        { key: 'chunks', label: '切片数', value: this.status.chunkCount || 0, hint: '分块后的总片段数' },
+        { key: 'docs', label: '文档数', value: this.displayDocumentCount, hint: '活动版本对应的构建文档' },
+        { key: 'chunks', label: 'Qdrant Points', value: this.displayActualPointCount, hint: '活动集合实时向量点数' },
         { key: 'lastIndexed', label: '最近索引', value: this.relativeTime(this.status.lastIndexedAt), hint: '上次成功索引时间' }
       ]
     },
@@ -445,6 +460,22 @@ export default {
     },
     displayCollection() {
       return this.status.activeCollection || this.status.collectionName || '-'
+    },
+    displayDocumentCount() {
+      return this.status.indexConsistency === 'CONSISTENT'
+        ? this.valueOrDash(this.status.expectedDocumentCount)
+        : '--'
+    },
+    displayActualPointCount() {
+      return this.valueOrDash(this.status.actualPointCount != null ? this.status.actualPointCount : this.status.chunkCount)
+    },
+    consistencyText() {
+      const labels = { CONSISTENT: '一致', MISMATCH: '数量不一致', UNKNOWN: '无法确认' }
+      return labels[this.status.indexConsistency] || '旧版状态'
+    },
+    consistencyWarning() {
+      if (!this.status.activeCollection || !this.status.indexConsistency || this.status.indexConsistency === 'CONSISTENT') return ''
+      return this.status.indexConsistencyMessage || `活动集合 ${this.displayCollection} 的构建记录与实时 Point 数无法确认一致，请检查索引批次。`
     },
     progressStatus() {
       if (!this.buildRun) return undefined
@@ -493,6 +524,9 @@ export default {
     this.stopPolling()
   },
   methods: {
+    valueOrDash(value) {
+      return value === null || value === undefined ? '--' : value
+    },
     async loadAll() {
       this.notice = ''
       await this.loadStatus()
@@ -527,7 +561,7 @@ export default {
     async loadTraces() {
       try {
         const res = await getRagTraces(20)
-        this.traces = (res && res.data) || []
+        this.traces = ((res && res.data) || []).map(this.normalizeTrace)
       } catch (e) {
         // traces are non-critical, ignore silently
       }
@@ -730,6 +764,23 @@ export default {
         }
       })
       return result
+    },
+    normalizeTrace(trace) {
+      if (!trace) return {}
+      const parse = (value, fallback) => {
+        if (value == null || value === '') return fallback
+        if (typeof value !== 'string') return value
+        try { return JSON.parse(value) } catch (e) { return fallback }
+      }
+      return {
+        ...trace,
+        querySummary: trace.querySummary || trace.query || '',
+        topSources: trace.topSources || parse(trace.topSourcesJson, []),
+        metadataFilters: trace.metadataFilters || parse(trace.metadataFiltersJson, {})
+      }
+    },
+    addTraceToEval(trace) {
+      this.$router.push({ path: '/postgrad/ops/rag-evaluation', query: { traceId: trace.id } })
     }
   }
 }
