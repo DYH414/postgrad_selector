@@ -33,7 +33,7 @@
             <div
               class="search-item"
               v-for="(item, index) in options"
-              :key="item.path"
+              :key="item.path + ':' + index"
               :class="{ 'is-active': index === activeIndex }"
               :style="activeStyle(index)"
               @mouseenter="activeIndex = index"
@@ -81,6 +81,35 @@ import { isHttp } from '@/utils/validate'
 
 function normalizeRoutePath(value) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function parseRouteQuery(value) {
+  if (!value) return null
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value
+    return isPlainObject(parsed) ? parsed : null
+  } catch (error) {
+    return null
+  }
+}
+
+function resolveRoutePath(routePath, basePath) {
+  if (isHttp(routePath)) return routePath
+  if (isHttp(basePath)) {
+    try {
+      const parentUrl = basePath.endsWith('/') ? basePath : `${basePath}/`
+      return new URL(routePath, parentUrl).toString()
+    } catch (error) {
+      return ''
+    }
+  }
+  return path.resolve(basePath, routePath)
 }
 
 export default {
@@ -135,14 +164,14 @@ export default {
     },
     change(val) {
       const p = val.path
-      const query = val.query
+      const query = parseRouteQuery(val.query)
       if (isHttp(val.path)) {
         // http(s):// 路径新窗口打开
         const pindex = p.indexOf('http')
         window.open(p.substr(pindex, p.length), '_blank')
       } else {
         if (query) {
-          this.$router.push({ path: p, query: JSON.parse(query) })
+          this.$router.push({ path: p, query: query })
         } else {
           this.$router.push(p)
         }
@@ -177,8 +206,13 @@ export default {
           continue
         }
         if (router.hidden) { continue }
+        const resolvedPath = resolveRoutePath(routePath, normalizedBasePath)
+        if (!resolvedPath) {
+          if (process.env.NODE_ENV === 'development') console.warn('[HeaderSearch] skipped unsupported route', router.name)
+          continue
+        }
         const data = {
-          path: !isHttp(routePath) ? path.resolve(normalizedBasePath, routePath) : routePath,
+          path: resolvedPath,
           title: [...prefixTitle],
           icon: ''
         }

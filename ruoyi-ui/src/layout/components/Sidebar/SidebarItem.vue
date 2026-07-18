@@ -1,5 +1,5 @@
 <template>
-  <div v-if="!item.hidden">
+  <div v-if="!item.hidden && isValidRoute(item)">
     <template v-if="hasOneShowingChild(item.children,item) && (!onlyOneChild.children||onlyOneChild.noShowingChildren)&&!item.alwaysShow">
       <app-link v-if="onlyOneChild.meta" :to="resolvePath(onlyOneChild.path, onlyOneChild.query)">
         <el-menu-item :index="resolvePath(onlyOneChild.path)" :class="{'submenu-title-noDropdown':!isNest}">
@@ -35,6 +35,12 @@ function normalizeRoutePath(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
 export default {
   name: 'SidebarItem',
   components: { Item, AppLink },
@@ -60,11 +66,8 @@ export default {
   },
   methods: {
     hasOneShowingChild(children = [], parent) {
-      if (!children) {
-        children = []
-      }
-      const showingChildren = children.filter(item => {
-        if (item.hidden) {
+      const showingChildren = (Array.isArray(children) ? children : []).filter(item => {
+        if (item.hidden || !this.isValidRoute(item)) {
           return false
         }
         // Temp set(will be used if only has one showing child)
@@ -79,18 +82,21 @@ export default {
 
       // Show parent if there are no child router to display
       if (showingChildren.length === 0) {
-        this.onlyOneChild = { ... parent, path: '', noShowingChildren: true }
+        this.onlyOneChild = { ...parent, noShowingChildren: true }
         return true
       }
 
       return false
+    },
+    isValidRoute(route) {
+      return !!normalizeRoutePath(route && route.path)
     },
     resolvePath(routePath, routeQuery) {
       const normalizedPath = normalizeRoutePath(routePath)
       const normalizedBasePath = normalizeRoutePath(this.basePath)
       if (!normalizedPath) {
         if (process.env.NODE_ENV === 'development') console.warn('[SidebarItem] skipped invalid route path', this.item && this.item.name)
-        return normalizedBasePath || '/'
+        return ''
       }
       if (isExternal(normalizedPath)) {
         return normalizedPath
@@ -100,10 +106,12 @@ export default {
       }
       if (routeQuery) {
         try {
-          const query = JSON.parse(routeQuery)
-          return { path: path.resolve(normalizedBasePath || '/', normalizedPath), query: query }
+          const query = typeof routeQuery === 'string' ? JSON.parse(routeQuery) : routeQuery
+          if (isPlainObject(query)) {
+            return { path: path.resolve(normalizedBasePath || '/', normalizedPath), query: query }
+          }
         } catch (error) {
-          return path.resolve(normalizedBasePath || '/', normalizedPath)
+          // Invalid query data should not prevent the route from opening.
         }
       }
       return path.resolve(normalizedBasePath || '/', normalizedPath)
