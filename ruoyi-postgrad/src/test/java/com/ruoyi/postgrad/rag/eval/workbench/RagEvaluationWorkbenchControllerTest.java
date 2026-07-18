@@ -2,29 +2,38 @@ package com.ruoyi.postgrad.rag.eval.workbench;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.github.pagehelper.Page;
+import com.github.pagehelper.PageHelper;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.page.TableDataInfo;
+import com.ruoyi.postgrad.rag.eval.RagEvaluationService;
 import com.ruoyi.postgrad.rag.eval.workbench.controller.RagEvaluationWorkbenchController;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
 import com.ruoyi.postgrad.rag.eval.workbench.mapper.RagEvaluationWorkbenchMapper;
 import com.ruoyi.postgrad.rag.eval.workbench.service.RagEvalDatasetService;
 import com.ruoyi.postgrad.rag.eval.workbench.service.RagEvalRunService;
 import com.ruoyi.postgrad.rag.mapper.RagRetrievalTraceMapper;
+import com.ruoyi.postgrad.rag.qdrant.RagCollectionManager;
 import java.lang.reflect.Method;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 class RagEvaluationWorkbenchControllerTest {
-    @AfterEach void clearRequest() { RequestContextHolder.resetRequestAttributes(); }
+    @AfterEach void clearRequest() {
+        PageHelper.clearPage();
+        RequestContextHolder.resetRequestAttributes();
+    }
 
     @Test
     void datasetListingUsesRuoYiPaginationContract() {
@@ -52,9 +61,15 @@ class RagEvaluationWorkbenchControllerTest {
     }
 
     @Test
-    void runListingPassesAllFiltersToService() {
+    void runListingStartsRequestedPageBeforePassingFiltersToService() {
         RagEvalRunService runs = mock(RagEvalRunService.class);
-        when(runs.list(7L, "SUCCEEDED", "abc123", "checksum-v1")).thenReturn(List.of());
+        doAnswer(invocation -> {
+            Page<?> page = PageHelper.getLocalPage();
+            assertNotNull(page);
+            assertEquals(2, page.getPageNum());
+            assertEquals(10, page.getPageSize());
+            return List.of();
+        }).when(runs).list(7L, "SUCCEEDED", "abc123", "checksum-v1");
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setParameter("pageNum", "2");
         request.setParameter("pageSize", "10");
@@ -64,6 +79,18 @@ class RagEvaluationWorkbenchControllerTest {
             .listRuns(7L, "SUCCEEDED", "abc123", "checksum-v1");
 
         verify(runs).list(7L, "SUCCEEDED", "abc123", "checksum-v1");
+    }
+
+    @Test
+    void runListingTrimsKeywordAndNullsBlankChecksumBeforeMapperInvocation() {
+        RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
+        RagEvalRunService runs = new RagEvalRunService(mapper, mock(RagEvalDatasetService.class),
+            mock(RagEvaluationService.class), mock(RagCollectionManager.class),
+            mock(ThreadPoolTaskExecutor.class), "BAAI/bge-m3", "BAAI/bge-reranker-v2-m3");
+
+        runs.list(7L, "SUCCEEDED", "  abc  ", "   ");
+
+        verify(mapper).selectRuns(7L, "SUCCEEDED", "abc", null);
     }
 
     @Test
