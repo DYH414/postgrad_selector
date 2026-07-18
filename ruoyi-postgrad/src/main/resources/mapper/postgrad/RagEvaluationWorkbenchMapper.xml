@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.rag.eval.workbench.mapper.RagEvaluationWorkbenchMapper">
+
+    <resultMap id="datasetMap" type="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset">
+        <id property="id" column="id"/><result property="datasetKey" column="dataset_key"/>
+        <result property="name" column="name"/><result property="version" column="version"/>
+        <result property="datasetType" column="dataset_type"/><result property="lifecycleState" column="lifecycle_state"/>
+        <result property="description" column="description"/><result property="sourceDatasetId" column="source_dataset_id"/>
+        <result property="checksumSha256" column="checksum_sha256"/><result property="caseCount" column="case_count"/>
+        <result property="lockVersion" column="lock_version"/><result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/><result property="updatedBy" column="updated_by"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="caseMap" type="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity">
+        <id property="id" column="id"/><result property="datasetId" column="dataset_id"/>
+        <result property="caseKey" column="case_key"/><result property="queryText" column="query_text"/>
+        <result property="category" column="category"/><result property="difficulty" column="difficulty"/>
+        <result property="expectedMetadataJson" column="expected_metadata_json"/>
+        <result property="relevantConditionsJson" column="relevant_conditions_json"/>
+        <result property="relevantSourcesJson" column="relevant_sources_json"/>
+        <result property="noAnswer" column="no_answer"/><result property="sourceDataAvailable" column="source_data_available"/>
+        <result property="expectedFallback" column="expected_fallback"/><result property="expectedRoute" column="expected_route"/>
+        <result property="tagsJson" column="tags_json"/><result property="reviewerNote" column="reviewer_note"/>
+        <result property="createdBy" column="created_by"/><result property="createdAt" column="created_at"/>
+        <result property="updatedBy" column="updated_by"/><result property="updatedAt" column="updated_at"/>
+    </resultMap>
+    <resultMap id="runMap" type="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalRun">
+        <id property="runId" column="run_id"/><result property="datasetId" column="dataset_id"/>
+        <result property="datasetChecksum" column="dataset_checksum"/><result property="status" column="status"/>
+        <result property="modesJson" column="modes_json"/><result property="parameterSnapshotJson" column="parameter_snapshot_json"/>
+        <result property="qdrantAlias" column="qdrant_alias"/><result property="qdrantCollection" column="qdrant_collection"/>
+        <result property="embeddingModel" column="embedding_model"/><result property="rerankModel" column="rerank_model"/>
+        <result property="gitCommit" column="git_commit"/><result property="totalCases" column="total_cases"/>
+        <result property="completedCases" column="completed_cases"/><result property="aggregateMetricsJson" column="aggregate_metrics_json"/>
+        <result property="errorCode" column="error_code"/><result property="errorSummary" column="error_summary"/>
+        <result property="cancelRequested" column="cancel_requested"/><result property="createdBy" column="created_by"/>
+        <result property="createdAt" column="created_at"/><result property="startedAt" column="started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+    </resultMap>
+    <resultMap id="resultMap" type="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseResultEntity">
+        <id property="id" column="id"/><result property="runId" column="run_id"/><result property="caseId" column="case_id"/>
+        <result property="evalMode" column="eval_mode"/><result property="passed" column="passed"/>
+        <result property="firstRelevantRank" column="first_relevant_rank"/><result property="relevantInTopK" column="relevant_in_top_k"/>
+        <result property="reciprocalRank" column="reciprocal_rank"/><result property="effectiveFiltersJson" column="effective_filters_json"/>
+        <result property="candidateSummaryJson" column="candidate_summary_json"/><result property="selectedEvidenceJson" column="selected_evidence_json"/>
+        <result property="latencyMs" column="latency_ms"/><result property="failureReason" column="failure_reason"/>
+        <result property="technicalErrorCode" column="technical_error_code"/><result property="technicalErrorSummary" column="technical_error_summary"/>
+        <result property="humanFailureCategory" column="human_failure_category"/><result property="reviewerNote" column="reviewer_note"/>
+        <result property="reviewedBy" column="reviewed_by"/><result property="reviewedAt" column="reviewed_at"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insertDataset" parameterType="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO rag_eval_dataset(dataset_key,name,version,dataset_type,lifecycle_state,description,source_dataset_id,checksum_sha256,case_count,lock_version,created_by,updated_by)
+        VALUES(#{datasetKey},#{name},#{version},#{datasetType},#{lifecycleState},#{description},#{sourceDatasetId},#{checksumSha256},#{caseCount},#{lockVersion},#{createdBy},#{updatedBy})
+    </insert>
+    <select id="selectDatasetById" resultMap="datasetMap">SELECT * FROM rag_eval_dataset WHERE id=#{id}</select>
+    <select id="selectDatasetByKeyVersion" resultMap="datasetMap">SELECT * FROM rag_eval_dataset WHERE dataset_key=#{datasetKey} AND version=#{version} LIMIT 1</select>
+    <select id="selectDatasets" resultMap="datasetMap">SELECT * FROM rag_eval_dataset <where><if test="datasetType != null and datasetType != ''">dataset_type=#{datasetType}</if><if test="lifecycleState != null and lifecycleState != ''">AND lifecycle_state=#{lifecycleState}</if></where> ORDER BY updated_at DESC</select>
+    <update id="updateDataset">UPDATE rag_eval_dataset SET name=#{name},description=#{description},lifecycle_state=#{lifecycleState},updated_by=#{updatedBy},lock_version=lock_version+1 WHERE id=#{id} AND lock_version=#{lockVersion} AND lifecycle_state!='FROZEN'</update>
+    <update id="updateDatasetCount">UPDATE rag_eval_dataset SET case_count=#{caseCount} WHERE id=#{id}</update>
+    <update id="freezeDataset">UPDATE rag_eval_dataset SET dataset_type='FROZEN',lifecycle_state='FROZEN',checksum_sha256=#{checksum},case_count=#{caseCount},updated_by=#{operator},lock_version=lock_version+1 WHERE id=#{id} AND lock_version=#{lockVersion} AND lifecycle_state!='FROZEN'</update>
+
+    <insert id="insertCase" parameterType="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity" useGeneratedKeys="true" keyProperty="id">INSERT INTO rag_eval_case(dataset_id,case_key,query_text,category,difficulty,expected_metadata_json,relevant_conditions_json,relevant_sources_json,no_answer,source_data_available,expected_fallback,expected_route,tags_json,reviewer_note,created_by,updated_by) VALUES(#{datasetId},#{caseKey},#{queryText},#{category},#{difficulty},#{expectedMetadataJson},#{relevantConditionsJson},#{relevantSourcesJson},#{noAnswer},#{sourceDataAvailable},#{expectedFallback},#{expectedRoute},#{tagsJson},#{reviewerNote},#{createdBy},#{updatedBy})</insert>
+    <select id="selectCaseById" resultMap="caseMap">SELECT * FROM rag_eval_case WHERE id=#{id}</select>
+    <select id="selectCasesByDatasetId" resultMap="caseMap">SELECT * FROM rag_eval_case WHERE dataset_id=#{datasetId} ORDER BY case_key</select>
+    <update id="updateCase">UPDATE rag_eval_case c JOIN rag_eval_dataset d ON d.id=c.dataset_id SET c.case_key=#{caseKey},c.query_text=#{queryText},c.category=#{category},c.difficulty=#{difficulty},c.expected_metadata_json=#{expectedMetadataJson},c.relevant_conditions_json=#{relevantConditionsJson},c.relevant_sources_json=#{relevantSourcesJson},c.no_answer=#{noAnswer},c.source_data_available=#{sourceDataAvailable},c.expected_fallback=#{expectedFallback},c.expected_route=#{expectedRoute},c.tags_json=#{tagsJson},c.reviewer_note=#{reviewerNote},c.updated_by=#{updatedBy} WHERE c.id=#{id} AND d.lifecycle_state!='FROZEN'</update>
+    <delete id="deleteCase">DELETE c FROM rag_eval_case c JOIN rag_eval_dataset d ON d.id=c.dataset_id WHERE c.id=#{id} AND d.lifecycle_state!='FROZEN'</delete>
+
+    <insert id="insertRun">INSERT INTO rag_eval_run(run_id,dataset_id,dataset_checksum,status,modes_json,parameter_snapshot_json,qdrant_alias,qdrant_collection,embedding_model,rerank_model,git_commit,total_cases,completed_cases,created_by) VALUES(#{runId},#{datasetId},#{datasetChecksum},#{status},#{modesJson},#{parameterSnapshotJson},#{qdrantAlias},#{qdrantCollection},#{embeddingModel},#{rerankModel},#{gitCommit},#{totalCases},#{completedCases},#{createdBy})</insert>
+    <select id="selectRunById" resultMap="runMap">SELECT * FROM rag_eval_run WHERE run_id=#{runId}</select>
+    <select id="selectRuns" resultMap="runMap">SELECT * FROM rag_eval_run <where><if test="datasetId != null">dataset_id=#{datasetId}</if><if test="status != null and status != ''">AND status=#{status}</if><if test="runIdKeyword != null and runIdKeyword != ''">AND run_id LIKE CONCAT('%', #{runIdKeyword}, '%')</if><if test="datasetChecksum != null and datasetChecksum != ''">AND dataset_checksum = #{datasetChecksum}</if></where> ORDER BY created_at DESC</select>
+    <select id="selectActiveEquivalentRun" resultMap="runMap">SELECT * FROM rag_eval_run WHERE dataset_id=#{datasetId} AND dataset_checksum &lt;=&gt; #{datasetChecksum} AND parameter_snapshot_json=#{parameterSnapshotJson} AND status IN ('PENDING','RUNNING') ORDER BY created_at DESC LIMIT 1</select>
+    <update id="markRunStarted">UPDATE rag_eval_run SET status='RUNNING',started_at=CURRENT_TIMESTAMP(3) WHERE run_id=#{runId} AND status='PENDING'</update>
+    <update id="updateRunProgress">UPDATE rag_eval_run SET completed_cases=#{completedCases} WHERE run_id=#{runId}</update>
+    <update id="completeRun">UPDATE rag_eval_run SET status=#{status},aggregate_metrics_json=#{metricsJson},error_code=#{errorCode},error_summary=#{errorSummary},finished_at=CURRENT_TIMESTAMP(3) WHERE run_id=#{runId}</update>
+    <update id="requestCancel">UPDATE rag_eval_run SET cancel_requested=1 WHERE run_id=#{runId} AND status IN ('PENDING','RUNNING')</update>
+    <update id="markRunningInterrupted">UPDATE rag_eval_run SET status='INTERRUPTED',finished_at=CURRENT_TIMESTAMP(3),error_code='APP_RESTART',error_summary='Evaluation interrupted by application restart' WHERE status='RUNNING'</update>
+
+    <insert id="insertCaseResult" parameterType="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseResultEntity" useGeneratedKeys="true" keyProperty="id">INSERT INTO rag_eval_case_result(run_id,case_id,eval_mode,passed,first_relevant_rank,relevant_in_top_k,reciprocal_rank,effective_filters_json,candidate_summary_json,selected_evidence_json,latency_ms,failure_reason,technical_error_code,technical_error_summary) VALUES(#{runId},#{caseId},#{evalMode},#{passed},#{firstRelevantRank},#{relevantInTopK},#{reciprocalRank},#{effectiveFiltersJson},#{candidateSummaryJson},#{selectedEvidenceJson},#{latencyMs},#{failureReason},#{technicalErrorCode},#{technicalErrorSummary})</insert>
+    <select id="selectCaseResultById" resultMap="resultMap">SELECT * FROM rag_eval_case_result WHERE id=#{id}</select>
+    <select id="selectCaseResultsByRunId" resultMap="resultMap">SELECT * FROM rag_eval_case_result WHERE run_id=#{runId} ORDER BY case_id,eval_mode</select>
+    <update id="reviewCaseResult">UPDATE rag_eval_case_result SET human_failure_category=#{category},reviewer_note=#{note},reviewed_by=#{reviewedBy},reviewed_at=CURRENT_TIMESTAMP(3) WHERE id=#{id}</update>
+</mapper>
