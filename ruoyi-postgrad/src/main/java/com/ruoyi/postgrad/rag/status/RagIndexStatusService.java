@@ -57,20 +57,40 @@ public class RagIndexStatusService {
         // 2. Read latest SUCCEEDED batch from MySQL
         RagIndexRun activeRun = indexRunMapper.selectActive();
 
-        if (activeRun != null && activeCollection != null) {
-            status.setIndexed(true);
+        boolean matchingRun = activeRun != null
+            && activeCollection != null
+            && activeCollection.equals(activeRun.getCandidateCollection())
+            && "SUCCEEDED".equals(activeRun.getStatus());
+
+        long pointCount = activeCollection == null
+            ? -1L
+            : collectionManager.getPointCount(activeCollection);
+        status.setActualPointCount(pointCount >= 0 ? pointCount : null);
+        status.setChunkCount((int) Math.max(pointCount, 0));
+        status.setIndexed(activeCollection != null && pointCount >= 0);
+
+        if (matchingRun) {
             int docCount = (activeRun.getGeneralDocumentCount() != null
                     ? activeRun.getGeneralDocumentCount() : 0)
                 + (activeRun.getDatabaseDocumentCount() != null
                     ? activeRun.getDatabaseDocumentCount() : 0);
             status.setDocumentCount(docCount);
+            status.setExpectedDocumentCount(docCount);
+            int expectedChunkCount = activeRun.getIndexedChunkCount() != null
+                ? activeRun.getIndexedChunkCount() : 0;
+            status.setExpectedChunkCount(expectedChunkCount);
             status.setLastIndexedAt(activeRun.getFinishedAt());
             status.setLastRunMode("auto");
-            // 3. Get point count from active collection
-            long pointCount = collectionManager.getPointCount(activeCollection);
-            status.setChunkCount((int) Math.max(pointCount, 0));
+            if (expectedChunkCount == pointCount) {
+                status.setIndexConsistency("CONSISTENT");
+                status.setIndexConsistencyMessage("活动索引与构建元数据一致");
+            } else {
+                status.setIndexConsistency("MISMATCH");
+                status.setIndexConsistencyMessage("活动索引点数与构建分块数不一致");
+            }
         } else {
-            status.setIndexed(false);
+            status.setIndexConsistency("UNKNOWN");
+            status.setIndexConsistencyMessage("活动别名未匹配成功构建记录");
         }
 
         // 4. The latest attempt is independent from the active successful version.
@@ -82,12 +102,6 @@ public class RagIndexStatusService {
             status.setBuildProgressStage(latestRun.getProgressStage());
             status.setLastError(latestRun.getErrorSummary());
 
-            // Without an active version, expose candidate progress instead.
-            if (!status.isIndexed() && latestRun.getCandidateCollection() != null) {
-                long pointCount = collectionManager.getPointCount(
-                    latestRun.getCandidateCollection());
-                status.setChunkCount((int) Math.max(pointCount, 0));
-            }
         }
 
         return status;

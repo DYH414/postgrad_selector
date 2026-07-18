@@ -19,6 +19,11 @@ public class RagStatus {
     private String latestRunStatus;
     private Integer buildProgressPercent;
     private String buildProgressStage;
+    private String indexConsistency;
+    private String indexConsistencyMessage;
+    private Integer expectedDocumentCount;
+    private Integer expectedChunkCount;
+    private Long actualPointCount;
 
     public boolean isIndexed() {
         return indexed;
@@ -138,6 +143,46 @@ public class RagStatus {
 
     public void setBuildProgressStage(String buildProgressStage) {
         this.buildProgressStage = buildProgressStage;
+    }
+
+    public String getIndexConsistency() {
+        return indexConsistency;
+    }
+
+    public void setIndexConsistency(String indexConsistency) {
+        this.indexConsistency = indexConsistency;
+    }
+
+    public String getIndexConsistencyMessage() {
+        return indexConsistencyMessage;
+    }
+
+    public void setIndexConsistencyMessage(String indexConsistencyMessage) {
+        this.indexConsistencyMessage = indexConsistencyMessage;
+    }
+
+    public Integer getExpectedDocumentCount() {
+        return expectedDocumentCount;
+    }
+
+    public void setExpectedDocumentCount(Integer expectedDocumentCount) {
+        this.expectedDocumentCount = expectedDocumentCount;
+    }
+
+    public Integer getExpectedChunkCount() {
+        return expectedChunkCount;
+    }
+
+    public void setExpectedChunkCount(Integer expectedChunkCount) {
+        this.expectedChunkCount = expectedChunkCount;
+    }
+
+    public Long getActualPointCount() {
+        return actualPointCount;
+    }
+
+    public void setActualPointCount(Long actualPointCount) {
+        this.actualPointCount = actualPointCount;
     }
 
 }

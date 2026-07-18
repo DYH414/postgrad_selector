@@ -32,6 +32,7 @@ class RagIndexStatusServiceTest {
         RagIndexRun activeRun = new RagIndexRun();
         activeRun.setRunId("run-active-1");
         activeRun.setStatus("SUCCEEDED");
+        activeRun.setCandidateCollection("postgrad_rag_v2");
         activeRun.setGeneralDocumentCount(10);
         activeRun.setDatabaseDocumentCount(5);
         activeRun.setIndexedChunkCount(200);
@@ -52,6 +53,10 @@ class RagIndexStatusServiceTest {
         assertTrue(status.isIndexed());
         assertEquals(15, status.getDocumentCount());
         assertEquals(200, status.getChunkCount());
+        assertEquals("CONSISTENT", status.getIndexConsistency());
+        assertEquals(15, status.getExpectedDocumentCount());
+        assertEquals(200, status.getExpectedChunkCount());
+        assertEquals(200L, status.getActualPointCount());
         assertEquals("postgrad_rag_v2", status.getActiveCollection());
         assertEquals("postgrad_rag_v2", status.getCollectionName());
         assertEquals("run-active-1", status.getLatestRunId());
@@ -67,6 +72,7 @@ class RagIndexStatusServiceTest {
         RagIndexRun activeRun = new RagIndexRun();
         activeRun.setRunId("run-active-1");
         activeRun.setStatus("SUCCEEDED");
+        activeRun.setCandidateCollection("postgrad_rag_v1");
         activeRun.setGeneralDocumentCount(5);
         activeRun.setDatabaseDocumentCount(20);
 
@@ -91,6 +97,54 @@ class RagIndexStatusServiceTest {
         assertEquals("Embedding provider unavailable", status.getLastError());
         assertEquals(40, status.getBuildProgressPercent());
         assertEquals("embedding", status.getBuildProgressStage());
+    }
+
+    @Test
+    void shouldReportMismatchWhenActivePointCountDiffersFromSucceededBuild() {
+        RagIndexRun activeRun = new RagIndexRun();
+        activeRun.setStatus("SUCCEEDED");
+        activeRun.setCandidateCollection("postgrad_rag_v2");
+        activeRun.setGeneralDocumentCount(10);
+        activeRun.setDatabaseDocumentCount(5);
+        activeRun.setIndexedChunkCount(200);
+
+        when(indexRunMapper.selectActive()).thenReturn(activeRun);
+        when(collectionManager.resolveAlias(RagIndexStatusService.ACTIVE_ALIAS))
+            .thenReturn("postgrad_rag_v2");
+        when(collectionManager.getPointCount("postgrad_rag_v2")).thenReturn(199L);
+
+        RagStatus status = new RagIndexStatusService(indexRunMapper, collectionManager).getStatus();
+
+        assertEquals("MISMATCH", status.getIndexConsistency());
+        assertEquals(15, status.getExpectedDocumentCount());
+        assertEquals(200, status.getExpectedChunkCount());
+        assertEquals(199L, status.getActualPointCount());
+    }
+
+    @Test
+    void shouldNotReuseUnrelatedSucceededRunMetadataWhenAliasCollectionDiffers() {
+        RagIndexRun activeRun = new RagIndexRun();
+        activeRun.setStatus("SUCCEEDED");
+        activeRun.setCandidateCollection("postgrad_rag_v1");
+        activeRun.setGeneralDocumentCount(10);
+        activeRun.setDatabaseDocumentCount(5);
+        activeRun.setIndexedChunkCount(200);
+
+        when(indexRunMapper.selectActive()).thenReturn(activeRun);
+        when(collectionManager.resolveAlias(RagIndexStatusService.ACTIVE_ALIAS))
+            .thenReturn("postgrad_rag_v2");
+        when(collectionManager.getPointCount("postgrad_rag_v2")).thenReturn(200L);
+
+        RagStatus status = new RagIndexStatusService(indexRunMapper, collectionManager).getStatus();
+
+        assertTrue(status.isIndexed());
+        assertEquals("UNKNOWN", status.getIndexConsistency());
+        assertEquals(0, status.getDocumentCount());
+        assertNull(status.getExpectedDocumentCount());
+        assertNull(status.getExpectedChunkCount());
+        assertEquals(200L, status.getActualPointCount());
+        assertEquals(200, status.getChunkCount());
+        assertNull(status.getLastIndexedAt());
     }
 
     // ===== T4.2: No active alias =====
@@ -135,8 +189,6 @@ class RagIndexStatusServiceTest {
         when(indexRunMapper.selectLatest()).thenReturn(buildRun);
         when(collectionManager.resolveAlias(RagIndexStatusService.ACTIVE_ALIAS))
             .thenReturn(null);
-        when(collectionManager.getPointCount("postgrad_rag_candidate_xxx")).thenReturn(50L);
-
         RagIndexStatusService service = new RagIndexStatusService(indexRunMapper, collectionManager);
 
         // Act
@@ -148,7 +200,8 @@ class RagIndexStatusServiceTest {
         assertEquals("RUNNING", status.getLatestRunStatus());
         assertEquals(60, status.getBuildProgressPercent());
         assertEquals("embedding", status.getBuildProgressStage());
-        assertEquals(50, status.getChunkCount());
+        assertEquals(0, status.getChunkCount());
+        assertNull(status.getActualPointCount());
     }
 
     // ===== T4.4: markPendingInterrupted =====
