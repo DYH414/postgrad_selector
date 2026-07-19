@@ -19,6 +19,7 @@ import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.observe.runtime.AiInvocationContext;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.ReportSummaryVO;
@@ -93,7 +94,7 @@ public class ReportServiceImpl implements IReportService {
         report.setTiers(snapshotTiers);
         report.setSummary(summary);
         report.setProfileBasis(draft.getProfileBasis());
-        report.setRagCitations(buildCitations(snapshotTiers));
+        report.setRagCitations(buildCitations(snapshotTiers, AiInvocationContext.getRunId()));
         report.setStatus("COMPLETED");
         report.setCreatedAt(LocalDateTime.now());
 
@@ -320,6 +321,10 @@ public class ReportServiceImpl implements IReportService {
     }
 
     private List<RagCitation> buildCitations(List<TierCandidates> tiers) {
+        return buildCitations(tiers, null);
+    }
+
+    private List<RagCitation> buildCitations(List<TierCandidates> tiers, String runId) {
         List<RagCitation> citations = new ArrayList<>();
         if (tiers == null) {
             return citations;
@@ -328,7 +333,7 @@ public class ReportServiceImpl implements IReportService {
             if (tier.getCandidates() == null) continue;
             for (CandidateCardVO candidate : tier.getCandidates()) {
                 if (candidate.getFact() == null) continue;
-                List<RagCitation> evidenceCitations = retrieveEvidenceCitations(candidate.getFact());
+                List<RagCitation> evidenceCitations = retrieveEvidenceCitations(candidate.getFact(), runId);
                 if (!evidenceCitations.isEmpty()) {
                     citations.addAll(evidenceCitations);
                 } else {
@@ -344,11 +349,16 @@ public class ReportServiceImpl implements IReportService {
     }
 
     private List<RagCitation> retrieveEvidenceCitations(SchoolFact fact) {
+        return retrieveEvidenceCitations(fact, null);
+    }
+
+    private List<RagCitation> retrieveEvidenceCitations(SchoolFact fact, String runId) {
         if (ragEvidenceService == null || fact == null || fact.getProgramId() == null) {
             return Collections.emptyList();
         }
         try {
             RagEvidenceRequest request = new RagEvidenceRequest();
+            request.setRunId(runId);
             request.setProgramId(fact.getProgramId());
             request.setSchoolId(fact.getSchoolId());
             request.setDocType("program_history");

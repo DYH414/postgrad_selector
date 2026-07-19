@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 -- Refresh program-year data quality from score, plan, and admission-result tables.
 -- Safe to run repeatedly.
 

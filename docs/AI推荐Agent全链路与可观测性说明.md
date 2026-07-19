@@ -273,7 +273,7 @@ SSE 不负责长期存储；它的职责是把同一 `runId` 的实时进度交�
 | 候选池、草稿、任务锁、会话/快照 | Redis | 长任务恢复、去重、并发保护 | TTL 到期后清理 |
 | Tool Trace | MySQL `ai_tool_call_trace` | 审计、排障、按 `runId` 查询 | 存摘要，不存完整参数/完整回答；建议定期清理 30 天前记录 |
 | RAG 索引任务 | MySQL `rag_index_run` | 构建状态、版本、进度和错误 | 可在重启后查询 |
-| RAG Trace | `RagTraceRecorder` 内存环形缓冲 | 最近检索调试、管理端展示 | **后端重启后清空，不是长期审计** |
+| RAG Trace | MySQL `rag_retrieval_trace` + 内存最近记录 | 跨重启检索审计、管理端展示 | 仅保存问题与 Chunk 摘要，不保存完整 Prompt/正文 |
 | SSE 流 | HTTP 长连接 | 实时 UI 反馈 | 断开后由 Redis 快照/任务状态辅助恢复 |
 
 ### 6.3 runId 的可观测性价值
@@ -354,7 +354,7 @@ GET /postgrad/rag/index-runs/{runId}
 
 ### 当前明确限制与下一步
 
-1. **RAG Trace 不持久化。** 当前仅适合最近问题调试；若要长期审计，应新增 `rag_retrieval_trace` 表或接入 OpenTelemetry/Tempo。
+1. **RAG Trace 已持久化，但还不是完整 APM。** 当前通过 MySQL 保存检索摘要、过滤条件、排名、结果与分阶段耗时；SSE 历史和完整模型 Span 仍未持久化，后续可接入 OpenTelemetry/Tempo。
 2. **负样例评测指标不完整。** 应新增正确拒答率、误召回率、引用覆盖率和答案忠实度，不能只用 MRR/Hit@K 衡量。
 3. **实体解析仍可增强。** 用户只说学校名或别名时，应先通过确定性实体解析映射 `schoolId/programId`，再进入 scoped RAG，减少模型猜测参数。
 4. **模型调用指标与 Tool/RAG Trace 的关联可继续强化。** 当前共享 `runId`，后续可将模型调用摘要也持久化为 Agent Run 表，形成完整跨重启链路。

@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 -- 数据审核中心菜单
 -- 需要在考研择校(2000)目录下
 

@@ -24,7 +24,7 @@ public class V2BoundDraftActionTools {
         this.runtime = runtime;
     }
 
-    @Tool("Remove one school from the current report draft. Returns refill info: auto-refill may add a replacement, confirm-refill returns candidates for the user to choose from.")
+    @Tool("Remove one school from the current report draft. Removal only decreases the draft count and never triggers automatic refill. Add or fill candidates only when the user explicitly requests it.")
     public String removeDraftCandidate(long programId) {
         return runtime.execute(context, "removeDraftCandidate", args("programId", programId),
             () -> delegate.removeDraftCandidate(programId));
@@ -54,7 +54,7 @@ public class V2BoundDraftActionTools {
         return runtime.execute(context, "fillTier", args("tier", tier), () -> delegate.fillTier(tier));
     }
 
-    @Tool("Remove multiple schools from the draft at once. programIds must come from the draft context. Each removal triggers refill.")
+    @Tool("Remove multiple schools from the draft at once. programIds must come from the draft context. Removal only decreases the draft count and never triggers automatic refill. Add or fill candidates only when the user explicitly requests it.")
     public String batchRemoveDraftCandidates(List<Long> programIds) {
         return runtime.execute(context, "batchRemoveDraftCandidates",
             args("programIdsCount", programIds == null ? null : programIds.size()),

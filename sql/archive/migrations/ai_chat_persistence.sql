@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 create table if not exists ai_chat_conversation (
   id bigint not null auto_increment comment 'conversation id',
   user_id bigint not null comment 'app user id',

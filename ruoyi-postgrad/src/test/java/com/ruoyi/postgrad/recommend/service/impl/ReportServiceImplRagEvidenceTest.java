@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import com.ruoyi.postgrad.rag.dto.RagEvidenceRequest;
 import com.ruoyi.postgrad.rag.dto.RagEvidenceResponse;
@@ -15,6 +16,7 @@ import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import java.lang.reflect.Method;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class ReportServiceImplRagEvidenceTest {
 
@@ -46,6 +48,28 @@ class ReportServiceImplRagEvidenceTest {
         assertEquals("program_history", citations.get(0).getDocType());
         assertEquals("101", citations.get(0).getProgramId());
         assertEquals("score_trend", citations.get(0).getSection());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void buildCitationsPropagatesReportRunIdToEvidence() throws Exception {
+        RagEvidenceService evidenceService = mock(RagEvidenceService.class);
+        RagEvidenceResponse evidence = new RagEvidenceResponse();
+        evidence.setCitations(List.of());
+        when(evidenceService.retrieveProgramEvidence(any(RagEvidenceRequest.class))).thenReturn(evidence);
+
+        ReportServiceImpl service = new ReportServiceImpl();
+        var field = ReportServiceImpl.class.getDeclaredField("ragEvidenceService");
+        field.setAccessible(true);
+        field.set(service, evidenceService);
+
+        Method method = ReportServiceImpl.class.getDeclaredMethod("buildCitations", List.class, String.class);
+        method.setAccessible(true);
+        method.invoke(service, List.of(tierWithProgram()), "report-run-9");
+
+        ArgumentCaptor<RagEvidenceRequest> captor = ArgumentCaptor.forClass(RagEvidenceRequest.class);
+        verify(evidenceService).retrieveProgramEvidence(captor.capture());
+        assertEquals("report-run-9", captor.getValue().getRunId());
     }
 
     private static TierCandidates tierWithProgram() {

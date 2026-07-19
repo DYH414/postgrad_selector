@@ -160,6 +160,10 @@ public class RagEvaluationResult {
         private Boolean routeMatch;
         private Boolean filterMatch;
         private Boolean fallbackMatch;
+        private List<com.ruoyi.postgrad.rag.dto.RagChunkResult> candidates = new ArrayList<>();
+        private long latencyMs;
+        private String technicalErrorCode;
+        private String technicalErrorSummary;
 
         public String getId() { return id; }
         public void setId(String id) { this.id = id; }
@@ -187,5 +191,15 @@ public class RagEvaluationResult {
         public void setFilterMatch(Boolean filterMatch) { this.filterMatch = filterMatch; }
         public Boolean getFallbackMatch() { return fallbackMatch; }
         public void setFallbackMatch(Boolean fallbackMatch) { this.fallbackMatch = fallbackMatch; }
+        public List<com.ruoyi.postgrad.rag.dto.RagChunkResult> getCandidates() { return candidates; }
+        public void setCandidates(List<com.ruoyi.postgrad.rag.dto.RagChunkResult> candidates) {
+            this.candidates = candidates == null ? new ArrayList<>() : new ArrayList<>(candidates);
+        }
+        public long getLatencyMs() { return latencyMs; }
+        public void setLatencyMs(long latencyMs) { this.latencyMs = latencyMs; }
+        public String getTechnicalErrorCode() { return technicalErrorCode; }
+        public void setTechnicalErrorCode(String technicalErrorCode) { this.technicalErrorCode = technicalErrorCode; }
+        public String getTechnicalErrorSummary() { return technicalErrorSummary; }
+        public void setTechnicalErrorSummary(String technicalErrorSummary) { this.technicalErrorSummary = technicalErrorSummary; }
     }
 }

@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 -- sql/add_rag_index_run.sql
 CREATE TABLE IF NOT EXISTS `rag_index_run` (
     `run_id`             VARCHAR(36)    NOT NULL COMMENT '批次UUID',

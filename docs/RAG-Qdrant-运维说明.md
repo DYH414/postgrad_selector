@@ -138,7 +138,7 @@ POST /postgrad/rag/search-test
 | `ai-chat` | 用户聊天的通用 RAG 预检索 |
 | `recommendation-evidence` | `getProgramEvidence` 或报告的专业级证据检索 |
 
-`RagTraceRecorder` 是单实例内存环形缓冲，重启后清空；它用于开发、演示和最近问题排查，不作为长期审计存储。
+`RagTraceRecorder` 仍保留单实例内存最近记录，同时将脱敏、截断后的检索摘要异步写入 MySQL `rag_retrieval_trace`。管理端优先查询持久化记录，数据库写入失败时回退内存记录且不影响在线回答。SSE 事件历史仍不持久化。
 
 | 现象 | 排查方式 |
 |---|---|
@@ -148,3 +148,35 @@ POST /postgrad/rag/search-test
 | 搜索无结果 | 先确认 Alias、文档/Chunk 数，再检查 `school_id`、`program_id`、`year`、`doc_type` 过滤是否过窄 |
 | AI Chat Trace 为 0/0 | 确认后端已加载请求级预检索版本；成功聊天应记录真实 `retrievedCount/selectedCount` |
 | 同名专业分数不同 | 比较 `collegeName`、`programCode`、`degreeType`、`dataYear`；不同招生单位或年份是独立项目 |
+
+## 持久化评测工作台
+
+管理端“RAG 评测工作台”复用在线 `RagRetrievalService`，不会维护第二套检索实现。数据保存在：
+
+| 表 | 内容 |
+|---|---|
+| `rag_eval_dataset` | 数据集类型、版本、状态、SHA-256 与审计信息 |
+| `rag_eval_case` | Query、Metadata、相关证据条件、No-answer 与人工备注 |
+| `rag_eval_run` | 状态、参数快照、Alias/Collection、模型、Git commit 与聚合指标 |
+| `rag_eval_case_result` | Vector/Rerank 排名、候选摘要、延迟、技术错误与人工诊断 |
+
+推荐工作流：
+
+```text
+创建 DEV / 导入 JSONL
+  -> 人工维护 Ground Truth
+  -> 标记 READY
+  -> 冻结为不可变版本并生成 JSONL + manifest
+  -> 提交 VECTOR_ONLY + VECTOR_RERANK 后台实验
+  -> 查看失败用例并标注原因
+  -> 与相同 dataset checksum 的历史 Run 对比
+  -> 导出 JSON / Markdown 报告
+```
+
+后台实验使用独立有界线程池，不修改在线检索配置；队列耗尽会返回稳定容量错误。应用重启时，未完成的 `RUNNING` 实验标记为 `INTERRUPTED`，已落库的逐用例结果保留。只有相同数据集 SHA-256 的已完成 Run 才展示直接指标变化，避免把数据集变化误写成模型优化。
+
+排名类正样本统计 MRR、Hit@K、Recall@5、nDCG@5 和 Filter Accuracy；SAFETY 数据集单独统计 No-answer Accuracy 与 False Positive Rate。指标用于检索回归与消融，不等同于最终回答忠实度或用户转化效果。
+
+评测权限分为 `postgrad:ragEval:view/edit/run/freeze/compare/export`。非冻结探索 Run 的历史保留应由运维按容量定期清理；冻结数据集、基线 Run 和已引用报告不应自动删除。
+
+当前工作台不包含 BM25/Sparse 混合召回、知识文档上传、OCR、LLM-as-judge，也不接入 LangSmith、Ragas 或 Python sidecar。上述能力应在独立实验验证收益后再引入，不能与本次评测控制面混为一体。

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
@@ -78,6 +79,7 @@ class RagEvidenceServiceTest {
         RagEvidenceRequest request = new RagEvidenceRequest();
         request.setQuery("有什么风险");
         request.setProgramId(101L);
+        request.setRunId("report-run-7");
         request.setDocType("program_history");
         request.setSection("risk_factors");
 
@@ -87,6 +89,11 @@ class RagEvidenceServiceTest {
         assertEquals("program_broad", response.getFallbackMode());
         assertEquals(1, response.getSelectedChunks().size());
         assertEquals("risk_factors", response.getSelectedChunks().get(0).getSection());
+        ArgumentCaptor<RagSearchTestRequest> captor = ArgumentCaptor.forClass(RagSearchTestRequest.class);
+        verify(retrievalService, times(2)).retrieve(captor.capture());
+        assertEquals(java.util.List.of("report-run-7", "report-run-7"), captor.getAllValues().stream()
+            .map(RagSearchTestRequest::getRunId)
+            .toList());
     }
 
     @Test

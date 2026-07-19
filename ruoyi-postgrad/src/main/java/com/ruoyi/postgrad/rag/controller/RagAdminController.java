@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/postgrad/rag")
@@ -75,11 +76,16 @@ public class RagAdminController extends BaseController {
     @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
     @PostMapping("/search-test")
     public AjaxResult searchTest(@Valid @RequestBody RagSearchTestRequest request) {
+        if (request.getRunId() == null || request.getRunId().isBlank()) {
+            request.setRunId(UUID.randomUUID().toString());
+        }
         RagSearchTestResponse resp = ragRetrievalService.retrieve(request).response();
+        resp.setRunId(request.getRunId());
 
         // Record trace
         RagTrace trace = new RagTrace();
         trace.setOperationKey("search-test");
+        trace.setRunId(request.getRunId());
         trace.setQuery(request.getQuery());
         trace.setOutcome(resp.getErrorSummary() != null ? RagTrace.Outcome.FAILURE : RagTrace.Outcome.SUCCESS);
         trace.setFailureStage(resp.isRerankFailed() ? "rerank" : null);
@@ -102,7 +108,8 @@ public class RagAdminController extends BaseController {
         trace.setSelectedChunks(resp.getChunks().stream()
             .filter(c -> c.isSelectedForPrompt())
             .limit(5)
-            .map(c -> new RagTrace.SelectedChunk(c.getSourceName(), c.getContentPreview()))
+            .map(c -> new RagTrace.SelectedChunk(c.getSourceName(), c.getContentPreview(),
+                c.getVectorRank(), c.getVectorScore(), c.getRerankRank(), c.getRerankScore()))
             .toList());
         ragTraceRecorder.record(trace);
 
@@ -111,9 +118,13 @@ public class RagAdminController extends BaseController {
 
     @PreAuthorize("@ss.hasPermi('postgrad:rag:view')")
     @GetMapping("/traces")
-    public AjaxResult traces(@RequestParam(defaultValue = "20") int limit) {
-        List<RagTrace> traces = ragTraceRecorder.listRecent(limit);
-        return success(traces);
+    public AjaxResult traces(@RequestParam(defaultValue = "20") int limit,
+                             @RequestParam(required = false) String runId) {
+        if (runId != null && !runId.isBlank()) {
+            return success(ragTraceRecorder.listPersistedByRunId(runId, limit));
+        }
+        var persisted = ragTraceRecorder.listPersistedRecent(limit);
+        return success(persisted.isEmpty() ? ragTraceRecorder.listRecent(limit) : persisted);
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")

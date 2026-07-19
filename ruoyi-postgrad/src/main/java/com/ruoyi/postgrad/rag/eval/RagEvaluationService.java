@@ -131,12 +131,34 @@ public class RagEvaluationService {
         return run("custom", cases);
     }
 
+    public RagEvaluationResult runDataset(String setName, List<RagEvaluationCase> cases,
+                                          RagEvaluationMode mode) {
+        return runDataset(setName, cases, mode, RECALL_TOP_N, FINAL_TOP_K);
+    }
+
+    public RagEvaluationResult runDataset(String setName, List<RagEvaluationCase> cases,
+                                          RagEvaluationMode mode, int recallTopN, int finalTopK) {
+        if (mode == null) {
+            throw new IllegalArgumentException("Evaluation mode is required");
+        }
+        if (recallTopN < 1 || finalTopK < 1 || finalTopK > recallTopN) {
+            throw new IllegalArgumentException("Invalid evaluation retrieval parameters");
+        }
+        return run(setName, cases, mode.isSkipRerank(), null, recallTopN, finalTopK);
+    }
+
     private RagEvaluationResult run(String setName, List<RagEvaluationCase> cases) {
         return run(setName, cases, true, null);
     }
 
     private RagEvaluationResult run(String setName, List<RagEvaluationCase> cases,
                                     boolean skipRerank, List<Long> latencies) {
+        return run(setName, cases, skipRerank, latencies, RECALL_TOP_N, FINAL_TOP_K);
+    }
+
+    private RagEvaluationResult run(String setName, List<RagEvaluationCase> cases,
+                                    boolean skipRerank, List<Long> latencies,
+                                    int recallTopN, int finalTopK) {
         RagEvaluationResult result = new RagEvaluationResult();
         result.setSetName(setName);
         List<RagEvaluationResult.RagEvaluationCaseResult> caseResults = new ArrayList<>();
@@ -159,13 +181,34 @@ public class RagEvaluationService {
         Map<String, List<RagEvaluationResult.RagEvaluationCaseResult>> diffGroups = new LinkedHashMap<>();
 
         for (RagEvaluationCase tc : cases) {
-            RagSearchTestRequest req = requestFor(tc, skipRerank);
-            RagSearchTestResponse response = retrievalService.retrieve(req).response();
+            RagSearchTestRequest req = requestFor(tc, skipRerank, recallTopN, finalTopK);
+            RagSearchTestResponse response;
+            try {
+                response = retrievalService.retrieve(req).response();
+            } catch (RuntimeException ex) {
+                RagEvaluationResult.RagEvaluationCaseResult failed = new RagEvaluationResult.RagEvaluationCaseResult();
+                failed.setId(tc.getId());
+                failed.setQuery(tc.getQuery());
+                failed.setPassed(false);
+                failed.setFailureReason("TECHNICAL_ERROR");
+                failed.setTechnicalErrorCode("RETRIEVAL_FAILED");
+                failed.setTechnicalErrorSummary(safeError(ex));
+                failed.setCategory(tc.getCategory());
+                failed.setDifficulty(tc.getDifficulty());
+                failed.setTags(tc.getTags());
+                caseResults.add(failed);
+                catGroups.computeIfAbsent(tc.getCategory(), k -> new ArrayList<>()).add(failed);
+                diffGroups.computeIfAbsent(tc.getDifficulty(), k -> new ArrayList<>()).add(failed);
+                if (tc.isNoAnswer()) noAnswerTotal++; else positiveCases++;
+                continue;
+            }
             if (latencies != null && response.getLatency() != null) {
                 latencies.add(response.getLatency().getTotalMs());
             }
 
             RagEvaluationResult.RagEvaluationCaseResult cr = evaluateCase(tc, response);
+            cr.setCandidates(response.getChunks());
+            cr.setLatencyMs(response.getLatency() == null ? 0L : response.getLatency().getTotalMs());
             cr.setCategory(tc.getCategory());
             cr.setDifficulty(tc.getDifficulty());
             cr.setTags(tc.getTags());
@@ -186,7 +229,7 @@ public class RagEvaluationService {
 
             // ── 检索排序指标 ──
             int firstRank = findFirstRelevantRank(tc, response);
-            int relevantInTopK = countRelevantInTopK(tc, response, FINAL_TOP_K);
+            int relevantInTopK = countRelevantInTopK(tc, response, finalTopK);
             cr.setFirstRelevantRank(firstRank);
             cr.setRelevantInTopK(relevantInTopK);
 
@@ -202,12 +245,12 @@ public class RagEvaluationService {
 
             // nDCG@5 — DCG / IDCG
             double dcg = 0.0;
-            for (int rank = 1; rank <= FINAL_TOP_K; rank++) {
+            for (int rank = 1; rank <= finalTopK; rank++) {
                 if (isRelevantAtRank(tc, response, rank)) {
                     dcg += 1.0 / log2(rank + 1);
                 }
             }
-            double idcg = idealDcg(Math.min(expectedRelevant, FINAL_TOP_K));
+            double idcg = idealDcg(Math.min(expectedRelevant, finalTopK));
             ndcgSum += idcg > 0 ? dcg / idcg : 0;
 
             // ── Filter Accuracy ──
@@ -261,7 +304,7 @@ public class RagEvaluationService {
         result.setHitAt5(positiveCases == 0 ? 0.0 : (double) hit5 / positiveCases);
         result.setRecallAt5(positiveCases == 0 ? 0.0 : recallSum / positiveCases);
         result.setNdcg5(positiveCases == 0 ? 0.0 : ndcgSum / positiveCases);
-        result.setEvalK(FINAL_TOP_K);
+        result.setEvalK(finalTopK);
 
         result.setFilterAccuracy(filterTotal == 0 ? 0.0 : (double) filterOk / filterTotal);
         result.setRouteAccuracy(positiveCases == 0 ? 0.0 : (double) routeOk / positiveCases);
@@ -574,12 +617,19 @@ public class RagEvaluationService {
 
     // ── Metadata helpers ──
 
-    private RagSearchTestRequest requestFor(RagEvaluationCase tc, boolean skipRerank) {
+    private RagSearchTestRequest requestFor(RagEvaluationCase tc, boolean skipRerank,
+                                            int recallTopN, int finalTopK) {
         RagSearchTestRequest request = new RagSearchTestRequest(
-            tc.getQuery(), RECALL_TOP_N, 0.5, FINAL_TOP_K);
+            tc.getQuery(), recallTopN, 0.5, finalTopK);
         request.setSkipRerank(skipRerank);
         applyExpectedFilters(request, tc.getExpectedMetadata());
         return request;
+    }
+
+    private String safeError(Throwable error) {
+        String message = error.getMessage();
+        String value = message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
+        return value.substring(0, Math.min(value.length(), 512));
     }
 
     private void applyExpectedFilters(RagSearchTestRequest req, Map<String, String> expected) {

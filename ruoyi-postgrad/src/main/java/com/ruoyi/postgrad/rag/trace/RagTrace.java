@@ -88,15 +88,35 @@ public class RagTrace {
     public static class SelectedChunk {
         private String sourceName;
         private String contentPreview;
+        private Integer vectorRank;
+        private Double vectorScore;
+        private Integer rerankRank;
+        private Double rerankScore;
 
         public SelectedChunk() {}
         public SelectedChunk(String sourceName, String contentPreview) {
             this.sourceName = sourceName;
             this.contentPreview = contentPreview;
         }
+        public SelectedChunk(String sourceName, String contentPreview, Integer vectorRank,
+                             Double vectorScore, Integer rerankRank, Double rerankScore) {
+            this(sourceName, contentPreview);
+            this.vectorRank = vectorRank;
+            this.vectorScore = vectorScore;
+            this.rerankRank = rerankRank;
+            this.rerankScore = rerankScore;
+        }
         public String getSourceName() { return sourceName; }
         public void setSourceName(String sourceName) { this.sourceName = sourceName; }
         public String getContentPreview() { return contentPreview; }
         public void setContentPreview(String contentPreview) { this.contentPreview = contentPreview; }
+        public Integer getVectorRank() { return vectorRank; }
+        public void setVectorRank(Integer vectorRank) { this.vectorRank = vectorRank; }
+        public Double getVectorScore() { return vectorScore; }
+        public void setVectorScore(Double vectorScore) { this.vectorScore = vectorScore; }
+        public Integer getRerankRank() { return rerankRank; }
+        public void setRerankRank(Integer rerankRank) { this.rerankRank = rerankRank; }
+        public Double getRerankScore() { return rerankScore; }
+        public void setRerankScore(Double rerankScore) { this.rerankScore = rerankScore; }
     }
 }

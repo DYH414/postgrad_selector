@@ -26,6 +26,7 @@ public class RagSearchTestRequest {
     private String year;
     private String docType;
     private String section;
+    private String runId;
 
     public RagSearchTestRequest() {}
 
@@ -56,6 +57,8 @@ public class RagSearchTestRequest {
     public void setDocType(String docType) { this.docType = docType; }
     public String getSection() { return section; }
     public void setSection(String section) { this.section = section; }
+    public String getRunId() { return runId; }
+    public void setRunId(String runId) { this.runId = runId; }
 
     public Map<String, String> getMetadataFilters() {
         Map<String, String> filters = new LinkedHashMap<>();

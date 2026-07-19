@@ -101,21 +101,39 @@
         </el-table>
       </section>
 
-      <el-drawer title="Run Tool 调用详情" :visible.sync="runDrawerVisible" size="52%">
-        <div class="run-trace-drawer"><el-table :data="runToolTraces" size="mini">
+      <el-drawer title="Run 全链路详情" :visible.sync="runDrawerVisible" size="64%">
+        <div class="run-trace-drawer">
+          <h4>Tool 调用</h4>
+          <el-table :data="runToolTraces" size="mini">
           <el-table-column prop="toolName" label="Tool" min-width="140" />
           <el-table-column prop="status" label="状态" min-width="120" />
           <el-table-column prop="resultCode" label="结果码" min-width="150" />
           <el-table-column prop="resultSummary" label="结果摘要" min-width="240" show-overflow-tooltip />
           <el-table-column prop="durationMs" label="耗时" width="90" />
-        </el-table></div>
+          </el-table>
+          <h4 class="run-section-title">RAG 检索</h4>
+          <el-table :data="runRagTraces" size="mini">
+            <el-table-column prop="operationKey" label="入口" min-width="110" />
+            <el-table-column prop="retrievalRoute" label="路由" min-width="120" />
+            <el-table-column prop="querySummary" label="查询摘要" min-width="220" show-overflow-tooltip />
+            <el-table-column label="召回/选中" width="95">
+              <template slot-scope="scope">{{ scope.row.retrievedCount || 0 }}/{{ scope.row.selectedCount || 0 }}</template>
+            </el-table-column>
+            <el-table-column prop="outcome" label="结果" width="100" />
+            <el-table-column label="耗时" width="90">
+              <template slot-scope="scope">{{ scope.row.totalLatencyMs == null ? '-' : scope.row.totalLatencyMs + ' ms' }}</template>
+            </el-table-column>
+            <el-table-column prop="errorSummary" label="错误" min-width="180" show-overflow-tooltip />
+          </el-table>
+          <p class="run-sse-note">SSE 仅用于在线推送，不保存历史事件。</p>
+        </div>
       </el-drawer>
     </div>
   </div>
 </template>
 
 <script>
-import { getAiObserveOverview, getRecentToolTraces, getRunToolTraces } from '@/api/postgrad/aiObserve'
+import { getAiObserveOverview, getRecentToolTraces, getRunDetail } from '@/api/postgrad/aiObserve'
 
 export default {
   name: 'PostgradAiObserve',
@@ -126,6 +144,7 @@ export default {
       overview: {},
       toolTraces: [],
       runToolTraces: [],
+      runRagTraces: [],
       runDrawerVisible: false,
       notice: ''
     }
@@ -174,8 +193,10 @@ export default {
     },
     openRun(runId) {
       if (!runId) return
-      getRunToolTraces(runId).then(res => {
-        this.runToolTraces = (res && res.data) || []
+      getRunDetail(runId).then(res => {
+        const detail = (res && res.data) || {}
+        this.runToolTraces = detail.toolTraces || []
+        this.runRagTraces = detail.ragTraces || []
         this.runDrawerVisible = true
       })
     }
@@ -250,6 +271,16 @@ export default {
 
 .run-trace-drawer {
   padding: 0 16px;
+}
+
+.run-section-title {
+  margin: 24px 0 12px;
+}
+
+.run-sse-note {
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 .observe-kpi {

@@ -98,7 +98,7 @@ Invoke-RestMethod http://localhost:6333/aliases | ConvertTo-Json -Depth 8
 
 ## 6. 运行限制
 
-- `RagTraceRecorder` 为单实例内存环形缓冲，后端重启后清空；
+- `RagTraceRecorder` 的最近记录保留在内存，同时异步持久化摘要到 `rag_retrieval_trace`；后端重启后应仍可查询数据库记录；
 - RAG 空召回可降级为 MySQL 工具或明确说明数据不足，不能编造；
 - 构建任务在后台执行，禁止连续点击创建多个 Index Run；
 - 不在生产活动集合上运行会删除/切换 Alias 的集成测试。

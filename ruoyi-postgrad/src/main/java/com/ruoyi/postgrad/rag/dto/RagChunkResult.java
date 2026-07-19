@@ -37,6 +37,8 @@ public class RagChunkResult {
     public void setRerankScore(Double rerankScore) { this.rerankScore = rerankScore; }
     public boolean isSelectedForPrompt() { return selectedForPrompt; }
     public void setSelectedForPrompt(boolean selectedForPrompt) { this.selectedForPrompt = selectedForPrompt; }
+    public boolean isSelected() { return selectedForPrompt; }
+    public void setSelected(boolean selected) { this.selectedForPrompt = selected; }
     public String getSourceName() { return sourceName; }
     public void setSourceName(String sourceName) { this.sourceName = sourceName; }
     public String getSourceId() { return sourceId; }

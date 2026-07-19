@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 CREATE TABLE IF NOT EXISTS ai_tool_call_trace (
     id BIGINT NOT NULL AUTO_INCREMENT,
     call_id VARCHAR(36) NOT NULL,

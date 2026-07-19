@@ -292,6 +292,24 @@ class RagIndexBuildServiceTest {
         verify(collectionManager, never()).switchAlias(anyString(), anyString());
     }
 
+    @Test
+    void shouldTruncateFailureSummaryToDatabaseColumnLimit() {
+        when(valueOps.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofSeconds(1800L))))
+            .thenReturn(true);
+        when(corpusAssembler.assemble(START_YEAR, END_YEAR))
+            .thenThrow(new RuntimeException("x".repeat(700)));
+
+        String runId = service.startBuild(START_YEAR, END_YEAR);
+        doReturn(runId).when(valueOps).get(LOCK_KEY);
+        service.executeBuild(runId, START_YEAR, END_YEAR);
+
+        ArgumentCaptor<String> summaryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(indexRunMapper).updateStatus(
+            eq(runId), eq("FAILED"), isNull(), isNull(), isNull(),
+            eq("ASSEMBLY_ERROR"), summaryCaptor.capture());
+        assertEquals(512, summaryCaptor.getValue().length());
+    }
+
     // ===== T3.4: Embedding failure → FAILED, no alias switch, old index preserved =====
 
     @Test

@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 USE postgrad_selector;
 
 DELETE FROM sys_menu WHERE menu_id BETWEEN 2010 AND 2119;

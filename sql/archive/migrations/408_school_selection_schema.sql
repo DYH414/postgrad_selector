@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 -- 考研择校决策平台 MySQL schema
 -- Version: MVP 1.0
 -- Date: 2026-05-18

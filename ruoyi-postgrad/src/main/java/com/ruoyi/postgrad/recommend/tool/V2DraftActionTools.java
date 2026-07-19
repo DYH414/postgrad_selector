@@ -80,32 +80,10 @@ public class V2DraftActionTools {
         result.put("schoolName", schoolName(target));
         result.put("draftCount", mutation.getDraftCount());
 
-        if (mutation.getRefill() != null) {
-            Map<String, Object> refill = new LinkedHashMap<>();
-            refill.put("policy", mutation.getRefill().getPolicy());
-            if (mutation.getRefill().getFilled() != null) {
-                CandidateCardVO f = mutation.getRefill().getFilled();
-                Map<String, Object> filled = new LinkedHashMap<>();
-                filled.put("programId", f.getFact().getProgramId());
-                filled.put("schoolName", f.getFact().getSchoolName());
-                filled.put("programName", f.getFact().getProgramName());
-                filled.put("reason", "同档位自动填充");
-                refill.put("filled", filled);
-            }
-            if (mutation.getRefill().getCandidates() != null && !mutation.getRefill().getCandidates().isEmpty()) {
-                refill.put("candidates", mutation.getRefill().getCandidates());
-            }
-            if (mutation.getRefill().getReason() != null) {
-                refill.put("reason", mutation.getRefill().getReason());
-            }
-            result.put("refill", refill);
-        }
-
         String json = JSON.toJSONString(result);
         V2ChatToolContext.markWriteExecuted(json);
-        log.info("[DraftTool] remove userId={} programId={} refill={}",
-            ctx.userId(), programId,
-            mutation.getRefill() != null ? mutation.getRefill().getPolicy() : "null");
+        log.info("[DraftTool] remove userId={} programId={} draftCount={}",
+            ctx.userId(), programId, mutation.getDraftCount());
         return json;
     }
 

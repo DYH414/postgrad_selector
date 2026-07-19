@@ -14,3 +14,7 @@ export function getRecentToolTraces(limit = 50) {
 export function getRunToolTraces(runId) {
   return request({ url: `/postgrad/ai-observe/runs/${runId}/tool-traces`, method: 'get' })
 }
+
+export function getRunDetail(runId) {
+  return request({ url: `/postgrad/ai-observe/runs/${runId}`, method: 'get' })
+}

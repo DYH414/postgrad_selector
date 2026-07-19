@@ -47,7 +47,7 @@ public interface IDraftMutationService {
     DraftMutationResultVO fillTier(Long userId, String tier, CandidateWorkspaceVO workspace);
 
     /**
-     * 批量移除候选 — 从草稿中移除多个学校，每个移除触发 refill 策略。
+     * 批量移除候选 — 从草稿中移除多个学校，不自动补充候选。
      */
     DraftMutationResultVO batchRemove(Long userId, List<Long> programIds,
                                        CandidateWorkspaceVO workspace);

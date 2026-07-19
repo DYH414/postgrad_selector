@@ -5537,6 +5537,7 @@ prototype-snapshot*.md
 node_modules/
 /.workbuddy/
 /.codex-backups/
+/.codex-runtime/
 /.agents/
 /outputs/
 

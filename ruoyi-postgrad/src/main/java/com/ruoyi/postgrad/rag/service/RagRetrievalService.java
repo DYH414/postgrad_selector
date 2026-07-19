@@ -66,7 +66,7 @@ public class RagRetrievalService {
             return result(response, List.of());
         }
 
-        List<TextSegment> retrievedSegments;
+        List<EmbeddingMatch<TextSegment>> retrievedMatches;
         try {
             long tEmbed = System.currentTimeMillis();
             Response<Embedding> embeddingResponse = embeddingModel.embed(request.getQuery());
@@ -84,10 +84,8 @@ public class RagRetrievalService {
             EmbeddingSearchResult<TextSegment> searchResult = embeddingStore.search(builder.build());
             response.getLatency().setRetrievalMs(System.currentTimeMillis() - tRetrieve);
 
-            retrievedSegments = searchResult.matches().stream()
-                .map(EmbeddingMatch::embedded)
-                .toList();
-            response.setRetrievedCount(retrievedSegments.size());
+            retrievedMatches = searchResult.matches();
+            response.setRetrievedCount(retrievedMatches.size());
         } catch (Exception e) {
             log.warn("[RagRetrieval] Retrieval failed: {}", e.getMessage());
             response.setErrorSummary("Retrieval failed: " + e.getMessage());
@@ -95,13 +93,16 @@ public class RagRetrievalService {
             return result(response, List.of());
         }
 
-        if (retrievedSegments.isEmpty()) {
+        if (retrievedMatches.isEmpty()) {
             response.getLatency().setTotalMs(System.currentTimeMillis() - t0);
             return result(response, List.of());
         }
 
         boolean rerankFailed = false;
         List<Double> rerankScores = null;
+        List<TextSegment> retrievedSegments = retrievedMatches.stream()
+            .map(EmbeddingMatch::embedded)
+            .toList();
         SiliconFlowReranker reranker = request.isSkipRerank() ? null : rerankerProvider.getIfAvailable();
         if (reranker != null) {
             try {
@@ -117,7 +118,7 @@ public class RagRetrievalService {
         }
 
         List<ChunkSelection> selections = buildChunkSelections(
-            retrievedSegments, rerankScores, defaultValue(request.getRerankTopN(), 3), rerankFailed);
+            retrievedMatches, rerankScores, defaultValue(request.getRerankTopN(), 3), rerankFailed);
         List<ChunkSelection> orderedSelections = orderForResponse(selections);
         response.setChunks(orderedSelections.stream().map(ChunkSelection::chunk).toList());
         response.setSelectedCount((int) orderedSelections.stream().filter(ChunkSelection::selected).count());
@@ -125,17 +126,18 @@ public class RagRetrievalService {
         return result(response, selectedSegments(orderedSelections));
     }
 
-    private List<ChunkSelection> buildChunkSelections(List<TextSegment> segments,
+    private List<ChunkSelection> buildChunkSelections(List<EmbeddingMatch<TextSegment>> matches,
                                                        List<Double> rerankScores,
                                                        int rerankTopN,
                                                        boolean rerankFailed) {
-        boolean hasValidRerank = rerankScores != null && !rerankFailed && rerankScores.size() == segments.size();
+        boolean hasValidRerank = rerankScores != null && !rerankFailed && rerankScores.size() == matches.size();
         List<Integer> rerankOrder = hasValidRerank ? rankedIndices(rerankScores) : List.of();
         List<ChunkSelection> selections = new ArrayList<>();
 
-        for (int index = 0; index < segments.size(); index++) {
-            TextSegment segment = segments.get(index);
-            RagChunkResult chunk = toChunkResult(segment, index + 1);
+        for (int index = 0; index < matches.size(); index++) {
+            EmbeddingMatch<TextSegment> match = matches.get(index);
+            TextSegment segment = match.embedded();
+            RagChunkResult chunk = toChunkResult(segment, index + 1, match.score());
             boolean selected;
             if (hasValidRerank) {
                 int rerankPosition = rerankOrder.indexOf(index);
@@ -162,10 +164,11 @@ public class RagRetrievalService {
         return indices;
     }
 
-    private static RagChunkResult toChunkResult(TextSegment segment, int vectorRank) {
+    private static RagChunkResult toChunkResult(TextSegment segment, int vectorRank, double vectorScore) {
         var metadata = segment.metadata();
         RagChunkResult chunk = new RagChunkResult();
         chunk.setVectorRank(vectorRank);
+        chunk.setVectorScore(vectorScore);
         chunk.setSourceName(metadata != null ? metadata.getString("source_name") : null);
         chunk.setSourceId(metadata != null ? metadata.getString("source_id") : null);
         chunk.setSourceUrl(metadata != null ? metadata.getString("source_url") : null);

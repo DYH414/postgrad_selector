@@ -57,6 +57,7 @@ public class RagEvidenceService {
         search.setMaxResults(request != null ? request.getMaxResults() : null);
         search.setMinScore(request != null ? request.getMinScore() : null);
         search.setRerankTopN(request != null ? request.getRerankTopN() : null);
+        search.setRunId(request != null ? request.getRunId() : null);
         if (request == null) {
             return search;
         }
@@ -132,7 +133,8 @@ public class RagEvidenceService {
             .limit(5)
             .toList());
         trace.setSelectedChunks((evidence != null ? evidence.getSelectedChunks() : search.getChunks()).stream()
-            .map(chunk -> new RagTrace.SelectedChunk(chunk.getSourceName(), chunk.getContentPreview()))
+            .map(chunk -> new RagTrace.SelectedChunk(chunk.getSourceName(), chunk.getContentPreview(),
+                chunk.getVectorRank(), chunk.getVectorScore(), chunk.getRerankRank(), chunk.getRerankScore()))
             .limit(5)
             .toList());
         if (search.getLatency() != null) {

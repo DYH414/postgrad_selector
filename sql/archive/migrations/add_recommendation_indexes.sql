@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 -- AI 推荐 12 表联查性能优化索引
 -- 覆盖 RecommendationMapper.selectCandidates 核心查询
 

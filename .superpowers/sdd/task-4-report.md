@@ -1,34 +1,51 @@
-# Task 4: RagCorpusAssembler — Unified Corpus Assembly
+# Task 4 Report: RAG Evaluation Run Management
 
-## Files Created
+## Status
 
-### Production Code
-- `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/build/AssembledCorpus.java` — record holding `List<TextSegment> chunks`, `int generalDocumentCount`, `int databaseDocumentCount`
-- `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/build/RagCorpusAssembler.java` — Spring `@Component` that assembles a unified corpus from:
-  - **General documents**: loaded from classpath `rag-documents/`, split via `DocumentSplitters.recursive(500, 50)`, metadata with `source_type=general` (no school/program fields)
-  - **Database evidence**: via `RagKnowledgeExportService` (histories, year facts, data quality) -> `StructuredRagChunkBuilder` -> `TextSegment` with `source_type=database` (includes school/program fields)
+Completed the run-history controls in `ruoyi-ui/src/views/postgrad/rag-evaluation/index.vue`.
 
-### Test
-- `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/rag/build/RagCorpusAssemblerTest.java` — 5 TDD test cases from the plan's T2 section
+## Delivered
 
-## Test Results
+- Added `runQuery`, `runTotal`, and `poller` state.
+- Added dataset, status, and Run ID filters with query and reset actions.
+- Replaced the fixed 100-row run request with the paged `rows` and `total` response.
+- Added standard RuoYi pagination and created/finished time columns.
+- Reset to page 1 for filter changes and new run submission; pagination keeps active filters.
+- Started polling only when the visible page contains `PENDING` or `RUNNING` rows; polling skips an in-flight request and stops when all visible rows are terminal or the view is destroyed.
 
-All 5 tests pass:
+## Validation
 
-| Test | Description | Status |
-|------|-------------|--------|
-| T2.1 | General docs assembled (sourceType=general, contentHash non-null) | PASS |
-| T2.2 | Database docs assembled (schoolId/programId/year non-null) | PASS |
-| T2.3 | General + database merged, sourceId unique across all chunks | PASS |
-| T2.4 | Empty corpus doesn't throw | PASS |
-| T2.5 | External Markdown written to `${RAG_DATA_DIR}/generated/` | PASS |
+Executed successfully:
 
-## Implementation Details
+```powershell
+$env:NODE_OPTIONS='--max-old-space-size=1024'; npm --prefix ruoyi-ui run build:prod
+```
 
-- **Metadata schema**: Unified `source_type`, `source_id`, `source_name`, `doc_type`, `section`, `chunk_index`, `content`, `content_hash`, `document_version`, `embedding_version`, `indexed_at` for all chunks
-- **Database chunks additionally**: `school_id`, `school_name`, `program_id`, `program_name`, `year` (and all other metadata from `StructuredRagChunkBuilder`)
-- **General chunks omit**: school/program/year fields entirely (not set to empty strings)
-- **source_id generation**: General `general:fileName:index`, Database `chunk.getChunkId()` (e.g., `program_year:1:101:2025:admission_score:hash`)
-- **External Markdown**: Written to `${ragDataDir}/generated/` per chunk, using chunkId as filename
-- **Validation**: `Set<String>` check for source_id uniqueness, throws `IllegalStateException` on duplicates
-- **Limit**: Database queries use 1000 as default limit
+The build completed with exit code 0. Webpack emitted pre-existing asset-size warnings only.
+
+## Scope
+
+No Task 5 redesign was implemented. The API module requires no Task 4 change because it already forwards the query object unchanged.
+
+## Review Fixes
+
+- Added `runQueryVersion`, `runLoadInFlight`, and `runReloadQueued`. Every load intent advances the version; an in-flight request records exactly one queued follow-up load. A stale response cannot update `runRows`, `runTotal`, or polling state, and the follow-up reads the newest filter and paging state.
+- Added `isDestroyed` and `stopRunPolling()`. `beforeDestroy` marks the component as destroyed and clears the timer. In-flight request completion exits without changing component state or creating a new timer after teardown.
+- `fetchRuns` catches request rejections without adding a duplicate UI message. It preserves the last successful rows and total, stops the poller, and prevents rejected polling promises from surfacing every three seconds.
+- Kept the existing comparison UI unchanged. It predates Task 4 and remains part of the preserved workbench behavior.
+
+## Review Validation
+
+Executed an inline component-method regression check against the page source. It verified that multiple requests during one in-flight load produce exactly one latest-query follow-up; stale results do not replace the last successful rows; rejected requests preserve those rows and stop polling; and a destroyed component ignores late completion. Result:
+
+```text
+loadRuns concurrency, failure, and teardown checks passed
+```
+
+Executed successfully:
+
+```powershell
+$env:NODE_OPTIONS='--max-old-space-size=1024'; npm --prefix ruoyi-ui run build:prod
+```
+
+Result: exit code 0 in 58.7 seconds. Webpack compiled with two existing size-limit warning groups: asset-size limits and entrypoint-size limits. No compilation errors occurred.

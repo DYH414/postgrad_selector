@@ -710,7 +710,7 @@ UserProfile (MySQL)
 | `RagEvidenceService.java` | 推荐证据检索，先 metadata filter，再 Qdrant 召回和 rerank |
 | `RagCollectionManager.java` | Qdrant 版本集合、Payload Index、Alias 与连通性管理 |
 | `RagAdminController.java` | Index Run、状态、检索测试与最近 Trace 后台接口 |
-| `RagTraceRecorder.java` | 内存环形缓冲记录最近 AI Chat、检索测试与专业证据 Trace |
+| `RagTraceRecorder.java` | 内存保留最近记录，并异步写入 MySQL `rag_retrieval_trace`；持久化失败不影响在线检索 |
 | `RagConfig.java` | Qdrant embedding store、retriever、reranker、retrieval augmentor 配置 |
 | `AiObserveController.java` | AI 观测后台接口 |
 | `AiObserveServiceImpl.java` | Micrometer 指标聚合、RAG 快照、最新调用快照 |

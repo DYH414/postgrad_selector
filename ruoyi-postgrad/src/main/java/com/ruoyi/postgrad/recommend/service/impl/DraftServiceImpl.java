@@ -349,7 +349,7 @@ public class DraftServiceImpl implements IDraftService {
 
     @Override
     public ReplaceResultVO replaceCandidate(Long userId, Long removeProgramId, String tier, String preference) {
-        // 先移除，refill 策略自动从工作集补位
+        // 仅执行移除；补充候选由用户另行发起
         CandidateWorkspaceVO ws = loadWorkspace(userId);
         DraftMutationResultVO removeResult = draftMutationService.removeCandidate(userId, removeProgramId, ws);
         ReplaceResultVO result = new ReplaceResultVO();

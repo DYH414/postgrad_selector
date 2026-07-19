@@ -31,6 +31,25 @@ class RagEvaluationServiceTest {
     Path tempDir;
 
     @Test
+    void technicalFailureIsRecordedAndRemainingCasesContinue() {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        RagSearchTestResponse response = new RagSearchTestResponse();
+        response.setChunks(List.of());
+        when(retrievalService.retrieve(any()))
+            .thenThrow(new IllegalStateException("qdrant unavailable"))
+            .thenReturn(new RagRetrievalResult(response, List.of()));
+        RagEvaluationCase first = new RagEvaluationCase("first", "first", Map.of());
+        RagEvaluationCase second = new RagEvaluationCase("second", "second", Map.of());
+
+        RagEvaluationResult result = new RagEvaluationService(retrievalService)
+            .runDataset("resilient", List.of(first, second), RagEvaluationMode.VECTOR_ONLY);
+
+        assertEquals(2, result.getTotalCases());
+        assertEquals("RETRIEVAL_FAILED", result.getCases().get(0).getTechnicalErrorCode());
+        verify(retrievalService, times(2)).retrieve(any());
+    }
+
+    @Test
     void frozenAblationSeparatesRankingAndAbstentionIntoJsonReport() throws Exception {
         RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = response();

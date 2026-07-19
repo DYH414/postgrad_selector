@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 -- ==========================================
 -- 考研择校菜单简化 — 13项扁平 → 4组分层
 -- ==========================================

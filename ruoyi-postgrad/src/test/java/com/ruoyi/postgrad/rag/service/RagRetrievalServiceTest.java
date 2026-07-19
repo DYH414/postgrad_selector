@@ -123,6 +123,42 @@ class RagRetrievalServiceTest {
             .toList());
         assertEquals(2, result.response().getChunks().get(0).getVectorRank());
         assertEquals(1, result.response().getChunks().get(1).getVectorRank());
+        assertEquals(0.9D, result.response().getChunks().get(0).getVectorScore());
+        assertEquals(0.9D, result.response().getChunks().get(0).getRerankScore());
+        assertEquals(1, result.response().getChunks().get(0).getRerankRank());
+        assertTrue(result.response().getChunks().get(0).isSelected());
+    }
+
+    @Test
+    void retrieveShouldMapVectorAndRerankMetricsToTheirOriginalMatches() {
+        ObjectProvider<EmbeddingModel> embeddingProvider = embeddingProvider("score mapping");
+        TextSegment vectorFirst = segment("vector first", "source-a");
+        TextSegment vectorSecond = segment("vector second", "source-b");
+        EmbeddingStore<TextSegment> embeddingStore = embeddingStore(
+            List.of(vectorFirst, vectorSecond), List.of(0.95D, 0.70D));
+        SiliconFlowReranker reranker = mock(SiliconFlowReranker.class);
+        when(reranker.scoreAll(anyList(), eq("score mapping")))
+            .thenReturn(Response.from(List.of(0.2D, 0.9D)));
+
+        RagRetrievalService service = new RagRetrievalService(
+            embeddingProvider, embeddingStore, provider(reranker), provider(null));
+
+        RagSearchTestResponse response = service.retrieve(
+            new RagSearchTestRequest("score mapping", 2, 0.0, 1)).response();
+
+        assertEquals("source-b", response.getChunks().get(0).getSourceId());
+        assertEquals(2, response.getChunks().get(0).getVectorRank());
+        assertEquals(0.70D, response.getChunks().get(0).getVectorScore());
+        assertEquals(1, response.getChunks().get(0).getRerankRank());
+        assertEquals(0.9D, response.getChunks().get(0).getRerankScore());
+        assertTrue(response.getChunks().get(0).isSelected());
+
+        assertEquals("source-a", response.getChunks().get(1).getSourceId());
+        assertEquals(1, response.getChunks().get(1).getVectorRank());
+        assertEquals(0.95D, response.getChunks().get(1).getVectorScore());
+        assertEquals(2, response.getChunks().get(1).getRerankRank());
+        assertEquals(0.2D, response.getChunks().get(1).getRerankScore());
+        assertTrue(!response.getChunks().get(1).isSelected());
     }
 
     private static ObjectProvider<EmbeddingModel> embeddingProvider(String query) {
@@ -132,11 +168,17 @@ class RagRetrievalServiceTest {
     }
 
     private static EmbeddingStore<TextSegment> embeddingStore(List<TextSegment> segments) {
+        return embeddingStore(segments, java.util.Collections.nCopies(segments.size(), 0.9D));
+    }
+
+    private static EmbeddingStore<TextSegment> embeddingStore(List<TextSegment> segments, List<Double> scores) {
         EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
         Embedding queryEmbedding = Embedding.from(new float[]{0.1f, 0.2f});
-        List<EmbeddingMatch<TextSegment>> matches = segments.stream()
-            .map(segment -> new EmbeddingMatch<>(0.9, "id-" + segment.text(), queryEmbedding, segment))
-            .toList();
+        List<EmbeddingMatch<TextSegment>> matches = new java.util.ArrayList<>();
+        for (int index = 0; index < segments.size(); index++) {
+            TextSegment segment = segments.get(index);
+            matches.add(new EmbeddingMatch<>(scores.get(index), "id-" + segment.text(), queryEmbedding, segment));
+        }
         when(store.search(any())).thenReturn(new EmbeddingSearchResult<>(matches));
         return store;
     }

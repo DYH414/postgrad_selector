@@ -1,3 +1,6 @@
+-- ARCHIVED: Historical SQL. Do not use for fresh installation or batch production execution.
+-- Current entry scripts are in the sql/ root directory.
+
 USE postgrad_selector;
 
 -- Phase 1: add the school data workspace as the primary postgrad admin entry.

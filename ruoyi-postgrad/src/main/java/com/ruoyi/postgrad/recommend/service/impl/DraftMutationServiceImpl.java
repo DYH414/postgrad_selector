@@ -408,7 +408,7 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
             draft = removeFromDraft(userId, pid);
             removed++;
 
-            // 每个移除触发 refill
+            // 记录移除结果；补充候选必须由用户另行发起
             ExcludedCandidateVO excluded = new ExcludedCandidateVO();
             excluded.setProgramId(pid);
             excluded.setSchoolName(schoolName);

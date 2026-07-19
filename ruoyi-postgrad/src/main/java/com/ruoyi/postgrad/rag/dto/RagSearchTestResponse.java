@@ -8,6 +8,7 @@ import java.util.Map;
  */
 public class RagSearchTestResponse {
 
+    private String runId;
     private String query;
     private String retrievalMode = "dense-vector-rerank";
     private int retrievedCount;
@@ -19,6 +20,9 @@ public class RagSearchTestResponse {
 
     private RagSearchLatency latency = new RagSearchLatency();
     private List<RagChunkResult> chunks = List.of();
+
+    public String getRunId() { return runId; }
+    public void setRunId(String runId) { this.runId = runId; }
 
     public String getQuery() { return query; }
     public void setQuery(String query) { this.query = query; }

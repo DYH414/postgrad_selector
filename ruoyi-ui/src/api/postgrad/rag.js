@@ -30,11 +30,11 @@ export function searchTestRag(data) {
   })
 }
 
-export function getRagTraces(limit) {
+export function getRagTraces(limit, runId) {
   return request({
     url: '/postgrad/rag/traces',
     method: 'get',
-    params: { limit: limit || 20 }
+    params: { limit: limit || 20, runId: runId || undefined }
   })
 }
 

@@ -1,547 +1,344 @@
-# 408 考研择校决策平台（Postgrad Selector）
+# 408 考研择校决策平台
 
-<p align="center">
-  <strong>数据驱动 · 规则推荐 · 来源可追溯 · AI 辅助决策</strong>
-</p>
+基于事实约束的 AI 考研择校 Agent，将结构化招生数据、规则推荐、Tool Calling 与版本化 RAG 组合成可解释、可追踪的择校工作台。
 
-<p align="center">
-  <a href="https://408lab.site" target="_blank">🌐 在线体验</a> &nbsp;|&nbsp;
-  <a href="./docs/考研择校决策平台立项说明书-增强版.md">📋 立项说明书</a> &nbsp;|&nbsp;
-  <a href="./docs/项目技术文档-完整版.md">📖 技术文档</a>
-</p>
+[![Java](https://img.shields.io/badge/Java-17-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.3-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![LangChain4j](https://img.shields.io/badge/LangChain4j-1.15-blue)](https://docs.langchain4j.dev/)
+[![Qdrant](https://img.shields.io/badge/Qdrant-Vector%20Database-DC244C?logo=qdrant&logoColor=white)](https://qdrant.tech/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
----
+- 在线体验：[https://408lab.site](https://408lab.site)
+- 管理端入口：[https://408lab.site/admin/](https://408lab.site/admin/)
+- RAG 运维：[RAG / Qdrant 运维说明](./docs/RAG-Qdrant-运维说明.md)
+- 系统原理：[AI 推荐 Agent 全链路与可观测性](./docs/AI推荐Agent全链路与可观测性说明.md)
 
-## 平台简介
+> 本项目用于考研信息辅助分析，推荐结果不能替代院校官方招生简章、专业目录和个人决策。
 
-**408 考研择校决策平台**是一个面向全专业、全国性考研择校的数据驱动型推荐系统。第一阶段以 408 计算机相关方向为样板，通过 **"数据库筛选 → 规则引擎 → AI 分析 → 多重校验"** 四阶段流水线，为用户自动生成包含**冲刺、稳妥、保底**三档的择校方案。
+## 项目概览
 
-> 本项目不是普通资料查询站，也不是纯 AI 聊天推荐工具。每一条推荐都有明确的数据来源和可追溯的证据链。
+平台围绕考研择校中的三个实际问题构建：
 
-### Agent Tool 运行治理
+1. **推荐不能脱离真实数据。** MySQL 和规则层负责筛选、分档与排序，LLM 只在受控候选池内精选和解释。
+2. **AI 操作必须可控。** 16 个领域 Tool 统一经过预算、错误协议、确认机制和 Trace 治理。
+3. **答案需要证据。** 招生事实与通用知识构建为 Qdrant 知识库，通过 Metadata Filter、向量召回和 BGE Rerank 提供引用依据。
 
-AI Chat 的 16 个 Tool 统一经过运行时治理层：按 `SEARCH / DETAIL / RAG / CONTEXT / WRITE` 分组限额、标准化结果码、调用 ID 和 MySQL Trace。写操作先生成提案，用户确认或取消后才执行；确认、取消和执行结果均以同一 `runId` 关联。管理端 AI 观测台可查看 Tool 摘要和单次 Run 的调用链，不保存完整 Prompt、原始参数或完整 Tool 结果。
+当前数据覆盖 486 所院校、2,000+ 个计算机相关专业方向及 6,000+ 条历年招生数据，支持用户画像、候选池生成、自然语言调整和推荐报告。
 
-### 核心数据规模
+## 核心亮点
 
-| 指标 | 数值 |
-|------|------|
-| 高校数量 | 486 所 |
-| 408 专业项目 | 2,023 个 |
-| 录取记录 | 24,000+ 条 |
-| 数据年份覆盖 | 2023-2025 年 |
-| 考试科目组合 | 2 套（22408 / 11408） |
+### 事实约束 Agent
 
-### 在线地址
+数据库粗筛与 Java 规则引擎先构建冲刺、稳妥、保底候选池，每档最多向 LLM 提供 30 条事实卡。模型返回的专业 ID 必须属于候选池，并经过空值、池外 ID、重复项、数据完整度和档位上限校验；模型异常时回退到规则排序结果。
 
-- **用户端**: [https://408lab.site](https://408lab.site)
-- **管理后台**: `https://408lab.site/admin`
-- 管理账号请在部署环境中单独创建并妥善保管。
+### Agent Tool Runtime
 
----
+当前 Tool Catalog 注册 16 个 Tool（9 READ / 7 WRITE），统一声明预算组、结果规模、确认要求和并发属性。Runtime 负责调用预算、标准结果码、异常脱敏和 MySQL Tool Trace，避免治理规则散落在各个 `@Tool` 方法中。
 
-## 系统架构图
+### 安全写操作
+
+模型不能直接修改用户草稿。写 Tool 先生成绑定用户、`runId` 和草稿版本的操作提案；用户确认后，后端通过 Redis Lua 原子消费一次性令牌，再执行真实修改，防止重复确认和过期提案覆盖新草稿。
+
+### 版本化 RAG
+
+MySQL 招生事实与通用 Markdown 被组织为带 Metadata 的语义 Chunk。索引重建先写入候选 Collection，校验后再原子切换 `postgrad_rag_active` Alias，避免在线查询读取半成品。检索链路为：
+
+```text
+Query -> Metadata Filter -> Dense Vector Retrieval -> BGE Rerank -> Top-K Evidence -> LLM / Citation
+```
+
+当前实现不是 BM25 + Dense Hybrid Search。
+
+### 长任务与可观测性
+
+三档推荐使用 `CompletableFuture` 并行调用，Redis 保存任务状态、锁和草稿快照，SSE 增量推送进度、Token、Tool 与确认事件。一次对话通过 `runId` 关联 LLM 调用、RAG Trace、Tool Trace 与 SSE 事件，管理端可查看过滤条件、候选排名和阶段耗时。
+
+### RAG 评测工作台
+
+管理端提供持久化 RAG 评测工作台，用 MySQL 管理可编辑 DEV、不可变 FROZEN 和独立 SAFETY 数据集。管理员可以维护 Ground Truth、从持久化 Trace 创建待审核用例、运行 Vector Only / Vector + Rerank 消融、查看逐用例排名与技术错误、对比兼容 Run，并导出 JSON 或 Markdown 报告。冻结时使用稳定排序与 SHA-256 生成可审计 JSONL 快照。
+
+## 系统架构
 
 ```mermaid
-graph TB
-    subgraph 客户端["客户端"]
-        Browser["浏览器"]
+flowchart LR
+    U[用户端 Vue 3] --> API[Spring Boot API]
+    A[管理端 Vue 2] --> API
+
+    subgraph Recommendation[事实约束推荐]
+        DB[(MySQL)] --> FILTER[DB 粗筛]
+        FILTER --> RULE[规则分档与评分]
+        RULE --> WS[每档不超过 30 条]
+        WS --> LLM[LLM 三档精选]
+        LLM --> VALIDATE[结果校验与降级]
     end
 
-    subgraph 网关["网关层"]
-        Nginx["Nginx<br/>HTTPS 反向代理 + 静态资源"]
+    subgraph Agent[Agent Runtime]
+        CHAT[LangChain4j AI Service] --> CATALOG[16 Tool Catalog]
+        CATALOG --> READ[READ: DB / RAG / Context]
+        CATALOG --> PROPOSAL[WRITE: 提案与确认]
     end
 
-    subgraph 前端["前端层"]
-        UserUI["用户端<br/>Vue 3 + Element Plus + Vite<br/>Pinia + Vue Router 4"]
-        AdminUI["管理后台<br/>Vue 2.6 + Element UI<br/>Vuex + Vue Router 3"]
+    subgraph Knowledge[RAG]
+        CORPUS[MySQL 事实 + Markdown] --> EMBED[BAAI/bge-m3]
+        EMBED --> QDRANT[(Qdrant Alias)]
+        QDRANT --> RERANK[BGE Rerank]
     end
 
-    subgraph 后端["后端层 (Spring Boot 4.0.3 / Java 17)"]
-        AdminModule["ruoyi-admin<br/>Controller 层 · 全局配置"]
-        Framework["ruoyi-framework<br/>Spring Security · JWT 过滤器<br/>权限服务 · 限流切面"]
-        Postgrad["ruoyi-postgrad 🎯<br/>推荐引擎 · AI 对话<br/>候选池管理 · 数据管理"]
-        SystemModule["ruoyi-system<br/>用户 · 角色 · 菜单 · 部门"]
-        Common["ruoyi-common<br/>BaseEntity · AjaxResult · 工具类"]
-        Quartz["ruoyi-quartz<br/>定时任务调度"]
-    end
-
-    subgraph 中间件["中间件层"]
-        MySQL[("MySQL 8.x<br/>Druid 连接池")]
-        Redis[("Redis<br/>缓存 · Session · 候选池")]
-        Qdrant[("Qdrant<br/>RAG 向量库")]
-        RabbitMQ["RabbitMQ 3.13<br/>异步消息队列"]
-    end
-
-    subgraph AI["AI 服务"]
-        DeepSeek["DeepSeek API<br/>V4 Pro / Flash<br/>兼容 OpenAI 协议"]
-        SiliconFlow["SiliconFlow API<br/>BGE-M3 Embedding<br/>BGE Reranker"]
-    end
-
-    Browser --> Nginx
-    Nginx -->|"/"| UserUI
-    Nginx -->|"/admin"| AdminUI
-    Nginx -->|"/dev-api"| AdminModule
-    AdminModule --> Framework
-    AdminModule --> Postgrad
-    AdminModule --> SystemModule
-    Postgrad --> Common
-    SystemModule --> Common
-    Postgrad --> MySQL
-    Postgrad --> Redis
-    Postgrad --> Qdrant
-    Postgrad --> RabbitMQ
-    Postgrad -->|"LangChain4j<br/>OpenAI 协议"| DeepSeek
-    Postgrad -->|"Embedding / Rerank"| SiliconFlow
-    SystemModule --> MySQL
-    Quartz --> MySQL
+    API --> Recommendation
+    API --> Agent
+    READ --> DB
+    READ --> Knowledge
+    API <--> REDIS[(Redis 状态与锁)]
+    API --> TRACE[LLM / RAG / Tool Trace]
+    API -. SSE .-> U
 ```
 
----
-
-## 推荐引擎流程图（Agent 核心链路）
-
-```mermaid
-flowchart TD
-    A["👤 用户提交画像<br/>预估分数 · 目标地区 · 偏好设置"] --> B
-
-    subgraph Stage1["阶段1: 数据库粗筛"]
-        B["12 表 JOIN 查询<br/>program → college → school<br/>LEFT JOIN 录取分数/计划/结果"]
-        B --> C["候选全集 Universe<br/>~200-500 条 · gap ≥ -30"]
-    end
-
-    C --> D
-
-    subgraph Stage2["阶段2: 规则引擎分档"]
-        D["convertToSchoolFact<br/>计算 gap · quotaRisk · canBeSafe"]
-        D --> E["classifyTier（唯一真相来源）"]
-        E --> F{"分档判定"}
-        F -->|"gap ∈ [-15, 5]"| G1["🔴 冲刺档 (reach)"]
-        F -->|"gap ∈ [6, 14]"| G2["🟡 稳妥档 (steady)"]
-        F -->|"gap ≥ 15 且 canBeSafe"| G3["🟢 保底档 (safe)"]
-        F -->|"gap < -15"| G4["❌ 排除"]
-        F -->|"数据完整度 C"| G4
-    end
-
-    G1 --> H
-    G2 --> H
-    G3 --> H
-
-    subgraph Stage3["阶段3: 综合评分 + 去重"]
-        H["policyScore 加权评分<br/>数据完整度 · 名额风险 · 学校层次 · gap适配"]
-        H --> I["偏好策略加权<br/>冲名校 / 求稳 / 发达地区"]
-        I --> J["diversityTrim 同校去重<br/>每校只留最优方向"]
-        J --> K["Workspace 工作集<br/>每档 ≤ 30 条"]
-    end
-
-    K --> L
-
-    subgraph Stage4["阶段4: AI 精选（三档并行）"]
-        L["构建事实卡<br/>只含原始数据，不含预判标签"]
-        L --> M1["DeepSeek select-reach"]
-        L --> M2["DeepSeek select-steady"]
-        L --> M3["DeepSeek select-safe"]
-        M1 --> N
-        M2 --> N
-        M3 --> N
-    end
-
-    N["五层校验 SelectionValidator"]
-
-    subgraph Validator["校验流水线"]
-        N --> V1["L1: 池外检测<br/>programId 不在候选池 → 幻觉拦截"]
-        V1 --> V2["L2: 去重<br/>同一 programId 出现多次 → 保留首次"]
-        V2 --> V3["L3: 数据不足拦截<br/>dataCompleteness = C → 排除"]
-        V3 --> V4["L4: 档位上限裁剪<br/>reach≤3 · steady≤4 · safe≤3"]
-        V4 --> V5["L5: 通过合并"]
-    end
-
-    V5 --> O["📊 最终草稿 Draft<br/>冲刺 3 所 + 稳妥 4 所 + 保底 3 所"]
-    O --> P["💾 持久化到 Redis<br/>TTL 7 天 · 支持刷新不丢"]
-```
-
----
-
-## AI 对话 Tool Calling 流程图
-
-```mermaid
-sequenceDiagram
-    actor User as 👤 用户
-    participant SSE as SSE Controller
-    participant Chat as AiChatServiceImpl
-    participant LC4J as LangChain4j<br/>AiServices
-    participant DS as DeepSeek API
-    participant Tools as Tool 执行层
-    participant Redis as Redis
-    participant DB as MySQL
-
-    User->>SSE: POST /app/v2/chat/send<br/>"帮我把北京换成杭州的学校"
-    SSE->>Chat: chatStream(conversationId, message)
-
-    Chat->>Redis: 获取会话上下文 (ChatMemory)
-    Redis-->>Chat: 最新 20 条消息历史
-
-    Chat->>Chat: 构建 System Prompt<br/>+ 用户画像 + 当前草稿摘要
-
-    Chat->>LC4J: 创建 AiServices 代理<br/>注册 Tools:
-    LC4J-->>Chat: V2ChatAssistant 实例
-
-    Chat->>DS: 发送消息 + Tool 定义
-    Note over DS: DeepSeek 分析用户意图<br/>决定调用哪个 Tool
-
-    loop Tool Calling 循环（最多 10 轮）
-        DS-->>Chat: ToolExecutionRequest<br/>toolName + arguments
-
-        alt 查询类 Tool
-            Chat->>Tools: getProgramDetail(programId)
-            Tools->>DB: SELECT program + school + scores
-            DB-->>Tools: 学校完整数据
-            Tools-->>Chat: JSON 结果
-        else 搜索类 Tool
-            Chat->>Tools: searchPrograms(keyword, tier, region)
-            Tools->>Redis: 查询候选池 workspace
-            Redis-->>Tools: 匹配的候选列表
-            Tools-->>Chat: JSON 结果
-        else 对比类 Tool
-            Chat->>Tools: comparePrograms(id1, id2)
-            Tools->>DB: 查询两所学校数据
-            DB-->>Tools: 双方数据
-            Tools-->>Chat: 对比结果 JSON
-        else 草稿操作 Tool
-            Chat->>Tools: removeCandidate(programId)
-            Tools->>Redis: 从草稿中移除
-            Tools->>Redis: 触发 refill 补充候补
-            Tools-->>Chat: 操作结果
-        end
-
-        Chat->>DS: 发送 Tool 执行结果
-        Note over DS: 判断是否还需要<br/>继续调用 Tool
-    end
-
-    DS-->>Chat: 最终自然语言回复
-    Chat->>Redis: 持久化对话消息
-    Chat-->>SSE: SSE 流式推送回复
-    SSE-->>User: 逐字显示 AI 回复
-```
-
-### Tool 清单
-
-| Tool | 类别 | 功能 |
-|------|------|------|
-| `getProgramDetail` | 查询 | 查询指定专业的完整数据（学校层次、录取均分、招生人数、复试线） |
-| `searchPrograms` | 搜索 | 在候选池中按关键词/档位/地区搜索 |
-| `comparePrograms` | 对比 | 并排对比两所学校的核心指标 |
-| `getDraftContext` | 查询 | 查看当前草稿状态——已选学校、档位分布 |
-| `removeCandidate` | 写操作 | 从草稿中移除指定候选，触发候补补充 |
-| `replaceCandidate` | 写操作 | 替换草稿中的候选，触发候补补充 |
-| `addBackCandidate` | 写操作 | 将候补池中的学校加回草稿 |
-| `getAlternatives` | 查询 | 获取某档位的候补选项列表 |
-
----
-
-## 技术栈
-
-| 层次 | 技术 | 版本 |
-|------|------|------|
-| **后端框架** | Spring Boot（jakarta namespace） | 4.0.3 |
-| **语言** | Java | 17 |
-| **ORM** | MyBatis + MyBatis XML Mapper | 4.0.1 |
-| **数据库** | MySQL（Druid 连接池） | 8.x |
-| **缓存** | Redis（Lettuce 客户端） | — |
-| **向量库** | Qdrant | 1.13.4 |
-| **AI 框架** | LangChain4j（兼容 OpenAI 协议） | 1.15.x |
-| **AI 模型** | DeepSeek（V4 Pro / Flash） | — |
-| **Embedding / Rerank** | SiliconFlow BAAI/bge-m3、BAAI/bge-reranker-v2-m3 | — |
-| **安全框架** | Spring Security + JWT | — |
-| **消息队列** | RabbitMQ | 3.13 |
-| **前端（管理端）** | Vue 2.6 + Element UI 2.15 + Vuex + Vue Router | — |
-| **前端（用户端）** | Vue 3 + Element Plus + Vite + Pinia | — |
-| **构建工具** | Maven 多模块 / Vue CLI 4 / Vite | — |
-
----
-
-## 项目结构
-
-```
-pom.xml (root, packaging=pom)
-├── ruoyi-admin          — 入口模块（RuoYiApplication）、Controller 层、全局配置
-├── ruoyi-framework      — 安全框架（JWT 过滤器、权限服务、限流切面）、线程池配置
-├── ruoyi-postgrad       — 🎯 核心业务模块：推荐引擎、AI 对话、候选池管理
-├── ruoyi-system         — 系统管理域（用户、角色、菜单、部门、公告）
-├── ruoyi-common         — 共享层：BaseEntity、AjaxResult、注解、工具类
-├── ruoyi-generator      — 代码生成器（Velocity 模板 → 完整 CRUD 栈）
-├── ruoyi-quartz         — 定时任务管理（内存调度器）
-├── ruoyi-ui/            — 管理后台前端（Vue 2 + Element UI）
-├── user-ui/             — 用户端前端（Vue 3 + Element Plus）
-└── sql/                 — 数据库初始化 SQL
-```
-
----
-
-## 核心功能
+## 产品能力
 
 ### 用户端
 
-- **📝 用户画像**：填写预估分数、目标地区、本科层次、跨考情况、风险偏好、学校层次偏好
-- **🤖 AI 智能推荐**：四阶段流水线自动生成冲刺/稳妥/保底三档择校方案（共 10 所）
-- **💬 AI 对话调整**：通过自然语言对话对推荐结果进行增删替换，Tool 支持查询/搜索/对比/写操作，并可检索专业级 RAG 证据
-- **📚 版本化 RAG 知识库**：MySQL 招生数据生成结构化 section Chunk，与 `rag-documents/` 通用知识统一检索；使用 Metadata Filter、向量召回、BGE Rerank、引用溯源和 RAG Trace
-- **📊 推荐报告**：生成包含执行摘要、画像基础、档位分析、数据透明度的完整择校报告
-- **⭐ 收藏管理**：收藏感兴趣的专业方向，支持批量操作
-- **📈 历史记录**：查看历史推荐记录和 AI 对话历史
+- 用户画像：估分、地区、院校层次、风险偏好与考试信息。
+- 智能推荐：生成冲刺 3 所、稳妥 4 所、保底 3 所的候选草稿。
+- AI 对话：查询、对比、解释推荐理由和风险，或提出草稿调整。
+- 证据引用：展示专业级历史数据、趋势、来源与数据质量证据。
+- 报告生成：输出画像依据、候选分析、风险提示与数据来源。
+- 会话恢复：聊天记录、任务状态和草稿可在刷新后恢复。
 
-### 管理后台
+### 管理端
 
-- **📋 学校/专业/学院管理**：486 所高校、2,023 个 408 专业方向的 CRUD 维护
-- **📊 录取数据管理**：复试线、录取最低分/平均分、招生计划、录取结果
-- **🔍 数据质量管控**：每条数据完整度评级（A/B/C）+ 数据来源追溯
-- **📝 审核系统**：对入库数据进行审核确认
-- **📚 RAG 观测台**：启动并轮询 Index Run、查看活动 Alias/版本集合、检索测试、最近 RAG Trace 与构建错误
-- **📈 AI 调用观测台**：聚合 LangChain4j/Micrometer 指标，展示 token、耗时、成功率、最新调用和 RAG 快照
-- **👤 系统管理**：用户、角色、菜单、权限、字典、参数、日志、在线用户监控
-- **🔧 代码生成器**：Velocity 模板一键生成前后端 CRUD 代码
+- 学校、学院、专业及历年招生数据维护。
+- 数据质量、来源追踪和审核工作台。
+- RAG 索引运行、活动 Alias、检索测试与 RAG Trace。
+- RAG 评测数据集、后台实验、回归对比、人工诊断与报告导出。
+- AI 调用指标和 Tool Trace 查询。
+- 用户、角色、菜单、日志等系统管理能力。
 
----
+## 技术栈
+
+| 领域 | 技术 |
+|---|---|
+| 后端 | Java 17、Spring Boot 4、Spring Security、MyBatis |
+| AI 应用 | LangChain4j、DeepSeek、Tool Calling、SSE |
+| RAG | BAAI/bge-m3、BGE Rerank、Qdrant |
+| 数据 | MySQL 8、Redis、RabbitMQ |
+| 用户端 | Vue 3、Vite、Pinia、Element Plus |
+| 管理端 | Vue 2、Vue CLI、Vuex、Element UI |
+| 工程化 | Maven、Docker Compose、Nginx |
 
 ## 快速开始
 
-### 环境要求
+### 1. 环境要求
 
-| 软件 | 版本要求 | 说明 |
-|------|---------|------|
-| JDK | 17+ | 后端编译与运行 |
-| Maven | 3.6+ | 后端构建 |
-| MySQL | 8.0+ | 数据持久化 |
-| Redis | 6.0+ | 缓存、Session、候选池 |
-| Qdrant | 1.13+ | RAG 向量库，Docker Compose 默认映射 6333/6334 |
-| Node.js | 16+ | 前端开发（两个前端都需要） |
-| RabbitMQ | 3.13+ | 消息队列（可选，本地开发可跳过） |
+- JDK 17+
+- Maven 3.9+
+- MySQL 8+
+- Redis 6+
+- Node.js 18+
+- Docker Desktop 或可用的 Docker Engine
 
-### 1. 初始化数据库
+RabbitMQ 仅用于相关异步业务；运行 AI 推荐与 RAG 的最小环境需要 MySQL、Redis 和 Qdrant。
 
-```bash
-# 创建数据库
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS postgrad_selector DEFAULT CHARACTER SET utf8mb4;"
+### 2. 初始化数据库
 
-# 按顺序导入 SQL（必须按此顺序）
-mysql -u root -p postgrad_selector < sql/ry_20260417.sql
-mysql -u root -p postgrad_selector < sql/quartz.sql
-mysql -u root -p postgrad_selector < sql/408_school_selection_schema.sql
-mysql -u root -p postgrad_selector < sql/postgrad_school_menu.sql
-mysql -u root -p postgrad_selector < sql/postgrad_crud_menu.sql
+创建数据库：
+
+```sql
+CREATE DATABASE postgrad_selector
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
 ```
 
-### 2. 配置环境变量
+数据库入口脚本位于 [`sql/`](./sql/)。全新环境按以下固定顺序导入：
 
-```bash
-# 必需（Windows 使用 set 命令）
-export MYSQL_USERNAME=root
-export MYSQL_PASSWORD=your_password
-export JWT_SECRET=your_jwt_secret_string
-export REDIS_PASSWORD=your_redis_password    # Redis 无密码则不设
-
-# AI 推荐功能必需（不使用 AI 功能可不设）
-export DEEPSEEK_API_KEY=sk-your-deepseek-api-key
-
-# RAG / AI 观测增强
-export SILICONFLOW_API_KEY=sk-your-siliconflow-api-key
-export QDRANT_URL=http://localhost:6333
-export QDRANT_HOST=localhost
-export QDRANT_GRPC_PORT=6334
-# 运行时统一使用 Qdrant Alias: postgrad_rag_active
+```text
+sql/00_platform_bootstrap.sql
+sql/10_postgrad_core_schema.sql
+sql/20_ai_runtime_schema.sql
+sql/30_postgrad_menu_permissions.sql
 ```
 
-### 3. 启动 Qdrant
+其中 `00_platform_bootstrap.sql` 和 `10_postgrad_core_schema.sql` 包含 `DROP TABLE`，只允许用于空库初始化或明确批准的全量重建，不能用于生产环境增量升级。
 
-```bash
-docker compose up -d qdrant
-curl http://localhost:6333/collections
+业务数据导入后，可按需执行 `sql/90_data_quality_maintenance.sql` 刷新专业年度数据质量。历史迁移和一次性修复保存在 `sql/archive/`，不属于常规安装步骤。
+
+### 3. 配置环境变量
+
+PowerShell 示例：
+
+```powershell
+$env:MYSQL_USERNAME = "root"
+$env:MYSQL_PASSWORD = "your-mysql-password"
+$env:REDIS_PASSWORD = "your-redis-password"
+$env:JWT_SECRET = "replace-with-a-long-random-secret"
+
+$env:DEEPSEEK_API_KEY = "your-deepseek-api-key"
+$env:SILICONFLOW_API_KEY = "your-siliconflow-api-key"
+
+$env:QDRANT_URL = "http://localhost:6333"
+$env:QDRANT_HOST = "localhost"
+$env:QDRANT_GRPC_PORT = "6334"
+$env:QDRANT_COLLECTION = "postgrad_rag_active"
 ```
 
-Qdrant Web UI: `http://localhost:6333/dashboard`
+Linux/macOS 使用同名环境变量。不要把真实密钥写入仓库或前端环境文件。
 
-### 4. 启动后端
+### 4. 启动基础服务
 
 ```bash
-# 编译（跳过测试加速）
-mvn clean package -Dmaven.test.skip=true
+docker compose up -d qdrant rabbitmq
+```
 
-# 运行
+检查 Qdrant：
+
+```bash
+curl http://localhost:6333/healthz
+curl http://localhost:6333/aliases
+```
+
+Qdrant Dashboard：<http://localhost:6333/dashboard>
+
+### 5. 启动后端
+
+```bash
+mvn clean package -DskipTests
 java -jar ruoyi-admin/target/ruoyi-admin.jar
 ```
 
-后端启动后访问 `http://localhost:8080`，Swagger 文档在 `http://localhost:8080/swagger-ui/index.html`。
+后端默认地址：<http://localhost:8080>
 
-后端启动不会自动重建或清空知识库。首次使用或数据更新后，在管理端“RAG 观测台”启动 Index Run；构建完成后才会原子切换活动 Alias。
+### 6. 启动两个前端
 
-### 5. 启动前端
-
-**管理后台（开发模式）：**
+管理端：
 
 ```bash
 cd ruoyi-ui
 npm install
 npm run dev
-# → http://localhost:8081
-# 自动代理 /dev-api → localhost:8080
 ```
 
-**用户端（开发模式）：**
+访问 <http://localhost:8081>。
+
+用户端：
 
 ```bash
 cd user-ui
 npm install
 npm run dev
-# → Vite 开发服务器（默认端口由 Vite 分配）
 ```
 
-### 6. 登录验证
+访问 <http://localhost:8082>。
 
-打开 `http://localhost:8081`，使用部署环境中的管理账号登录后台，确认功能正常。
-RAG 管理页为 `/postgrad/rag`，可查看活动 Alias、启动并跟踪 Index Run、执行 metadata 检索测试、查看最近 RAG Trace；AI 观测页为 `/postgrad/observe`。
+## 首次 RAG 初始化
 
-推荐链路中的 RAG 使用边界：
+后端启动不会自动清空或重建知识库。首次使用时：
 
-| 数据源 | 作用 | 使用阶段 |
-|--------|------|----------|
-| MySQL 结构化表 | 学校、专业、分数、计划、录取结果等确定性事实 | 候选池、工作集、AI 选择、最终报告事实快照 |
-| `rag-data/generated/` | 从 MySQL 生成的结构化 Markdown 镜像（派生产物） | 排查文档生成；运行时实际检索 Qdrant 活动 Alias |
-| `rag-documents/` | 考研术语、政策、择校方法等通用知识 | 通用问答、方法解释、辅助上下文 |
+1. 登录管理端。
+2. 进入“数据运维 / RAG 观测台”。
+3. 选择招生数据年份范围，创建完整知识库构建任务。
+4. 等待状态变为 `SUCCEEDED`。
+5. 确认活动 Alias 指向新版本 Collection。
+6. 使用检索测试验证学校、专业和年份过滤。
 
-构建流程采用 `Candidate Collection -> 校验 -> Qdrant Alias`：构建失败不会影响在线检索；成功后 `postgrad_rag_active` 才切换到新版本。用户端“按分数找专业”由 MySQL Tool 完成确定性筛选，“为什么推荐/有什么风险”使用 `programId` 精确 RAG 证据；管理端 `ai-chat` Trace 可查看真实召回/选中、过滤条件、Top 来源和 E/Q/R 耗时。
+完整流程见 [RAG 全链路验收清单](./docs/RAG-全链路验收清单.md)。
 
-完整验收流程见 [RAG 全链路验收清单](./docs/RAG-全链路验收清单.md)。
+## 最小验收
 
----
-
-## 部署说明
-
-### 本地 / 个人电脑部署
-
-适用于在本机运行完整服务，供自己或局域网内同学使用。
-
-**方案一：直接运行（开发/演示）**
+### 服务状态
 
 ```bash
-# 终端 1: 确保 MySQL 和 Redis 已启动，然后
-java -jar ruoyi-admin/target/ruoyi-admin.jar
-
-# 终端 2: 管理后台
-cd ruoyi-ui && npm run dev
-
-# 终端 3: 用户端
-cd user-ui && npm run dev
+curl http://localhost:8080/captchaImage
+curl http://localhost:6333/healthz
+curl http://localhost:6333/aliases
 ```
 
-**方案二：生产构建 + Nginx（推荐给同学演示）**
+### 产品流程
+
+- 用户端可以注册、填写画像并生成三档候选草稿。
+- AI 对话可以查询学校详情，并对写操作弹出确认步骤。
+- 管理端 RAG 观测台显示 Qdrant 可达、已索引和活动 Collection。
+- 检索测试返回 Metadata Filter、召回数、Rerank 结果和阶段耗时。
+- AI 观测台可以按 `runId` 查看 Tool Trace。
+
+## 项目结构
+
+```text
+postgrad_selector/
+├── ruoyi-admin/       # 应用入口、Controller 和运行配置
+├── ruoyi-postgrad/    # 推荐、Agent Tool Runtime、RAG 与业务领域
+├── ruoyi-framework/   # 安全、Redis、线程池和框架配置
+├── ruoyi-system/      # 用户、角色、菜单等系统域
+├── ruoyi-common/      # 公共类型与工具
+├── ruoyi-quartz/      # 定时任务
+├── ruoyi-generator/   # 代码生成器
+├── ruoyi-ui/          # Vue 2 管理端
+├── user-ui/           # Vue 3 用户端
+├── sql/               # 初始化与增量 SQL
+├── docs/              # 架构、运维、验收和面试文档
+└── docker-compose.yml # Qdrant 与 RabbitMQ 本地环境
+```
+
+## 测试与 RAG 评测
+
+后端测试：
 
 ```bash
-# 1. 构建前端静态文件
-cd ruoyi-ui && npm run build:prod    # 输出到 ruoyi-ui/dist/
-cd user-ui && npm run build          # 输出到 user-ui/dist/
-
-# 2. 配置 Nginx
-# 将以下配置放入 nginx.conf 的 server 块中（见下方 Nginx 配置）
-
-# 3. 启动后端
-java -jar ruoyi-admin/target/ruoyi-admin.jar
-
-# 4. 启动/重载 Nginx
-nginx -s reload
+mvn -pl ruoyi-postgrad -am test
 ```
 
-访问 `http://localhost` 即可使用完整系统。
+前端构建验证：
 
-**Nginx 参考配置：**
-
-```nginx
-server {
-    listen 80;
-    server_name localhost;
-
-    # 用户端
-    location / {
-        root /path/to/user-ui/dist;
-        index index.html;
-        try_files $uri $uri/ /index.html;
-    }
-
-    # 管理后台
-    location /admin/ {
-        alias /path/to/ruoyi-ui/dist/;
-        index index.html;
-        try_files $uri $uri/ /admin/index.html;
-    }
-
-    # 后端 API
-    location /dev-api/ {
-        proxy_pass http://localhost:8080/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
+```bash
+cd user-ui && npm run build
+cd ../ruoyi-ui && npm run build:prod
 ```
 
-> **Windows 用户**：可以使用 [nginx-for-windows](http://nginx.org/en/docs/windows.html) 或上面的"直接运行"方式，无需 Nginx。
+RAG 评测包含：
 
-### 云服务器部署
+- `DEV`：可编辑的日常回归用例；
+- `FROZEN`：带 SHA-256 的不可变版本，用于可比较实验；
+- `SAFETY`：单独统计 No-answer Accuracy 与 False Positive Rate；
+- `VECTOR_ONLY` / `VECTOR_RERANK`：在相同数据集和参数快照下进行消融；
+- 每次 Run 持久化数据集校验和、Qdrant Alias/Collection、模型、参数、Git commit、逐用例结果和阶段延迟。
 
-项目已部署于腾讯云轻量应用服务器，架构同上。配置文件位于服务器 `/www/server/panel/vhost/nginx/` 目录下。
+管理端权限为 `postgrad:ragEval:view/edit/run/freeze/compare/export`。本阶段不包含 BM25 混合召回、知识文档上传和 LLM-as-judge；评测工作台只验证现有 Dense Retrieval + Metadata Filter + BGE Rerank 链路。
 
-- **云服务**: 腾讯云轻量应用服务器
-- **面板**: 宝塔 Linux 面板
-- **域名**: [408lab.site](https://408lab.site)
+- 63 条开发集，用于迭代和 bad case 分析。
+- 18 条 `frozen-v1` 排序集，不参与原地调参。
+- 4 条 `safety-v1` No-answer 安全集。
+- Vector Only 与 Vector + BGE Rerank 消融。
+- MRR、Hit@K、Recall@K、nDCG、Filter Accuracy、No-answer Accuracy、FPR 和阶段延迟。
 
----
+一次本地 frozen 消融中，Rerank 将 MRR 从 `0.593` 提升至 `0.639`、Hit@1 从 `44.4%` 提升至 `50.0%`，同时总延迟 P50 从 `152 ms` 增加至 `284 ms`。该结果样本量较小，用于工程回归，不代表线上 SLA。
 
-## 项目截图
+历史本地全量索引批次曾生成 3,581 份逻辑文档、21,461 个 Chunk；实际活动索引数量取决于当前数据和构建年份范围。
 
-> 📸 截图待补充。运行项目后可通过浏览器截图以下页面：
->
-> - 用户端：画像填写页 → 推荐结果页 → AI 对话页 → 择校报告页
-> - 管理后台：学校列表 → 专业管理 → 数据质量面板 → 审核系统
+## 文档
 
----
+| 文档 | 内容 |
+|---|---|
+| [AI 推荐 Agent 全链路与可观测性](./docs/AI推荐Agent全链路与可观测性说明.md) | 推荐、Tool、RAG、SSE 和 Trace 全链路 |
+| [RAG / Qdrant 运维说明](./docs/RAG-Qdrant-运维说明.md) | 启动、索引、Alias、检索与排障 |
+| [RAG 全链路验收清单](./docs/RAG-全链路验收清单.md) | 数据生成、索引、检索、引用和观测验收 |
+| [AI 推荐链路完整文档](./docs/AI推荐链路完整文档.md) | 候选池、规则分档与 AI 精选 |
+| [数据库设计文档](./docs/考研择校平台数据库设计文档-MVP.md) | 核心表结构和关系 |
+| [AI 应用开发面试深挖手册](./docs/丁宇涵-AI应用开发面试深挖手册.md) | 项目追问、AI 八股和系统设计 |
 
-## 文档索引
+## 当前边界
 
-| 文档 | 说明 |
-|------|------|
-| [立项说明书（增强版）](./docs/考研择校决策平台立项说明书-增强版.md) | 项目背景、定位、目标用户、商业验证 |
-| [需求说明书（MVP）](./docs/考研择校平台需求说明书-MVP.md) | MVP 阶段功能范围与验收标准 |
-| [数据库设计文档](./docs/考研择校平台数据库设计文档-MVP.md) | 数据表结构与关系设计 |
-| [项目技术文档（完整版）](./docs/项目技术文档-完整版.md) | 系统架构、业务流程、部署运维 |
-| [AI 推荐链路完整文档](./docs/AI推荐链路完整文档.md) | 四阶段推荐引擎的完整数据变换链路 |
-| [RAG / Qdrant 运维说明](./docs/RAG-Qdrant-运维说明.md) | Qdrant 启动、数据库文档生成、metadata 检索、重新索引与故障排查 |
-| [RAG 全链路验收清单](./docs/RAG-全链路验收清单.md) | MySQL 导出、文档生成、Qdrant、检索、rerank、引用溯源、观测验收 |
-
----
-
-## 开发约定
-
-本项目基于若依（RuoYi v3.9.2）框架定制开发，遵循三层架构规范：
-
-```
-Controller → IService/ServiceImpl → Mapper → Mapper XML
-```
-
-- **Controller**（`ruoyi-admin`）：仅接收请求、校验参数、返回响应，**严禁业务逻辑**
-- **Service**（`ruoyi-postgrad`）：所有业务逻辑、计算、校验、编排
-- **Mapper**（`ruoyi-postgrad`）：数据访问 + MyBatis XML 中的所有 SQL
-- 禁止使用 JdbcTemplate / NamedParameterJdbcTemplate，所有数据库访问必须通过 Mapper + MyBatis XML
-- 新功能必须使用标准三层架构，不得扩展旧的泛型 CRUD 模式
-
-详细规范见 [CLAUDE.md](./CLAUDE.md)。
-
----
-
-## 致谢
-
-- 基础框架基于 [若依 RuoYi-Vue](https://gitee.com/y_project/RuoYi-Vue)（Spring Boot 4.x 分支）
-- AI 能力由 [DeepSeek](https://deepseek.com) 提供
-
----
+- 项目以单体 Spring Boot 应用为主，不是多 Agent 或分布式工作流平台。
+- RAG 使用 Dense Vector + Metadata Filter + Rerank，尚未接入 Sparse/BM25 混合召回。
+- `runId` 提供领域级调用关联，但当前并非完整 OpenTelemetry 分布式追踪。
+- 离线评测集规模有限，指标用于回归和方案比较，不代表真实用户转化效果。
+- 推荐结果需要结合当年院校官方信息人工复核。
 
 ## License
 
-本项目基于 RuoYi-Vue 修改，遵循 MIT License。
+本项目基于 [RuoYi-Vue](https://gitee.com/y_project/RuoYi-Vue) 进行业务扩展，遵循 [MIT License](./LICENSE)。
+
+## 致谢
+
+- [RuoYi-Vue](https://gitee.com/y_project/RuoYi-Vue)
+- [LangChain4j](https://github.com/langchain4j/langchain4j)
+- [Qdrant](https://github.com/qdrant/qdrant)
+- [DeepSeek](https://www.deepseek.com/)
+- [SiliconFlow](https://siliconflow.cn/)

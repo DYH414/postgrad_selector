@@ -30,6 +30,7 @@ import com.ruoyi.postgrad.recommend.domain.CandidateWorkspaceVO;
 import com.ruoyi.postgrad.recommend.domain.DraftMutationResultVO;
 import com.ruoyi.postgrad.recommend.domain.DraftReplacementRequest;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
+import com.ruoyi.postgrad.recommend.domain.RefillResultVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.domain.WorkspaceTierVO;
@@ -93,6 +94,9 @@ class V2DraftActionToolsTest {
         mutation.setAction("remove");
         mutation.setDraft(after);
         mutation.setDraftCount(0);
+        RefillResultVO obsoleteRefill = new RefillResultVO();
+        obsoleteRefill.setPolicy("auto");
+        mutation.setRefill(obsoleteRefill);
         when(mutationService.removeCandidate(eq(1L), eq(1764L), any())).thenReturn(mutation);
 
         String json = tools.removeDraftCandidate(1764L);
@@ -103,6 +107,7 @@ class V2DraftActionToolsTest {
         assertEquals(1764, ((Number) result.get("programId")).intValue());
         assertEquals("South China Agricultural University", result.get("schoolName"));
         assertEquals(0, ((Number) result.get("draftCount")).intValue());
+        assertFalse(result.containsKey("refill"));
         assertTrue(V2ChatToolContext.writeExecuted());
         assertEquals(json, V2ChatToolContext.lastActionResultJson());
         verify(mutationService).removeCandidate(eq(1L), eq(1764L), any());

@@ -5,11 +5,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 
 import com.ruoyi.postgrad.recommend.domain.DraftReplacementRequest;
 import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
+import dev.langchain4j.agent.tool.Tool;
 import org.junit.jupiter.api.Test;
 
 class BoundToolRuntimeContractTest {
@@ -42,5 +46,19 @@ class BoundToolRuntimeContractTest {
 
         verify(runtime, times(16)).execute(any(), any(), any(), any());
         verifyNoInteractions(readDelegate, writeDelegate);
+    }
+
+    @Test
+    void removalToolContractsExplicitlyDisableAutomaticRefill() throws Exception {
+        assertRemovalDoesNotAutoRefill("removeDraftCandidate", long.class);
+        assertRemovalDoesNotAutoRefill("batchRemoveDraftCandidates", List.class);
+    }
+
+    private void assertRemovalDoesNotAutoRefill(String methodName, Class<?>... parameterTypes) throws Exception {
+        Method method = V2BoundDraftActionTools.class.getMethod(methodName, parameterTypes);
+        String description = Arrays.toString(method.getAnnotation(Tool.class).value()).toLowerCase();
+
+        assertTrue(description.contains("never") && description.contains("automatic"),
+            methodName + " must tell the model that removal never triggers automatic refill");
     }
 }

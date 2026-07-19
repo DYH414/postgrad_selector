@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.postgrad.rag.mapper.RagRetrievalTraceMapper">
+    <resultMap id="RagRetrievalTraceResult" type="com.ruoyi.postgrad.rag.trace.RagRetrievalTrace">
+        <id property="id" column="id"/>
+        <result property="traceId" column="trace_id"/>
+        <result property="operationKey" column="operation_key"/>
+        <result property="runId" column="run_id"/>
+        <result property="retrievalRoute" column="retrieval_route"/>
+        <result property="userId" column="user_id"/>
+        <result property="querySummary" column="query_summary"/>
+        <result property="outcome" column="outcome"/>
+        <result property="failureStage" column="failure_stage"/>
+        <result property="errorSummary" column="error_summary"/>
+        <result property="retrievedCount" column="retrieved_count"/>
+        <result property="selectedCount" column="selected_count"/>
+        <result property="topSourcesJson" column="top_sources_json"/>
+        <result property="metadataFiltersJson" column="metadata_filters_json"/>
+        <result property="fallbackUsed" column="fallback_used"/>
+        <result property="fallbackMode" column="fallback_mode"/>
+        <result property="embeddingLatencyMs" column="embedding_latency_ms"/>
+        <result property="retrievalLatencyMs" column="retrieval_latency_ms"/>
+        <result property="rerankLatencyMs" column="rerank_latency_ms"/>
+        <result property="totalLatencyMs" column="total_latency_ms"/>
+        <result property="selectedChunksSummary" column="selected_chunks_summary"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <sql id="columns">id, trace_id, operation_key, run_id, retrieval_route, user_id,
+        query_summary, outcome, failure_stage, error_summary, retrieved_count, selected_count,
+        top_sources_json, metadata_filters_json, fallback_used, fallback_mode,
+        embedding_latency_ms, retrieval_latency_ms, rerank_latency_ms, total_latency_ms,
+        selected_chunks_summary, created_at</sql>
+
+    <insert id="insert" parameterType="com.ruoyi.postgrad.rag.trace.RagRetrievalTrace" useGeneratedKeys="true" keyProperty="id">
+        insert into rag_retrieval_trace
+        (trace_id, operation_key, run_id, retrieval_route, user_id, query_summary, outcome,
+         failure_stage, error_summary, retrieved_count, selected_count, top_sources_json,
+         metadata_filters_json, fallback_used, fallback_mode, embedding_latency_ms,
+         retrieval_latency_ms, rerank_latency_ms, total_latency_ms, selected_chunks_summary, created_at)
+        values
+        (#{traceId}, #{operationKey}, #{runId}, #{retrievalRoute}, #{userId}, #{querySummary}, #{outcome},
+         #{failureStage}, #{errorSummary}, #{retrievedCount}, #{selectedCount}, #{topSourcesJson},
+         #{metadataFiltersJson}, #{fallbackUsed}, #{fallbackMode}, #{embeddingLatencyMs},
+         #{retrievalLatencyMs}, #{rerankLatencyMs}, #{totalLatencyMs}, #{selectedChunksSummary}, #{createdAt})
+    </insert>
+
+    <select id="selectById" resultMap="RagRetrievalTraceResult">
+        SELECT * FROM rag_retrieval_trace WHERE id = #{id}
+    </select>
+
+    <select id="selectRecent" resultMap="RagRetrievalTraceResult">
+        select <include refid="columns"/> from rag_retrieval_trace
+        order by created_at desc, id desc
+        limit #{limit}
+    </select>
+
+    <select id="selectByRunId" resultMap="RagRetrievalTraceResult">
+        select <include refid="columns"/> from rag_retrieval_trace
+        where run_id = #{runId}
+        order by created_at asc, id asc
+        limit #{limit}
+    </select>
+</mapper>

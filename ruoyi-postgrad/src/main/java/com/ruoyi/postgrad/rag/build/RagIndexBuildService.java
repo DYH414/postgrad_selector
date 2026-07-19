@@ -56,6 +56,8 @@ public class RagIndexBuildService {
 
     private static final Duration LOCK_TTL = Duration.ofSeconds(1800L);
 
+    private static final int ERROR_SUMMARY_MAX_LENGTH = 512;
+
     private static final DefaultRedisScript<Long> RELEASE_SCRIPT = new DefaultRedisScript<>(
         "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
         Long.class);
@@ -259,7 +261,8 @@ public class RagIndexBuildService {
 
         } catch (Exception e) {
             String errorCode = deriveErrorCode(currentStage, e);
-            String errorSummary = e.getMessage() != null ? e.getMessage() : errorCode;
+            String errorSummary = truncateErrorSummary(
+                e.getMessage() != null ? e.getMessage() : errorCode);
             if (!aliasSwitched) {
                 indexRunMapper.updateStatus(runId, "FAILED", null, null, null, errorCode, errorSummary);
                 cleanupFailedCandidate(candidateCollection);
@@ -293,6 +296,12 @@ public class RagIndexBuildService {
             log.warn("[RagIndexBuild] Failed to clean candidate collection {}: {}",
                 candidateCollection, cleanupError.getMessage());
         }
+    }
+
+    private static String truncateErrorSummary(String summary) {
+        return summary.length() <= ERROR_SUMMARY_MAX_LENGTH
+            ? summary
+            : summary.substring(0, ERROR_SUMMARY_MAX_LENGTH);
     }
 
     /**
