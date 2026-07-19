@@ -9,6 +9,7 @@ import dev.langchain4j.model.output.TokenUsage;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.util.Map;
+import com.ruoyi.postgrad.observe.llm.service.AiLlmTracePersistenceService;
 import java.util.concurrent.TimeUnit;
 
 public class AiInvocationSnapshotListener implements ChatModelListener {
@@ -18,10 +19,18 @@ public class AiInvocationSnapshotListener implements ChatModelListener {
 
     private final MeterRegistry meterRegistry;
     private final AiInvocationSnapshotRecorder recorder;
+    private final AiLlmTracePersistenceService persistenceService;
 
     public AiInvocationSnapshotListener(MeterRegistry meterRegistry, AiInvocationSnapshotRecorder recorder) {
+        this(meterRegistry, recorder, null);
+    }
+
+    public AiInvocationSnapshotListener(MeterRegistry meterRegistry,
+                                        AiInvocationSnapshotRecorder recorder,
+                                        AiLlmTracePersistenceService persistenceService) {
         this.meterRegistry = meterRegistry;
         this.recorder = recorder;
+        this.persistenceService = persistenceService;
     }
 
     @Override
@@ -52,6 +61,7 @@ public class AiInvocationSnapshotListener implements ChatModelListener {
             tokenUsage != null && tokenUsage.inputTokenCount() != null ? tokenUsage.inputTokenCount() : 0,
             tokenUsage != null && tokenUsage.outputTokenCount() != null ? tokenUsage.outputTokenCount() : 0
         );
+        persistLatest();
     }
 
     @Override
@@ -68,6 +78,11 @@ public class AiInvocationSnapshotListener implements ChatModelListener {
             model,
             summarize(errorContext.error())
         );
+        persistLatest();
+    }
+
+    private void persistLatest() {
+        if (persistenceService != null) persistenceService.persist(recorder.getLatest());
     }
 
     private void recordDurationMetric(String operationKey, String provider, String model, String outcome, long durationMs) {

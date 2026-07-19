@@ -12,6 +12,12 @@ import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotRecorder;
 import com.ruoyi.postgrad.rag.RagStatus;
 import com.ruoyi.postgrad.rag.status.RagIndexStatusService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.ruoyi.postgrad.observe.llm.domain.AiLlmCallTrace;
+import com.ruoyi.postgrad.observe.llm.domain.AiLlmTraceAggregate;
+import com.ruoyi.postgrad.observe.llm.service.AiLlmObserveSnapshot;
+import com.ruoyi.postgrad.observe.llm.service.AiLlmTraceQueryService;
+import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class AiObserveServiceImplTest {
@@ -91,5 +97,35 @@ class AiObserveServiceImplTest {
         assertEquals(2L, overview.getTotalCalls());
         assertEquals(50.0D, overview.getSuccessRate());
         assertEquals(200.0D, overview.getAverageDurationMs());
+    }
+
+    @Test
+    void overviewShouldUsePersistedWindowAndExposeRealtimeMetrics() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        meterRegistry.timer("gen_ai.client.operation.duration",
+            "postgrad.ai.operation", "ai-chat", "outcome", "SUCCESS",
+            "gen_ai.request.model", "live-model", "gen_ai.response.model", "live-model",
+            "gen_ai.provider.name", "openai", "gen_ai.operation.name", "chat")
+            .record(50, java.util.concurrent.TimeUnit.MILLISECONDS);
+        RagIndexStatusService statusService = mock(RagIndexStatusService.class);
+        when(statusService.getStatus()).thenReturn(new RagStatus());
+        AiLlmTraceQueryService queryService = mock(AiLlmTraceQueryService.class);
+        AiLlmCallTrace latest = new AiLlmCallTrace();
+        latest.setOperationKey("ai-report");
+        latest.setOccurredAt(LocalDateTime.of(2026, 7, 19, 10, 0));
+        when(queryService.load(com.ruoyi.postgrad.observe.llm.service.AiObserveWindow.DAYS_7))
+            .thenReturn(new AiLlmObserveSnapshot(
+                new AiLlmTraceAggregate(4, 3, 250, 100, 50),
+                List.of(), List.of(), latest, LocalDateTime.of(2026, 7, 12, 10, 0)));
+
+        AiObserveServiceImpl service = new AiObserveServiceImpl(
+            meterRegistry, statusService, new AiInvocationSnapshotRecorder(), null, queryService);
+        AiObserveOverviewVO overview = service.getOverview("7d");
+
+        assertEquals(4L, overview.getTotalCalls());
+        assertEquals(75.0D, overview.getSuccessRate());
+        assertEquals("7d", overview.getWindow());
+        assertEquals("ai-report", overview.getLatest().getOperationKey());
+        assertEquals(1L, overview.getRealtime().getTotalCalls());
     }
 }

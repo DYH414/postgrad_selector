@@ -11,6 +11,7 @@ import java.util.List;
 import io.micrometer.core.instrument.MeterRegistry;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotListener;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotRecorder;
+import com.ruoyi.postgrad.observe.llm.service.AiLlmTracePersistenceService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -58,10 +59,14 @@ public class AiConfig {
 
     private final MeterRegistry meterRegistry;
     private final AiInvocationSnapshotRecorder snapshotRecorder;
+    private final AiLlmTracePersistenceService tracePersistenceService;
 
-    public AiConfig(MeterRegistry meterRegistry, AiInvocationSnapshotRecorder snapshotRecorder) {
+    public AiConfig(MeterRegistry meterRegistry,
+                    AiInvocationSnapshotRecorder snapshotRecorder,
+                    AiLlmTracePersistenceService tracePersistenceService) {
         this.meterRegistry = meterRegistry;
         this.snapshotRecorder = snapshotRecorder;
+        this.tracePersistenceService = tracePersistenceService;
     }
 
     @Bean
@@ -107,7 +112,7 @@ public class AiConfig {
     private List<dev.langchain4j.model.chat.listener.ChatModelListener> chatModelListeners() {
         return List.of(
             new MicrometerMetricsChatModelListener(meterRegistry),
-            new AiInvocationSnapshotListener(meterRegistry, snapshotRecorder)
+            new AiInvocationSnapshotListener(meterRegistry, snapshotRecorder, tracePersistenceService)
         );
     }
 }

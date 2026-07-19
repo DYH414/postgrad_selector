@@ -19,7 +19,9 @@ import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.HashMap;
 import java.util.Map;
+import com.ruoyi.postgrad.observe.llm.service.AiLlmTracePersistenceService;
 import org.junit.jupiter.api.Test;
+import static org.mockito.Mockito.verify;
 
 class AiInvocationSnapshotListenerTest {
 
@@ -27,7 +29,8 @@ class AiInvocationSnapshotListenerTest {
     void onResponseShouldRecordDurationMetrics() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         AiInvocationSnapshotRecorder recorder = new AiInvocationSnapshotRecorder();
-        AiInvocationSnapshotListener listener = new AiInvocationSnapshotListener(meterRegistry, recorder);
+        AiLlmTracePersistenceService persistence = mock(AiLlmTracePersistenceService.class);
+        AiInvocationSnapshotListener listener = new AiInvocationSnapshotListener(meterRegistry, recorder, persistence);
 
         Map<Object, Object> attributes = new HashMap<>();
         ChatModelRequestContext requestContext = mock(ChatModelRequestContext.class);
@@ -70,13 +73,15 @@ class AiInvocationSnapshotListenerTest {
         assertTrue(timer.totalTime(java.util.concurrent.TimeUnit.MILLISECONDS) >= 0L);
         assertEquals("ai-chat", recorder.getLatest().getOperationKey());
         assertEquals("run-1", recorder.getLatest().getRunId());
+        verify(persistence).persist(recorder.getLatest());
     }
 
     @Test
     void onErrorShouldRecordDurationMetrics() {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         AiInvocationSnapshotRecorder recorder = new AiInvocationSnapshotRecorder();
-        AiInvocationSnapshotListener listener = new AiInvocationSnapshotListener(meterRegistry, recorder);
+        AiLlmTracePersistenceService persistence = mock(AiLlmTracePersistenceService.class);
+        AiInvocationSnapshotListener listener = new AiInvocationSnapshotListener(meterRegistry, recorder, persistence);
 
         Map<Object, Object> attributes = new HashMap<>();
         ChatModelRequestContext requestContext = mock(ChatModelRequestContext.class);
@@ -103,5 +108,6 @@ class AiInvocationSnapshotListenerTest {
 
         assertTrue(timer != null);
         assertEquals(1L, timer.count());
+        verify(persistence).persist(recorder.getLatest());
     }
 }

@@ -14,6 +14,9 @@ public class AiObserveOverviewVO {
     private List<AiObserveGroupVO> operationGroups = new ArrayList<>();
     private AiObserveLatestVO latest = new AiObserveLatestVO();
     private RagQuickStatusVO rag = new RagQuickStatusVO();
+    private String window = "24h";
+    private String windowStart;
+    private AiObserveRealtimeVO realtime = new AiObserveRealtimeVO();
 
     public long getTotalCalls() {
         return totalCalls;
@@ -86,4 +89,11 @@ public class AiObserveOverviewVO {
     public void setRag(RagQuickStatusVO rag) {
         this.rag = rag;
     }
+
+    public String getWindow() { return window; }
+    public void setWindow(String window) { this.window = window; }
+    public String getWindowStart() { return windowStart; }
+    public void setWindowStart(String windowStart) { this.windowStart = windowStart; }
+    public AiObserveRealtimeVO getRealtime() { return realtime; }
+    public void setRealtime(AiObserveRealtimeVO realtime) { this.realtime = realtime; }
 }

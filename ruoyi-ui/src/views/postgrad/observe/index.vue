@@ -7,9 +7,20 @@
           <p>查看 AI 调用的成功率、延迟和 Token 消耗，监控推荐与对话服务状态。</p>
         </div>
         <div class="observe-actions">
+          <el-radio-group v-model="window" size="mini" @change="loadOverview">
+            <el-radio-button v-for="item in windowOptions" :key="item.value" :label="item.value">{{ item.label }}</el-radio-button>
+          </el-radio-group>
           <el-button size="mini" icon="el-icon-refresh" :loading="loading" @click="loadOverview">刷新</el-button>
           <el-button size="mini" @click="$router.push('/postgrad/rag')">查看 RAG 观测台</el-button>
         </div>
+      </div>
+
+      <div class="realtime-strip">
+        <strong>当前进程实时指标</strong>
+        <span>调用 {{ realtime.totalCalls || 0 }} 次</span>
+        <span>成功率 {{ (realtime.successRate || 0).toFixed(1) }}%</span>
+        <span>平均耗时 {{ (realtime.averageDurationMs || 0).toFixed(0) }} ms</span>
+        <span>Token {{ realtime.inputTokens || 0 }} / {{ realtime.outputTokens || 0 }}</span>
       </div>
 
       <div class="observe-kpis">
@@ -58,7 +69,10 @@
           </div>
           <el-descriptions :column="2" border size="small" class="observe-desc">
             <el-descriptions-item label="入口">{{ latest.operationKey || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="Run ID">{{ latest.runId || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="Run ID">
+              <el-button v-if="latest.runId" type="text" size="mini" @click="openRun(latest.runId)">{{ latest.runId }}</el-button>
+              <span v-else>-</span>
+            </el-descriptions-item>
             <el-descriptions-item label="结果">{{ latest.outcome || '-' }}</el-descriptions-item>
             <el-descriptions-item label="Provider">{{ latest.provider || '-' }}</el-descriptions-item>
             <el-descriptions-item label="模型">{{ latest.model || '-' }}</el-descriptions-item>
@@ -103,7 +117,18 @@
 
       <el-drawer title="Run 全链路详情" :visible.sync="runDrawerVisible" size="64%">
         <div class="run-trace-drawer">
-          <h4>Tool 调用</h4>
+          <h4>LLM 调用</h4>
+          <el-table :data="runLlmTraces" size="mini">
+            <el-table-column prop="occurredAt" label="时间" min-width="150" />
+            <el-table-column prop="operationKey" label="入口" min-width="110" />
+            <el-table-column prop="model" label="模型" min-width="150" />
+            <el-table-column prop="outcome" label="结果" width="90" />
+            <el-table-column prop="durationMs" label="耗时" width="90" />
+            <el-table-column prop="inputTokens" label="输入 Token" width="100" />
+            <el-table-column prop="outputTokens" label="输出 Token" width="100" />
+            <el-table-column prop="errorSummary" label="错误摘要" min-width="180" show-overflow-tooltip />
+          </el-table>
+          <h4 class="run-section-title">Tool 调用</h4>
           <el-table :data="runToolTraces" size="mini">
           <el-table-column prop="toolName" label="Tool" min-width="140" />
           <el-table-column prop="status" label="状态" min-width="120" />
@@ -142,8 +167,15 @@ export default {
       loading: false,
       traceLoading: false,
       overview: {},
+      window: '24h',
+      windowOptions: [
+        { value: '24h', label: '24小时' },
+        { value: '7d', label: '7天' },
+        { value: '30d', label: '30天' }
+      ],
       toolTraces: [],
       runToolTraces: [],
+      runLlmTraces: [],
       runRagTraces: [],
       runDrawerVisible: false,
       notice: ''
@@ -156,13 +188,20 @@ export default {
     rag() {
       return this.overview.rag || {}
     },
+    realtime() {
+      return this.overview.realtime || {}
+    },
+    windowLabel() {
+      const item = this.windowOptions.find(option => option.value === this.window)
+      return item ? item.label : '24小时'
+    },
     kpis() {
       return [
-        { key: 'calls', label: '总调用数', value: this.overview.totalCalls || 0, hint: '累计 AI 调用次数' },
-        { key: 'succ', label: '成功率', value: `${(this.overview.successRate || 0).toFixed(1)}%`, hint: '成功/总调用' },
-        { key: 'dur', label: '平均耗时', value: `${(this.overview.averageDurationMs || 0).toFixed(0)} ms`, hint: '所有调用平均响应时间' },
-        { key: 'in', label: '输入 token', value: this.overview.inputTokens || 0, hint: '所有输入 token 汇总' },
-        { key: 'out', label: '输出 token', value: this.overview.outputTokens || 0, hint: '所有输出 token 汇总' },
+        { key: 'calls', label: '总调用数', value: this.overview.totalCalls || 0, hint: `${this.windowLabel}历史统计` },
+        { key: 'succ', label: '成功率', value: `${(this.overview.successRate || 0).toFixed(1)}%`, hint: `${this.windowLabel}成功/总调用` },
+        { key: 'dur', label: '平均耗时', value: `${(this.overview.averageDurationMs || 0).toFixed(0)} ms`, hint: `${this.windowLabel}历史平均` },
+        { key: 'in', label: '输入 token', value: this.overview.inputTokens || 0, hint: `${this.windowLabel}输入汇总` },
+        { key: 'out', label: '输出 token', value: this.overview.outputTokens || 0, hint: `${this.windowLabel}输出汇总` },
         { key: 'rag', label: 'RAG 状态', value: this.rag.indexed ? '已索引' : '未索引', hint: '知识库健康快照' }
       ]
     }
@@ -175,7 +214,7 @@ export default {
     loadOverview() {
       this.loading = true
       this.notice = ''
-      getAiObserveOverview().then(res => {
+      getAiObserveOverview(this.window).then(res => {
         this.overview = (res && res.data) || {}
       }).catch(() => {
         this.notice = 'AI 观测请求失败，请检查后端接口是否启动。'
@@ -195,6 +234,7 @@ export default {
       if (!runId) return
       getRunDetail(runId).then(res => {
         const detail = (res && res.data) || {}
+        this.runLlmTraces = detail.llmTraces || []
         this.runToolTraces = detail.toolTraces || []
         this.runRagTraces = detail.ragTraces || []
         this.runDrawerVisible = true
@@ -252,6 +292,21 @@ export default {
   gap: 10px;
   margin-bottom: 12px;
 }
+
+.realtime-strip {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #475569;
+  font-size: 12px;
+}
+
+.realtime-strip strong { color: #1e3a8a; }
 
 .observe-kpi,
 .observe-panel {

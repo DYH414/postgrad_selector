@@ -3,6 +3,7 @@ package com.ruoyi.web.controller.postgrad;
 import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.postgrad.observe.service.AiObserveService;
+import com.ruoyi.postgrad.observe.llm.service.AiObserveWindow;
 import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,8 +35,13 @@ public class AiObserveController extends BaseController {
 
     @PreAuthorize("@ss.hasPermi('postgrad:aiObserve:view')")
     @GetMapping("/overview")
-    public AjaxResult overview() {
-        return success(aiObserveService.getOverview());
+    public AjaxResult overview(@RequestParam(defaultValue = "24h") String window) {
+        try {
+            AiObserveWindow.parse(window);
+            return success(aiObserveService.getOverview(window));
+        } catch (IllegalArgumentException ex) {
+            return AjaxResult.error(400, ex.getMessage());
+        }
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:aiObserve:view')")
@@ -57,6 +63,7 @@ public class AiObserveController extends BaseController {
         if (runId == null || runId.isBlank()) return error("runId 不能为空");
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("runId", runId);
+        detail.put("llmTraces", aiObserveService.listRunLlmTraces(runId));
         detail.put("toolTraces", aiObserveService.listRunToolTraces(runId));
         detail.put("ragTraces", ragTraceRecorder == null
             ? java.util.List.of()

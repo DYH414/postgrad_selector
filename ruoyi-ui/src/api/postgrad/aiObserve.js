@@ -1,9 +1,10 @@
 import request from '@/utils/request'
 
-export function getAiObserveOverview() {
+export function getAiObserveOverview(window = '24h') {
   return request({
     url: '/postgrad/ai-observe/overview',
-    method: 'get'
+    method: 'get',
+    params: { window }
   })
 }
 

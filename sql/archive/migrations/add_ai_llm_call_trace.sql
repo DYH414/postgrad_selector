@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS ai_llm_call_trace (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    trace_id VARCHAR(36) NOT NULL,
+    run_id VARCHAR(64) NULL,
+    operation_key VARCHAR(64) NOT NULL,
+    provider VARCHAR(64) NOT NULL,
+    model VARCHAR(128) NOT NULL,
+    outcome VARCHAR(16) NOT NULL,
+    duration_ms BIGINT NOT NULL DEFAULT 0,
+    input_tokens INT NOT NULL DEFAULT 0,
+    output_tokens INT NOT NULL DEFAULT 0,
+    error_summary VARCHAR(512) NULL,
+    occurred_at DATETIME(3) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_llm_trace_id (trace_id),
+    KEY idx_llm_occurred (occurred_at),
+    KEY idx_llm_run_time (run_id, occurred_at),
+    KEY idx_llm_operation_time (operation_key, occurred_at),
+    KEY idx_llm_outcome_time (outcome, occurred_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='LLM 调用追踪';

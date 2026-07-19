@@ -18,13 +18,20 @@ class AiObserveControllerTest {
         AiObserveService service = mock(AiObserveService.class);
         AiObserveOverviewVO overview = new AiObserveOverviewVO();
         overview.setTotalCalls(7L);
-        when(service.getOverview()).thenReturn(overview);
+        when(service.getOverview("24h")).thenReturn(overview);
 
         AiObserveController controller = new AiObserveController(service);
-        AjaxResult result = controller.overview();
+        AjaxResult result = controller.overview("24h");
 
         assertEquals(200, result.get(AjaxResult.CODE_TAG));
         assertEquals(7L, ((AiObserveOverviewVO) result.get(AjaxResult.DATA_TAG)).getTotalCalls());
+    }
+
+    @Test
+    void overviewShouldRejectUnsupportedWindow() {
+        AiObserveController controller = new AiObserveController(mock(AiObserveService.class));
+        AjaxResult result = controller.overview("all");
+        assertEquals(400, result.get(AjaxResult.CODE_TAG));
     }
 
     @Test
