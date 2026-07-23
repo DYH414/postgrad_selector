@@ -28,7 +28,8 @@ public class V2BoundChatTools {
             () -> delegate.getProgramDetail(programId));
     }
 
-    @Tool("检索指定 programId 的 RAG 证据。回答某个学校为什么推荐、风险是什么、历年趋势如何时使用。参数 question 是用户具体问题。")
+    @Tool("根据 programId 定位学校并检索该校招生简章等非结构化 RAG 证据。"
+        + "专业分数、名额和历年趋势应使用 getProgramDetail。")
     public String getProgramEvidence(long programId, String question) {
         return runtime.execute(context, "getProgramEvidence", args("programId", programId, "question", truncate(question)),
             () -> delegate.getProgramEvidence(programId, question));

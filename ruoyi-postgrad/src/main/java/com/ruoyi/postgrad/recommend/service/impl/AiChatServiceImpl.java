@@ -35,6 +35,9 @@ import com.ruoyi.postgrad.recommend.tool.V2BoundDraftActionTools;
 import com.ruoyi.postgrad.recommend.tool.V2ChatToolContext;
 import com.ruoyi.postgrad.recommend.tool.V2ChatTools;
 import com.ruoyi.postgrad.recommend.tool.V2DraftActionTools;
+import com.ruoyi.postgrad.recommend.routing.AgentIntentRouter;
+import com.ruoyi.postgrad.recommend.routing.AgentRouteDecision;
+import com.ruoyi.postgrad.recommend.routing.AgentToolScope;
 import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationContext;
 
@@ -86,6 +89,9 @@ public class AiChatServiceImpl implements IAiChatService {
 
     @Autowired
     private AgentToolRuntime agentToolRuntime;
+
+    @Autowired
+    private AgentIntentRouter agentIntentRouter;
 
     @Autowired
     private RecommendationMapper recommendationMapper;
@@ -181,7 +187,19 @@ public class AiChatServiceImpl implements IAiChatService {
             history.add(new ChatMessageVO("user", message));
             saveHistory(userId, history);
 
-            final String finalSystemPrompt = systemPrompt;
+            AiInvocationContext.setOperationKey("ai-chat-route");
+            AgentRouteDecision routeDecision;
+            try {
+                routeDecision = agentIntentRouter.route(message, history);
+            } finally {
+                AiInvocationContext.setOperationKey("ai-chat");
+            }
+            log.info("[AiChat-Route] runId={} route={} reason={}",
+                runId, routeDecision.route(), routeDecision.reason());
+
+            final String finalSystemPrompt = systemPrompt
+                + "\n<runtime_route>" + routeDecision.route()
+                + "；只使用本轮实际提供的工具。</runtime_route>";
 
             // 5. 初始化工具上下文 + 创建流式 assistant
             try {
@@ -204,11 +222,12 @@ public class AiChatServiceImpl implements IAiChatService {
                             callback.onConfirmationRequired(callId, lifecycleRunId, summary, confirmationToken);
                         }
                     });
+            var readTools = new V2BoundChatTools(v2ChatTools, toolContext, agentToolRuntime);
+            var writeTools = new V2BoundDraftActionTools(v2DraftActionTools, toolContext, agentToolRuntime);
+            var scopedTools = AgentToolScope.select(routeDecision.route(), readTools, writeTools);
             AiServices<StreamAssistant> assistantBuilder = AiServices.builder(StreamAssistant.class)
                 .streamingChatModel(streamingChatModel)
-                .tools(
-                    new V2BoundChatTools(v2ChatTools, toolContext, agentToolRuntime),
-                    new V2BoundDraftActionTools(v2DraftActionTools, toolContext, agentToolRuntime))
+                .tools(scopedTools)
                 .hallucinatedToolNameStrategy(request -> ToolExecutionResultMessage.from(request,
                     agentToolRuntime.rejectWithoutExecution(toolContext, request.name(), "TOOL_NOT_FOUND",
                         "请求的工具不存在，请选择已提供的工具。", true)))
@@ -398,17 +417,15 @@ public class AiChatServiceImpl implements IAiChatService {
     }
 
     /**
-     * 构建系统提示词：加载模板 + 注入用户画像 + 草稿上下文。
+     * 构建系统提示词：只注入稳定的用户画像。动态草稿由 Tool 按需读取，
+     * 避免每个问题都被草稿语境带偏。
      */
     private String buildSystemPrompt(Long userId) {
         String template = loadPromptTemplate();
         DraftVO draft = draftService.getDraft(userId);
-        String draftCtx = buildDraftContextText(draft);
         String profileCtx = buildProfileContextText(draft);
 
-        return template
-            .replace("{profileContext}", profileCtx)
-            .replace("{draftContext}", draftCtx);
+        return template.replace("{profileContext}", profileCtx);
     }
 
     /**

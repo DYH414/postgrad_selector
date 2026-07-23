@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.observe.tool.service.AiToolTraceService;
 import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagSearchTestRequest;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 class AgentRuntimeFlowContractTest {
 
@@ -44,7 +46,9 @@ class AgentRuntimeFlowContractTest {
         RagSearchTestResponse searchResponse = new RagSearchTestResponse();
         searchResponse.setRetrievedCount(1);
         searchResponse.setSelectedCount(1);
-        searchResponse.setAppliedFilters(Map.of("program_id", "202"));
+        searchResponse.setAppliedFilters(Map.of(
+            "school_name", "杭州电子科技大学",
+            "doc_type", "admission_guide"));
         searchResponse.setChunks(List.of(selectedRiskChunk()));
         when(retrieval.retrieve(any(RagSearchTestRequest.class)))
             .thenReturn(new RagRetrievalResult(searchResponse, List.of()));
@@ -55,8 +59,14 @@ class AgentRuntimeFlowContractTest {
         Field field = V2ChatTools.class.getDeclaredField("ragEvidenceService");
         field.setAccessible(true);
         field.set(tools, evidence);
-        var toolContext = V2ChatToolContext.init(7L, mock(StringRedisTemplate.class),
-            mock(RecommendationMapper.class), run.getRunId());
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> values = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        RowMap program = new RowMap();
+        program.put("schoolName", "杭州电子科技大学");
+        when(mapper.selectProgramForRecommendation(202L)).thenReturn(program);
+        var toolContext = V2ChatToolContext.init(7L, redis, mapper, run.getRunId());
 
         String toolResult = new V2BoundChatTools(tools, toolContext,
             new AgentToolRuntime(mock(AiToolTraceService.class)))
@@ -79,13 +89,13 @@ class AgentRuntimeFlowContractTest {
 
     private RagChunkResult selectedRiskChunk() {
         RagChunkResult chunk = new RagChunkResult();
-        chunk.setChunkTitle("杭州电子科技大学 电子信息 - 风险因素");
-        chunk.setSourceName("数据库生成文档");
+        chunk.setChunkTitle("杭州电子科技大学 2025 年硕士研究生招生简章");
+        chunk.setSourceName("杭州电子科技大学-招生简章.md");
         chunk.setSourceUrl("https://example.com/source");
-        chunk.setDocType("program_history");
-        chunk.setProgramId("202");
-        chunk.setSection("risk_factors");
-        chunk.setContentPreview("统考名额较少，需要关注历年波动风险。");
+        chunk.setDocType("admission_guide");
+        chunk.setSchoolName("杭州电子科技大学");
+        chunk.setSection("application_requirements");
+        chunk.setContentPreview("考生须符合招生简章中的报考条件。");
         chunk.setSelectedForPrompt(true);
         return chunk;
     }

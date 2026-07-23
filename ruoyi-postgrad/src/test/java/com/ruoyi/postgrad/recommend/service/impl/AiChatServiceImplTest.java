@@ -138,8 +138,10 @@ class AiChatServiceImplTest {
         assertFalse(prompt.contains("---ACTION---"));
         assertFalse(prompt.contains("\"type\":\"remove\""));
         assertTrue(prompt.contains("removeDraftCandidate(programId)"));
-        assertTrue(prompt.contains("getProgramEvidence(programId, question)"));
-        assertTrue(prompt.contains("必须先调用 getProgramEvidence"));
+        assertFalse(prompt.contains("{draftContext}"),
+            "动态草稿不应全局注入 System Prompt，应由草稿 Tool 按需读取");
+        assertTrue(prompt.contains("结构化招生事实"));
+        assertTrue(prompt.contains("非结构化文档"));
     }
 
     // ═══════════ H3: chat() 并发锁拒绝 ═══════════
@@ -215,10 +217,12 @@ class AiChatServiceImplTest {
 
         assertTrue(prompt.contains("searchKnowledgeBase"),
             "通用知识检索必须通过 searchKnowledgeBase Tool 触发");
-        assertTrue(prompt.contains("getProgramEvidence"),
-            "具体学校/专业证据检索必须通过 getProgramEvidence Tool 触发");
+        assertTrue(prompt.contains("searchPrograms"),
+            "学校和专业结构化事实必须通过 MySQL Tool 获取");
         assertTrue(prompt.contains("不得依赖自动注入的通用 RAG 上下文"),
             "Prompt 应明确禁止依赖后端自动 general RAG 注入");
+        assertFalse(prompt.contains("系统已自动从工作集补充"),
+            "已废弃的自动补位行为不能继续出现在 Prompt 中");
     }
 
     private static void injectField(Object target, String fieldName, Object value) throws Exception {

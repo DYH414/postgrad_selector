@@ -78,7 +78,8 @@ public class V2ChatTools {
         return sb.toString();
     }
 
-    @Tool("检索指定 programId 的 RAG 证据。回答某个学校为什么推荐、风险是什么、历年趋势如何时使用。参数 question 是用户具体问题。")
+    @Tool("根据 programId 定位学校并检索该校招生简章等非结构化 RAG 证据。"
+        + "专业分数、名额和历年趋势应使用 getProgramDetail，不由本工具提供。")
     public String getProgramEvidence(long programId, String question) {
         V2ChatToolContext.Context ctx = V2ChatToolContext.current();
         java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
@@ -92,11 +93,19 @@ public class V2ChatTools {
         }
 
         try {
+            String schoolName = resolveSchoolName(ctx, programId);
+            if (schoolName == null || schoolName.isBlank()) {
+                result.put("ok", false);
+                result.put("error", "program_not_found");
+                result.put("message", "未找到该专业对应的学校。");
+                return JSON.toJSONString(result);
+            }
             RagEvidenceRequest request = new RagEvidenceRequest();
-            request.setProgramId(programId);
+            request.setSchoolName(schoolName);
             request.setRunId(ctx != null ? ctx.runId() : null);
-            request.setQuery(question != null && !question.isBlank() ? question : "推荐依据 风险 历年趋势");
-            request.setDocType("program_history");
+            request.setQuery(schoolName + " "
+                + (question != null && !question.isBlank() ? question : "招生简章 报考条件 培养信息"));
+            request.setDocType("admission_guide");
             request.setMaxResults(6);
             request.setRerankTopN(3);
             RagEvidenceResponse evidence = ragEvidenceService.retrieveProgramEvidence(request);
@@ -116,6 +125,20 @@ public class V2ChatTools {
             result.put("message", e.getMessage());
             return JSON.toJSONString(result);
         }
+    }
+
+    private String resolveSchoolName(V2ChatToolContext.Context ctx, long programId) {
+        if (ctx == null) return null;
+        List<CandidateCardVO> pool = loadWorkspaceCandidates(ctx.userId());
+        if (pool.isEmpty()) pool = loadPoolSnapshot(ctx.userId());
+        for (CandidateCardVO card : pool) {
+            if (card.getFact() != null && programId == card.getFact().getProgramId()) {
+                return card.getFact().getSchoolName();
+            }
+        }
+        RowMap row = ctx.mapper().selectProgramForRecommendation(programId);
+        Object schoolName = row != null ? row.get("schoolName") : null;
+        return schoolName != null ? String.valueOf(schoolName) : null;
     }
 
     @Tool("在候选工作集中搜索学校，支持按关键词、档位(tier)、地区(region)过滤。" +
@@ -144,9 +167,10 @@ public class V2ChatTools {
             if (results.size() >= 10) break;
         }
 
-        // 工作集无结果且有地区筛选 → 回退到全国 DB 搜索
-        if (results.isEmpty() && r != null) {
-            log.info("[ChatTool] searchPrograms workspace empty for region='{}', falling back to DB", r);
+        // 工作集无结果时按学校/专业关键词或地区回退全国 DB。
+        if (results.isEmpty() && (!kw.isEmpty() || r != null)) {
+            log.info("[ChatTool] searchPrograms workspace empty for keyword='{}', region='{}', falling back to DB",
+                kw, r);
             results = fallbackDbSearch(ctx, kw, t, r);
         }
 
@@ -157,8 +181,15 @@ public class V2ChatTools {
     private boolean matchSearch(SchoolFact f, String kw, String tier, String region) {
         if (!kw.isEmpty()) {
             String school = f.getSchoolName() != null ? f.getSchoolName().toLowerCase() : "";
+            String college = f.getCollegeName() != null ? f.getCollegeName().toLowerCase() : "";
             String program = f.getProgramName() != null ? f.getProgramName().toLowerCase() : "";
-            if (!school.contains(kw) && !program.contains(kw)) return false;
+            String code = f.getProgramCode() != null ? f.getProgramCode().toLowerCase() : "";
+            if (!bidirectionalContains(kw, school)
+                && !bidirectionalContains(kw, college)
+                && !bidirectionalContains(kw, program)
+                && !bidirectionalContains(kw, code)) {
+                return false;
+            }
         }
         if (tier != null && !tier.equals(f.inferTier())) return false;
         if (region != null) {
@@ -167,6 +198,16 @@ public class V2ChatTools {
             if (!prov.contains(region) && !city.contains(region)) return false;
         }
         return true;
+    }
+
+    private boolean bidirectionalContains(String query, String candidate) {
+        if (query == null || candidate == null || candidate.isBlank()) {
+            return false;
+        }
+        String normalizedQuery = query.replaceAll("[\\s·・,，、/]+", "");
+        String normalizedCandidate = candidate.replaceAll("[\\s·・,，、/]+", "");
+        return normalizedQuery.contains(normalizedCandidate)
+            || normalizedCandidate.contains(normalizedQuery);
     }
 
     /** 搜索结果项（包含足够分析所需的所有字段） */
@@ -332,19 +373,69 @@ public class V2ChatTools {
         List<CandidateCardVO> pool = loadPoolSnapshot(ctx.userId());
         CandidateCardVO c1 = findByProgramId(pool, programId1);
         CandidateCardVO c2 = findByProgramId(pool, programId2);
+        ComparisonFact left = comparisonFact(ctx, c1, programId1);
+        ComparisonFact right = comparisonFact(ctx, c2, programId2);
 
         StringBuilder sb = new StringBuilder();
         sb.append("=== 学校对比 ===\n\n");
 
-        sb.append(String.format("%-20s %-30s %-30s\n", "指标", schoolLabel(c1, programId1), schoolLabel(c2, programId2)));
-        sb.append(String.format("%-20s %-30s %-30s\n", "学校层次", val(c1, f -> f.getSchoolTier()), val(c2, f -> f.getSchoolTier())));
-        sb.append(String.format("%-20s %-30s %-30s\n", "录取均分", val(c1, f -> f.getAvgAdmittedScore()), val(c2, f -> f.getAvgAdmittedScore())));
-        sb.append(String.format("%-20s %-30s %-30s\n", "分数差距", val(c1, f -> f.getScoreGap()), val(c2, f -> f.getScoreGap())));
-        sb.append(String.format("%-20s %-30s %-30s\n", "招生名额", quotaVal(c1), quotaVal(c2)));
-        sb.append(String.format("%-20s %-30s %-30s\n", "城市", val(c1, f -> f.getCity()), val(c2, f -> f.getCity())));
-        sb.append(String.format("%-20s %-30s %-30s\n", "数据完整度", val(c1, f -> f.getDataCompleteness()), val(c2, f -> f.getDataCompleteness())));
+        sb.append(String.format("%-20s %-30s %-30s\n", "指标", left.label(), right.label()));
+        sb.append(String.format("%-20s %-30s %-30s\n", "学校层次", left.schoolTier(), right.schoolTier()));
+        sb.append(String.format("%-20s %-30s %-30s\n", "录取均分", left.avgScore(), right.avgScore()));
+        sb.append(String.format("%-20s %-30s %-30s\n", "分数差距", left.scoreGap(), right.scoreGap()));
+        sb.append(String.format("%-20s %-30s %-30s\n", "招生名额", left.quota(), right.quota()));
+        sb.append(String.format("%-20s %-30s %-30s\n", "城市", left.city(), right.city()));
+        sb.append(String.format("%-20s %-30s %-30s\n", "数据完整度", left.completeness(), right.completeness()));
 
         return sb.toString();
+    }
+
+    private ComparisonFact comparisonFact(
+        V2ChatToolContext.Context ctx, CandidateCardVO card, long programId) {
+        if (card != null && card.getFact() != null) {
+            var fact = card.getFact();
+            Integer quota = fact.getUnifiedExamQuota() != null
+                ? fact.getUnifiedExamQuota() : fact.getPlanCount();
+            return new ComparisonFact(
+                text(fact.getSchoolName(), "programId=" + programId),
+                text(fact.getSchoolTier(), "-"),
+                text(fact.getAvgAdmittedScore(), "-"),
+                text(fact.getScoreGap(), "-"),
+                text(quota, "-"),
+                text(fact.getCity(), "-"),
+                text(fact.getDataCompleteness(), "-")
+            );
+        }
+
+        RowMap row = ctx.mapper().selectProgramForRecommendation(programId);
+        if (row == null) {
+            return new ComparisonFact("programId=" + programId, "-", "-", "-", "-", "-", "-");
+        }
+        Object quota = row.get("unifiedExamQuota") != null
+            ? row.get("unifiedExamQuota") : row.get("planCount");
+        return new ComparisonFact(
+            text(row.get("schoolName"), "programId=" + programId),
+            text(row.get("schoolTier"), "-"),
+            text(row.get("avgAdmittedScore"), "-"),
+            "-",
+            text(quota, "-"),
+            text(row.get("city"), "-"),
+            text(row.get("dataCompleteness"), "-")
+        );
+    }
+
+    private static String text(Object value, String fallback) {
+        return value != null ? String.valueOf(value) : fallback;
+    }
+
+    private record ComparisonFact(
+        String label,
+        String schoolTier,
+        String avgScore,
+        String scoreGap,
+        String quota,
+        String city,
+        String completeness) {
     }
 
     @Tool("不限定学校的 RAG 知识库检索，用于回答考研通识问题（如 408 考什么、国家线多少、调剂政策）。" +

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import org.mockito.ArgumentCaptor;
@@ -19,6 +20,7 @@ import com.ruoyi.postgrad.rag.knowledge.RagCitation;
 import com.ruoyi.postgrad.rag.service.RagEvidenceService;
 import java.util.Map;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
+import com.ruoyi.postgrad.domain.RowMap;
 import org.junit.jupiter.api.Test;
 
 class V2ChatToolsRagEvidenceTest {
@@ -26,13 +28,16 @@ class V2ChatToolsRagEvidenceTest {
     @Test
     void getProgramEvidenceDelegatesToRagEvidenceService() throws Exception {
         RagEvidenceService evidenceService = mock(RagEvidenceService.class);
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        RowMap program = new RowMap();
+        program.put("schoolName", "广州大学");
+        when(mapper.selectProgramForRecommendation(101L)).thenReturn(program);
         RagEvidenceResponse response = new RagEvidenceResponse();
         RagCitation citation = new RagCitation();
-        citation.setTitle("广州大学 网络空间安全 - 风险因素");
-        citation.setProgramId("101");
-        citation.setDocType("program_history");
-        citation.setSection("risk_factors");
-        citation.setContentPreview("复试线波动较大，需要结合历年趋势判断。");
+        citation.setTitle("广州大学 2025 年硕士研究生招生简章");
+        citation.setSchoolName("广州大学");
+        citation.setDocType("admission_guide");
+        citation.setContentPreview("考生须符合招生简章规定的报考条件。");
         response.setCitations(java.util.List.of(citation));
         when(evidenceService.retrieveProgramEvidence(any(RagEvidenceRequest.class))).thenReturn(response);
 
@@ -41,25 +46,38 @@ class V2ChatToolsRagEvidenceTest {
         field.setAccessible(true);
         field.set(tools, evidenceService);
 
-        String json = tools.getProgramEvidence(101L, "这个学校有什么风险");
-        Map<String, Object> result = JSON.parseObject(json, Map.class);
+        V2ChatToolContext.init(7L, mock(StringRedisTemplate.class, RETURNS_DEEP_STUBS), mapper, "run-1");
+        try {
+            String json = tools.getProgramEvidence(101L, "这个学校的报考条件");
+            Map<String, Object> result = JSON.parseObject(json, Map.class);
 
-        assertEquals(true, result.get("ok"));
-        assertEquals(101, ((Number) result.get("programId")).intValue());
-        assertTrue(json.contains("risk_factors"));
-        assertTrue(json.contains("复试线波动"));
+            assertEquals(true, result.get("ok"));
+            assertEquals(101, ((Number) result.get("programId")).intValue());
+            assertTrue(json.contains("admission_guide"));
+            assertTrue(json.contains("报考条件"));
+            ArgumentCaptor<RagEvidenceRequest> captor = ArgumentCaptor.forClass(RagEvidenceRequest.class);
+            verify(evidenceService).retrieveProgramEvidence(captor.capture());
+            assertEquals("广州大学", captor.getValue().getSchoolName());
+            assertEquals("admission_guide", captor.getValue().getDocType());
+            assertEquals(null, captor.getValue().getProgramId());
+        } finally {
+            V2ChatToolContext.clear();
+        }
     }
 
     @Test
     void boundChatToolsExposeProgramEvidenceTool() throws Exception {
         RagEvidenceService evidenceService = mock(RagEvidenceService.class);
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        RowMap program = new RowMap();
+        program.put("schoolName", "杭州电子科技大学");
+        when(mapper.selectProgramForRecommendation(202L)).thenReturn(program);
         RagEvidenceResponse response = new RagEvidenceResponse();
         RagCitation citation = new RagCitation();
-        citation.setTitle("杭州电子科技大学 电子信息 - 风险因素");
-        citation.setProgramId("202");
-        citation.setDocType("program_history");
-        citation.setSection("risk_factors");
-        citation.setContentPreview("统考名额较少，需要关注波动风险。");
+        citation.setTitle("杭州电子科技大学 2025 年硕士研究生招生简章");
+        citation.setSchoolName("杭州电子科技大学");
+        citation.setDocType("admission_guide");
+        citation.setContentPreview("具体招生专业和条件以招生简章为准。");
         response.setCitations(java.util.List.of(citation));
         when(evidenceService.retrieveProgramEvidence(any(RagEvidenceRequest.class))).thenReturn(response);
 
@@ -68,18 +86,23 @@ class V2ChatToolsRagEvidenceTest {
         field.setAccessible(true);
         field.set(tools, evidenceService);
 
-        var context = V2ChatToolContext.init(7L, mock(StringRedisTemplate.class),
-            mock(RecommendationMapper.class), "run-1");
+        var context = V2ChatToolContext.init(7L,
+            mock(StringRedisTemplate.class, RETURNS_DEEP_STUBS), mapper, "run-1");
         V2BoundChatTools boundTools = new V2BoundChatTools(tools, context,
             new AgentToolRuntime(mock(AiToolTraceService.class)));
-        String json = boundTools.getProgramEvidence(202L, "为什么推荐，有什么风险");
+        try {
+            String json = boundTools.getProgramEvidence(202L, "有哪些报考条件");
 
-        assertTrue(json.contains("risk_factors"));
-        assertTrue(json.contains("统考名额较少"));
-        assertTrue(json.contains("run-1"));
-        ArgumentCaptor<RagEvidenceRequest> captor = ArgumentCaptor.forClass(RagEvidenceRequest.class);
-        verify(evidenceService).retrieveProgramEvidence(captor.capture());
-        assertEquals("run-1", captor.getValue().getRunId());
+            assertTrue(json.contains("admission_guide"));
+            assertTrue(json.contains("招生专业和条件"));
+            assertTrue(json.contains("run-1"));
+            ArgumentCaptor<RagEvidenceRequest> captor = ArgumentCaptor.forClass(RagEvidenceRequest.class);
+            verify(evidenceService).retrieveProgramEvidence(captor.capture());
+            assertEquals("run-1", captor.getValue().getRunId());
+            assertEquals("杭州电子科技大学", captor.getValue().getSchoolName());
+        } finally {
+            V2ChatToolContext.clear();
+        }
     }
 
     @Test
