@@ -80,7 +80,7 @@ class RagEvaluationServiceTest {
 
         assertEquals(18, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
         assertEquals(18, report.getResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
-        assertEquals(5, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getNoAnswerCases());
+        assertEquals(0, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getNoAnswerCases());
         assertEquals(4, report.getSafetyResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
         assertEquals(4, report.getSafetyResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
         assertEquals(4, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
@@ -211,7 +211,7 @@ class RagEvaluationServiceTest {
     }
 
     @Test
-    void defaultCasesShouldMatchCurrentUnstructuredCorpusBoundary() {
+    void retrievalCasesShouldMatchCurrentUnstructuredCorpusBoundary() {
         RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagChunkResult general = new RagChunkResult();
         general.setSourceName("02-考研国家线与复试.md");
@@ -232,8 +232,20 @@ class RagEvaluationServiceTest {
             .thenReturn(new RagRetrievalResult(schoolResponse, List.of()))
             .thenReturn(new RagRetrievalResult(empty, List.of()));
 
+        RagEvaluationCase generalCase = new RagEvaluationCase(
+            "smoke-general", "没过国家线还能调剂吗", Map.of());
+        generalCase.setRelevantSources(List.of("02-考研国家线与复试"));
+        RagEvaluationCase schoolCase = new RagEvaluationCase(
+            "smoke-school", "杭州电子科技大学研究生学费",
+            Map.of("school_name", "杭州电子科技大学", "doc_type", "admission_guide"));
+        schoolCase.setRelevantSources(List.of("杭州电子科技大学-招生简章"));
+        RagEvaluationCase noAnswerCase = new RagEvaluationCase(
+            "smoke-no-answer", "星河大学招生简章",
+            Map.of("school_name", "星河大学", "doc_type", "admission_guide"));
+        noAnswerCase.setNoAnswer(true);
+
         RagEvaluationResult result = new RagEvaluationService(retrievalService)
-            .run(RagEvaluationDataset.smokeTests());
+            .run(List.of(generalCase, schoolCase, noAnswerCase));
 
         assertTrue(result.getCases().stream().anyMatch(c -> c.getQuery().contains("国家线")));
         assertEquals(3, result.getTotalCases());

@@ -33,11 +33,19 @@ public class RagAnswerEvaluationDatasetLoader {
     public String verifyAnswerV1Checksum() {
         byte[] bytes = readBytes(RESOURCE);
         Manifest manifest = JSON.parseObject(readBytes(MANIFEST), Manifest.class);
-        if (manifest.caseCount != CASE_COUNT || !Objects.equals(manifest.sha256, sha256(bytes))) {
+        if (manifest.caseCount != CASE_COUNT
+            || !Objects.equals(manifest.sha256, sha256(canonicalTextBytes(bytes)))) {
             throw new IllegalStateException(RESOURCE + " manifest mismatch");
         }
         loadAnswerV1();
         return manifest.sha256;
+    }
+
+    private byte[] canonicalTextBytes(byte[] bytes) {
+        String text = new String(bytes, StandardCharsets.UTF_8)
+            .replace("\r\n", "\n")
+            .replace('\r', '\n');
+        return text.getBytes(StandardCharsets.UTF_8);
     }
 
     private byte[] readBytes(String path) {

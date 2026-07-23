@@ -47,17 +47,19 @@ class RagEvaluationDatasetLoaderTest {
         List<RagEvaluationCase> cases = loader.loadFrozenV1();
 
         RagEvaluationCase first = cases.get(0);
-        assertEquals("general-01", first.getId());
-        assertEquals("408 统考考哪些科目？每门占多少？", first.getQuery());
-        assertTrue(first.getExpectedMetadata().isEmpty());
-        assertEquals("01-408考试介绍", first.getRelevantSources().get(0));
+        assertEquals("fact-test-01", first.getId());
+        assertEquals("深圳大学 人工智能 2025 复试线", first.getQuery());
+        assertEquals("15", first.getExpectedMetadata().get("school_id"));
+        assertEquals("1768", first.getExpectedMetadata().get("program_id"));
+        assertEquals("admission_score", first.getRelevantConditions().get(0).getSection());
 
         RagEvaluationCase general = cases.stream()
-            .filter(testCase -> "general-02".equals(testCase.getId()))
+            .filter(testCase -> "general-test-01".equals(testCase.getId()))
             .findFirst()
             .orElseThrow();
         assertEquals("考研 A 区和 B 区有什么区别？", general.getQuery());
-        assertEquals("02-考研国家线与复试", general.getRelevantSources().get(0));
+        assertTrue(general.getExpectedMetadata().isEmpty());
+        assertEquals("01-408考试介绍", general.getRelevantSources().get(0));
     }
 
     @Test
@@ -120,6 +122,20 @@ class RagEvaluationDatasetLoaderTest {
 
         assertThrows(IllegalStateException.class,
             () -> loader.verifyChecksum(fixture, manifest, "manifest-fixture", 4));
+    }
+
+    @Test
+    void checksumTreatsCrLfAndLfAsTheSameFrozenText() {
+        byte[] lfFixture = jsonLines(4);
+        byte[] crlfFixture = new String(lfFixture, StandardCharsets.UTF_8)
+            .replace("\n", "\r\n")
+            .getBytes(StandardCharsets.UTF_8);
+        RagEvaluationDatasetLoader.Manifest manifest = new RagEvaluationDatasetLoader.Manifest();
+        manifest.caseCount = 4;
+        manifest.sha256 = sha256Hex(lfFixture);
+
+        assertEquals(manifest.sha256,
+            loader.verifyChecksum(crlfFixture, manifest, "crlf-fixture", 4));
     }
 
     private static byte[] jsonLines(int count) {

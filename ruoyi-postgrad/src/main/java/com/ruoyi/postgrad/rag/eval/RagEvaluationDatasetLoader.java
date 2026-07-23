@@ -96,11 +96,18 @@ public class RagEvaluationDatasetLoader {
             throw new IllegalStateException(sourceName + " manifest caseCount mismatch");
         }
         readJsonLines(bytes, sourceName, expectedCount);
-        String actual = sha256Hex(bytes);
+        String actual = sha256Hex(canonicalTextBytes(bytes));
         if (!Objects.equals(actual, manifest.sha256)) {
             throw new IllegalStateException(sourceName + " checksum mismatch");
         }
         return actual;
+    }
+
+    private byte[] canonicalTextBytes(byte[] bytes) {
+        String text = new String(bytes, StandardCharsets.UTF_8)
+            .replace("\r\n", "\n")
+            .replace('\r', '\n');
+        return text.getBytes(StandardCharsets.UTF_8);
     }
 
     private byte[] readBytes(String path) {
