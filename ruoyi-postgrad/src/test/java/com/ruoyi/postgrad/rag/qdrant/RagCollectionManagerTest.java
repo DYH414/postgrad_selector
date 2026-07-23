@@ -5,13 +5,16 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
 
+@EnabledIfEnvironmentVariable(named = "RUN_QDRANT_INTEGRATION_TESTS", matches = "true")
 class RagCollectionManagerTest {
 
     private static final String QDRANT_URL = "http://localhost:6333";
-    private static final String TEST_ALIAS = "postgrad_rag_test_alias";
+    private static final String TEST_ALIAS =
+        "postgrad_rag_test_alias_" + UUID.randomUUID().toString().substring(0, 8);
 
     private RestTemplate restTemplate;
     private RagCollectionManager manager;
@@ -20,7 +23,7 @@ class RagCollectionManagerTest {
     void setUp() {
         restTemplate = new RestTemplate();
         manager = new RagCollectionManager(restTemplate, QDRANT_URL);
-        cleanupTestArtifacts();
+        deleteAliasSafely(TEST_ALIAS);
     }
 
     @Test
@@ -131,11 +134,6 @@ class RagCollectionManagerTest {
 
     // ---- helpers ----
 
-    private void cleanupTestArtifacts() {
-        deleteAliasSafely(TEST_ALIAS);
-        deleteLeftoverVersionedCollections();
-    }
-
     private void deleteAliasSafely(String alias) {
         try {
             deleteAlias(alias);
@@ -154,33 +152,6 @@ class RagCollectionManagerTest {
 
         restTemplate.postForEntity(QDRANT_URL + "/collections/aliases",
             new HttpEntity<>(body, jsonHeaders()), String.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    private void deleteLeftoverVersionedCollections() {
-        try {
-            Map<String, Object> response = restTemplate.getForObject(
-                QDRANT_URL + "/collections", Map.class);
-            if (response == null) return;
-
-            Map<String, Object> result = (Map<String, Object>) response.get("result");
-            if (result == null) return;
-
-            List<Map<String, Object>> collections =
-                (List<Map<String, Object>>) result.get("collections");
-            if (collections == null) return;
-
-            for (Map<String, Object> col : collections) {
-                String name = (String) col.get("name");
-                if (name != null && name.startsWith("postgrad_rag_") && !name.equals("postgrad_rag_main")) {
-                    try {
-                        manager.deleteCollection(name);
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     private static HttpHeaders jsonHeaders() {
