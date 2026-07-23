@@ -16,9 +16,12 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
@@ -66,9 +69,27 @@ public class RagEvaluationService {
      * calculating abstention separately from the safety set.
      */
     public RagEvaluationRunReport runFrozenV1Ablation() {
-        List<RagEvaluationCase> frozenCases = datasetLoader.loadFrozenV1();
-        List<RagEvaluationCase> safetyCases = datasetLoader.loadSafetyV1();
+        return runFrozenAblation(
+            "frozen-v1", datasetLoader.loadFrozenV1(), datasetLoader.verifyFrozenV1Checksum(),
+            "safety-v1", datasetLoader.loadSafetyV1(), datasetLoader.verifySafetyV1Checksum());
+    }
+
+    /**
+     * Runs the reviewed V3 corpus benchmark. Positive ranking metrics and
+     * abstention metrics remain separate so negative cases cannot dilute MRR.
+     */
+    public RagEvaluationRunReport runFrozenV3Ablation() {
+        return runFrozenAblation(
+            "frozen-v3", datasetLoader.loadFrozenV3(), datasetLoader.verifyFrozenV3Checksum(),
+            "safety-v3", datasetLoader.loadSafetyV3(), datasetLoader.verifySafetyV3Checksum());
+    }
+
+    private RagEvaluationRunReport runFrozenAblation(
+        String rankingDataset, List<RagEvaluationCase> frozenCases, String frozenChecksum,
+        String safetyDataset, List<RagEvaluationCase> safetyCases, String safetyChecksum) {
         Map<RagEvaluationMode, RagEvaluationResult> results = new EnumMap<>(RagEvaluationMode.class);
+        Map<RagEvaluationMode, RagEvaluationResult> safetyResults =
+            new EnumMap<>(RagEvaluationMode.class);
         Map<RagEvaluationMode, RagEvaluationRunReport.AbstentionMetrics> abstention =
             new EnumMap<>(RagEvaluationMode.class);
         Map<RagEvaluationMode, RagEvaluationRunReport.LatencyMetrics> latencies =
@@ -76,25 +97,64 @@ public class RagEvaluationService {
 
         for (RagEvaluationMode mode : RagEvaluationMode.values()) {
             List<Long> modeLatencies = new ArrayList<>();
-            RagEvaluationResult rankingResult = run("frozen-v1-" + mode.name().toLowerCase(),
+            RagEvaluationResult rankingResult = run(rankingDataset + "-" + mode.name().toLowerCase(),
                 frozenCases, mode.isSkipRerank(), modeLatencies);
-            RagEvaluationResult safetyResult = run("safety-v1-" + mode.name().toLowerCase(),
+            RagEvaluationResult safetyResult = run(safetyDataset + "-" + mode.name().toLowerCase(),
                 safetyCases, mode.isSkipRerank(), modeLatencies);
             results.put(mode, rankingResult);
-            abstention.put(mode, new RagEvaluationRunReport.AbstentionMetrics(
+            safetyResults.put(mode, safetyResult);
+            RagEvaluationRunReport.AbstentionMetrics abstentionMetrics =
+                new RagEvaluationRunReport.AbstentionMetrics(
                 safetyResult.getNoAnswerCases(), safetyResult.getPassedCases(),
-                safetyResult.getNoAnswerAccuracy(), safetyResult.getFalsePositiveRate()));
+                safetyResult.getNoAnswerAccuracy(), safetyResult.getFalsePositiveRate());
+            abstentionMetrics.setTechnicalErrorCases((int) safetyResult.getCases().stream()
+                .filter(item -> item.getTechnicalErrorCode() != null).count());
+            abstention.put(mode, abstentionMetrics);
             latencies.put(mode, latencyMetrics(modeLatencies));
         }
 
         RagEvaluationRunReport report = new RagEvaluationRunReport();
         report.setResults(results);
+        report.setSafetyResults(safetyResults);
         report.setAbstentionMetrics(abstention);
         report.setLatencyMetrics(latencies);
+        report.setPairedComparison(pairedComparison(
+            results.get(RagEvaluationMode.VECTOR_ONLY),
+            results.get(RagEvaluationMode.VECTOR_RERANK)));
         report.setRunMetadata(buildRuntimeMetadata(
-            datasetLoader.verifyFrozenV1Checksum(), datasetLoader.verifySafetyV1Checksum()));
-        writeReport(report);
+            rankingDataset, frozenCases.size(), frozenChecksum,
+            safetyDataset, safetyCases.size(), safetyChecksum));
+        writeReport(report, rankingDataset);
         return report;
+    }
+
+    static RagEvaluationRunReport.PairedComparison pairedComparison(
+        RagEvaluationResult vectorOnly, RagEvaluationResult reranked) {
+        Map<String, Integer> baselineRanks = new HashMap<>();
+        for (RagEvaluationResult.RagEvaluationCaseResult item : vectorOnly.getCases()) {
+            baselineRanks.put(item.getId(), item.getFirstRelevantRank());
+        }
+        int compared = 0;
+        int improved = 0;
+        int tied = 0;
+        int regressed = 0;
+        for (RagEvaluationResult.RagEvaluationCaseResult item : reranked.getCases()) {
+            Integer baselineRank = baselineRanks.get(item.getId());
+            if (baselineRank == null) continue;
+            compared++;
+            int comparison = compareRanks(item.getFirstRelevantRank(), baselineRank);
+            if (comparison < 0) improved++;
+            else if (comparison > 0) regressed++;
+            else tied++;
+        }
+        return new RagEvaluationRunReport.PairedComparison(
+            compared, improved, tied, regressed);
+    }
+
+    private static int compareRanks(int rerankedRank, int baselineRank) {
+        int normalizedReranked = rerankedRank < 1 ? Integer.MAX_VALUE : rerankedRank;
+        int normalizedBaseline = baselineRank < 1 ? Integer.MAX_VALUE : baselineRank;
+        return Integer.compare(normalizedReranked, normalizedBaseline);
     }
 
     /** 保留旧接口 — 跑 dev set */
@@ -168,12 +228,12 @@ public class RagEvaluationService {
         int hit1 = 0, hit3 = 0, hit5 = 0;
         double recallSum = 0.0;
         double ndcgSum = 0.0;
+        double precisionSum = 0.0;
         int positiveCases = 0;
         int noAnswerTotal = 0, noAnswerCorrect = 0, falsePositive = 0;
 
         // 系统级指标计数器
-        int filterOk = 0, filterTotal = 0;
-        int routeOk = 0;
+        int filterOk = 0, filterTotal = 0, filterEmpty = 0;
         int fallbackOk = 0, fallbackTotal = 0;
 
         // 分层聚合
@@ -244,30 +304,28 @@ public class RagEvaluationService {
             recallSum += expectedRelevant > 0 ? (double) relevantInTopK / expectedRelevant : 0;
 
             // nDCG@5 — DCG / IDCG
-            double dcg = 0.0;
-            for (int rank = 1; rank <= finalTopK; rank++) {
-                if (isRelevantAtRank(tc, response, rank)) {
-                    dcg += 1.0 / log2(rank + 1);
-                }
-            }
+            double dcg = discountedGainAtK(tc, response, finalTopK);
             double idcg = idealDcg(Math.min(expectedRelevant, finalTopK));
             ndcgSum += idcg > 0 ? dcg / idcg : 0;
 
+            // ── Precision@K ──
+            precisionSum += relevantInTopK / (double) finalTopK;
+
             // ── Filter Accuracy ──
-            if (response.getChunks() != null && !response.getChunks().isEmpty()) {
-                boolean filterPass = checkFilterAccuracy(tc, response);
-                cr.setFilterMatch(filterPass);
-                filterTotal++;
-                if (filterPass) filterOk++;
+            if (tc.getExpectedMetadata() != null && !tc.getExpectedMetadata().isEmpty()) {
+                if (response.getChunks() == null || response.getChunks().isEmpty()) {
+                    filterEmpty++;
+                } else {
+                    boolean filterPass = checkFilterAccuracy(tc, response);
+                    cr.setFilterMatch(filterPass);
+                    filterTotal++;
+                    if (filterPass) filterOk++;
+                }
             }
 
-            // ── Route Accuracy ──
-            // 简化：如果期望走 RAG 且实际有检索结果，则路由正确
-            boolean routeOkCase = tc.getExpectedRoute() == null
-                || "RAG".equals(tc.getExpectedRoute())
-                || "TOOL_RAG".equals(tc.getExpectedRoute());
-            cr.setRouteMatch(routeOkCase);
-            routeOk++;
+            // This service starts after routing and evaluates retrieval only.
+            // Route quality must be measured by a separate Agent route dataset.
+            cr.setRouteMatch(null);
 
             // ── Fallback Accuracy ──
             if (tc.getExpectedMetadata() != null && !tc.getExpectedMetadata().isEmpty()) {
@@ -304,23 +362,44 @@ public class RagEvaluationService {
         result.setHitAt5(positiveCases == 0 ? 0.0 : (double) hit5 / positiveCases);
         result.setRecallAt5(positiveCases == 0 ? 0.0 : recallSum / positiveCases);
         result.setNdcg5(positiveCases == 0 ? 0.0 : ndcgSum / positiveCases);
+        result.setPrecisionAt5(positiveCases == 0 ? 0.0 : precisionSum / positiveCases);
         result.setEvalK(finalTopK);
 
         result.setFilterAccuracy(filterTotal == 0 ? 0.0 : (double) filterOk / filterTotal);
-        result.setRouteAccuracy(positiveCases == 0 ? 0.0 : (double) routeOk / positiveCases);
+        result.setFilterEvaluatedCases(filterTotal);
+        result.setFilterEmptyCases(filterEmpty);
+        result.setRouteAccuracy(0.0);
+        result.setRouteEvaluated(false);
         result.setFallbackAccuracy(fallbackTotal == 0 ? 1.0 : (double) fallbackOk / fallbackTotal);
 
         result.setByCategory(buildBreakdown(catGroups));
         result.setByDifficulty(buildBreakdown(diffGroups));
 
         // 分段指标
-        result.setStructuredMetrics(segmentMetrics(caseResults, "fact", "trend"));
+        result.setStructuredMetrics(segmentMetrics(caseResults, "school"));
         result.setGeneralMetrics(segmentMetrics(caseResults, "general"));
         result.setNegativeMetrics(segmentMetrics(caseResults, "edge"));
 
         result.setCases(caseResults);
 
+        // 截断 contentPreview 防止 JSON 响应过大导致 SocketTimeout
+        truncatePreviews(caseResults);
+
         return result;
+    }
+
+    private static final int MAX_PREVIEW_LEN = 200;
+
+    private static void truncatePreviews(List<RagEvaluationResult.RagEvaluationCaseResult> cases) {
+        for (RagEvaluationResult.RagEvaluationCaseResult c : cases) {
+            if (c.getCandidates() == null) continue;
+            for (RagChunkResult chunk : c.getCandidates()) {
+                String raw = chunk.getContentPreview();
+                if (raw != null && raw.length() > MAX_PREVIEW_LEN) {
+                    chunk.setContentPreview(raw.substring(0, MAX_PREVIEW_LEN) + "…");
+                }
+            }
+        }
     }
 
     private RagEvaluationRunReport.LatencyMetrics latencyMetrics(List<Long> latencies) {
@@ -338,15 +417,21 @@ public class RagEvaluationService {
         return sortedValues.get(Math.max(0, index));
     }
 
-    private Map<String, String> buildRuntimeMetadata(String frozenChecksum, String safetyChecksum) {
+    private Map<String, String> buildRuntimeMetadata(
+        String frozenDataset, int frozenCaseCount, String frozenChecksum,
+        String safetyDataset, int safetyCaseCount, String safetyChecksum) {
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("runAtUtc", Instant.now().toString());
-        metadata.put("frozenDataset", "frozen-v1");
-        metadata.put("frozenCaseCount", "18");
+        metadata.put("frozenDataset", frozenDataset);
+        metadata.put("frozenCaseCount", Integer.toString(frozenCaseCount));
         metadata.put("frozenChecksum", frozenChecksum);
-        metadata.put("safetyDataset", "safety-v1");
-        metadata.put("safetyCaseCount", "4");
+        metadata.put("safetyDataset", safetyDataset);
+        metadata.put("safetyCaseCount", Integer.toString(safetyCaseCount));
         metadata.put("safetyChecksum", safetyChecksum);
+        metadata.put("recallTopN", Integer.toString(RECALL_TOP_N));
+        metadata.put("finalTopK", Integer.toString(FINAL_TOP_K));
+        metadata.put("minScore", "0.5");
+        metadata.put("relevanceGroundTruth", "content_hash");
         metadata.put("qdrantAlias", ACTIVE_ALIAS);
         appendQdrantMetadata(metadata);
         appendGitMetadata(metadata);
@@ -391,6 +476,7 @@ public class RagEvaluationService {
                 metadata.put("gitCommit", "unknown");
                 metadata.put("gitCommitReason", output.isBlank() ? "git rev-parse failed" : output);
             }
+            appendGitDirtyMetadata(metadata);
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();
             metadata.put("gitCommit", "unknown");
@@ -398,19 +484,106 @@ public class RagEvaluationService {
         }
     }
 
-    private void writeReport(RagEvaluationRunReport report) {
+    private void writeReport(RagEvaluationRunReport report, String datasetName) {
         try {
             Files.createDirectories(reportDirectory);
-            Path reportPath = createReportPath();
+            Path reportPath = createReportPath(datasetName);
             report.setReportPath(reportPath.toString());
+            Path markdownPath = reportPath.resolveSibling(
+                reportPath.getFileName().toString().replaceFirst("\\.json$", ".md"));
+            report.getRunMetadata().put("markdownReportPath", markdownPath.toString());
+            Files.writeString(markdownPath, markdown(report), StandardCharsets.UTF_8);
             Files.writeString(reportPath, JSON.toJSONString(report), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new IllegalStateException("Unable to write RAG evaluation report", e);
         }
     }
 
-    private Path createReportPath() throws IOException {
-        String baseName = REPORT_TIMESTAMP.format(Instant.now()) + "-frozen-v1";
+    private void appendGitDirtyMetadata(Map<String, String> metadata)
+        throws IOException, InterruptedException {
+        Path statusOutput = Files.createTempFile("rag-eval-git-status-", ".txt");
+        try {
+            Process dirty = new ProcessBuilder("git", "status", "--porcelain")
+                .redirectErrorStream(true)
+                .redirectOutput(statusOutput.toFile())
+                .start();
+            if (dirty.waitFor(15, TimeUnit.SECONDS) && dirty.exitValue() == 0) {
+                metadata.put("gitDirty", Boolean.toString(Files.size(statusOutput) > 0));
+            } else {
+                dirty.destroyForcibly();
+                metadata.put("gitDirty", "unknown");
+                metadata.put("gitDirtyReason", "git status timed out or failed");
+            }
+        } finally {
+            Files.deleteIfExists(statusOutput);
+        }
+    }
+
+    private String markdown(RagEvaluationRunReport report) {
+        RagEvaluationResult vector = report.getResults().get(RagEvaluationMode.VECTOR_ONLY);
+        RagEvaluationResult rerank = report.getResults().get(RagEvaluationMode.VECTOR_RERANK);
+        RagEvaluationRunReport.PairedComparison paired = report.getPairedComparison();
+        RagEvaluationRunReport.AbstentionMetrics safety =
+            report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_RERANK);
+        RagEvaluationRunReport.LatencyMetrics vectorLatency =
+            report.getLatencyMetrics().get(RagEvaluationMode.VECTOR_ONLY);
+        RagEvaluationRunReport.LatencyMetrics rerankLatency =
+            report.getLatencyMetrics().get(RagEvaluationMode.VECTOR_RERANK);
+        return """
+            # RAG Frozen Evaluation
+
+            ## Reproducibility
+
+            - Dataset: %s (%d cases)
+            - Dataset SHA-256: `%s`
+            - Safety set: %s (%d cases)
+            - Safety SHA-256: `%s`
+            - Qdrant alias: `%s`
+            - Qdrant collection: `%s`
+            - Git commit: `%s`
+            - Dirty worktree: %s
+
+            ## Retrieval Ablation
+
+            | Mode | MRR | Hit@1 | Hit@3 | Hit@5 | nDCG@5 | P50 | P95 |
+            | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+            | Vector only | %.4f | %.2f%% | %.2f%% | %.2f%% | %.4f | %d ms | %d ms |
+            | Vector + BGE Rerank | %.4f | %.2f%% | %.2f%% | %.2f%% | %.4f | %d ms | %d ms |
+
+            Paired cases: improved %d, tied %d, regressed %d (total %d).
+
+            ## Safety
+
+            - Cases: %d
+            - No-answer accuracy: %.2f%%
+            - False-positive rate: %.2f%%
+            - Technical errors: %d
+
+            Ranking metrics are computed only from reviewed positive cases. Relevance ground truth
+            uses exact `content_hash`; safety metrics are reported separately.
+            """.formatted(
+            report.getRunMetadata().get("frozenDataset"), vector.getTotalCases(),
+            report.getRunMetadata().get("frozenChecksum"),
+            report.getRunMetadata().get("safetyDataset"), safety.getTotalCases(),
+            report.getRunMetadata().get("safetyChecksum"),
+            report.getRunMetadata().get("qdrantAlias"),
+            report.getRunMetadata().get("qdrantCollection"),
+            report.getRunMetadata().get("gitCommit"),
+            report.getRunMetadata().getOrDefault("gitDirty", "unknown"),
+            vector.getMrr(), vector.getHitAt1() * 100, vector.getHitAt3() * 100,
+            vector.getHitAt5() * 100, vector.getNdcg5(),
+            vectorLatency.getP50Ms(), vectorLatency.getP95Ms(),
+            rerank.getMrr(), rerank.getHitAt1() * 100, rerank.getHitAt3() * 100,
+            rerank.getHitAt5() * 100, rerank.getNdcg5(),
+            rerankLatency.getP50Ms(), rerankLatency.getP95Ms(),
+            paired.getImprovedCases(), paired.getTiedCases(), paired.getRegressedCases(),
+            paired.getComparedCases(),
+            safety.getTotalCases(), safety.getNoAnswerAccuracy() * 100,
+            safety.getFalsePositiveRate() * 100, safety.getTechnicalErrorCases());
+    }
+
+    private Path createReportPath(String datasetName) throws IOException {
+        String baseName = REPORT_TIMESTAMP.format(Instant.now()) + "-" + datasetName;
         for (int suffix = 0; ; suffix++) {
             String filename = baseName + (suffix == 0 ? "" : "-" + suffix) + ".json";
             Path candidate = reportDirectory.resolve(filename);
@@ -429,7 +602,8 @@ public class RagEvaluationService {
         var chunks = resp.getChunks();
         if (chunks == null || chunks.isEmpty()) return -1;
         for (int i = 0; i < chunks.size(); i++) {
-            if (isRelevant(tc, chunks.get(i))) return i + 1;
+            RagChunkResult chunk = chunks.get(i);
+            if (chunk.isSelectedForPrompt() && isRelevant(tc, chunk)) return i + 1;
         }
         return -1;
     }
@@ -437,16 +611,28 @@ public class RagEvaluationService {
     private int countRelevantInTopK(RagEvaluationCase tc, RagSearchTestResponse resp, int k) {
         var chunks = resp.getChunks();
         if (chunks == null) return 0;
-        int count = 0;
+        Set<String> matchedUnits = new HashSet<>();
         for (int i = 0; i < Math.min(chunks.size(), k); i++) {
-            if (isRelevant(tc, chunks.get(i))) count++;
+            RagChunkResult chunk = chunks.get(i);
+            String unit = chunk.isSelectedForPrompt() ? relevanceUnit(tc, chunk) : null;
+            if (unit != null) matchedUnits.add(unit);
         }
-        return count;
+        return matchedUnits.size();
     }
 
-    private boolean isRelevantAtRank(RagEvaluationCase tc, RagSearchTestResponse resp, int rank) {
+    private double discountedGainAtK(RagEvaluationCase tc, RagSearchTestResponse resp, int k) {
         var chunks = resp.getChunks();
-        return chunks != null && rank > 0 && rank <= chunks.size() && isRelevant(tc, chunks.get(rank - 1));
+        if (chunks == null || chunks.isEmpty()) return 0.0;
+        Set<String> matchedUnits = new HashSet<>();
+        double dcg = 0.0;
+        for (int index = 0; index < Math.min(chunks.size(), k); index++) {
+            RagChunkResult chunk = chunks.get(index);
+            String unit = chunk.isSelectedForPrompt() ? relevanceUnit(tc, chunk) : null;
+            if (unit != null && matchedUnits.add(unit)) {
+                dcg += 1.0 / log2(index + 2);
+            }
+        }
+        return dcg;
     }
 
     private int expectedRelevantCount(RagEvaluationCase tc) {
@@ -473,29 +659,37 @@ public class RagEvaluationService {
      *   ③ 否则 false
      */
     private boolean isRelevant(RagEvaluationCase tc, RagChunkResult chunk) {
+        return relevanceUnit(tc, chunk) != null;
+    }
+
+    private String relevanceUnit(RagEvaluationCase tc, RagChunkResult chunk) {
         // ① 结构化招生类：relevantConditions OR 匹配
         if (!tc.getRelevantConditions().isEmpty()) {
-            for (RagEvaluationCase.RelevantCondition cond : tc.getRelevantConditions()) {
-                if (cond.matches(chunk.getProgramId(), chunk.getDocType(),
+            for (int index = 0; index < tc.getRelevantConditions().size(); index++) {
+                RagEvaluationCase.RelevantCondition cond = tc.getRelevantConditions().get(index);
+                if (cond.matches(chunk.getContentHash(), chunk.getProgramId(), chunk.getDocType(),
                     chunk.getSection(), chunk.getYear(), chunk.getSchoolId())) {
-                    return true;
+                    return "condition:" + index;
                 }
             }
-            return false;
+            return null;
         }
 
         // ② 通用知识类：relevantSources 前缀匹配 sourceName
         if (!tc.getRelevantSources().isEmpty()) {
             String sourceName = chunk.getSourceName();
             if (sourceName != null) {
-                return tc.getRelevantSources().stream()
-                    .anyMatch(prefix -> sourceName.startsWith(prefix));
+                for (String prefix : tc.getRelevantSources()) {
+                    if (sourceName.startsWith(prefix)) {
+                        return "source:" + prefix;
+                    }
+                }
             }
-            return false;
+            return null;
         }
 
         // ③ negative / 未配置 → 不相关
-        return false;
+        return null;
     }
 
     // ── Filter Accuracy ──
@@ -521,11 +715,13 @@ public class RagEvaluationService {
             .filter(cr -> cr.getCategory() != null && cats.contains(cr.getCategory()))
             .toList();
         int n = subset.size();
-        if (n == 0) return new RagEvaluationResult.SegmentMetrics(0, 0, 0, 0, 0, 0);
+        if (n == 0) return new RagEvaluationResult.SegmentMetrics(0, 0, 0, 0, 0, 0, 0);
 
         double mrrSum = 0;
         int h1 = 0, h3 = 0, h5 = 0;
         double recallSum = 0;
+        double precisionSum = 0;
+        int evalK = 5;
         for (var cr : subset) {
             int rank = cr.getFirstRelevantRank();
             if (rank > 0) {
@@ -535,6 +731,7 @@ public class RagEvaluationService {
                 if (rank <= 5) h5++;
             }
             int inTop5 = cr.getRelevantInTopK();
+            precisionSum += (double) inTop5 / evalK;
             // count total relevant from evidence size as approximation
             int total = Math.max(inTop5, cr.getEvidence().size());
             recallSum += total > 0 ? (double) inTop5 / total : 0;
@@ -544,7 +741,8 @@ public class RagEvaluationService {
             n == 0 ? 0 : (double) h1 / n,
             n == 0 ? 0 : (double) h3 / n,
             n == 0 ? 0 : (double) h5 / n,
-            n == 0 ? 0 : recallSum / n);
+            n == 0 ? 0 : recallSum / n,
+            n == 0 ? 0 : precisionSum / n);
     }
 
     // ── 分层 breakdown ──
@@ -557,14 +755,18 @@ public class RagEvaluationService {
             int n = list.size();
             double mrrSum = 0;
             int hit5Count = 0;
+            double precisionSum = 0;
+            int evalK = 5;
             for (var cr : list) {
                 if (cr.getFirstRelevantRank() > 0) {
                     mrrSum += 1.0 / cr.getFirstRelevantRank();
                     hit5Count++;
                 }
+                precisionSum += (double) cr.getRelevantInTopK() / evalK;
             }
             result.put(entry.getKey(), new RagEvaluationResult.MetricBreakdown(
-                n, n == 0 ? 0 : mrrSum / n, n == 0 ? 0 : (double) hit5Count / n));
+                n, n == 0 ? 0 : mrrSum / n, n == 0 ? 0 : (double) hit5Count / n,
+                n == 0 ? 0 : precisionSum / n));
         }
         return result;
     }
@@ -598,7 +800,7 @@ public class RagEvaluationService {
         }
 
         for (RagChunkResult chunk : resp.getChunks()) {
-            if (isRelevant(tc, chunk)) {
+            if (chunk.isSelectedForPrompt() && isRelevant(tc, chunk)) {
                 cr.setPassed(true);
                 cr.setFailureReason("PASSED");
                 cr.getEvidence().add(evidenceLabel(chunk));
@@ -635,6 +837,7 @@ public class RagEvaluationService {
     private void applyExpectedFilters(RagSearchTestRequest req, Map<String, String> expected) {
         if (expected == null) return;
         req.setSchoolId(expected.get("school_id"));
+        req.setSchoolName(expected.get("school_name"));
         req.setProgramId(expected.get("program_id"));
         req.setYear(expected.get("year"));
         req.setDocType(expected.get("doc_type"));
@@ -649,6 +852,7 @@ public class RagEvaluationService {
 
     private boolean matchesScope(Map<String, String> expected, RagChunkResult chunk) {
         return equalsExpected(expected, "school_id", chunk.getSchoolId())
+            && equalsExpected(expected, "school_name", chunk.getSchoolName())
             && equalsExpected(expected, "program_id", chunk.getProgramId())
             && equalsExpected(expected, "year", chunk.getYear())
             && equalsExpected(expected, "doc_type", chunk.getDocType());

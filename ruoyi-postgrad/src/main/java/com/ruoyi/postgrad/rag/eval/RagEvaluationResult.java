@@ -26,11 +26,15 @@ public class RagEvaluationResult {
     private double hitAt5;
     private double recallAt5;
     private double ndcg5;
+    private double precisionAt5;
     private int evalK = 5;
 
     // ── 系统级指标 ──
     private double filterAccuracy;
+    private int filterEvaluatedCases;
+    private int filterEmptyCases;
     private double routeAccuracy;
+    private boolean routeEvaluated;
     private double fallbackAccuracy;
 
     // ── 分层统计 ──
@@ -77,13 +81,21 @@ public class RagEvaluationResult {
     public void setRecallAt5(double recallAt5) { this.recallAt5 = recallAt5; }
     public double getNdcg5() { return ndcg5; }
     public void setNdcg5(double ndcg5) { this.ndcg5 = ndcg5; }
+    public double getPrecisionAt5() { return precisionAt5; }
+    public void setPrecisionAt5(double precisionAt5) { this.precisionAt5 = precisionAt5; }
     public int getEvalK() { return evalK; }
     public void setEvalK(int evalK) { this.evalK = evalK; }
 
     public double getFilterAccuracy() { return filterAccuracy; }
     public void setFilterAccuracy(double filterAccuracy) { this.filterAccuracy = filterAccuracy; }
+    public int getFilterEvaluatedCases() { return filterEvaluatedCases; }
+    public void setFilterEvaluatedCases(int filterEvaluatedCases) { this.filterEvaluatedCases = filterEvaluatedCases; }
+    public int getFilterEmptyCases() { return filterEmptyCases; }
+    public void setFilterEmptyCases(int filterEmptyCases) { this.filterEmptyCases = filterEmptyCases; }
     public double getRouteAccuracy() { return routeAccuracy; }
     public void setRouteAccuracy(double routeAccuracy) { this.routeAccuracy = routeAccuracy; }
+    public boolean isRouteEvaluated() { return routeEvaluated; }
+    public void setRouteEvaluated(boolean routeEvaluated) { this.routeEvaluated = routeEvaluated; }
     public double getFallbackAccuracy() { return fallbackAccuracy; }
     public void setFallbackAccuracy(double fallbackAccuracy) { this.fallbackAccuracy = fallbackAccuracy; }
 
@@ -106,11 +118,12 @@ public class RagEvaluationResult {
         private double hitAt3;
         private double hitAt5;
         private double recallAt5;
+        private double precisionAt5;
 
         public SegmentMetrics() {}
-        public SegmentMetrics(int count, double mrr, double hitAt1, double hitAt3, double hitAt5, double recallAt5) {
+        public SegmentMetrics(int count, double mrr, double hitAt1, double hitAt3, double hitAt5, double recallAt5, double precisionAt5) {
             this.count = count; this.mrr = mrr; this.hitAt1 = hitAt1; this.hitAt3 = hitAt3;
-            this.hitAt5 = hitAt5; this.recallAt5 = recallAt5;
+            this.hitAt5 = hitAt5; this.recallAt5 = recallAt5; this.precisionAt5 = precisionAt5;
         }
         public int getCount() { return count; }
         public void setCount(int count) { this.count = count; }
@@ -124,6 +137,8 @@ public class RagEvaluationResult {
         public void setHitAt5(double h) { this.hitAt5 = h; }
         public double getRecallAt5() { return recallAt5; }
         public void setRecallAt5(double r) { this.recallAt5 = r; }
+        public double getPrecisionAt5() { return precisionAt5; }
+        public void setPrecisionAt5(double p) { this.precisionAt5 = p; }
     }
 
     // ── inner types ──
@@ -132,10 +147,11 @@ public class RagEvaluationResult {
         private int count;
         private double mrr;
         private double hitAt5;
+        private double precisionAt5;
 
         public MetricBreakdown() {}
-        public MetricBreakdown(int count, double mrr, double hitAt5) {
-            this.count = count; this.mrr = mrr; this.hitAt5 = hitAt5;
+        public MetricBreakdown(int count, double mrr, double hitAt5, double precisionAt5) {
+            this.count = count; this.mrr = mrr; this.hitAt5 = hitAt5; this.precisionAt5 = precisionAt5;
         }
         public int getCount() { return count; }
         public void setCount(int count) { this.count = count; }
@@ -143,6 +159,8 @@ public class RagEvaluationResult {
         public void setMrr(double mrr) { this.mrr = mrr; }
         public double getHitAt5() { return hitAt5; }
         public void setHitAt5(double hitAt5) { this.hitAt5 = hitAt5; }
+        public double getPrecisionAt5() { return precisionAt5; }
+        public void setPrecisionAt5(double precisionAt5) { this.precisionAt5 = precisionAt5; }
     }
 
     public static class RagEvaluationCaseResult {

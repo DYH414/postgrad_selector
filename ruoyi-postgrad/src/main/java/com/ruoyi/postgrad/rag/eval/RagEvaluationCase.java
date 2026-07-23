@@ -77,9 +77,10 @@ public class RagEvaluationCase {
 
     /**
      * 单个相关性条件。所有非 null 字段都匹配 → 该条件命中。
-     * programId / docType / section / year / schoolId 均可选（null=不检查该字段）。
+     * contentHash / programId / docType / section / year / schoolId 均可选（null=不检查该字段）。
      */
     public static class RelevantCondition {
+        private String contentHash;
         private String programId;
         private String docType;
         private String section;
@@ -103,8 +104,9 @@ public class RagEvaluationCase {
             return c;
         }
 
-        public boolean matches(String chunkProgramId, String chunkDocType,
+        public boolean matches(String chunkContentHash, String chunkProgramId, String chunkDocType,
                                String chunkSection, String chunkYear, String chunkSchoolId) {
+            if (contentHash != null && !contentHash.equals(chunkContentHash)) return false;
             if (programId != null && !programId.equals(chunkProgramId)) return false;
             if (docType != null && !docType.equals(chunkDocType)) return false;
             if (section != null && !section.equals(chunkSection)) return false;
@@ -113,6 +115,8 @@ public class RagEvaluationCase {
             return true;
         }
 
+        public String getContentHash() { return contentHash; }
+        public void setContentHash(String contentHash) { this.contentHash = contentHash; }
         public String getProgramId() { return programId; }
         public void setProgramId(String programId) { this.programId = programId; }
         public String getDocType() { return docType; }

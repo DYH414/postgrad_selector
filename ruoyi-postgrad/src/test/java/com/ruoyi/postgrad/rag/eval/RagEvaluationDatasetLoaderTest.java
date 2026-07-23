@@ -27,21 +27,37 @@ class RagEvaluationDatasetLoaderTest {
     }
 
     @Test
+    void frozenV3LoadsReviewedRankingAndSafetyCases() {
+        List<RagEvaluationCase> ranking = loader.loadFrozenV3();
+        List<RagEvaluationCase> safety = loader.loadSafetyV3();
+
+        assertEquals(36, ranking.size());
+        assertEquals(12, safety.size());
+        assertDoesNotThrow(loader::verifyFrozenV3Checksum);
+        assertDoesNotThrow(loader::verifySafetyV3Checksum);
+        assertTrue(ranking.stream().allMatch(testCase ->
+            !testCase.getRelevantConditions().isEmpty()
+                && testCase.getRelevantConditions().stream()
+                .allMatch(condition -> condition.getContentHash() != null)));
+        assertTrue(safety.stream().allMatch(RagEvaluationCase::isNoAnswer));
+    }
+
+    @Test
     void frozenCasesKeepTheirQueriesAndEvaluationMetadata() {
         List<RagEvaluationCase> cases = loader.loadFrozenV1();
 
         RagEvaluationCase first = cases.get(0);
-        assertEquals("fact-test-01", first.getId());
-        assertEquals("深圳大学 人工智能 2025 复试线", first.getQuery());
-        assertEquals("15", first.getExpectedMetadata().get("school_id"));
-        assertEquals("1768", first.getRelevantConditions().get(0).getProgramId());
+        assertEquals("general-01", first.getId());
+        assertEquals("408 统考考哪些科目？每门占多少？", first.getQuery());
+        assertTrue(first.getExpectedMetadata().isEmpty());
+        assertEquals("01-408考试介绍", first.getRelevantSources().get(0));
 
         RagEvaluationCase general = cases.stream()
-            .filter(testCase -> "general-test-02".equals(testCase.getId()))
+            .filter(testCase -> "general-02".equals(testCase.getId()))
             .findFirst()
             .orElseThrow();
-        assertEquals("408 统考考哪些科目？每门占多少？", general.getQuery());
-        assertEquals("01-408考试介绍", general.getRelevantSources().get(0));
+        assertEquals("考研 A 区和 B 区有什么区别？", general.getQuery());
+        assertEquals("02-考研国家线与复试", general.getRelevantSources().get(0));
     }
 
     @Test

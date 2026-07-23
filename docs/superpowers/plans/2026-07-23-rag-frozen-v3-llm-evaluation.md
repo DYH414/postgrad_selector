@@ -30,11 +30,11 @@
 - Consumes: `RagEvaluationCase` relevance sources and conditions.
 - Produces: bounded nDCG, unique-unit Recall/Precision and explicit filter evaluation counts.
 
-- [ ] **Step 1: Add failing duplicate-source and denominator tests**
+- [x] **Step 1: Add failing duplicate-source and denominator tests**
 
 Add tests where three chunks from one relevant source occupy ranks 1-3 while only one source is expected. Assert `nDCG@5 == 1.0`, `Recall@5 == 1.0`, and safety cases do not affect MRR.
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -44,36 +44,36 @@ mvn -pl ruoyi-postgrad -am -DskipTests=false -Dtest=RagEvaluationServiceTest -Ds
 
 Expected: the duplicate-source nDCG assertion fails against the current implementation.
 
-- [ ] **Step 3: Implement canonical relevance-unit deduplication**
+- [x] **Step 3: Implement canonical relevance-unit deduplication**
 
 Track the first matching expected source or condition at each rank. Count each relevance unit once for DCG, Recall and Precision while preserving first relevant rank for MRR.
 
-- [ ] **Step 4: Expose filter evaluated and empty-result counts**
+- [x] **Step 4: Expose filter evaluated and empty-result counts**
 
 Add integer fields to `RagEvaluationResult` so a reported Filter Accuracy always shows its denominator and cannot present empty retrievals as successful filtering.
 
-- [ ] **Step 5: Run focused and regression tests**
+- [x] **Step 5: Run focused and regression tests**
 
 Run the focused command above and existing RAG evaluation workbench tests. Expected: all pass and every nDCG assertion is within `[0, 1]`.
 
-### Task 2: Add Frozen V3 And Safety V2
+### Task 2: Add Frozen V3 And Safety V3
 
 **Files:**
 - Create: `ruoyi-postgrad/src/main/resources/rag-eval/frozen-v3.jsonl`
 - Create: `ruoyi-postgrad/src/main/resources/rag-eval/frozen-v3.manifest.json`
-- Create: `ruoyi-postgrad/src/main/resources/rag-eval/safety-v2.jsonl`
-- Create: `ruoyi-postgrad/src/main/resources/rag-eval/safety-v2.manifest.json`
+- Create: `ruoyi-postgrad/src/main/resources/rag-eval/safety-v3.jsonl`
+- Create: `ruoyi-postgrad/src/main/resources/rag-eval/safety-v3.manifest.json`
 - Modify: `ruoyi-postgrad/src/main/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoader.java`
 - Test: `ruoyi-postgrad/src/test/java/com/ruoyi/postgrad/rag/eval/RagEvaluationDatasetLoaderTest.java`
 
 **Interfaces:**
-- Produces: `loadFrozenV3()`, `loadSafetyV2()`, `verifyFrozenV3Checksum()` and `verifySafetyV2Checksum()`.
+- Produces: `loadFrozenV3()`, `loadSafetyV3()`, `verifyFrozenV3Checksum()` and `verifySafetyV3Checksum()`.
 
-- [ ] **Step 1: Add failing loader contract tests**
+- [x] **Step 1: Add failing loader contract tests**
 
-Assert exactly 48 positive cases, 12 safety cases, globally unique IDs and queries, explicit relevance for every positive case, explicit no-answer semantics for every safety case, and matching manifests.
+Assert exactly 36 positive cases, 12 safety cases, globally unique IDs and queries, exact `content_hash` relevance for every positive case, explicit no-answer semantics for every safety case, and matching manifests.
 
-- [ ] **Step 2: Verify the tests fail because V3 resources are absent**
+- [x] **Step 2: Verify the tests fail because V3 resources are absent**
 
 Run:
 
@@ -81,15 +81,15 @@ Run:
 mvn -pl ruoyi-postgrad -am -DskipTests=false -Dtest=RagEvaluationDatasetLoaderTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-- [ ] **Step 3: Build ground truth from source documents and MySQL facts**
+- [x] **Step 3: Build ground truth from indexed Markdown evidence**
 
-Select cases before inspecting retrieval output. Include all four approved positive segments and all four safety categories. Encode stable source prefixes or exact metadata relevance conditions.
+Select cases from indexed general-knowledge and school-guide evidence. Encode exact reviewed `content_hash` relevance. Keep MySQL-owned score and enrollment facts out of this RAG benchmark.
 
-- [ ] **Step 4: Generate SHA-256 manifests**
+- [x] **Step 4: Generate SHA-256 manifests**
 
 Hash the exact UTF-8 JSONL bytes and store `version`, `caseCount` and lowercase SHA-256 in each manifest.
 
-- [ ] **Step 5: Implement loader methods and run tests**
+- [x] **Step 5: Implement loader methods and run tests**
 
 Expected: loader and checksum tests pass without touching V1 resources.
 
@@ -104,19 +104,19 @@ Expected: loader and checksum tests pass without touching V1 resources.
 **Interfaces:**
 - Produces: `runFrozenV3Ablation()` and `POST /postgrad/rag/eval/frozen-v3`.
 
-- [ ] **Step 1: Add a failing report contract test**
+- [x] **Step 1: Add a failing report contract test**
 
-Assert both modes use the same 48 ranking and 12 safety cases, expose paired improvement/tie/regression counts, and record both checksums.
+Assert both modes use the same 36 ranking and 12 safety cases, expose paired improvement/tie/regression counts, and record both checksums.
 
-- [ ] **Step 2: Implement paired comparison and runtime metadata**
+- [x] **Step 2: Implement paired comparison and runtime metadata**
 
 Record Qdrant alias, concrete collection, Git commit, dirty flag, retrieval parameters and model identifiers.
 
-- [ ] **Step 3: Add the protected administrator endpoint**
+- [x] **Step 3: Add the protected administrator endpoint**
 
 Use the existing `postgrad:rag:eval` permission and return the generated report.
 
-- [ ] **Step 4: Run evaluation and controller regression tests**
+- [x] **Step 4: Run evaluation and controller regression tests**
 
 Expected: deterministic report tests pass without requiring a live Qdrant instance.
 
@@ -134,23 +134,23 @@ Expected: deterministic report tests pass without requiring a live Qdrant instan
 - Consumes: `RagRetrievalService`, `ChatModel`, 12 answer cases.
 - Produces: one generated answer and two independent rubric judgments per successful case.
 
-- [ ] **Step 1: Add failing deterministic parser and aggregation tests**
+- [x] **Step 1: Add failing deterministic parser and aggregation tests**
 
 Cover valid judge JSON, malformed output, disagreement, expected abstention, citation mismatch and technical errors.
 
-- [ ] **Step 2: Implement strict answer and judge prompts**
+- [x] **Step 2: Implement strict answer and judge prompts**
 
 The answer prompt permits only supplied evidence. The judge prompt returns JSON fields for faithfulness, relevance, citation correctness, abstention correctness and reason.
 
-- [ ] **Step 3: Implement two-pass judging and transparent aggregation**
+- [x] **Step 3: Implement two-pass judging and transparent aggregation**
 
 Keep both raw judgments, calculate agreement, and exclude judge technical errors from quality denominators.
 
-- [ ] **Step 4: Validate the answer dataset checksum**
+- [x] **Step 4: Validate the answer dataset checksum**
 
 Assert 12 cases, stable IDs, expected facts or abstention semantics, and expected source prefixes.
 
-- [ ] **Step 5: Run answer-evaluation unit tests**
+- [x] **Step 5: Run answer-evaluation unit tests**
 
 Expected: all tests pass with mocked model responses and no network access.
 
@@ -166,26 +166,26 @@ Expected: all tests pass with mocked model responses and no network access.
 - Consumes: running MySQL, Redis, Qdrant, backend and IDEA environment variables.
 - Produces: immutable local acceptance artifacts and verified resume metrics.
 
-- [ ] **Step 1: Run unit and module regression tests**
+- [x] **Step 1: Run unit and module regression tests**
 
 Run all RAG evaluation, retrieval and workbench tests. Expected: PASS.
 
-- [ ] **Step 2: Start dependencies and backend with IDEA environment**
+- [x] **Step 2: Start dependencies and backend with IDEA environment**
 
 Verify Qdrant alias resolution and record the concrete collection before testing.
 
-- [ ] **Step 3: Execute Frozen V3 in both modes**
+- [x] **Step 3: Execute Frozen V3 in both modes**
 
-Verify 48 positive cases and 12 safety cases complete in both modes with no unreported technical failures.
+Verify 36 positive cases and 12 safety cases complete in both modes with no unreported technical failures.
 
-- [ ] **Step 4: Execute Answer V1**
+- [x] **Step 4: Execute Answer V1**
 
 Run 12 generations and two judge calls per case. Retain raw output and mark any provider error separately.
 
-- [ ] **Step 5: Export JSON and Markdown reports**
+- [x] **Step 5: Export JSON and Markdown reports**
 
 Verify all required metadata, formulas, denominators, per-case evidence and limitations are present.
 
-- [ ] **Step 6: Produce the final evidence summary**
+- [x] **Step 6: Produce the final evidence summary**
 
 Report only metrics found in the generated artifacts. Identify which values are suitable for a resume, interview discussion, or neither.

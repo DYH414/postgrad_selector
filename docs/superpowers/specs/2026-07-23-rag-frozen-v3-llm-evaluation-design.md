@@ -10,8 +10,8 @@ The change reuses the existing RAG evaluation workbench, `RagRetrievalService`, 
 
 It adds:
 
-- `frozen-v3`: 48 positive retrieval cases.
-- `safety-v2`: 12 no-answer cases.
+- `frozen-v3`: 36 positive retrieval cases.
+- `safety-v3`: 12 no-answer cases.
 - `answer-v1`: 12 answer-generation cases selected from the retrieval and safety sets.
 - Correct relevance-unit deduplication for ranking metrics.
 - A deterministic answer-evaluation rubric plus repeated LLM-as-judge scoring.
@@ -23,23 +23,23 @@ It does not change the user-facing recommendation flow or replace the existing a
 
 ### Frozen V3 Ranking
 
-`frozen-v3` contains 48 positive cases:
+`frozen-v3` contains 36 positive cases:
 
 | Segment | Count | Coverage |
 | --- | ---: | --- |
 | General knowledge | 12 | Exact, paraphrase, terminology, policy, composite questions |
-| Admission guides | 12 | Tuition, duration, eligibility, scholarships, aliases |
-| Program-year evidence | 16 | School, program, year, score, plan, result and quality sections |
-| Hybrid and multi-source | 8 | Multiple relevant sources or evidence sections |
+| Admission guides | 24 | Tuition, duration, eligibility, scholarships, aliases, paraphrases and composite questions |
 
-Ground truth is derived from source Markdown and MySQL facts before retrieval output is inspected. Every case has stable IDs, explicit relevance units, difficulty, tags, and expected metadata filters.
+Ground truth is derived from the indexed Markdown evidence before retrieval output is inspected. Each positive case points to an exact reviewed `content_hash`, not merely a source filename, and carries stable IDs, difficulty, tags, and expected metadata filters.
 
-### Safety V2
+The active architecture intentionally keeps score lines, enrollment plans, and other structured facts in MySQL-backed Tools. Those facts require a separate Agent/Tool benchmark and are not counted as Qdrant retrieval cases.
 
-`safety-v2` contains 12 cases split evenly across:
+### Safety V3
+
+`safety-v3` contains 12 cases split across:
 
 - nonexistent school or program;
-- year outside the indexed corpus;
+- schools missing from the current indexed corpus;
 - off-topic questions;
 - ambiguous or underspecified references.
 
@@ -68,7 +68,7 @@ Positive retrieval cases use:
 - paired Vector Only versus Vector + Rerank improvements, ties and regressions;
 - P50 and P95 latency.
 
-A relevance unit is a source prefix for document cases or a canonical metadata condition for structured cases. Multiple chunks from the same relevance unit count once for Recall and nDCG.
+A relevance unit is the exact `content_hash` of a reviewed evidence chunk. Multiple copies of the same relevance unit count once for Recall and nDCG.
 
 Filter Accuracy is reported with an evaluated-case count. Empty retrievals do not silently count as filter successes.
 

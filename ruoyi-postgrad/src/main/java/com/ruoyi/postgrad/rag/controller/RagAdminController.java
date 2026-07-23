@@ -11,10 +11,12 @@ import com.ruoyi.postgrad.rag.service.RagRetrievalService;
 import com.ruoyi.postgrad.rag.status.RagIndexStatusService;
 import com.ruoyi.postgrad.rag.eval.RagEvaluationResult;
 import com.ruoyi.postgrad.rag.eval.RagEvaluationService;
+import com.ruoyi.postgrad.rag.eval.answer.RagAnswerEvaluationService;
 import com.ruoyi.postgrad.rag.trace.RagTrace;
 import com.ruoyi.postgrad.rag.trace.RagTraceRecorder;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -32,6 +34,8 @@ public class RagAdminController extends BaseController {
     private final RagRetrievalService ragRetrievalService;
     private final RagTraceRecorder ragTraceRecorder;
     private final RagEvaluationService ragEvaluationService;
+    @Autowired
+    private RagAnswerEvaluationService ragAnswerEvaluationService;
 
     public RagAdminController(RagIndexBuildService ragIndexBuildService,
                               RagIndexStatusService ragIndexStatusService,
@@ -149,6 +153,18 @@ public class RagAdminController extends BaseController {
     @PostMapping("/eval/frozen-v1")
     public AjaxResult runFrozenEvaluation() {
         return success(ragEvaluationService.runFrozenV1Ablation());
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
+    @PostMapping("/eval/frozen-v3")
+    public AjaxResult runFrozenV3Evaluation() {
+        return success(ragEvaluationService.runFrozenV3Ablation());
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
+    @PostMapping("/eval/answer-v1")
+    public AjaxResult runAnswerV1Evaluation() {
+        return success(ragAnswerEvaluationService.runAnswerV1());
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")

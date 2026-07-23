@@ -145,15 +145,21 @@ public class RagEvalDatasetService {
 
     @Transactional
     public RagEvalDataset importBundled(String resourceName, String operator) {
-        boolean safety = "safety-v1".equals(resourceName);
-        RagEvalDataset existing = mapper.selectDatasetByKeyVersion(resourceName, "v1");
+        boolean safety = resourceName.startsWith("safety-");
+        boolean v3 = resourceName.endsWith("-v3");
+        String version = v3 ? "v3" : "v1";
+        RagEvalDataset existing = mapper.selectDatasetByKeyVersion(resourceName, version);
         if (existing != null) return existing;
-        List<RagEvaluationCase> source = safety ? resourceLoader.loadSafetyV1() : resourceLoader.loadFrozenV1();
-        String checksum = safety ? resourceLoader.verifySafetyV1Checksum() : resourceLoader.verifyFrozenV1Checksum();
+        List<RagEvaluationCase> source = v3
+            ? (safety ? resourceLoader.loadSafetyV3() : resourceLoader.loadFrozenV3())
+            : (safety ? resourceLoader.loadSafetyV1() : resourceLoader.loadFrozenV1());
+        String checksum = v3
+            ? (safety ? resourceLoader.verifySafetyV3Checksum() : resourceLoader.verifyFrozenV3Checksum())
+            : (safety ? resourceLoader.verifySafetyV1Checksum() : resourceLoader.verifyFrozenV1Checksum());
         RagEvalDataset dataset = new RagEvalDataset();
         dataset.setDatasetKey(resourceName);
-        dataset.setName(safety ? "Safety v1" : "Frozen v1");
-        dataset.setVersion("v1");
+        dataset.setName((safety ? "Safety " : "Frozen ") + version);
+        dataset.setVersion(version);
         dataset.setDatasetType(safety ? "SAFETY" : "FROZEN");
         dataset.setLifecycleState("FROZEN");
         dataset.setChecksumSha256(checksum);

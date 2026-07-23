@@ -16,6 +16,10 @@ public class RagEvaluationDatasetLoader {
     private static final String FROZEN_MANIFEST = "rag-eval/frozen-v1.manifest.json";
     private static final String SAFETY_RESOURCE = "rag-eval/safety-v1.jsonl";
     private static final String SAFETY_MANIFEST = "rag-eval/safety-v1.manifest.json";
+    private static final String FROZEN_V3_RESOURCE = "rag-eval/frozen-v3.jsonl";
+    private static final String FROZEN_V3_MANIFEST = "rag-eval/frozen-v3.manifest.json";
+    private static final String SAFETY_V3_RESOURCE = "rag-eval/safety-v3.jsonl";
+    private static final String SAFETY_V3_MANIFEST = "rag-eval/safety-v3.manifest.json";
 
     private final String resourcePath;
     private final String manifestPath;
@@ -43,6 +47,22 @@ public class RagEvaluationDatasetLoader {
 
     public String verifySafetyV1Checksum() {
         return verifyChecksum(SAFETY_RESOURCE, SAFETY_MANIFEST, 4);
+    }
+
+    public List<RagEvaluationCase> loadFrozenV3() {
+        return readJsonLines(FROZEN_V3_RESOURCE, 36);
+    }
+
+    public List<RagEvaluationCase> loadSafetyV3() {
+        return readJsonLines(SAFETY_V3_RESOURCE, 12);
+    }
+
+    public String verifyFrozenV3Checksum() {
+        return verifyChecksum(FROZEN_V3_RESOURCE, FROZEN_V3_MANIFEST, 36);
+    }
+
+    public String verifySafetyV3Checksum() {
+        return verifyChecksum(SAFETY_V3_RESOURCE, SAFETY_V3_MANIFEST, 12);
     }
 
     private List<RagEvaluationCase> readJsonLines(String defaultResource, int expectedCount) {

@@ -50,7 +50,23 @@ class RagEvaluationServiceTest {
     }
 
     @Test
-    void frozenAblationSeparatesRankingAndAbstentionIntoJsonReport() throws Exception {
+    void pairedComparisonCountsImprovedTiedAndRegressedCases() {
+        RagEvaluationResult vectorOnly = resultWithRanks(
+            Map.of("improved", 4, "tied", 2, "regressed", 1, "new-hit", -1));
+        RagEvaluationResult reranked = resultWithRanks(
+            Map.of("improved", 1, "tied", 2, "regressed", 3, "new-hit", 5));
+
+        RagEvaluationRunReport.PairedComparison comparison =
+            RagEvaluationService.pairedComparison(vectorOnly, reranked);
+
+        assertEquals(2, comparison.getImprovedCases());
+        assertEquals(1, comparison.getTiedCases());
+        assertEquals(1, comparison.getRegressedCases());
+        assertEquals(4, comparison.getComparedCases());
+    }
+
+    @Test
+    void frozenAblationWritesCurrentLegacyDatasetAndSafetyMetricsIntoJsonReport() throws Exception {
         RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = response();
         response.getLatency().setTotalMs(12L);
@@ -64,7 +80,9 @@ class RagEvaluationServiceTest {
 
         assertEquals(18, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
         assertEquals(18, report.getResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
-        assertEquals(0, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getNoAnswerCases());
+        assertEquals(5, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getNoAnswerCases());
+        assertEquals(4, report.getSafetyResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
+        assertEquals(4, report.getSafetyResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
         assertEquals(4, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
         assertEquals(4, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
         assertEquals(12L, report.getLatencyMetrics().get(RagEvaluationMode.VECTOR_ONLY).getP50Ms());
@@ -193,27 +211,51 @@ class RagEvaluationServiceTest {
     }
 
     @Test
-    void defaultCasesShouldUseConcreteKnownProgramMetadata() {
+    void defaultCasesShouldMatchCurrentUnstructuredCorpusBoundary() {
         RagRetrievalService retrievalService = mock(RagRetrievalService.class);
-        RagSearchTestResponse response = new RagSearchTestResponse();
-        // 3 个 smoke case 各查不同 section，mock 返回 3 个 chunk 各匹配一个
-        RagChunkResult c1 = chunk("56","2854","2025","program_year","admission_score");
-        RagChunkResult c2 = chunk("56","2854","2025","program_year","admission_plan");
-        RagChunkResult c3 = chunk("56","2854","2025","program_year","admission_result");
-        response.setChunks(List.of(c1, c2, c3));
-        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(response, List.of()));
+        RagChunkResult general = new RagChunkResult();
+        general.setSourceName("02-考研国家线与复试.md");
+        general.setSelectedForPrompt(true);
+        RagSearchTestResponse generalResponse = response(general);
+
+        RagChunkResult school = new RagChunkResult();
+        school.setSourceName("杭州电子科技大学-招生简章.md");
+        school.setSchoolName("杭州电子科技大学");
+        school.setDocType("admission_guide");
+        school.setSelectedForPrompt(true);
+        RagSearchTestResponse schoolResponse = response(school);
+
+        RagSearchTestResponse empty = new RagSearchTestResponse();
+        empty.setChunks(List.of());
+        when(retrievalService.retrieve(any()))
+            .thenReturn(new RagRetrievalResult(generalResponse, List.of()))
+            .thenReturn(new RagRetrievalResult(schoolResponse, List.of()))
+            .thenReturn(new RagRetrievalResult(empty, List.of()));
 
         RagEvaluationResult result = new RagEvaluationService(retrievalService)
             .run(RagEvaluationDataset.smokeTests());
 
-        assertTrue(result.getCases().stream().anyMatch(c -> c.getQuery().contains("杭电")), "smoke should contain 杭电");
+        assertTrue(result.getCases().stream().anyMatch(c -> c.getQuery().contains("国家线")));
         assertEquals(3, result.getTotalCases());
-        assertEquals(3, result.getPassedCases(), "smoke tests should all pass with matching chunk");
+        assertEquals(3, result.getPassedCases(), "smoke tests should cover general, school and no-answer");
+        assertFalse(result.isRouteEvaluated(), "retrieval-only evaluation must not claim route accuracy");
         verify(retrievalService, atLeastOnce()).retrieve(argThat(req ->
-            "56".equals(req.getSchoolId())
-                && "2854".equals(req.getProgramId())
-                && "2025".equals(req.getYear())
+            "杭州电子科技大学".equals(req.getSchoolName())
+                && "admission_guide".equals(req.getDocType())
+                && req.getProgramId() == null
         ));
+    }
+
+    private static RagEvaluationResult resultWithRanks(Map<String, Integer> ranks) {
+        RagEvaluationResult result = new RagEvaluationResult();
+        result.setCases(ranks.entrySet().stream().map(entry -> {
+            RagEvaluationResult.RagEvaluationCaseResult caseResult =
+                new RagEvaluationResult.RagEvaluationCaseResult();
+            caseResult.setId(entry.getKey());
+            caseResult.setFirstRelevantRank(entry.getValue());
+            return caseResult;
+        }).toList());
+        return result;
     }
 
     @Test
@@ -297,6 +339,70 @@ class RagEvaluationServiceTest {
     }
 
     @Test
+    void repeatedChunksFromOneRelevantSourceCountAsOneRelevanceUnit() {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        RagChunkResult first = sourceChunk("03-调剂政策.md", "基本条件");
+        RagChunkResult second = sourceChunk("03-调剂政策.md", "志愿规则");
+        RagChunkResult third = sourceChunk("03-调剂政策.md", "系统操作");
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(
+            response(first, second, third), List.of()));
+
+        RagEvaluationCase testCase = new RagEvaluationCase("general-duplicate",
+            "考研调剂需要满足什么条件？", Map.of());
+        testCase.setRelevantSources(List.of("03-调剂政策"));
+
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(testCase));
+
+        assertEquals(1.0, result.getMrr());
+        assertEquals(1.0, result.getRecallAt5());
+        assertEquals(1.0, result.getNdcg5());
+        assertEquals(1, result.getCases().get(0).getRelevantInTopK());
+    }
+
+    @Test
+    void contentHashQrelMatchesOnlyTheReviewedEvidenceChunk() {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        RagChunkResult wrongChunkFromSameSource = sourceChunk("杭州电子科技大学-招生简章.md", "招生计划");
+        wrongChunkFromSameSource.setContentHash("wrong-hash");
+        RagChunkResult reviewedEvidence = sourceChunk("杭州电子科技大学-招生简章.md", "学费与学制");
+        reviewedEvidence.setContentHash("reviewed-hash");
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(
+            response(wrongChunkFromSameSource, reviewedEvidence), List.of()));
+
+        RagEvaluationCase testCase = new RagEvaluationCase(
+            "hash-qrel", "杭电研究生学费和学制", Map.of("school_name", "杭州电子科技大学"));
+        RagEvaluationCase.RelevantCondition condition = new RagEvaluationCase.RelevantCondition();
+        condition.setContentHash("reviewed-hash");
+        testCase.setRelevantConditions(List.of(condition));
+
+        RagEvaluationResult result = new RagEvaluationService(retrievalService).run(List.of(testCase));
+
+        assertEquals(0.5, result.getMrr());
+        assertEquals(1, result.getCases().get(0).getRelevantInTopK());
+    }
+
+    @Test
+    void relevantCandidateOutsidePromptTopKDoesNotPass() {
+        RagRetrievalService retrievalService = mock(RagRetrievalService.class);
+        RagChunkResult selectedIrrelevant = sourceChunk("其他文档.md", "无关内容");
+        RagChunkResult unselectedRelevant = sourceChunk("03-调剂政策.md", "调剂条件");
+        unselectedRelevant.setSelectedForPrompt(false);
+        when(retrievalService.retrieve(any())).thenReturn(new RagRetrievalResult(
+            response(selectedIrrelevant, unselectedRelevant), List.of()));
+
+        RagEvaluationCase testCase = new RagEvaluationCase(
+            "prompt-boundary", "调剂需要什么条件", Map.of());
+        testCase.setRelevantSources(List.of("03-调剂政策"));
+
+        RagEvaluationResult result = new RagEvaluationService(retrievalService)
+            .runDataset("prompt-boundary", List.of(testCase), RagEvaluationMode.VECTOR_ONLY, 20, 1);
+
+        assertEquals(0, result.getPassedCases());
+        assertEquals(0.0, result.getMrr());
+        assertEquals(0.0, result.getHitAt1());
+    }
+
+    @Test
     void filterAccuracyIncludesOnlyPositiveCasesWithReturnedChunks() {
         RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse matchingPositive = response(chunk("1", "10", "2025", "program_year", "admission_score"));
@@ -315,6 +421,8 @@ class RagEvaluationServiceTest {
             relevantCase("matching"), relevantCase("empty"), noAnswerCase));
 
         assertEquals(1.0, result.getFilterAccuracy());
+        assertEquals(1, result.getFilterEvaluatedCases());
+        assertEquals(1, result.getFilterEmptyCases());
     }
 
     private static RagEvaluationCase relevantCase(String id) {
@@ -341,5 +449,13 @@ class RagEvaluationServiceTest {
         c.setSection(sec);
         c.setSelectedForPrompt(true);
         return c;
+    }
+
+    private static RagChunkResult sourceChunk(String sourceName, String title) {
+        RagChunkResult chunk = new RagChunkResult();
+        chunk.setSourceName(sourceName);
+        chunk.setChunkTitle(title);
+        chunk.setSelectedForPrompt(true);
+        return chunk;
     }
 }
