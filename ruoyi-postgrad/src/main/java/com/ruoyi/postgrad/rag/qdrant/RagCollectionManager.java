@@ -19,7 +19,7 @@ public class RagCollectionManager {
     private static final String COLLECTION_PREFIX = "postgrad_rag_";
 
     private static final String[] INDEXED_FIELDS = {
-        "source_type", "school_id", "program_id", "year", "doc_type", "section"
+        "source_type", "school_id", "school_name", "program_id", "year", "doc_type", "section"
     };
 
     private final RestTemplate restTemplate;

@@ -359,12 +359,11 @@ public class ReportServiceImpl implements IReportService {
         try {
             RagEvidenceRequest request = new RagEvidenceRequest();
             request.setRunId(runId);
-            request.setProgramId(fact.getProgramId());
-            request.setSchoolId(fact.getSchoolId());
-            request.setDocType("program_history");
+            request.setSchoolName(fact.getSchoolName());
+            request.setDocType("admission_guide");
             request.setQuery((fact.getSchoolName() != null ? fact.getSchoolName() : "")
                 + " " + (fact.getProgramName() != null ? fact.getProgramName() : "")
-                + " 推荐依据 风险 历年分数趋势");
+                + " 招生简章 报考条件 培养信息");
             request.setMaxResults(6);
             request.setRerankTopN(3);
             RagEvidenceResponse response = ragEvidenceService.retrieveProgramEvidence(request);

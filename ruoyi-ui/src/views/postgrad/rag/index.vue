@@ -51,25 +51,19 @@
             活动版本: <code>{{ displayCollection }}</code>
           </div>
 
-          <el-form :inline="true" :model="buildForm" size="mini" class="index-build-form">
-            <el-form-item label="起始年份">
-              <el-input-number v-model="buildForm.startYear" :min="2000" :max="2100" controls-position="right" />
-            </el-form-item>
-            <el-form-item label="结束年份">
-              <el-input-number v-model="buildForm.endYear" :min="2000" :max="2100" controls-position="right" />
-            </el-form-item>
-            <el-form-item>
-              <el-button
-                type="primary"
-                icon="el-icon-refresh-right"
-                :loading="building"
-                :disabled="building || !hasReindexPerm"
-                @click="handleBuild"
-              >
-                重建完整知识库
-              </el-button>
-            </el-form-item>
-          </el-form>
+          <div class="index-build-form">
+            <span class="index-corpus-scope">索引范围：通用知识与已采集学校招生简章</span>
+            <el-button
+              size="mini"
+              type="primary"
+              icon="el-icon-refresh-right"
+              :loading="building"
+              :disabled="building || !hasReindexPerm"
+              @click="handleBuild"
+            >
+              重建完整知识库
+            </el-button>
+          </div>
 
           <div v-if="building && buildRun" class="index-progress-box">
             <el-progress :percentage="buildRun.progressPercent || 0" :status="progressStatus" />
@@ -402,10 +396,6 @@ export default {
       loading: false,
       status: {},
       notice: '',
-      buildForm: {
-        startYear: 2024,
-        endYear: 2025
-      },
       building: false,
       buildRunId: null,
       buildRun: null,
@@ -588,10 +578,7 @@ export default {
         this.buildRun = null
         this.pollFailures = 0
         try {
-          const res = await startIndexBuild({
-            startYear: this.buildForm.startYear,
-            endYear: this.buildForm.endYear
-          })
+          const res = await startIndexBuild()
           const runId = (res && res.data && res.data.runId) || null
           if (!runId) {
             this.$message.error('启动索引构建失败：未获取到批次 ID')
@@ -1011,7 +998,15 @@ export default {
 }
 
 .index-build-form {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   margin-bottom: 0;
+}
+
+.index-corpus-scope {
+  color: #64748b;
+  font-size: 13px;
 }
 
 .index-progress-box {

@@ -5558,3 +5558,7 @@ node_modules/
 **/rag-generated/
 /rag-data/
 **/rag-data/
+
+# Local RAG corpus snapshots and browser inspection screenshots
+/ruoyi-postgrad/src/main/resources/rag-documents/schools/
+/szu_*.png

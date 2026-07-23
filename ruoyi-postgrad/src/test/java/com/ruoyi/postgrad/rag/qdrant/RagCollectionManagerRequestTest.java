@@ -26,7 +26,7 @@ class RagCollectionManagerRequestTest {
         String collection = "postgrad_rag_candidate";
 
         for (String field : new String[] {
-            "source_type", "school_id", "program_id", "year", "doc_type", "section"
+            "source_type", "school_id", "school_name", "program_id", "year", "doc_type", "section"
         }) {
             server.expect(requestTo(QDRANT_URL + "/collections/" + collection + "/index"))
                 .andExpect(method(HttpMethod.PUT))

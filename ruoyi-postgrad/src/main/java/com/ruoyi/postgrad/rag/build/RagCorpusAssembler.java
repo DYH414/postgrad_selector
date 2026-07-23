@@ -1,23 +1,22 @@
 package com.ruoyi.postgrad.rag.build;
 
-import com.ruoyi.postgrad.rag.knowledge.RagDataQualityDocument;
-import com.ruoyi.postgrad.rag.knowledge.RagKnowledgeExportService;
-import com.ruoyi.postgrad.rag.knowledge.RagProgramHistoryDocument;
-import com.ruoyi.postgrad.rag.knowledge.RagProgramYearFact;
-import com.ruoyi.postgrad.rag.knowledge.StructuredRagChunk;
-import com.ruoyi.postgrad.rag.knowledge.StructuredRagChunkBuilder;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
-import dev.langchain4j.data.document.loader.ClassPathDocumentLoader;
-import dev.langchain4j.data.document.parser.TextDocumentParser;
 import dev.langchain4j.data.document.splitter.DocumentSplitters;
 import dev.langchain4j.data.segment.TextSegment;
-import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -25,21 +24,27 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Component;
 
 /**
- * Assembles a unified RAG corpus from general documents (classpath rag-documents/)
- * and database evidence (via RagKnowledgeExportService).
+ * Assembles a unified RAG corpus from general documents (classpath rag-documents/).
+ *
+ * <p>Structured data (admission scores, plans, quality) is served via ChatTools
+ * from MySQL directly — no longer duplicated in RAG. RAG focuses on unstructured
+ * knowledge: 招生简章, policies, methodology guides, etc.</p>
  *
  * <p>Each chunk carries unified metadata: source_type, source_id, source_name,
  * doc_type, section, chunk_index, content, content_hash, document_version,
- * embedding_version, indexed_at. Database chunks additionally carry school_id,
- * school_name, program_id, program_name, year. General chunks omit these fields.</p>
+ * embedding_version, indexed_at.</p>
  */
 @Component
 public class RagCorpusAssembler {
@@ -48,28 +53,17 @@ public class RagCorpusAssembler {
 
     private static final int CHUNK_SIZE = 500;
     private static final int CHUNK_OVERLAP = 50;
-    /**
-     * A complete knowledge-base build must not silently depend on sort order.
-     * The current corpus is small enough to export every eligible program.
-     */
-    private static final int ALL_PROGRAMS_LIMIT = Integer.MAX_VALUE;
-    private static final String SCHEMA_VERSION = "rag-doc-v2";
+    private static final String SCHEMA_VERSION = "rag-doc-v3";
     private static final String EMBEDDING_VERSION = "bge-m3-v1";
-
-    private final RagKnowledgeExportService ragKnowledgeExportService;
-    private final StructuredRagChunkBuilder structuredChunkBuilder;
-    private final String ragDataDir;
+    private static final Pattern YEAR_PATTERN = Pattern.compile("(?<!\\d)(20\\d{2})(?!\\d)");
+    private static final Pattern SOURCE_URL_PATTERN =
+        Pattern.compile("(?m)^>\\s*来源\\s*:\\s*(https?://\\S+)\\s*$");
+    private static final String ADMISSION_GUIDE_SUFFIX = "-招生简章.md";
 
     // Package-private for test injection via reflection
     String documentsPath = "rag-documents/";
 
-    public RagCorpusAssembler(
-            RagKnowledgeExportService ragKnowledgeExportService,
-            StructuredRagChunkBuilder structuredChunkBuilder,
-            @Value("${app.ai.rag.data-dir:./rag-data}") String ragDataDir) {
-        this.ragKnowledgeExportService = ragKnowledgeExportService;
-        this.structuredChunkBuilder = structuredChunkBuilder;
-        this.ragDataDir = ragDataDir;
+    public RagCorpusAssembler() {
     }
 
     /**
@@ -83,57 +77,46 @@ public class RagCorpusAssembler {
         LocalDateTime indexedAt = LocalDateTime.now();
         List<TextSegment> allSegments = new ArrayList<>();
 
-        // 1. General documents
+        // General documents from rag-documents/ (招生简章, policies, methodology)
         List<Document> documents = loadClasspathDocuments();
         List<TextSegment> generalSegments = splitGeneralDocuments(documents, indexedAt);
         allSegments.addAll(generalSegments);
 
-        // 2. Database documents
-        List<StructuredRagChunk> dbChunks = new ArrayList<>();
-        int databaseDocCount = 0;
-
-        List<RagProgramHistoryDocument> histories =
-            ragKnowledgeExportService.exportProgramHistoryDocuments(startYear, endYear, ALL_PROGRAMS_LIMIT);
-        for (RagProgramHistoryDocument history : histories) {
-            dbChunks.addAll(structuredChunkBuilder.buildProgramHistoryChunks(history));
-            databaseDocCount++;
-        }
-
-        List<RagProgramYearFact> facts =
-            ragKnowledgeExportService.exportLatestProgramYearFacts(startYear, endYear, ALL_PROGRAMS_LIMIT);
-        for (RagProgramYearFact fact : facts) {
-            dbChunks.addAll(structuredChunkBuilder.buildProgramYearChunks(fact));
-            databaseDocCount++;
-        }
-
-        List<RagDataQualityDocument> qualities =
-            ragKnowledgeExportService.exportDataQualityDocuments(startYear, endYear, ALL_PROGRAMS_LIMIT);
-        for (RagDataQualityDocument quality : qualities) {
-            dbChunks.addAll(structuredChunkBuilder.buildDataQualityChunks(quality));
-            databaseDocCount++;
-        }
-
-        List<TextSegment> dbSegments = toDbSegments(dbChunks, indexedAt);
-        allSegments.addAll(dbSegments);
-
-        // 3. Write external Markdown mirrors
-        writeExternalMarkdown(dbChunks);
-
-        // 4. Validate source_id uniqueness
+        // Validate source_id uniqueness
         validateSourceIds(allSegments);
 
-        log.info("[RagCorpusAssembler] Assembled corpus: {} general docs -> {} segments, {} database docs -> {} segments",
-            documents.size(), generalSegments.size(), databaseDocCount, dbSegments.size());
+        log.info("[RagCorpusAssembler] Assembled corpus: {} general docs -> {} segments (structured data served via Tools)",
+            documents.size(), generalSegments.size());
 
-        return new AssembledCorpus(allSegments, documents.size(), databaseDocCount);
+        return new AssembledCorpus(allSegments, documents.size(), 0);
     }
 
     // ---- General document loading & splitting ----
 
     private List<Document> loadClasspathDocuments() {
         try {
-            List<Document> docs = ClassPathDocumentLoader.loadDocuments(documentsPath, new TextDocumentParser());
-            return docs != null ? docs : Collections.emptyList();
+            ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+            String pattern = "classpath*:" + documentsPath + "**/*.md";
+            Resource[] resources = resolver.getResources(pattern);
+            List<Document> docs = new ArrayList<>();
+            for (Resource resource : resources) {
+                String filename = resource.getFilename();
+                if (filename == null) continue;
+                String content;
+                try (InputStream is = resource.getInputStream();
+                     BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line).append('\n');
+                    }
+                    content = sb.toString();
+                }
+                Metadata metadata = new Metadata();
+                metadata.put("file_name", filename);
+                docs.add(Document.from(content, metadata));
+            }
+            return docs;
         } catch (Exception ex) {
             log.warn("[RagCorpusAssembler] No documents found at classpath:{} : {}", documentsPath, ex.getMessage());
             return Collections.emptyList();
@@ -148,10 +131,14 @@ public class RagCorpusAssembler {
             List<TextSegment> segments = splitter.split(document);
             String sourceName = sourceName(document);
             String docType = inferDocType(sourceName);
+            String schoolName = inferSchoolName(sourceName);
+            String sourceType = schoolName != null ? "school_guide" : "general";
+            String year = extractYear(document.text());
+            String sourceUrl = extractSourceUrl(document.text());
             for (int i = 0; i < segments.size(); i++) {
                 TextSegment segment = segments.get(i);
                 Metadata metadata = segment.metadata().copy();
-                metadata.put("source_type", "general");
+                metadata.put("source_type", sourceType);
                 metadata.put("source_id", "general:" + sourceName + ":" + i);
                 metadata.put("source_name", sourceName);
                 metadata.put("doc_type", docType);
@@ -162,61 +149,14 @@ public class RagCorpusAssembler {
                 metadata.put("document_version", SCHEMA_VERSION);
                 metadata.put("embedding_version", EMBEDDING_VERSION);
                 metadata.put("indexed_at", indexedAtStr);
-                // General chunks omit school_id, school_name, program_id, program_name, year
+                if (schoolName != null) metadata.put("school_name", schoolName);
+                if (year != null) metadata.put("year", year);
+                if (sourceUrl != null) metadata.put("source_url", sourceUrl);
+                // Unstructured chunks intentionally omit program_id/program_name.
                 result.add(TextSegment.from(segment.text(), metadata));
             }
         }
         return result;
-    }
-
-    // ---- Database document conversion ----
-
-    private List<TextSegment> toDbSegments(List<StructuredRagChunk> chunks, LocalDateTime indexedAt) {
-        List<TextSegment> segments = new ArrayList<>();
-        String indexedAtStr = indexedAt.toString();
-        for (StructuredRagChunk chunk : chunks) {
-            Metadata metadata = new Metadata();
-            // Copy all existing metadata from the structured chunk
-            for (Map.Entry<String, String> entry : chunk.getMetadata().entrySet()) {
-                metadata.put(entry.getKey(), entry.getValue() != null ? entry.getValue() : "");
-            }
-            // Override unified fields
-            metadata.put("source_type", "database");
-            metadata.put("source_id", chunk.getChunkId());
-            metadata.put("content", chunk.getText());
-            metadata.put("content_hash", sha256(chunk.getText()));
-            metadata.put("indexed_at", indexedAtStr);
-            metadata.put("embedding_version", EMBEDDING_VERSION);
-            // Existing metadata from chunk builder already provides:
-            // school_id, school_name, program_id, program_name, year, section,
-            // doc_type, source_name, document_version (as schema_version), etc.
-            segments.add(TextSegment.from(chunk.getText(), metadata));
-        }
-        return segments;
-    }
-
-    // ---- External Markdown output ----
-
-    private void writeExternalMarkdown(List<StructuredRagChunk> chunks) {
-        if (chunks.isEmpty()) {
-            return;
-        }
-        try {
-            Path generatedDir = Path.of(ragDataDir, "generated");
-            Files.createDirectories(generatedDir);
-            for (StructuredRagChunk chunk : chunks) {
-                String fileName = chunk.getChunkId()
-                    .replace(":", "_")
-                    .replace("/", "_")
-                    .replace("\\", "_") + ".md";
-                Path filePath = generatedDir.resolve(fileName);
-                Files.writeString(filePath, chunk.getText(), StandardCharsets.UTF_8);
-            }
-            log.info("[RagCorpusAssembler] Wrote {} external markdown files to {}", chunks.size(), generatedDir);
-        } catch (IOException ex) {
-            throw new IllegalStateException(
-                "Failed to write external Markdown to " + ragDataDir + "/generated/: " + ex.getMessage(), ex);
-        }
     }
 
     // ---- Validation ----
@@ -259,6 +199,9 @@ public class RagCorpusAssembler {
     }
 
     private String inferDocType(String sourceName) {
+        if (sourceName.contains("招生简章")) {
+            return "admission_guide";
+        }
         if (sourceName.contains("调剂")) {
             return "adjustment_policy";
         }
@@ -271,7 +214,29 @@ public class RagCorpusAssembler {
         if (sourceName.contains("术语")) {
             return "terminology";
         }
+        if (sourceName.contains("408") || sourceName.contains("考试")) {
+            return "exam_intro";
+        }
         return "general";
+    }
+
+    private String inferSchoolName(String sourceName) {
+        if (sourceName != null && sourceName.endsWith(ADMISSION_GUIDE_SUFFIX)) {
+            return sourceName.substring(0, sourceName.length() - ADMISSION_GUIDE_SUFFIX.length()).trim();
+        }
+        return null;
+    }
+
+    private String extractYear(String content) {
+        if (content == null) return null;
+        Matcher matcher = YEAR_PATTERN.matcher(content);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private String extractSourceUrl(String content) {
+        if (content == null) return null;
+        Matcher matcher = SOURCE_URL_PATTERN.matcher(content);
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     private static String sha256(String text) {

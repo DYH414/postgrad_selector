@@ -8,6 +8,7 @@ public class RagEvidenceRequest {
     private String query;
     private Long programId;
     private Long schoolId;
+    private String schoolName;
     private Integer year;
     private String docType;
     private String section;
@@ -22,6 +23,8 @@ public class RagEvidenceRequest {
     public void setProgramId(Long programId) { this.programId = programId; }
     public Long getSchoolId() { return schoolId; }
     public void setSchoolId(Long schoolId) { this.schoolId = schoolId; }
+    public String getSchoolName() { return schoolName; }
+    public void setSchoolName(String schoolName) { this.schoolName = schoolName; }
     public Integer getYear() { return year; }
     public void setYear(Integer year) { this.year = year; }
     public String getDocType() { return docType; }

@@ -24,17 +24,38 @@ public class RagQueryMetadataResolver {
     }
 
     public void enrich(RagSearchTestRequest request) {
-        if (request == null || notBlank(request.getSchoolId()) || !notBlank(request.getQuery())) {
+        if (request == null) {
+            return;
+        }
+        if (notBlank(request.getSchoolName())) {
+            request.setSchoolId(null);
+            applyCorpusScope(request);
             return;
         }
         try {
-            resolveSchool(request);
+            if (notBlank(request.getSchoolId())) {
+                resolveSchoolId(request);
+            } else if (notBlank(request.getQuery())) {
+                resolveSchoolMention(request);
+            }
         } catch (Exception e) {
             log.warn("[RagQueryMetadataResolver] Failed to resolve query metadata: {}", e.getMessage());
         }
+        applyCorpusScope(request);
     }
 
-    private void resolveSchool(RagSearchTestRequest request) {
+    private void applyCorpusScope(RagSearchTestRequest request) {
+        boolean schoolScoped = notBlank(request.getSchoolName())
+            || "admission_guide".equals(request.getDocType());
+        if (!notBlank(request.getSourceType())) {
+            request.setSourceType(schoolScoped ? "school_guide" : "general");
+        }
+        if (schoolScoped && !notBlank(request.getDocType())) {
+            request.setDocType("admission_guide");
+        }
+    }
+
+    private void resolveSchoolMention(RagSearchTestRequest request) {
         List<School> schools = schoolMapper.selectSchoolAll();
         if (schools == null || schools.isEmpty()) {
             return;
@@ -43,7 +64,22 @@ public class RagQueryMetadataResolver {
         schools.stream()
             .filter(school -> school != null && school.getId() != null && matches(query, school))
             .max(Comparator.comparingInt(this::matchLength))
-            .ifPresent(school -> request.setSchoolId(String.valueOf(school.getId())));
+            .ifPresent(school -> request.setSchoolName(school.getName()));
+    }
+
+    private void resolveSchoolId(RagSearchTestRequest request) {
+        List<School> schools = schoolMapper.selectSchoolAll();
+        if (schools == null || schools.isEmpty()) {
+            return;
+        }
+        schools.stream()
+            .filter(school -> school != null && school.getId() != null)
+            .filter(school -> String.valueOf(school.getId()).equals(request.getSchoolId()))
+            .findFirst()
+            .ifPresent(school -> {
+                request.setSchoolName(school.getName());
+                request.setSchoolId(null);
+            });
     }
 
     private boolean matches(String query, School school) {

@@ -41,7 +41,7 @@ public class RagEvidenceService {
 
         if (shouldFallback(request)) {
             RagSearchTestResponse fallback = retrieve(toSearchRequest(request, true));
-            RagEvidenceResponse response = toEvidenceResponse(request, fallback, true, "program_broad");
+            RagEvidenceResponse response = toEvidenceResponse(request, fallback, true, "metadata_broad");
             recordTrace(request, fallback, response);
             return response;
         }
@@ -63,6 +63,7 @@ public class RagEvidenceService {
         }
         search.setProgramId(value(request.getProgramId()));
         search.setSchoolId(value(request.getSchoolId()));
+        search.setSchoolName(request.getSchoolName());
         if (!broad) {
             search.setYear(value(request.getYear()));
             search.setDocType(request.getDocType());
@@ -105,7 +106,6 @@ public class RagEvidenceService {
 
     private boolean shouldFallback(RagEvidenceRequest request) {
         return request != null
-            && request.getProgramId() != null
             && (notBlank(request.getDocType()) || notBlank(request.getSection()) || request.getYear() != null);
     }
 

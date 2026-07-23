@@ -7,11 +7,10 @@ export function getRagStatus() {
   })
 }
 
-export function startIndexBuild(data) {
+export function startIndexBuild() {
   return request({
     url: '/postgrad/rag/index-runs',
-    method: 'post',
-    params: data
+    method: 'post'
   })
 }
 

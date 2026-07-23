@@ -21,7 +21,9 @@ public class RagSearchTestRequest {
     private Double minScore = 0.6;
     private Integer rerankTopN = DEFAULT_RERANK_TOP_N;
     private boolean skipRerank = false;
+    private String sourceType;
     private String schoolId;
+    private String schoolName;
     private String programId;
     private String year;
     private String docType;
@@ -47,8 +49,12 @@ public class RagSearchTestRequest {
     public void setRerankTopN(Integer rerankTopN) { this.rerankTopN = clamp(rerankTopN, DEFAULT_RERANK_TOP_N, RERANK_TOP_N_CAP); }
     public boolean isSkipRerank() { return skipRerank; }
     public void setSkipRerank(boolean skipRerank) { this.skipRerank = skipRerank; }
+    public String getSourceType() { return sourceType; }
+    public void setSourceType(String sourceType) { this.sourceType = sourceType; }
     public String getSchoolId() { return schoolId; }
     public void setSchoolId(String schoolId) { this.schoolId = schoolId; }
+    public String getSchoolName() { return schoolName; }
+    public void setSchoolName(String schoolName) { this.schoolName = schoolName; }
     public String getProgramId() { return programId; }
     public void setProgramId(String programId) { this.programId = programId; }
     public String getYear() { return year; }
@@ -62,7 +68,9 @@ public class RagSearchTestRequest {
 
     public Map<String, String> getMetadataFilters() {
         Map<String, String> filters = new LinkedHashMap<>();
+        putIfPresent(filters, "source_type", sourceType);
         putIfPresent(filters, "school_id", schoolId);
+        putIfPresent(filters, "school_name", schoolName);
         putIfPresent(filters, "program_id", programId);
         putIfPresent(filters, "year", year);
         putIfPresent(filters, "doc_type", docType);
