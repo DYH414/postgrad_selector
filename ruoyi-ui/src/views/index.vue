@@ -37,8 +37,8 @@
         <el-card class="status-card">
           <div slot="header">运维入口</div>
           <div class="ops-actions">
-            <el-button type="primary" plain @click="goRoute('/postgrad/rag')">知识库状态</el-button>
-            <el-button type="primary" plain @click="goRoute('/postgrad/observe')">AI 服务状态</el-button>
+            <el-button type="primary" plain @click="goRoute('/postgrad/ops/rag')">知识库状态</el-button>
+            <el-button type="primary" plain @click="goRoute('/postgrad/ops/ai-observe')">AI 服务状态</el-button>
             <el-button plain @click="goRoute('/postgrad/workspace')">学校数据工作台</el-button>
             <el-button plain @click="goRoute('/postgrad/review')">数据审核</el-button>
           </div>
@@ -56,8 +56,8 @@ export default {
       version: '1.0.0',
       quickLinks: [
         { title: '学校数据', desc: '维护院校、专业、招生和录取事实。', icon: 'el-icon-school', path: '/postgrad/workspace' },
-        { title: '知识库状态', desc: '查看索引版本、检索记录和质量检查。', icon: 'el-icon-collection', path: '/postgrad/rag' },
-        { title: 'AI 服务状态', desc: '观察模型调用、工具执行和异常摘要。', icon: 'el-icon-monitor', path: '/postgrad/observe' },
+        { title: '知识库状态', desc: '查看索引版本、检索记录和质量检查。', icon: 'el-icon-collection', path: '/postgrad/ops/rag' },
+        { title: 'AI 服务状态', desc: '观察模型调用、工具执行和异常摘要。', icon: 'el-icon-monitor', path: '/postgrad/ops/ai-observe' },
         { title: '数据审核', desc: '处理采集数据的审核与入库流程。', icon: 'el-icon-document-checked', path: '/postgrad/review' }
       ]
     }
