@@ -175,16 +175,16 @@ class RagAdminControllerTraceTest {
     }
 
     @Test
-    void frozenEvaluationReturnsAblationReport() {
+    void frozenV3EvaluationReturnsAblationReport() {
         RagEvaluationService evalService = mock(RagEvaluationService.class);
         RagEvaluationRunReport report = new RagEvaluationRunReport();
-        when(evalService.runFrozenV1Ablation()).thenReturn(report);
+        when(evalService.runFrozenV3Ablation()).thenReturn(report);
         RagAdminController controller = new RagAdminController(
             mock(RagIndexBuildService.class), mock(RagIndexStatusService.class),
             mock(RagIndexRunMapper.class), mock(RagRetrievalService.class),
             new RagTraceRecorder(), evalService);
 
-        AjaxResult result = controller.runFrozenEvaluation();
+        AjaxResult result = controller.runFrozenV3Evaluation();
 
         assertTrue(result.isSuccess());
         assertEquals(report, result.get("data"));
@@ -192,7 +192,7 @@ class RagAdminControllerTraceTest {
 
     @Test
     void expensiveEvaluationEndpointsRequireExecutePermission() throws Exception {
-        for (String methodName : List.of("runEval", "runEvalDev", "runEvalTest", "runFrozenEvaluation", "runEvalFull")) {
+        for (String methodName : List.of("runEval", "runEvalDev", "runEvalTest", "runFrozenV3Evaluation", "runEvalFull")) {
             Method method = RagAdminController.class.getMethod(methodName);
             PreAuthorize annotation = method.getAnnotation(PreAuthorize.class);
             assertTrue(annotation != null, methodName + " must declare PreAuthorize");

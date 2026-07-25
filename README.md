@@ -303,8 +303,8 @@ RAG 评测包含：
 管理端权限为 `postgrad:ragEval:view/edit/run/freeze/compare/export`。本阶段不包含 BM25 混合召回、知识文档上传和 LLM-as-judge；评测工作台只验证现有 Dense Retrieval + Metadata Filter + BGE Rerank 链路。
 
 - 63 条开发集，用于迭代和 bad case 分析。
-- 18 条 `frozen-v1` 排序集，不参与原地调参。
-- 4 条 `safety-v1` No-answer 安全集。
+- 36 条 `frozen-v3` 排序集，不参与原地调参。
+- 12 条 `safety-v3` No-answer 安全集。
 - Vector Only 与 Vector + BGE Rerank 消融。
 - MRR、Hit@K、Recall@K、nDCG、Filter Accuracy、No-answer Accuracy、FPR 和阶段延迟。
 

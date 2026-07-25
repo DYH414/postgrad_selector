@@ -52,14 +52,23 @@ class RagEvalDatasetServiceTest {
     void bundledImportIsIdempotent() {
         RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
         RagEvalDataset existing = dataset(9L, "FROZEN");
-        existing.setDatasetKey("frozen-v1");
-        existing.setVersion("v1");
-        when(mapper.selectDatasetByKeyVersion("frozen-v1", "v1")).thenReturn(existing);
+        existing.setDatasetKey("frozen-v3");
+        existing.setVersion("v3");
+        when(mapper.selectDatasetByKeyVersion("frozen-v3", "v3")).thenReturn(existing);
 
-        RagEvalDataset actual = new RagEvalDatasetService(mapper).importBundled("frozen-v1", "admin");
+        RagEvalDataset actual = new RagEvalDatasetService(mapper).importBundled("frozen-v3", "admin");
 
         assertEquals(9L, actual.getId());
         verify(mapper, never()).insertDataset(any());
+    }
+
+    @Test
+    void obsoleteBundledV1IsRejected() {
+        RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
+
+        assertThrows(ServiceException.class,
+            () -> new RagEvalDatasetService(mapper).importBundled("frozen-v1", "admin"));
+        verify(mapper, never()).selectDatasetByKeyVersion("frozen-v1", "v1");
     }
 
     @Test

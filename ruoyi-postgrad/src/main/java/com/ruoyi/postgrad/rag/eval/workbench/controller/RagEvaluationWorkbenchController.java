@@ -96,7 +96,7 @@ public class RagEvaluationWorkbenchController extends BaseController {
     @PreAuthorize("@ss.hasPermi('postgrad:ragEval:edit')")
     @PostMapping("/datasets/import/{resourceName}")
     public AjaxResult importBundled(@PathVariable String resourceName) {
-        if (!List.of("frozen-v1", "safety-v1", "frozen-v3", "safety-v3").contains(resourceName)) {
+        if (!List.of("frozen-v3", "safety-v3").contains(resourceName)) {
             return error("Unsupported bundled dataset");
         }
         return success(datasets.importBundled(resourceName, getUsername()));

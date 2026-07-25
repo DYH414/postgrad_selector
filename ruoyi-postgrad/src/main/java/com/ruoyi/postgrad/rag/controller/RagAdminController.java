@@ -150,12 +150,6 @@ public class RagAdminController extends BaseController {
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
-    @PostMapping("/eval/frozen-v1")
-    public AjaxResult runFrozenEvaluation() {
-        return success(ragEvaluationService.runFrozenV1Ablation());
-    }
-
-    @PreAuthorize("@ss.hasPermi('postgrad:rag:eval')")
     @PostMapping("/eval/frozen-v3")
     public AjaxResult runFrozenV3Evaluation() {
         return success(ragEvaluationService.runFrozenV3Ablation());

@@ -145,17 +145,17 @@ public class RagEvalDatasetService {
 
     @Transactional
     public RagEvalDataset importBundled(String resourceName, String operator) {
+        if (!List.of("frozen-v3", "safety-v3").contains(resourceName)) {
+            throw new ServiceException("Unsupported bundled dataset");
+        }
         boolean safety = resourceName.startsWith("safety-");
-        boolean v3 = resourceName.endsWith("-v3");
-        String version = v3 ? "v3" : "v1";
+        String version = "v3";
         RagEvalDataset existing = mapper.selectDatasetByKeyVersion(resourceName, version);
         if (existing != null) return existing;
-        List<RagEvaluationCase> source = v3
-            ? (safety ? resourceLoader.loadSafetyV3() : resourceLoader.loadFrozenV3())
-            : (safety ? resourceLoader.loadSafetyV1() : resourceLoader.loadFrozenV1());
-        String checksum = v3
-            ? (safety ? resourceLoader.verifySafetyV3Checksum() : resourceLoader.verifyFrozenV3Checksum())
-            : (safety ? resourceLoader.verifySafetyV1Checksum() : resourceLoader.verifyFrozenV1Checksum());
+        List<RagEvaluationCase> source = safety
+            ? resourceLoader.loadSafetyV3() : resourceLoader.loadFrozenV3();
+        String checksum = safety
+            ? resourceLoader.verifySafetyV3Checksum() : resourceLoader.verifyFrozenV3Checksum();
         RagEvalDataset dataset = new RagEvalDataset();
         dataset.setDatasetKey(resourceName);
         dataset.setName((safety ? "Safety " : "Frozen ") + version);

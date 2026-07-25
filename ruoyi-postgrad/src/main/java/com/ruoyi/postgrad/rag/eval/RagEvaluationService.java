@@ -68,12 +68,6 @@ public class RagEvaluationService {
      * Runs the frozen ranking set in vector-only and vector-rerank modes, while
      * calculating abstention separately from the safety set.
      */
-    public RagEvaluationRunReport runFrozenV1Ablation() {
-        return runFrozenAblation(
-            "frozen-v1", datasetLoader.loadFrozenV1(), datasetLoader.verifyFrozenV1Checksum(),
-            "safety-v1", datasetLoader.loadSafetyV1(), datasetLoader.verifySafetyV1Checksum());
-    }
-
     /**
      * Runs the reviewed V3 corpus benchmark. Positive ranking metrics and
      * abstention metrics remain separate so negative cases cannot dilute MRR.

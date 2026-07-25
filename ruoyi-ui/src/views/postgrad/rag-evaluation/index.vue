@@ -9,8 +9,8 @@
       <el-tab-pane label="数据集" name="datasets">
         <div class="toolbar">
           <el-button v-hasPermi="['postgrad:ragEval:edit']" type="primary" size="mini" icon="el-icon-plus" @click="openDataset">新建开发集</el-button>
-          <el-button size="mini" @click="handleImport('frozen-v1')">导入 frozen-v1</el-button>
-          <el-button size="mini" @click="handleImport('safety-v1')">导入 safety-v1</el-button>
+          <el-button size="mini" @click="handleImport('frozen-v3')">导入 frozen-v3</el-button>
+          <el-button size="mini" @click="handleImport('safety-v3')">导入 safety-v3</el-button>
           <el-upload action="#" :auto-upload="false" :show-file-list="false" accept=".jsonl" :on-change="handleJsonlFile"><el-button size="mini" icon="el-icon-upload2">导入 JSONL</el-button></el-upload>
         </div>
         <el-table v-loading="loading.datasets" :data="datasetRows" stripe size="mini" @row-click="selectDataset">

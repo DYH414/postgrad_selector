@@ -66,7 +66,7 @@ class RagEvaluationServiceTest {
     }
 
     @Test
-    void frozenAblationWritesCurrentLegacyDatasetAndSafetyMetricsIntoJsonReport() throws Exception {
+    void frozenV3AblationWritesCurrentBenchmarkAndSafetyMetricsIntoJsonReport() throws Exception {
         RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse response = response();
         response.getLatency().setTotalMs(12L);
@@ -76,25 +76,25 @@ class RagEvaluationServiceTest {
 
         RagEvaluationRunReport report = new RagEvaluationService(
             retrievalService, new RagEvaluationDatasetLoader(), collectionManager, tempDir)
-            .runFrozenV1Ablation();
+            .runFrozenV3Ablation();
 
-        assertEquals(18, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
-        assertEquals(18, report.getResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
+        assertEquals(36, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
+        assertEquals(36, report.getResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
         assertEquals(0, report.getResults().get(RagEvaluationMode.VECTOR_ONLY).getNoAnswerCases());
-        assertEquals(4, report.getSafetyResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
-        assertEquals(4, report.getSafetyResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
-        assertEquals(4, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
-        assertEquals(4, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
+        assertEquals(12, report.getSafetyResults().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
+        assertEquals(12, report.getSafetyResults().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
+        assertEquals(12, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_ONLY).getTotalCases());
+        assertEquals(12, report.getAbstentionMetrics().get(RagEvaluationMode.VECTOR_RERANK).getTotalCases());
         assertEquals(12L, report.getLatencyMetrics().get(RagEvaluationMode.VECTOR_ONLY).getP50Ms());
         assertEquals("postgrad_rag_20260713", report.getRunMetadata().get("qdrantCollection"));
         assertTrue(Files.isRegularFile(Path.of(report.getReportPath())));
 
         JSONObject json = JSON.parseObject(Files.readString(Path.of(report.getReportPath())));
-        assertEquals(18, json.getJSONObject("results").getJSONObject("VECTOR_ONLY").getIntValue("totalCases"));
-        assertEquals(4, json.getJSONObject("abstentionMetrics").getJSONObject("VECTOR_RERANK").getIntValue("totalCases"));
+        assertEquals(36, json.getJSONObject("results").getJSONObject("VECTOR_ONLY").getIntValue("totalCases"));
+        assertEquals(12, json.getJSONObject("abstentionMetrics").getJSONObject("VECTOR_RERANK").getIntValue("totalCases"));
 
-        verify(retrievalService, times(22)).retrieve(argThat(request -> request.isSkipRerank()));
-        verify(retrievalService, times(22)).retrieve(argThat(request -> !request.isSkipRerank()));
+        verify(retrievalService, times(48)).retrieve(argThat(request -> request.isSkipRerank()));
+        verify(retrievalService, times(48)).retrieve(argThat(request -> !request.isSkipRerank()));
     }
 
     @Test
