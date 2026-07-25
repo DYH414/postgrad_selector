@@ -32,6 +32,7 @@ import com.ruoyi.postgrad.recommend.service.IDraftSummaryMessageService;
 @Service
 public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskService {
     static final String TASK_KEY_PREFIX = "ai:v2:draft:task:";
+    static final String LOCK_KEY = "ai:v2:draft:lock:";
     private static final Duration TASK_TTL = Duration.ofMinutes(60);
 
     private static final Logger log = LoggerFactory.getLogger(DraftGenerationTaskServiceImpl.class);
@@ -55,6 +56,20 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
     public DraftGenerationTaskVO start(Long userId) {
         String taskId = UUID.randomUUID().toString();
         String streamToken = UUID.randomUUID().toString().replace("-", "");
+
+        // 原子防重复提交：setIfAbsent 等价于 check-and-set，
+        // 消除 hasKey → runAsync → generateDraft 之间的竞态窗口
+        // TTL 比 generateDraft 的真实锁稍长，覆盖 CompletableFuture 调度延迟
+        String lockKey = LOCK_KEY + userId;
+        Boolean acquired = redisTemplate.opsForValue()
+            .setIfAbsent(lockKey, taskId, Duration.ofMinutes(12));
+        if (Boolean.FALSE.equals(acquired)) {
+            log.info("[DraftTask] User {} already has a running draft task, rejecting duplicate start", userId);
+            DraftGenerationTaskVO vo = new DraftGenerationTaskVO();
+            vo.setStatus("locked");
+            vo.setMessage("已有草稿正在生成，请稍候");
+            return vo;
+        }
 
         DraftGenerationTaskState state = new DraftGenerationTaskState();
         state.setTaskId(taskId);
@@ -92,6 +107,9 @@ public class DraftGenerationTaskServiceImpl implements IDraftGenerationTaskServi
     }
 
     private void runTask(Long userId, String taskId) {
+        // 释放 start() 中设置的预锁，让 generateDraft 在 DraftServiceImpl 中获取同名锁
+        // 删锁和 generateDraft 的 setIfAbsent 在同一线程内执行，竞态窗口极小
+        redisTemplate.delete(LOCK_KEY + userId);
         draftService.generateDraft(userId, new DraftGenerationCallback() {
             @Override
             public void onTierComplete(String tier, String tierJson) {

@@ -5,10 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 
@@ -35,7 +40,9 @@ class DraftGenerationTaskServiceImplTest {
     void setUp() {
         redis = mock(StringRedisTemplate.class);
         ops = mock(ValueOperations.class);
-        when(redis.opsForValue()).thenReturn(ops);
+        doReturn(ops).when(redis).opsForValue();
+        // 默认：锁获取成功（null → Boolean.FALSE.equals(null) = false → 通过锁检查）
+        doReturn(null).when(ops).setIfAbsent(anyString(), anyString(), any(Duration.class));
 
         draftService = mock(IDraftService.class);
 
@@ -68,6 +75,16 @@ class DraftGenerationTaskServiceImplTest {
     }
 
     @Test
+    void startShouldRejectDuplicateWhenLockHeld() {
+        doReturn(false).when(ops).setIfAbsent(anyString(), anyString(), any(Duration.class));
+
+        DraftGenerationTaskVO vo = service.start(1L);
+
+        assertEquals("locked", vo.getStatus());
+        assertEquals("已有草稿正在生成，请稍候", vo.getMessage());
+    }
+
+    @Test
     void validateStreamTokenShouldRejectWrongToken() {
         DraftGenerationTaskVO vo = service.start(1L);
 
@@ -77,7 +94,7 @@ class DraftGenerationTaskServiceImplTest {
             jsonCaptor.capture(),
             any(Duration.class));
         String persisted = jsonCaptor.getAllValues().get(0);
-        when(ops.get("ai:v2:draft:task:" + vo.getTaskId())).thenReturn(persisted);
+        doReturn(persisted).when(ops).get("ai:v2:draft:task:" + vo.getTaskId());
 
         assertEquals(false, service.validateStreamToken(vo.getTaskId(), "wrong-token"));
     }
