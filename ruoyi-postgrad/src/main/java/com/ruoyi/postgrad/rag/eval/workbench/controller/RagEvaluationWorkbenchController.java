@@ -8,6 +8,8 @@ import com.ruoyi.postgrad.rag.eval.RagEvaluationMode;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
 import com.ruoyi.postgrad.rag.eval.workbench.mapper.RagEvaluationWorkbenchMapper;
+import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion;
+import com.ruoyi.postgrad.rag.eval.workbench.service.AgentConfigVersionService;
 import com.ruoyi.postgrad.rag.eval.workbench.service.RagEvalDatasetService;
 import com.ruoyi.postgrad.rag.eval.workbench.service.RagEvalRunService;
 import com.ruoyi.postgrad.rag.mapper.RagRetrievalTraceMapper;
@@ -38,11 +40,14 @@ public class RagEvaluationWorkbenchController extends BaseController {
     private final RagEvalRunService runs;
     private final RagEvaluationWorkbenchMapper mapper;
     private final RagRetrievalTraceMapper traceMapper;
+    private final AgentConfigVersionService agentConfigVersions;
 
     public RagEvaluationWorkbenchController(RagEvalDatasetService datasets, RagEvalRunService runs,
                                             RagEvaluationWorkbenchMapper mapper,
-                                            RagRetrievalTraceMapper traceMapper) {
+                                            RagRetrievalTraceMapper traceMapper,
+                                            AgentConfigVersionService agentConfigVersions) {
         this.datasets = datasets; this.runs = runs; this.mapper = mapper; this.traceMapper = traceMapper;
+        this.agentConfigVersions = agentConfigVersions;
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:ragEval:view')")
@@ -187,6 +192,29 @@ public class RagEvaluationWorkbenchController extends BaseController {
         headers.setContentType(type);
         headers.setContentDisposition(ContentDisposition.attachment().filename("rag-eval-" + runId + "." + ext).build());
         return ResponseEntity.ok().headers(headers).body(body);
+    }
+
+    // ── AGENT_E2E: AgentConfigVersion ──
+
+    @PreAuthorize("@ss.hasPermi('postgrad:ragEval:view')")
+    @GetMapping("/agent-config-versions")
+    public TableDataInfo listAgentConfigVersions(@RequestParam(required = false) String status) {
+        startPage();
+        List<AgentConfigVersion> versions = agentConfigVersions.list(status);
+        versions.forEach(v -> { v.setBusinessPromptText(null); v.setRoutingPromptText(null); }); // 列表不返回 Prompt 正文
+        return getDataTable(versions);
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:ragEval:edit')")
+    @PostMapping("/agent-config-versions")
+    public AjaxResult createAgentConfigVersion(@RequestBody AgentConfigVersion version) {
+        return success(agentConfigVersions.create(version, getUsername()));
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:ragEval:view')")
+    @GetMapping("/agent-config-versions/{id}")
+    public AjaxResult agentConfigVersion(@PathVariable Long id) {
+        return success(agentConfigVersions.get(id)); // 详情返回完整 Prompt
     }
 
     public static class StartRunRequest {

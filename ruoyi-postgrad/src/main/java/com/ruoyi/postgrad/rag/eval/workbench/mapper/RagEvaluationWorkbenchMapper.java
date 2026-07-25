@@ -1,5 +1,6 @@
 package com.ruoyi.postgrad.rag.eval.workbench.mapper;
 
+import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseResultEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
@@ -49,4 +50,10 @@ public interface RagEvaluationWorkbenchMapper {
     List<RagEvalCaseResultEntity> selectCaseResultsByRunId(String runId);
     int reviewCaseResult(@Param("id") Long id, @Param("category") String category,
                          @Param("note") String note, @Param("reviewedBy") String reviewedBy);
+
+    // ── AGENT_E2E: AgentConfigVersion（不可变配置版本）──
+    int insertAgentConfigVersion(AgentConfigVersion version);
+    AgentConfigVersion selectAgentConfigVersionById(Long id);
+    List<AgentConfigVersion> selectAgentConfigVersions(@Param("status") String status);
+    int archiveAgentConfigVersion(@Param("id") Long id);
 }

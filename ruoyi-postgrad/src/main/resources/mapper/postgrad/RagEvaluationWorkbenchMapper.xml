@@ -86,4 +86,19 @@
     <select id="selectCaseResultById" resultMap="resultMap">SELECT * FROM rag_eval_case_result WHERE id=#{id}</select>
     <select id="selectCaseResultsByRunId" resultMap="resultMap">SELECT * FROM rag_eval_case_result WHERE run_id=#{runId} ORDER BY case_id,eval_mode</select>
     <update id="reviewCaseResult">UPDATE rag_eval_case_result SET human_failure_category=#{category},reviewer_note=#{note},reviewed_by=#{reviewedBy},reviewed_at=CURRENT_TIMESTAMP(3) WHERE id=#{id}</update>
+
+    <!-- ── AGENT_E2E: agent_config_version ── -->
+    <resultMap id="agentConfigVersionMap" type="com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion">
+        <id property="id" column="id"/><result property="versionName" column="version_name"/>
+        <result property="businessPromptText" column="business_prompt_text"/><result property="businessPromptChecksum" column="business_prompt_checksum"/>
+        <result property="routingPromptText" column="routing_prompt_text"/><result property="routingPromptChecksum" column="routing_prompt_checksum"/>
+        <result property="model" column="model"/><result property="temperature" column="temperature"/>
+        <result property="toolCatalogChecksum" column="tool_catalog_checksum"/><result property="ragConfigSnapshotJson" column="rag_config_snapshot_json"/>
+        <result property="gitCommit" column="git_commit"/><result property="status" column="status"/>
+        <result property="createdBy" column="created_by"/><result property="createdAt" column="created_at"/>
+    </resultMap>
+    <insert id="insertAgentConfigVersion" parameterType="com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion" useGeneratedKeys="true" keyProperty="id">INSERT INTO agent_config_version(version_name,business_prompt_text,business_prompt_checksum,routing_prompt_text,routing_prompt_checksum,model,temperature,tool_catalog_checksum,rag_config_snapshot_json,git_commit,status,created_by) VALUES(#{versionName},#{businessPromptText},#{businessPromptChecksum},#{routingPromptText},#{routingPromptChecksum},#{model},#{temperature},#{toolCatalogChecksum},#{ragConfigSnapshotJson},#{gitCommit},#{status},#{createdBy})</insert>
+    <select id="selectAgentConfigVersionById" resultMap="agentConfigVersionMap">SELECT * FROM agent_config_version WHERE id=#{id}</select>
+    <select id="selectAgentConfigVersions" resultMap="agentConfigVersionMap">SELECT * FROM agent_config_version <where><if test="status != null and status != ''">status=#{status}</if></where> ORDER BY created_at DESC</select>
+    <update id="archiveAgentConfigVersion">UPDATE agent_config_version SET status='ARCHIVED' WHERE id=#{id} AND status='ACTIVE'</update>
 </mapper>

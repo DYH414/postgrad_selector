@@ -107,6 +107,7 @@ class RagEvaluationWorkbenchControllerTest {
     private RagEvaluationWorkbenchController controller(RagEvalDatasetService datasets, RagEvalRunService runs,
                                                          RagRetrievalTraceMapper traces) {
         return new RagEvaluationWorkbenchController(datasets, runs,
-            mock(RagEvaluationWorkbenchMapper.class), traces);
+            mock(RagEvaluationWorkbenchMapper.class), traces,
+            mock(com.ruoyi.postgrad.rag.eval.workbench.service.AgentConfigVersionService.class));
     }
 }
