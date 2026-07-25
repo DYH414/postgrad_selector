@@ -6,6 +6,7 @@
         <id property="id" column="id"/><result property="datasetKey" column="dataset_key"/>
         <result property="name" column="name"/><result property="version" column="version"/>
         <result property="datasetType" column="dataset_type"/><result property="lifecycleState" column="lifecycle_state"/>
+        <result property="evaluationType" column="evaluation_type"/>
         <result property="description" column="description"/><result property="sourceDatasetId" column="source_dataset_id"/>
         <result property="checksumSha256" column="checksum_sha256"/><result property="caseCount" column="case_count"/>
         <result property="lockVersion" column="lock_version"/><result property="createdBy" column="created_by"/>
@@ -21,6 +22,7 @@
         <result property="relevantSourcesJson" column="relevant_sources_json"/>
         <result property="noAnswer" column="no_answer"/><result property="sourceDataAvailable" column="source_data_available"/>
         <result property="expectedFallback" column="expected_fallback"/><result property="expectedRoute" column="expected_route"/>
+        <result property="agentSpecJson" column="agent_spec_json"/>
         <result property="tagsJson" column="tags_json"/><result property="reviewerNote" column="reviewer_note"/>
         <result property="createdBy" column="created_by"/><result property="createdAt" column="created_at"/>
         <result property="updatedBy" column="updated_by"/><result property="updatedAt" column="updated_at"/>
@@ -28,6 +30,8 @@
     <resultMap id="runMap" type="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalRun">
         <id property="runId" column="run_id"/><result property="datasetId" column="dataset_id"/>
         <result property="datasetChecksum" column="dataset_checksum"/><result property="status" column="status"/>
+        <result property="evaluationType" column="evaluation_type"/><result property="agentConfigVersionId" column="agent_config_version_id"/>
+        <result property="agentConfigSnapshotJson" column="agent_config_snapshot_json"/>
         <result property="modesJson" column="modes_json"/><result property="parameterSnapshotJson" column="parameter_snapshot_json"/>
         <result property="qdrantAlias" column="qdrant_alias"/><result property="qdrantCollection" column="qdrant_collection"/>
         <result property="embeddingModel" column="embedding_model"/><result property="rerankModel" column="rerank_model"/>
@@ -52,8 +56,8 @@
     </resultMap>
 
     <insert id="insertDataset" parameterType="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO rag_eval_dataset(dataset_key,name,version,dataset_type,lifecycle_state,description,source_dataset_id,checksum_sha256,case_count,lock_version,created_by,updated_by)
-        VALUES(#{datasetKey},#{name},#{version},#{datasetType},#{lifecycleState},#{description},#{sourceDatasetId},#{checksumSha256},#{caseCount},#{lockVersion},#{createdBy},#{updatedBy})
+        INSERT INTO rag_eval_dataset(dataset_key,name,version,dataset_type,lifecycle_state,evaluation_type,description,source_dataset_id,checksum_sha256,case_count,lock_version,created_by,updated_by)
+        VALUES(#{datasetKey},#{name},#{version},#{datasetType},#{lifecycleState},IFNULL(#{evaluationType},'RAG_RETRIEVAL'),#{description},#{sourceDatasetId},#{checksumSha256},#{caseCount},#{lockVersion},#{createdBy},#{updatedBy})
     </insert>
     <select id="selectDatasetById" resultMap="datasetMap">SELECT * FROM rag_eval_dataset WHERE id=#{id}</select>
     <select id="selectDatasetByKeyVersion" resultMap="datasetMap">SELECT * FROM rag_eval_dataset WHERE dataset_key=#{datasetKey} AND version=#{version} LIMIT 1</select>
@@ -62,13 +66,13 @@
     <update id="updateDatasetCount">UPDATE rag_eval_dataset SET case_count=#{caseCount} WHERE id=#{id}</update>
     <update id="freezeDataset">UPDATE rag_eval_dataset SET dataset_type='FROZEN',lifecycle_state='FROZEN',checksum_sha256=#{checksum},case_count=#{caseCount},updated_by=#{operator},lock_version=lock_version+1 WHERE id=#{id} AND lock_version=#{lockVersion} AND lifecycle_state!='FROZEN'</update>
 
-    <insert id="insertCase" parameterType="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity" useGeneratedKeys="true" keyProperty="id">INSERT INTO rag_eval_case(dataset_id,case_key,query_text,category,difficulty,expected_metadata_json,relevant_conditions_json,relevant_sources_json,no_answer,source_data_available,expected_fallback,expected_route,tags_json,reviewer_note,created_by,updated_by) VALUES(#{datasetId},#{caseKey},#{queryText},#{category},#{difficulty},#{expectedMetadataJson},#{relevantConditionsJson},#{relevantSourcesJson},#{noAnswer},#{sourceDataAvailable},#{expectedFallback},#{expectedRoute},#{tagsJson},#{reviewerNote},#{createdBy},#{updatedBy})</insert>
+    <insert id="insertCase" parameterType="com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity" useGeneratedKeys="true" keyProperty="id">INSERT INTO rag_eval_case(dataset_id,case_key,query_text,category,difficulty,expected_metadata_json,relevant_conditions_json,relevant_sources_json,no_answer,source_data_available,expected_fallback,expected_route,agent_spec_json,tags_json,reviewer_note,created_by,updated_by) VALUES(#{datasetId},#{caseKey},#{queryText},#{category},#{difficulty},#{expectedMetadataJson},#{relevantConditionsJson},#{relevantSourcesJson},#{noAnswer},#{sourceDataAvailable},#{expectedFallback},#{expectedRoute},#{agentSpecJson},#{tagsJson},#{reviewerNote},#{createdBy},#{updatedBy})</insert>
     <select id="selectCaseById" resultMap="caseMap">SELECT * FROM rag_eval_case WHERE id=#{id}</select>
     <select id="selectCasesByDatasetId" resultMap="caseMap">SELECT * FROM rag_eval_case WHERE dataset_id=#{datasetId} ORDER BY case_key</select>
-    <update id="updateCase">UPDATE rag_eval_case c JOIN rag_eval_dataset d ON d.id=c.dataset_id SET c.case_key=#{caseKey},c.query_text=#{queryText},c.category=#{category},c.difficulty=#{difficulty},c.expected_metadata_json=#{expectedMetadataJson},c.relevant_conditions_json=#{relevantConditionsJson},c.relevant_sources_json=#{relevantSourcesJson},c.no_answer=#{noAnswer},c.source_data_available=#{sourceDataAvailable},c.expected_fallback=#{expectedFallback},c.expected_route=#{expectedRoute},c.tags_json=#{tagsJson},c.reviewer_note=#{reviewerNote},c.updated_by=#{updatedBy} WHERE c.id=#{id} AND d.lifecycle_state!='FROZEN'</update>
+    <update id="updateCase">UPDATE rag_eval_case c JOIN rag_eval_dataset d ON d.id=c.dataset_id SET c.case_key=#{caseKey},c.query_text=#{queryText},c.category=#{category},c.difficulty=#{difficulty},c.expected_metadata_json=#{expectedMetadataJson},c.relevant_conditions_json=#{relevantConditionsJson},c.relevant_sources_json=#{relevantSourcesJson},c.no_answer=#{noAnswer},c.source_data_available=#{sourceDataAvailable},c.expected_fallback=#{expectedFallback},c.expected_route=#{expectedRoute},c.agent_spec_json=#{agentSpecJson},c.tags_json=#{tagsJson},c.reviewer_note=#{reviewerNote},c.updated_by=#{updatedBy} WHERE c.id=#{id} AND d.lifecycle_state!='FROZEN'</update>
     <delete id="deleteCase">DELETE c FROM rag_eval_case c JOIN rag_eval_dataset d ON d.id=c.dataset_id WHERE c.id=#{id} AND d.lifecycle_state!='FROZEN'</delete>
 
-    <insert id="insertRun">INSERT INTO rag_eval_run(run_id,dataset_id,dataset_checksum,status,modes_json,parameter_snapshot_json,qdrant_alias,qdrant_collection,embedding_model,rerank_model,git_commit,total_cases,completed_cases,created_by) VALUES(#{runId},#{datasetId},#{datasetChecksum},#{status},#{modesJson},#{parameterSnapshotJson},#{qdrantAlias},#{qdrantCollection},#{embeddingModel},#{rerankModel},#{gitCommit},#{totalCases},#{completedCases},#{createdBy})</insert>
+    <insert id="insertRun">INSERT INTO rag_eval_run(run_id,dataset_id,dataset_checksum,status,evaluation_type,agent_config_version_id,modes_json,parameter_snapshot_json,agent_config_snapshot_json,qdrant_alias,qdrant_collection,embedding_model,rerank_model,git_commit,total_cases,completed_cases,created_by) VALUES(#{runId},#{datasetId},#{datasetChecksum},#{status},IFNULL(#{evaluationType},'RAG_RETRIEVAL'),#{agentConfigVersionId},#{modesJson},#{parameterSnapshotJson},#{agentConfigSnapshotJson},#{qdrantAlias},#{qdrantCollection},#{embeddingModel},#{rerankModel},#{gitCommit},#{totalCases},#{completedCases},#{createdBy})</insert>
     <select id="selectRunById" resultMap="runMap">SELECT * FROM rag_eval_run WHERE run_id=#{runId}</select>
     <select id="selectRuns" resultMap="runMap">SELECT * FROM rag_eval_run <where><if test="datasetId != null">dataset_id=#{datasetId}</if><if test="status != null and status != ''">AND status=#{status}</if><if test="runIdKeyword != null and runIdKeyword != ''">AND run_id LIKE CONCAT('%', #{runIdKeyword}, '%')</if><if test="datasetChecksum != null and datasetChecksum != ''">AND dataset_checksum = #{datasetChecksum}</if></where> ORDER BY created_at DESC</select>
     <select id="selectActiveEquivalentRun" resultMap="runMap">SELECT * FROM rag_eval_run WHERE dataset_id=#{datasetId} AND dataset_checksum &lt;=&gt; #{datasetChecksum} AND parameter_snapshot_json=#{parameterSnapshotJson} AND status IN ('PENDING','RUNNING') ORDER BY created_at DESC LIMIT 1</select>

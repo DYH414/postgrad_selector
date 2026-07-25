@@ -16,6 +16,7 @@ public class RagEvalCaseEntity {
     private Boolean sourceDataAvailable;
     private Boolean expectedFallback;
     private String expectedRoute;
+    private String agentSpecJson;
     private String tagsJson;
     private String reviewerNote;
     private String createdBy;
@@ -49,6 +50,8 @@ public class RagEvalCaseEntity {
     public void setExpectedFallback(Boolean expectedFallback) { this.expectedFallback = expectedFallback; }
     public String getExpectedRoute() { return expectedRoute; }
     public void setExpectedRoute(String expectedRoute) { this.expectedRoute = expectedRoute; }
+    public String getAgentSpecJson() { return agentSpecJson; }
+    public void setAgentSpecJson(String agentSpecJson) { this.agentSpecJson = agentSpecJson; }
     public String getTagsJson() { return tagsJson; }
     public void setTagsJson(String tagsJson) { this.tagsJson = tagsJson; }
     public String getReviewerNote() { return reviewerNote; }

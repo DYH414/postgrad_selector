@@ -7,8 +7,11 @@ public class RagEvalRun {
     private Long datasetId;
     private String datasetChecksum;
     private String status;
+    private String evaluationType;
+    private Long agentConfigVersionId;
     private String modesJson;
     private String parameterSnapshotJson;
+    private String agentConfigSnapshotJson;
     private String qdrantAlias;
     private String qdrantCollection;
     private String embeddingModel;
@@ -27,6 +30,12 @@ public class RagEvalRun {
 
     public String getRunId() { return runId; }
     public void setRunId(String runId) { this.runId = runId; }
+    public String getEvaluationType() { return evaluationType; }
+    public void setEvaluationType(String evaluationType) { this.evaluationType = evaluationType; }
+    public Long getAgentConfigVersionId() { return agentConfigVersionId; }
+    public void setAgentConfigVersionId(Long v) { this.agentConfigVersionId = v; }
+    public String getAgentConfigSnapshotJson() { return agentConfigSnapshotJson; }
+    public void setAgentConfigSnapshotJson(String v) { this.agentConfigSnapshotJson = v; }
     public Long getDatasetId() { return datasetId; }
     public void setDatasetId(Long datasetId) { this.datasetId = datasetId; }
     public String getDatasetChecksum() { return datasetChecksum; }

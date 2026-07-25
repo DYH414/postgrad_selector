@@ -9,6 +9,7 @@ public class RagEvalDataset {
     private String version;
     private String datasetType;
     private String lifecycleState;
+    private String evaluationType;
     private String description;
     private Long sourceDatasetId;
     private String checksumSha256;
@@ -27,6 +28,8 @@ public class RagEvalDataset {
     public void setName(String name) { this.name = name; }
     public String getVersion() { return version; }
     public void setVersion(String version) { this.version = version; }
+    public String getEvaluationType() { return evaluationType; }
+    public void setEvaluationType(String evaluationType) { this.evaluationType = evaluationType; }
     public String getDatasetType() { return datasetType; }
     public void setDatasetType(String datasetType) { this.datasetType = datasetType; }
     public String getLifecycleState() { return lifecycleState; }
