@@ -23,7 +23,10 @@ from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt
 
 from app.clients.java_control_plane import JavaControlPlaneClient
+from app.clients.judge_client import JudgeClient
 from app.graph.state import CaseState
+from app.judge.parser import JudgeParseError
+from app.rules.checker import check_rules
 
 # 方差阈值: faithfulness 极差 > 0.34 触发 reflect（§5.3）
 _VARIANCE_THRESHOLD = 0.34
@@ -90,68 +93,88 @@ async def invoke_agent(state: CaseState, config: dict | None = None) -> dict:
 
 def rule_check(state: CaseState) -> dict:
     """
-    确定性规则（§6.1）—— 纯函数，不依赖外部服务。
-    Step 9 补全全部指标；此处先算 routeAccuracy 和 agentSuccess。
+    确定性规则（§6.1）—— 纯函数，委托 rules.checker.check_rules。
     """
+    result = check_rules(
+        case=state["case"],
+        agent_response=state.get("agent_response", {}),
+        trace=state.get("trace", {}),
+    )
+    return {"rule_result": result}
+
+
+async def judge_node(state: CaseState, config: dict | None = None) -> dict:
+    """
+    LLM-as-judge，3 次并发采样取多数投票（§6.2）。
+    asyncio.gather = 单节点内 @task 并发，不扇出图节点（§5.0 官方纠正二）。
+    temp=0 硬要求；单次失败重试 1 次，再失败记 JUDGE_INVALID_OUTPUT。
+    """
+    cfg = (config or {}).get("configurable", {})
+    judge_client: JudgeClient | None = cfg.get("judge_client")
     case = state["case"]
     agent_spec = case.get("agent") or {}
     resp = state.get("agent_response", {})
     trace = state.get("trace", {})
-
-    agent_success = state.get("agent_status") == "ok"
-    observed_route = resp.get("route")
-    expected_route = case.get("expected_route")
-    route_accuracy = (observed_route == expected_route) if expected_route else None
-
-    rule = {
-        "agent_success": agent_success,
-        "route_accuracy": route_accuracy,
-        "required_tool_hit": None,       # step 9 填充
-        "forbidden_tool_called": None,   # step 9 填充
-        "tool_success_rate": None,       # step 9 填充
-        "citation_present": None,        # step 9 填充
-        "expected_abstention": None,     # step 9 填充
-        "trace_complete": bool(trace),
-    }
-    return {"rule_result": rule}
-
-
-async def judge_node(state: CaseState) -> dict:
-    """
-    LLM-as-judge，3 次并发采样取多数投票（§6.2）。
-    @task 等价于 asyncio.gather（单节点内并发，不扇出图节点）。
-    temp=0 是硬要求（§6.2 note）；桩实现返回固定结果。
-    Step 9 替换为真实 Judge API 调用。
-    """
+    rag_traces: list = trace.get("rag") or []
+    evidence = [{"content": r.get("content", "")} for r in rag_traces if r.get("content")]
 
     async def _single_sample(sample_idx: int) -> dict:
-        # TODO step 9: 调用 judge_client.py，temp=0，strict Pydantic parse
-        return {
-            "faithfulness": 0.9,
-            "answer_relevance": 0.85,
-            "citation_correctness": 0.8,
-            "passed": True,
-            "reasons": [],
-            "unsupported_claims": [],
-        }
+        if judge_client is None:
+            # 无 client → 桩（测试用）
+            return {
+                "faithfulness": 0.9,
+                "answerRelevance": 0.85,
+                "citationCorrectness": None,
+                "passed": True,
+                "reasons": [],
+                "unsupportedClaims": [],
+            }
+        for attempt in range(2):  # 最多 1 次重试
+            try:
+                out = await judge_client.judge(
+                    query=case.get("query", ""),
+                    answer=resp.get("answer") or "",
+                    evidence=evidence,
+                    expected_claims=agent_spec.get("expected_claims") or [],
+                    forbidden_claims=agent_spec.get("forbidden_claims") or [],
+                )
+                return out.model_dump(by_alias=True)
+            except (JudgeParseError, Exception):  # noqa: BLE001
+                if attempt == 1:
+                    return {
+                        "faithfulness": 0.0,
+                        "answerRelevance": 0.0,
+                        "citationCorrectness": None,
+                        "passed": False,
+                        "reasons": ["JUDGE_INVALID_OUTPUT"],
+                        "unsupportedClaims": [],
+                    }
+        return {}  # unreachable
 
-    # 3 次并发采样（asyncio.gather = 单节点内 @task 并发，§5.0 三处官方纠正之二）
+    # 3 次并发采样（asyncio.gather = @task 并发，§5.0）
     samples = await asyncio.gather(*[_single_sample(i) for i in range(3)])
 
     # 多数投票
     passed_votes = sum(1 for s in samples if s.get("passed"))
     judge_passed = passed_votes >= 2
 
-    # 方差：faithfulness 极差（max - min）
-    scores = [s.get("faithfulness", 0.0) for s in samples]
-    variance = max(scores) - min(scores) if scores else 0.0
+    # faithfulness 极差（方差代理）
+    scores = [s.get("faithfulness") or 0.0 for s in samples]
+    variance = round(max(scores) - min(scores), 4) if scores else 0.0
 
-    # 三项均值
     verdict = {
         "passed": judge_passed,
-        "faithfulness": sum(s.get("faithfulness", 0) for s in samples) / len(samples),
-        "answer_relevance": sum(s.get("answer_relevance", 0) for s in samples) / len(samples),
-        "citation_correctness": sum(s.get("citation_correctness", 0) for s in samples) / len(samples),
+        "faithfulness": round(sum(s.get("faithfulness") or 0 for s in samples) / len(samples), 4),
+        "answer_relevance": round(sum(s.get("answerRelevance") or 0 for s in samples) / len(samples), 4),
+        "citation_correctness": (
+            round(
+                sum(s["citationCorrectness"] for s in samples if s.get("citationCorrectness") is not None)
+                / max(1, sum(1 for s in samples if s.get("citationCorrectness") is not None)),
+                4,
+            )
+            if any(s.get("citationCorrectness") is not None for s in samples)
+            else None
+        ),
         "variance": variance,
         "valid_samples": len(samples),
         "passed_votes": passed_votes,
