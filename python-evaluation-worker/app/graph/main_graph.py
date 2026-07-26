@@ -72,6 +72,7 @@ async def run_case(send_input: dict, config: dict | None = None) -> dict:
     结果通过 operator.add reducer 累加到 RunState.case_results。
     config 显式传递给子图，确保 java_client/judge_client 被继承。
     子图内已兜底，此处不抛（§5.5 铁律）。
+    子图执行完毕后回调 Java 落库（§5.1 缺口3补全）。
     """
     combo = send_input["combo"]
     initial: CaseState = {
@@ -103,6 +104,25 @@ async def run_case(send_input: dict, config: dict | None = None) -> dict:
             "config_version_id": combo["config_version_id"],
             "failure_reasons": [f"subgraph_error: {exc}"],
         }
+
+    # 回调 Java 落库单个 case 结果（§5.1 缺口3补全）
+    cfg_inner = (config or {}).get("configurable", {})
+    java_client = cfg_inner.get("java_client")
+    if java_client:
+        try:
+            await java_client.post_case_result(
+                run_id=send_input["run_id"],
+                case_id=combo["case"].get("case_id"),
+                result=result,
+            )
+        except Exception as callback_exc:  # noqa: BLE001
+            # 回调失败不影响图继续（Java 侧有 /case-results 查漏兜底）
+            import logging
+            logging.getLogger(__name__).warning(
+                "post_case_result failed run_id=%s case_id=%s: %s",
+                send_input["run_id"], combo["case"].get("case_id"), callback_exc
+            )
+
     return {"case_results": [result]}
 
 

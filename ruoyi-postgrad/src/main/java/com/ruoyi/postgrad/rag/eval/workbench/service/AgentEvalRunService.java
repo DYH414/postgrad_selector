@@ -2,15 +2,20 @@ package com.ruoyi.postgrad.rag.eval.workbench.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.postgrad.rag.eval.workbench.client.EvaluationWorkerClient;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentEvalCaseResult;
+import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalRun;
 import com.ruoyi.postgrad.rag.eval.workbench.mapper.RagEvaluationWorkbenchMapper;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /**
@@ -33,9 +38,11 @@ public class AgentEvalRunService {
     private static final Set<String> TERMINAL_STATUSES = Set.of("SUCCEEDED", "FAILED", "CANCELLED");
 
     private final RagEvaluationWorkbenchMapper mapper;
+    private final EvaluationWorkerClient workerClient;
 
-    public AgentEvalRunService(RagEvaluationWorkbenchMapper mapper) {
+    public AgentEvalRunService(RagEvaluationWorkbenchMapper mapper, EvaluationWorkerClient workerClient) {
         this.mapper = mapper;
+        this.workerClient = workerClient;
     }
 
     /**
@@ -80,8 +87,7 @@ public class AgentEvalRunService {
 
     /**
      * 创建 AGENT_E2E 评测 Run（§4 端点1 的 AGENT_E2E 分支）。
-     * 校验 dataset 存在 + agentConfigVersion 为 ACTIVE，插入 run 记录并返回 runId。
-     * Python Worker 通过 dispatch 端点异步执行；run 状态保持 PENDING 直到 Worker 接单。
+     * 校验 dataset 存在 + agentConfigVersion 为 ACTIVE，插入 run 记录，分发给 Python Worker，返回 runId。
      */
     public String createRun(Long datasetId, Long agentConfigVersionId, String operator) {
         RagEvalDataset dataset = mapper.selectDatasetById(datasetId);
@@ -91,7 +97,7 @@ public class AgentEvalRunService {
         if (version == null) throw new ServiceException("Agent 配置版本不存在");
         if (!"ACTIVE".equals(version.getStatus())) throw new ServiceException("AGENT_CONFIG_NOT_ACTIVE");
 
-        int totalCases = mapper.selectCasesByDatasetId(datasetId).size();
+        List<RagEvalCaseEntity> cases = mapper.selectCasesByDatasetId(datasetId);
 
         RagEvalRun run = new RagEvalRun();
         run.setRunId(UUID.randomUUID().toString());
@@ -103,10 +109,29 @@ public class AgentEvalRunService {
         run.setAgentConfigSnapshotJson(JSON.toJSONString(version));
         run.setModesJson("[]");
         run.setParameterSnapshotJson("{}");
-        run.setTotalCases(totalCases);
+        run.setTotalCases(cases.size());
         run.setCompletedCases(0);
         run.setCreatedBy(operator);
         mapper.insertRun(run);
+
+        // 分发给 Python Worker
+        Map<String, Object> configSnapshot = new LinkedHashMap<>();
+        configSnapshot.put("id", version.getId());
+        configSnapshot.put("versionName", version.getVersionName());
+        configSnapshot.put("businessPromptText", version.getBusinessPromptText());
+        configSnapshot.put("routingPromptText", version.getRoutingPromptText());
+        configSnapshot.put("model", version.getModel());
+        configSnapshot.put("temperature", version.getTemperature());
+
+        List<Map<String, Object>> casesPayload = cases.stream().map(c -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("case_id", c.getId());
+            m.put("query", c.getQueryText());
+            m.put("agent_spec", c.getAgentSpecJson() == null ? null : JSON.parse(c.getAgentSpecJson()));
+            return m;
+        }).collect(Collectors.toList());
+
+        workerClient.dispatchRun(run.getRunId(), dataset.getChecksumSha256(), configSnapshot, casesPayload);
         return run.getRunId();
     }
 }

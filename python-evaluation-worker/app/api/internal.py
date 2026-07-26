@@ -54,6 +54,20 @@ async def dispatch_run(
 async def _run_graph(request: DispatchRunRequest, settings: Settings) -> None:
     """后台运行主图，异常不会影响 HTTP 响应。"""
     from app.graph.main_graph import run_main_graph  # 延迟导入，避免启动时循环
+    from app.clients.java_control_plane import JavaControlPlaneClient
+    from app.clients.judge_client import JudgeClient
+
+    # 实例化真实客户端（非测试桩）
+    java_client = JavaControlPlaneClient(
+        base_url=settings.java_control_plane_base_url,
+        internal_token=settings.evaluation_internal_token,
+    )
+    judge_client = JudgeClient(
+        base_url=settings.judge_base_url,
+        api_key=settings.judge_api_key,
+        model=settings.judge_model,
+    )
+
     try:
         await run_main_graph(
             run_id=request.run_id,
@@ -62,6 +76,11 @@ async def _run_graph(request: DispatchRunRequest, settings: Settings) -> None:
             cases=[c.model_dump() for c in request.cases],
             checkpoint_db_path=settings.checkpoint_db_path,
             max_concurrency=settings.max_concurrency,
+            extra_config={
+                "java_client": java_client,
+                "judge_client": judge_client,
+                "subject_user_id": 1,  # 固定测试用户（可从 request 传入或配置）
+            },
         )
     except Exception as exc:  # noqa: BLE001
         # 记录错误（生产应接入 logging/alerting），不重新抛出
