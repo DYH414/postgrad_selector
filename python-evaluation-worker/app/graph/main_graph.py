@@ -66,10 +66,11 @@ def _fanout(state: RunState) -> Union[list[Send], str]:
     ]
 
 
-async def run_case(send_input: dict) -> dict:
+async def run_case(send_input: dict, config: dict | None = None) -> dict:
     """
     父图普通节点——调 case 子图（§5.0 官方纠正一：不用 add_node(compiled_subgraph)）。
     结果通过 operator.add reducer 累加到 RunState.case_results。
+    config 显式传递给子图，确保 java_client/judge_client 被继承。
     子图内已兜底，此处不抛（§5.5 铁律）。
     """
     combo = send_input["combo"]
@@ -89,7 +90,7 @@ async def run_case(send_input: dict) -> dict:
         "final_result": {},
     }
     try:
-        sub = await _case_subgraph.ainvoke(initial)
+        sub = await _case_subgraph.ainvoke(initial, config=config)
         result = sub.get("final_result") or {"passed": False, "status": "no_result",
                                               "case_id": combo["case"].get("id"),
                                               "config_version_id": combo["config_version_id"],

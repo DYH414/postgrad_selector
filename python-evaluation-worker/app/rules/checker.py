@@ -16,6 +16,7 @@ def check_rules(
     case: dict,
     agent_response: dict,
     trace: dict,
+    agent_status: str = "ok",
 ) -> dict:
     """
     计算全部 §6.1 指标，返回 rule_result dict。
@@ -106,7 +107,7 @@ def check_rules(
     # 有主记录 + route + 终态 + ≥1 LLM trace；有 Tool 则每条 Tool trace 有终态
     has_main_record = bool(trace.get("agent_run_id"))
     has_route = observed_route is not None
-    has_terminal = agent_response.get("status") in (
+    has_terminal = agent_status in (
         "ok", "SUCCEEDED", "FAILED", "UNSUPPORTED_SIDE_EFFECT", "TIMED_OUT"
     )
     has_llm = len(llm_traces) >= 1

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class JudgeOutput(BaseModel):
     """Judge 严格输出 schema — 拒额外字段/缺字段/越界（§6.2 Pydantic strict）。"""
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "forbid", "populate_by_name": True}
 
     faithfulness: float = Field(ge=0.0, le=1.0)
     answer_relevance: float = Field(ge=0.0, le=1.0, alias="answerRelevance")

@@ -1,13 +1,16 @@
 """
 Java 控制面 HTTP 客户端（§4 端点3: agent-invocations, 端点4: result 回调）。
 
-Step 8 为桩实现——返回固定假数据，Step 10 替换为真实 httpx 调用。
-所有方法签名与真实实现保持一致，方便 mock 替换。
+网络重试策略：
+- invoke_agent: 最多 2 次重试，超时 → agent_status=timeout，5xx → http_error
+- post_case_result: 最多 3 次重试，带 Idempotency-Key
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+import httpx
 
 
 @dataclass
@@ -28,14 +31,17 @@ class AgentInvocationResponse:
 
 class JavaControlPlaneClient:
     """
-    调用 Java 内部端点。
-    TODO step 10: 替换桩实现为真实 httpx 调用。
+    调用 Java 内部端点（/internal/v1/evaluation/...）。
+    token 通过 X-Evaluation-Token header 传递。
     """
 
     def __init__(self, base_url: str, token: str, timeout_seconds: float = 30.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout_seconds = timeout_seconds
+
+    def _headers(self) -> dict:
+        return {"X-Evaluation-Token": self.token, "Content-Type": "application/json"}
 
     async def invoke_agent(
         self,
@@ -48,23 +54,55 @@ class JavaControlPlaneClient:
     ) -> AgentInvocationResponse:
         """
         POST /internal/v1/evaluation/agent-invocations（§4 端点3）。
-        返回 answer + route + 内联三类 trace。
+        内联返回 answer + route + 三类 trace。
+        网络重试 2 次；超时→timeout，5xx→http_error。
         """
-        # TODO step 10: real httpx POST with retry (2 times), timeout handling
-        return AgentInvocationResponse(
-            agent_run_id=f"stub-agent-run-{case_id}",
-            status="SUCCEEDED",
-            route="PROGRAM_FACTS",
-            route_reason="stub",
-            answer="深圳大学计算机专硕2025年录取分数约345分。（桩数据）",
-            duration_ms=500,
-            draft_changed=False,
-            error_code=None,
-            error_summary=None,
-            llm_traces=[],
-            tool_traces=[],
-            rag_traces=[],
-        )
+        payload = {
+            "evaluationRunId": evaluation_run_id,
+            "caseId": case_id,
+            "subjectUserId": subject_user_id,
+            "agentConfigVersionId": agent_config_version_id,
+            "query": query,
+            "businessPromptText": business_prompt_text,
+        }
+        url = f"{self.base_url}/internal/v1/evaluation/agent-invocations"
+        last_exc: Exception | None = None
+        for attempt in range(3):  # 最多 2 次重试
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                    resp = await client.post(url, json=payload, headers=self._headers())
+                    resp.raise_for_status()
+                    data = resp.json()
+                    agent = data.get("agentRun", {})
+                    return AgentInvocationResponse(
+                        agent_run_id=agent.get("runId") or "",
+                        status=agent.get("status") or "FAILED",
+                        route=agent.get("route"),
+                        route_reason=agent.get("routeReason"),
+                        answer=agent.get("answer"),
+                        duration_ms=agent.get("durationMs") or 0,
+                        draft_changed=agent.get("draftChanged") or False,
+                        error_code=agent.get("errorCode"),
+                        error_summary=agent.get("errorSummary"),
+                        llm_traces=data.get("llmTraces") or [],
+                        tool_traces=data.get("toolTraces") or [],
+                        rag_traces=data.get("ragTraces") or [],
+                    )
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                if attempt == 2:
+                    raise _wrap_error("timeout", exc)
+            except httpx.HTTPStatusError as exc:
+                if 400 <= exc.response.status_code < 500:
+                    raise _wrap_error("http_error", exc)
+                last_exc = exc
+                if attempt == 2:
+                    raise _wrap_error("http_error", exc)
+            except Exception as exc:
+                last_exc = exc
+                if attempt == 2:
+                    raise _wrap_error("http_error", exc)
+        raise _wrap_error("http_error", last_exc)  # unreachable
 
     async def post_case_result(
         self,
@@ -74,7 +112,36 @@ class JavaControlPlaneClient:
     ) -> str:
         """
         PUT /internal/v1/evaluation/runs/{runId}/cases/{caseId}/result（§4 端点4）。
+        Idempotency-Key 保证幂等；同 checksum → 200 REPLAYED，异 checksum → 409。
         返回 "SAVED" | "REPLAYED"。
         """
-        # TODO step 10: real httpx PUT with idempotency key + retry
-        return "SAVED"
+        url = f"{self.base_url}/internal/v1/evaluation/runs/{run_id}/cases/{case_id}/result"
+        idempotency_key = f"result:{run_id}:{case_id}"
+        headers = {**self._headers(), "Idempotency-Key": idempotency_key}
+        last_exc: Exception | None = None
+        for attempt in range(4):  # 最多 3 次重试
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                    resp = await client.put(url, json=result, headers=headers)
+                    if resp.status_code == 409:
+                        return "CONFLICT"
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data.get("outcome", "SAVED")
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 409:
+                    return "CONFLICT"
+                if 400 <= exc.response.status_code < 500:
+                    raise
+                last_exc = exc
+                if attempt == 3:
+                    raise
+            except Exception as exc:
+                last_exc = exc
+                if attempt == 3:
+                    raise
+        raise RuntimeError(f"post_case_result failed: {last_exc}")  # unreachable
+
+
+def _wrap_error(kind: str, cause: Exception | None) -> RuntimeError:
+    return RuntimeError(f"agent_invocation_{kind}: {cause}")

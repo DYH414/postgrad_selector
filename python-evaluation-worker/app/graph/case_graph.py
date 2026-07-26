@@ -99,6 +99,7 @@ def rule_check(state: CaseState) -> dict:
         case=state["case"],
         agent_response=state.get("agent_response", {}),
         trace=state.get("trace", {}),
+        agent_status=state.get("agent_status", "ok"),
     )
     return {"rule_result": result}
 
