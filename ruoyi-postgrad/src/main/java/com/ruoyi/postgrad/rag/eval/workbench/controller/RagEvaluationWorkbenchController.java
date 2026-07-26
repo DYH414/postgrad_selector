@@ -10,6 +10,7 @@ import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
 import com.ruoyi.postgrad.rag.eval.workbench.mapper.RagEvaluationWorkbenchMapper;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion;
 import com.ruoyi.postgrad.rag.eval.workbench.service.AgentConfigVersionService;
+import com.ruoyi.postgrad.rag.eval.workbench.service.AgentEvalRunService;
 import com.ruoyi.postgrad.rag.eval.workbench.service.RagEvalDatasetService;
 import com.ruoyi.postgrad.rag.eval.workbench.service.RagEvalRunService;
 import com.ruoyi.postgrad.rag.mapper.RagRetrievalTraceMapper;
@@ -41,13 +42,15 @@ public class RagEvaluationWorkbenchController extends BaseController {
     private final RagEvaluationWorkbenchMapper mapper;
     private final RagRetrievalTraceMapper traceMapper;
     private final AgentConfigVersionService agentConfigVersions;
+    private final AgentEvalRunService agentEvalRuns;
 
     public RagEvaluationWorkbenchController(RagEvalDatasetService datasets, RagEvalRunService runs,
                                             RagEvaluationWorkbenchMapper mapper,
                                             RagRetrievalTraceMapper traceMapper,
-                                            AgentConfigVersionService agentConfigVersions) {
+                                            AgentConfigVersionService agentConfigVersions,
+                                            AgentEvalRunService agentEvalRuns) {
         this.datasets = datasets; this.runs = runs; this.mapper = mapper; this.traceMapper = traceMapper;
-        this.agentConfigVersions = agentConfigVersions;
+        this.agentConfigVersions = agentConfigVersions; this.agentEvalRuns = agentEvalRuns;
     }
 
     @PreAuthorize("@ss.hasPermi('postgrad:ragEval:view')")
@@ -223,4 +226,25 @@ public class RagEvaluationWorkbenchController extends BaseController {
         public Map<String, Object> parameters;
     }
     public static class ReviewRequest { public String category; public String note; }
+
+    // ── AGENT_E2E: Agent 评测 Run ──
+
+    @PreAuthorize("@ss.hasPermi('postgrad:ragEval:run')")
+    @PostMapping("/agent-runs")
+    public AjaxResult startAgentRun(@RequestBody StartAgentRunRequest req) {
+        String runId = agentEvalRuns.createRun(req.datasetId, req.agentConfigVersionId, getUsername());
+        return success(Map.of("runId", runId));
+    }
+
+    @PreAuthorize("@ss.hasPermi('postgrad:ragEval:view')")
+    @GetMapping("/runs/{runId}/agent-results")
+    public TableDataInfo agentRunResults(@PathVariable String runId) {
+        startPage();
+        return getDataTable(agentEvalRuns.listCaseResults(runId));
+    }
+
+    public static class StartAgentRunRequest {
+        public Long datasetId;
+        public Long agentConfigVersionId;
+    }
 }

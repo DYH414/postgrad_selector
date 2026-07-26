@@ -1,12 +1,16 @@
 package com.ruoyi.postgrad.rag.eval.workbench.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentEvalCaseResult;
+import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalRun;
 import com.ruoyi.postgrad.rag.eval.workbench.mapper.RagEvaluationWorkbenchMapper;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 /**
@@ -72,5 +76,37 @@ public class AgentEvalRunService {
         RagEvalRun run = mapper.selectRunById(runId);
         if (run == null) throw new ServiceException("EVAL_RUN_NOT_FOUND");
         return mapper.selectAgentEvalCaseResultsByRunId(runId);
+    }
+
+    /**
+     * 创建 AGENT_E2E 评测 Run（§4 端点1 的 AGENT_E2E 分支）。
+     * 校验 dataset 存在 + agentConfigVersion 为 ACTIVE，插入 run 记录并返回 runId。
+     * Python Worker 通过 dispatch 端点异步执行；run 状态保持 PENDING 直到 Worker 接单。
+     */
+    public String createRun(Long datasetId, Long agentConfigVersionId, String operator) {
+        RagEvalDataset dataset = mapper.selectDatasetById(datasetId);
+        if (dataset == null) throw new ServiceException("评测数据集不存在");
+
+        AgentConfigVersion version = mapper.selectAgentConfigVersionById(agentConfigVersionId);
+        if (version == null) throw new ServiceException("Agent 配置版本不存在");
+        if (!"ACTIVE".equals(version.getStatus())) throw new ServiceException("AGENT_CONFIG_NOT_ACTIVE");
+
+        int totalCases = mapper.selectCasesByDatasetId(datasetId).size();
+
+        RagEvalRun run = new RagEvalRun();
+        run.setRunId(UUID.randomUUID().toString());
+        run.setDatasetId(datasetId);
+        run.setDatasetChecksum(dataset.getChecksumSha256());
+        run.setStatus("PENDING");
+        run.setEvaluationType("AGENT_E2E");
+        run.setAgentConfigVersionId(agentConfigVersionId);
+        run.setAgentConfigSnapshotJson(JSON.toJSONString(version));
+        run.setModesJson("[]");
+        run.setParameterSnapshotJson("{}");
+        run.setTotalCases(totalCases);
+        run.setCompletedCases(0);
+        run.setCreatedBy(operator);
+        mapper.insertRun(run);
+        return run.getRunId();
     }
 }
