@@ -1,6 +1,7 @@
 package com.ruoyi.postgrad.rag.eval.workbench.mapper;
 
 import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion;
+import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentEvalCaseResult;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseResultEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
@@ -36,7 +37,8 @@ public interface RagEvaluationWorkbenchMapper {
                                 @Param("datasetChecksum") String datasetChecksum);
     RagEvalRun selectActiveEquivalentRun(@Param("datasetId") Long datasetId,
                                          @Param("datasetChecksum") String datasetChecksum,
-                                         @Param("parameterSnapshotJson") String parameterSnapshotJson);
+                                         @Param("parameterSnapshotJson") String parameterSnapshotJson,
+                                         @Param("modesJson") String modesJson);
     int markRunStarted(String runId);
     int updateRunProgress(@Param("runId") String runId, @Param("completedCases") int completedCases);
     int completeRun(@Param("runId") String runId, @Param("status") String status,
@@ -56,4 +58,13 @@ public interface RagEvaluationWorkbenchMapper {
     AgentConfigVersion selectAgentConfigVersionById(Long id);
     List<AgentConfigVersion> selectAgentConfigVersions(@Param("status") String status);
     int archiveAgentConfigVersion(@Param("id") Long id);
+
+    // ── AGENT_E2E: agent_eval_case_result（Python 回调落库）──
+    int insertAgentEvalCaseResult(AgentEvalCaseResult result);
+    AgentEvalCaseResult selectAgentEvalCaseResultByKey(@Param("runId") String runId, @Param("caseId") Long caseId);
+    List<AgentEvalCaseResult> selectAgentEvalCaseResultsByRunId(String runId);
+    /** 按 agent_eval_case_result COUNT(*) 重算 completed_cases；只更新 RUNNING 状态的 run。 */
+    int updateAgentEvalProgress(@Param("runId") String runId);
+    /** CAS：completed_cases >= total_cases 且非终态时转 SUCCEEDED；返回 1 表示已转态。 */
+    int completeAgentEvalRunIfDone(@Param("runId") String runId);
 }

@@ -83,7 +83,7 @@ public class RagEvalRunService {
             ? List.copyOf(EnumSet.allOf(RagEvaluationMode.class)) : List.copyOf(requestedModes);
         Map<String, Object> snapshot = canonicalParameters(parameters);
         String snapshotJson = JSON.toJSONString(snapshot);
-        RagEvalRun active = mapper.selectActiveEquivalentRun(datasetId, dataset.getChecksumSha256(), snapshotJson);
+        RagEvalRun active = mapper.selectActiveEquivalentRun(datasetId, dataset.getChecksumSha256(), snapshotJson, JSON.toJSONString(modes));
         if (active != null) return active.getRunId();
 
         List<RagEvalCaseEntity> cases = datasetService.listCases(datasetId);

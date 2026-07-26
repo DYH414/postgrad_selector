@@ -102,7 +102,8 @@ class RagEvalRunServiceTest {
         RagEvalRun active = run("existing", "RUNNING", "sum");
         when(f.datasets.get(1L)).thenReturn(dataset);
         when(f.mapper.selectActiveEquivalentRun(org.mockito.ArgumentMatchers.eq(1L),
-            org.mockito.ArgumentMatchers.eq("sum"), org.mockito.ArgumentMatchers.anyString())).thenReturn(active);
+            org.mockito.ArgumentMatchers.eq("sum"), org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString())).thenReturn(active);
 
         org.junit.jupiter.api.Assertions.assertEquals("existing",
             f.service.start(1L, List.of(RagEvaluationMode.VECTOR_ONLY), Map.of(), "admin"));
