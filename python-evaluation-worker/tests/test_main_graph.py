@@ -4,9 +4,10 @@ Step 8 验证: Send 扇出 / max_concurrency / judge @task 并发 / 一 run 一 
 
 import asyncio
 import pytest
+from unittest.mock import AsyncMock
 
 from app.graph.state import RunState, CaseState
-from app.graph.main_graph import load_run, _fanout, aggregate, compare, build_main_graph
+from app.graph.main_graph import load_run, _fanout, aggregate, compare, build_main_graph, save_run
 from app.graph.case_graph import rule_check, judge_node, finalize, decide, _route_after_rule
 from langgraph.types import Send
 
@@ -118,6 +119,23 @@ def test_compare_single_version():
     state["aggregates"] = {"by_version": {"1": {"pass_rate": 0.8}}}
     result = compare(state)
     assert "note" in result["comparison"]
+
+
+@pytest.mark.asyncio
+async def test_save_run_replays_all_case_results_for_callback_reconciliation():
+    state = _make_run_state(n_versions=1, n_cases=2)
+    state["case_results"] = [
+        {"case_id": 1, "passed": True, "result_checksum": "a"},
+        {"case_id": 2, "passed": False, "result_checksum": "b"},
+    ]
+    java_client = AsyncMock()
+
+    await save_run(state, config={"configurable": {"java_client": java_client}})
+
+    callback_case_ids = {
+        call.kwargs["case_id"] for call in java_client.post_case_result.await_args_list
+    }
+    assert callback_case_ids == {1, 2}
 
 
 # ── case 子图节点 ───────────────────────────────────────────────────────────────
@@ -239,7 +257,11 @@ def test_finalize_passed():
 
 def test_finalize_agent_failed():
     state = _make_case_state(
-        agent_status="http_error",
+        agent_status="failed",
+        agent_response={
+            "error_code": "AGENT_INVOCATION_FAILED",
+            "error_summary": "provider rejected request",
+        },
         rule_result={"agent_success": False, "trace_complete": False,
                      "forbidden_tool_called": False, "route_accuracy": None,
                      "required_tool_hit": None, "citation_present": None, "expected_abstention": None},
@@ -247,7 +269,9 @@ def test_finalize_agent_failed():
     )
     result = finalize(state)
     assert result["final_result"]["passed"] is False
-    assert "http_error" in str(result["final_result"]["failure_reasons"])
+    assert "agent_status=failed" in result["final_result"]["failure_reasons"]
+    assert result["final_result"]["technical_error_code"] == "AGENT_INVOCATION_FAILED"
+    assert result["final_result"]["technical_error_summary"] == "provider rejected request"
 
 
 # ── 主图 end-to-end (stub) ─────────────────────────────────────────────────────

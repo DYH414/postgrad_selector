@@ -57,18 +57,17 @@ async def _run_graph(request: DispatchRunRequest, settings: Settings) -> None:
     from app.clients.java_control_plane import JavaControlPlaneClient
     from app.clients.judge_client import JudgeClient
 
-    # 实例化真实客户端（非测试桩）
-    java_client = JavaControlPlaneClient(
-        base_url=settings.java_control_plane_base_url,
-        internal_token=settings.evaluation_internal_token,
-    )
-    judge_client = JudgeClient(
-        base_url=settings.judge_base_url,
-        api_key=settings.judge_api_key,
-        model=settings.judge_model,
-    )
-
     try:
+        # 实例化真实客户端（非测试桩）
+        java_client = JavaControlPlaneClient(
+            base_url=settings.java_control_plane_base_url,
+            token=settings.evaluation_internal_token,
+        )
+        judge_client = JudgeClient(
+            base_url=settings.judge_base_url,
+            api_key=settings.judge_api_key,
+            model=settings.judge_model,
+        )
         await run_main_graph(
             run_id=request.run_id,
             dataset_checksum=request.dataset_checksum,

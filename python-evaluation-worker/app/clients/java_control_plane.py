@@ -8,6 +8,7 @@ Java 控制面 HTTP 客户端（§4 端点3: agent-invocations, 端点4: result 
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import httpx
@@ -35,7 +36,7 @@ class JavaControlPlaneClient:
     token 通过 X-Evaluation-Token header 传递。
     """
 
-    def __init__(self, base_url: str, token: str, timeout_seconds: float = 30.0) -> None:
+    def __init__(self, base_url: str, token: str, timeout_seconds: float = 150.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout_seconds = timeout_seconds
@@ -69,7 +70,9 @@ class JavaControlPlaneClient:
         last_exc: Exception | None = None
         for attempt in range(3):  # 最多 2 次重试
             try:
-                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_seconds, trust_env=False
+                ) as client:
                     resp = await client.post(url, json=payload, headers=self._headers())
                     resp.raise_for_status()
                     data = resp.json()
@@ -118,11 +121,14 @@ class JavaControlPlaneClient:
         url = f"{self.base_url}/internal/v1/evaluation/runs/{run_id}/cases/{case_id}/result"
         idempotency_key = f"result:{run_id}:{case_id}"
         headers = {**self._headers(), "Idempotency-Key": idempotency_key}
+        payload = _to_java_case_result(result)
         last_exc: Exception | None = None
         for attempt in range(4):  # 最多 3 次重试
             try:
-                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                    resp = await client.put(url, json=result, headers=headers)
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_seconds, trust_env=False
+                ) as client:
+                    resp = await client.put(url, json=payload, headers=headers)
                     if resp.status_code == 409:
                         return "CONFLICT"
                     resp.raise_for_status()
@@ -145,3 +151,44 @@ class JavaControlPlaneClient:
 
 def _wrap_error(kind: str, cause: Exception | None) -> RuntimeError:
     return RuntimeError(f"agent_invocation_{kind}: {cause}")
+
+
+def _to_java_case_result(result: dict) -> dict:
+    """Translate the Python graph result into the Java callback DTO."""
+    scalar_fields = {
+        "agent_run_id": "agentRunId",
+        "passed": "passed",
+        "agent_success": "agentSuccess",
+        "route_accuracy": "routeAccuracy",
+        "required_tool_hit": "requiredToolHit",
+        "forbidden_tool_called": "forbiddenToolCalled",
+        "tool_success_rate": "toolSuccessRate",
+        "citation_present": "citationPresent",
+        "expected_abstention": "expectedAbstention",
+        "trace_complete": "traceComplete",
+        "faithfulness": "faithfulness",
+        "answer_relevance": "answerRelevance",
+        "citation_correctness": "citationCorrectness",
+        "judge_variance": "judgeVariance",
+        "judge_passed": "judgePassed",
+        "latency_ms": "latencyMs",
+        "input_tokens": "inputTokens",
+        "output_tokens": "outputTokens",
+        "result_checksum": "resultChecksum",
+        "technical_error_code": "technicalErrorCode",
+        "technical_error_summary": "technicalErrorSummary",
+    }
+    payload = {
+        java_name: result.get(python_name)
+        for python_name, java_name in scalar_fields.items()
+    }
+    payload["ruleResultJson"] = json.dumps(
+        result.get("rule_result") or {}, ensure_ascii=False
+    )
+    payload["judgeResultJson"] = json.dumps(
+        result.get("judge_result") or {}, ensure_ascii=False
+    )
+    payload["failureReasonsJson"] = json.dumps(
+        result.get("failure_reasons") or [], ensure_ascii=False
+    )
+    return payload

@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.rag.eval.workbench.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.postgrad.rag.eval.workbench.client.EvaluationDispatchRequest;
 import com.ruoyi.postgrad.rag.eval.workbench.client.EvaluationWorkerClient;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentEvalCaseResult;
@@ -9,14 +10,12 @@ import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalRun;
 import com.ruoyi.postgrad.rag.eval.workbench.mapper.RagEvaluationWorkbenchMapper;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * AGENT_E2E 评测 Run 的结果回调处理。
@@ -54,11 +53,17 @@ public class AgentEvalRunService {
      * @throws ServiceException code="EVAL_RUN_TERMINAL"    run 已终止（非 CANCELLED）
      * @throws ServiceException code="EVAL_RESULT_CONFLICT" 同 (runId,caseId) 但 checksum 不同，409 语义
      */
+    @Transactional
     public String saveAgentCaseResult(String runId, Long caseId, AgentEvalCaseResult result) {
         RagEvalRun run = mapper.selectRunById(runId);
         if (run == null) throw new ServiceException("EVAL_RUN_NOT_FOUND");
         if ("CANCELLED".equals(run.getStatus())) throw new ServiceException("EVAL_RUN_CANCELLED");
         if (TERMINAL_STATUSES.contains(run.getStatus())) throw new ServiceException("EVAL_RUN_TERMINAL");
+
+        RagEvalCaseEntity evalCase = mapper.selectCaseById(caseId);
+        if (evalCase == null || !Objects.equals(run.getDatasetId(), evalCase.getDatasetId())) {
+            throw new ServiceException("EVAL_CASE_NOT_IN_RUN");
+        }
 
         AgentEvalCaseResult existing = mapper.selectAgentEvalCaseResultByKey(runId, caseId);
         if (existing != null) {
@@ -70,7 +75,13 @@ public class AgentEvalRunService {
 
         result.setRunId(runId);
         result.setCaseId(caseId);
-        mapper.insertAgentEvalCaseResult(result);
+        if (mapper.insertAgentEvalCaseResult(result) == 0) {
+            existing = mapper.selectAgentEvalCaseResultByKey(runId, caseId);
+            if (existing != null && Objects.equals(existing.getResultChecksum(), result.getResultChecksum())) {
+                return "REPLAYED";
+            }
+            throw new ServiceException("EVAL_RESULT_CONFLICT");
+        }
         // 重算 completed_cases（COUNT(*) from agent_eval_case_result）
         mapper.updateAgentEvalProgress(runId);
         // CAS：全部 case 完成且非终态时转 SUCCEEDED
@@ -92,15 +103,25 @@ public class AgentEvalRunService {
     public String createRun(Long datasetId, Long agentConfigVersionId, String operator) {
         RagEvalDataset dataset = mapper.selectDatasetById(datasetId);
         if (dataset == null) throw new ServiceException("评测数据集不存在");
+        if (!"AGENT_E2E".equals(dataset.getEvaluationType())) {
+            throw new ServiceException("AGENT_EVAL_DATASET_TYPE_REQUIRED");
+        }
+        if (!"FROZEN".equals(dataset.getLifecycleState())) {
+            throw new ServiceException("AGENT_EVAL_DATASET_NOT_FROZEN");
+        }
 
         AgentConfigVersion version = mapper.selectAgentConfigVersionById(agentConfigVersionId);
         if (version == null) throw new ServiceException("Agent 配置版本不存在");
         if (!"ACTIVE".equals(version.getStatus())) throw new ServiceException("AGENT_CONFIG_NOT_ACTIVE");
 
         List<RagEvalCaseEntity> cases = mapper.selectCasesByDatasetId(datasetId);
+        validateDispatchInputs(dataset, version, cases);
+        String runId = UUID.randomUUID().toString();
+        EvaluationDispatchRequest dispatchRequest =
+            EvaluationDispatchRequest.from(runId, dataset, version, cases);
 
         RagEvalRun run = new RagEvalRun();
-        run.setRunId(UUID.randomUUID().toString());
+        run.setRunId(runId);
         run.setDatasetId(datasetId);
         run.setDatasetChecksum(dataset.getChecksumSha256());
         run.setStatus("PENDING");
@@ -114,24 +135,42 @@ public class AgentEvalRunService {
         run.setCreatedBy(operator);
         mapper.insertRun(run);
 
-        // 分发给 Python Worker
-        Map<String, Object> configSnapshot = new LinkedHashMap<>();
-        configSnapshot.put("id", version.getId());
-        configSnapshot.put("versionName", version.getVersionName());
-        configSnapshot.put("businessPromptText", version.getBusinessPromptText());
-        configSnapshot.put("routingPromptText", version.getRoutingPromptText());
-        configSnapshot.put("model", version.getModel());
-        configSnapshot.put("temperature", version.getTemperature());
-
-        List<Map<String, Object>> casesPayload = cases.stream().map(c -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("case_id", c.getId());
-            m.put("query", c.getQueryText());
-            m.put("agent_spec", c.getAgentSpecJson() == null ? null : JSON.parse(c.getAgentSpecJson()));
-            return m;
-        }).collect(Collectors.toList());
-
-        workerClient.dispatchRun(run.getRunId(), dataset.getChecksumSha256(), configSnapshot, casesPayload);
+        if (mapper.markRunStarted(run.getRunId()) != 1) {
+            mapper.completeRun(run.getRunId(), "FAILED", null,
+                "EVAL_RUN_START_FAILED", "Unable to transition Agent evaluation run to RUNNING");
+            throw new ServiceException("EVAL_RUN_START_FAILED");
+        }
+        try {
+            workerClient.dispatchRun(dispatchRequest);
+        } catch (RuntimeException ex) {
+            mapper.completeRun(run.getRunId(), "FAILED", null,
+                "EVAL_WORKER_DISPATCH_FAILED", safeMessage(ex));
+            throw ex;
+        }
         return run.getRunId();
+    }
+
+    private void validateDispatchInputs(RagEvalDataset dataset, AgentConfigVersion version,
+                                        List<RagEvalCaseEntity> cases) {
+        if (cases == null || cases.isEmpty()) throw new ServiceException("AGENT_EVAL_DATASET_EMPTY");
+        if (blank(dataset.getChecksumSha256())) throw new ServiceException("AGENT_EVAL_DATASET_CHECKSUM_REQUIRED");
+        if (version.getId() == null || blank(version.getVersionName())
+            || blank(version.getBusinessPromptText()) || blank(version.getModel())
+            || version.getTemperature() == null || blank(version.getToolCatalogChecksum())) {
+            throw new ServiceException("AGENT_CONFIG_INCOMPLETE");
+        }
+        boolean invalidCase = cases.stream().anyMatch(c -> c.getId() == null
+            || blank(c.getCaseKey()) || blank(c.getQueryText()) || blank(c.getAgentSpecJson()));
+        if (invalidCase) throw new ServiceException("AGENT_EVAL_CASE_SPEC_REQUIRED");
+    }
+
+    private boolean blank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private String safeMessage(RuntimeException ex) {
+        String message = ex.getMessage();
+        if (message == null || message.isBlank()) return ex.getClass().getSimpleName();
+        return message.length() <= 500 ? message : message.substring(0, 500);
     }
 }

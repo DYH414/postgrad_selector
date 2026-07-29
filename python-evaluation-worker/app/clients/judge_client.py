@@ -53,6 +53,9 @@ class JudgeClient:
         payload = {
             "model": self._model,
             "temperature": 0,           # § 6.2 硬约束：temp=0
+            # SiliconFlow Qwen models otherwise spend the bounded output budget
+            # on reasoning_content and may return an empty JSON content field.
+            "enable_thinking": False,
             "max_tokens": 512,
             "messages": [
                 {"role": "system", "content": JUDGE_SYSTEM_PROMPT},

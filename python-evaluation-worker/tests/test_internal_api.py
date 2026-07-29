@@ -7,8 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 # conftest.py 已在此之前设置好所有必填环境变量
+from app.api.internal import _run_graph
+from app.config import get_settings
 from app.main import app
 from app.api.internal import _dispatched
+from app.models.contracts import DispatchRunRequest
 
 TOKEN = "test-secret-token-step7"
 AUTH = {"X-Evaluation-Token": TOKEN}
@@ -95,6 +98,32 @@ def test_dispatch_different_run_ids_both_accepted(client):
     assert res1.status_code == 202
     assert res2.status_code == 202
     assert len(_dispatched) == 2
+
+
+@pytest.mark.asyncio
+async def test_run_graph_builds_java_client_with_supported_token_argument(monkeypatch):
+    captured = {}
+
+    class FakeJavaClient:
+        def __init__(self, base_url, token):
+            captured["java"] = {"base_url": base_url, "token": token}
+
+    class FakeJudgeClient:
+        def __init__(self, base_url, api_key, model):
+            captured["judge"] = {"base_url": base_url, "api_key": api_key, "model": model}
+
+    async def fake_run_main_graph(**kwargs):
+        captured["graph"] = kwargs
+
+    monkeypatch.setattr(
+        "app.clients.java_control_plane.JavaControlPlaneClient", FakeJavaClient)
+    monkeypatch.setattr("app.clients.judge_client.JudgeClient", FakeJudgeClient)
+    monkeypatch.setattr("app.graph.main_graph.run_main_graph", fake_run_main_graph)
+
+    await _run_graph(DispatchRunRequest.model_validate(_DISPATCH_BODY), get_settings())
+
+    assert captured["java"]["token"] == TOKEN
+    assert captured["graph"]["extra_config"]["java_client"].__class__ is FakeJavaClient
 
 
 # ── token 鉴权 ─────────────────────────────────────────────────────────────────

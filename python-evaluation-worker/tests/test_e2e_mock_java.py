@@ -2,6 +2,8 @@
 Step 10 验证: mock Java E2E + 同 checksum V1/V2 delta 正确（§9 步骤10）。
 """
 
+import json
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -101,10 +103,11 @@ async def test_e2e_v1_fails_v2_passes_with_mock_java():
     """
     graph = build_main_graph(checkpointer=MemorySaver())
     initial = _base_state(run_id="run-v1v2-001", n_cases=2)
+    java_mock = _make_java_mock()
     cfg = {
         "configurable": {
             "thread_id": "run-v1v2-001",
-            "java_client": _make_java_mock(),
+            "java_client": java_mock,
             "judge_client": _make_judge_mock_passing(),
         },
         "max_concurrency": 2,
@@ -123,6 +126,10 @@ async def test_e2e_v1_fails_v2_passes_with_mock_java():
     delta = comp["1->2"]["pass_rate"]["delta"]
     assert delta == pytest.approx(1.0), f"Expected delta=1.0, got {delta}"
     assert comp["1->2"]["pass_rate"]["status"] == "IMPROVED"
+    callback_case_ids = {
+        call.kwargs["case_id"] for call in java_mock.post_case_result.await_args_list
+    }
+    assert callback_case_ids == {1, 2}
 
 
 @pytest.mark.asyncio
@@ -256,3 +263,70 @@ async def test_java_client_invoke_agent_success():
     assert resp.route == "PROGRAM_FACTS"
     assert resp.answer == "test answer"
     assert len(resp.llm_traces) == 1
+
+
+@pytest.mark.asyncio
+async def test_java_client_serializes_case_result_to_java_contract():
+    """Callback DTO uses Java field names and JSON-encodes structured columns."""
+    import httpx
+    import respx
+
+    route = respx.put(
+        "http://localhost:8080/internal/v1/evaluation/runs/run-1/cases/7/result"
+    ).mock(return_value=httpx.Response(200, json={"outcome": "SAVED"}))
+    result = {
+        "agent_run_id": "agent-7",
+        "passed": False,
+        "agent_success": False,
+        "rule_result": {"agent_success": False},
+        "judge_result": {},
+        "failure_reasons": ["agent_status=failed"],
+        "result_checksum": "checksum-7",
+        "technical_error_code": "AGENT_INVOCATION_FAILED",
+        "technical_error_summary": "provider rejected request",
+    }
+
+    with respx.mock:
+        client = JavaControlPlaneClient("http://localhost:8080", "test-token")
+        assert client.timeout_seconds > 120
+        assert await client.post_case_result("run-1", 7, result) == "SAVED"
+        payload = json.loads(route.calls[0].request.content)
+        assert payload["agentRunId"] == "agent-7"
+        assert payload["ruleResultJson"] == '{"agent_success": false}'
+        assert payload["failureReasonsJson"] == '["agent_status=failed"]'
+        assert payload["technicalErrorCode"] == "AGENT_INVOCATION_FAILED"
+        assert "rule_result" not in payload
+
+
+@pytest.mark.asyncio
+async def test_judge_client_disables_reasoning_to_preserve_json_output_budget():
+    """Reasoning models must spend the output budget on the strict JSON verdict."""
+    import httpx
+    import respx
+
+    route = respx.post("https://api.siliconflow.cn/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{
+                    "message": {
+                        "content": (
+                            '{"faithfulness":0.9,"answerRelevance":0.9,'
+                            '"citationCorrectness":null,"passed":true,'
+                            '"reasons":[],"unsupportedClaims":[]}'
+                        )
+                    }
+                }]
+            },
+        )
+    )
+    with respx.mock:
+        client = JudgeClient(
+            "https://api.siliconflow.cn/v1", "test-key", "Qwen/Qwen3.5-9B"
+        )
+        verdict = await client.judge("q", "a", [], [], [])
+        payload = json.loads(route.calls[0].request.content)
+
+    assert verdict.passed is True
+    assert payload["temperature"] == 0
+    assert payload["enable_thinking"] is False

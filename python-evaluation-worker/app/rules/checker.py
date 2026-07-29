@@ -31,13 +31,12 @@ def check_rules(
     answer: str | None = agent_response.get("answer")
     observed_route: str | None = agent_response.get("route")
     expected_route: str | None = case.get("expected_route")
-    agent_status: str = agent_response.get("status", "ok")
-
     llm_traces: list = trace.get("llm") or []
     tool_traces: list = trace.get("tool") or []
+    effective_status = agent_response.get("status") or agent_status
 
     # ── agentSuccess ──────────────────────────────────────────────────────────
-    agent_success = agent_response.get("status", "ok") == "ok" and not agent_response.get(
+    agent_success = effective_status in ("ok", "SUCCEEDED") and not agent_response.get(
         "error_code"
     )
 
@@ -107,8 +106,9 @@ def check_rules(
     # 有主记录 + route + 终态 + ≥1 LLM trace；有 Tool 则每条 Tool trace 有终态
     has_main_record = bool(trace.get("agent_run_id"))
     has_route = observed_route is not None
-    has_terminal = agent_status in (
-        "ok", "SUCCEEDED", "FAILED", "UNSUPPORTED_SIDE_EFFECT", "TIMED_OUT"
+    has_terminal = effective_status in (
+        "ok", "failed", "unsupported_side_effect", "timed_out",
+        "SUCCEEDED", "FAILED", "UNSUPPORTED_SIDE_EFFECT", "TIMED_OUT"
     )
     has_llm = len(llm_traces) >= 1
     tool_traces_complete = all(

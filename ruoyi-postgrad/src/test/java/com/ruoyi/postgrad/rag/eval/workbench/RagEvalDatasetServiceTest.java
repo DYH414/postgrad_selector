@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.argThat;
 
 import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity;
@@ -184,6 +185,35 @@ class RagEvalDatasetServiceTest {
         verify(mapper, times(1)).insertCase(any());
     }
 
+    @Test
+    void createPreservesAgentEvaluationType() {
+        RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
+        RagEvalDataset requested = dataset(null, "DRAFT");
+        requested.setEvaluationType("AGENT_E2E");
+
+        RagEvalDataset created = new RagEvalDatasetService(mapper).create(requested, "admin");
+
+        assertEquals("AGENT_E2E", created.getEvaluationType());
+        verify(mapper).insertDataset(argThat(d -> "AGENT_E2E".equals(d.getEvaluationType())));
+    }
+
+    @Test
+    void freezePreservesAgentEvaluationType() {
+        RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
+        RagEvalDataset source = dataset(1L, "READY");
+        source.setEvaluationType("AGENT_E2E");
+        when(mapper.selectDatasetById(1L)).thenReturn(source);
+        when(mapper.selectCasesByDatasetId(1L)).thenReturn(List.of(validAgentCase(1L)));
+        doAnswer(invocation -> { ((RagEvalDataset) invocation.getArgument(0)).setId(2L); return 1; })
+            .when(mapper).insertDataset(any());
+
+        RagEvalDataset frozen = new RagEvalDatasetService(mapper, tempDir)
+            .freeze(1L, "agent-frozen-v1", "admin");
+
+        assertEquals("AGENT_E2E", frozen.getEvaluationType());
+        verify(mapper).insertDataset(argThat(d -> "AGENT_E2E".equals(d.getEvaluationType())));
+    }
+
     private RagEvalDataset dataset(Long id, String state) {
         RagEvalDataset dataset = new RagEvalDataset();
         dataset.setId(id); dataset.setDatasetKey("dev"); dataset.setName("Dev"); dataset.setVersion("v1");
@@ -196,6 +226,13 @@ class RagEvalDatasetServiceTest {
         evalCase.setDatasetId(datasetId); evalCase.setCaseKey("case-1"); evalCase.setQueryText("深圳大学复试线");
         evalCase.setDifficulty("medium"); evalCase.setNoAnswer(false); evalCase.setRelevantConditionsJson("[{\"programId\":\"1\"}]");
         evalCase.setRelevantSourcesJson("[]"); evalCase.setExpectedMetadataJson("{}"); evalCase.setTagsJson("[]");
+        return evalCase;
+    }
+
+    private RagEvalCaseEntity validAgentCase(Long datasetId) {
+        RagEvalCaseEntity evalCase = validCase(datasetId);
+        evalCase.setRelevantConditionsJson("[]");
+        evalCase.setAgentSpecJson("{\"requiredTools\":[]}");
         return evalCase;
     }
 }

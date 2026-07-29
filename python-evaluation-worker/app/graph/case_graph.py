@@ -67,6 +67,7 @@ async def invoke_agent(state: CaseState, config: dict | None = None) -> dict:
         return {
             "agent_status": status,
             "agent_response": {
+                "status": status,
                 "answer": resp.answer,
                 "route": resp.route,
                 "route_reason": resp.route_reason,
@@ -85,7 +86,11 @@ async def invoke_agent(state: CaseState, config: dict | None = None) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {
             "agent_status": "http_error",
-            "agent_response": {},
+            "agent_response": {
+                "status": "http_error",
+                "error_code": "AGENT_INVOCATION_HTTP_ERROR",
+                "error_summary": str(exc),
+            },
             "trace": {},
             "failure_reasons": state.get("failure_reasons", []) + [f"invoke_agent error: {exc}"],
         }
@@ -294,9 +299,9 @@ def finalize(state: CaseState) -> dict:
         passed = passed and expected_abstention
 
     # 技术失败/UNSUPPORTED_SIDE_EFFECT 不通过
-    if agent_status in ("http_error", "timeout", "invalid_output", "unsupported_side_effect"):
+    if agent_status != "ok":
         passed = False
-        if agent_status not in failure_reasons:
+        if f"agent_status={agent_status}" not in failure_reasons:
             failure_reasons.append(f"agent_status={agent_status}")
 
     final = {
@@ -321,6 +326,14 @@ def finalize(state: CaseState) -> dict:
         "agent_run_id": state.get("trace", {}).get("agent_run_id"),
         "result_checksum": _checksum(state),
         "status": "ok" if agent_status == "ok" else agent_status,
+        "technical_error_code": (
+            state.get("agent_response", {}).get("error_code")
+            if agent_status != "ok" else None
+        ),
+        "technical_error_summary": (
+            state.get("agent_response", {}).get("error_summary")
+            if agent_status != "ok" else None
+        ),
     }
     return {"final_result": final}
 

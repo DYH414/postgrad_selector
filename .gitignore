@@ -135,3 +135,22 @@ node_modules/
 /legacy-session-1-transcript.md
 /repair-codex-project-threads.ps1
 /tmp/
+
+# Python Worker artifacts
+/python-evaluation-worker/venv/
+/python-evaluation-worker/.env
+/python-evaluation-worker/checkpoints.sqlite
+/python-evaluation-worker/*.db
+/python-evaluation-worker/__pycache__/
+/python-evaluation-worker/.pytest_cache/
+
+# Temp / generated scripts
+/.start-*.ps1
+/start-eval-services.ps1
+/start-frontends.cmd
+
+# Session-generated docs (not specs)
+/AGENT_EVAL_COMPLETION.md
+/AGENT_EVAL_GUIDE.md
+/AGENT_EVAL_TOOL_REPORT.md
+

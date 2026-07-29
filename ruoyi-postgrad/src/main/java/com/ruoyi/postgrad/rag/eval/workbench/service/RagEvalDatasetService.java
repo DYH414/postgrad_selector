@@ -64,6 +64,11 @@ public class RagEvalDatasetService {
             throw new ServiceException("New datasets must be DEV or SAFETY");
         }
         dataset.setDatasetType(type);
+        String evaluationType = normalize(dataset.getEvaluationType(), "RAG_RETRIEVAL");
+        if (!List.of("RAG_RETRIEVAL", "AGENT_E2E").contains(evaluationType)) {
+            throw new ServiceException("evaluationType must be RAG_RETRIEVAL or AGENT_E2E");
+        }
+        dataset.setEvaluationType(evaluationType);
         dataset.setLifecycleState("DRAFT");
         dataset.setCaseCount(0);
         dataset.setLockVersion(0);
@@ -128,6 +133,7 @@ public class RagEvalDatasetService {
         frozen.setVersion(frozenVersion);
         frozen.setDatasetType(source.getDatasetType().equals("SAFETY") ? "SAFETY" : "FROZEN");
         frozen.setLifecycleState("FROZEN");
+        frozen.setEvaluationType(source.getEvaluationType());
         frozen.setDescription(source.getDescription());
         frozen.setSourceDatasetId(sourceDatasetId);
         frozen.setChecksumSha256(checksum);

@@ -112,7 +112,7 @@ async def run_case(send_input: dict, config: dict | None = None) -> dict:
         try:
             await java_client.post_case_result(
                 run_id=send_input["run_id"],
-                case_id=combo["case"].get("case_id"),
+                case_id=combo["case"].get("id"),
                 result=result,
             )
         except Exception as callback_exc:  # noqa: BLE001
@@ -120,7 +120,7 @@ async def run_case(send_input: dict, config: dict | None = None) -> dict:
             import logging
             logging.getLogger(__name__).warning(
                 "post_case_result failed run_id=%s case_id=%s: %s",
-                send_input["run_id"], combo["case"].get("case_id"), callback_exc
+                send_input["run_id"], combo["case"].get("id"), callback_exc
             )
 
     return {"case_results": [result]}
@@ -201,11 +201,32 @@ def compare(state: RunState) -> dict:
 
 async def save_run(state: RunState, config: dict | None = None) -> dict:
     """
-    最终汇总回调（可选）。
-    per-case result 已在 run_case 内（通过 java_client.post_case_result）逐条回调。
-    此节点做最终运行汇总 PUT（若 Java 支持）或仅记录日志。
-    TODO step 10: 调用 Java 汇总接口（若有）。
+    结束前重放每个 case 的结果，修复瞬时回调失败导致 Run 永久卡在 100% 以下。
+    Java 回调接口具备幂等性：已保存的结果返回 REPLAYED，缺失结果会被补写。
     """
+    cfg_inner = (config or {}).get("configurable", {})
+    java_client = cfg_inner.get("java_client")
+    if not java_client:
+        return {}
+
+    seen_case_ids: set[int] = set()
+    for result in state.get("case_results") or []:
+        case_id = result.get("case_id")
+        if case_id is None or case_id in seen_case_ids:
+            continue
+        seen_case_ids.add(case_id)
+        try:
+            await java_client.post_case_result(
+                run_id=state["run_id"],
+                case_id=case_id,
+                result=result,
+            )
+        except Exception as callback_exc:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning(
+                "final post_case_result reconciliation failed run_id=%s case_id=%s: %s",
+                state["run_id"], case_id, callback_exc,
+            )
     return {}
 
 
