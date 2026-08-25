@@ -116,8 +116,11 @@ node_modules/
 /skills/
 /skills-lock.json
 
-/docs/简历编辑 - CodeCV简历 (7).md
-/docs/面试准备-简历逐点拆解与加分故事.md
+# Personal career/interview material (keep local, never version)
+/INTERVIEW_PREP.md
+/docs/*面试*.md
+/docs/*简历*.md
+/docs/丁宇涵-*.md
 
 # RAG generated documents (auto-generated from database/content pipelines)
 /rag-documents/
@@ -154,3 +157,5 @@ node_modules/
 /AGENT_EVAL_GUIDE.md
 /AGENT_EVAL_TOOL_REPORT.md
 
+# Local/ad-hoc evaluation seed data
+/sql/agent_eval_test_data.sql
