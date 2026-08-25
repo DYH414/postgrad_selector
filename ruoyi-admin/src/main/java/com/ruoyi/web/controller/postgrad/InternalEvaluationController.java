@@ -106,6 +106,17 @@ public class InternalEvaluationController {
         return body;
     }
 
+    /** Python Worker callback for failures before any case result can be persisted. */
+    @PutMapping("/runs/{runId}/failure")
+    public Map<String, Object> agentRunFailure(@PathVariable String runId,
+                                               @RequestBody AgentRunFailureRequest request) {
+        agentEvalRunService.failRun(runId, request.errorCode, request.errorSummary);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("outcome", "FAILED");
+        body.put("runId", runId);
+        return body;
+    }
+
     private AgentEvalCaseResult toEntity(AgentCaseResultRequest r) {
         AgentEvalCaseResult e = new AgentEvalCaseResult();
         e.setAgentRunId(r.agentRunId);
@@ -172,5 +183,10 @@ public class InternalEvaluationController {
         public String resultChecksum;
         public String technicalErrorCode;
         public String technicalErrorSummary;
+    }
+
+    public static class AgentRunFailureRequest {
+        public String errorCode;
+        public String errorSummary;
     }
 }

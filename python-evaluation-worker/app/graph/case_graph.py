@@ -271,7 +271,8 @@ def finalize(state: CaseState) -> dict:
             [] if judge_passed else [f"human_review: {human_dec.get('reason', '')}"]
         )
     else:
-        judge_passed = verdict.get("passed", False)
+        # 缺少 verdict 表示技术链路尚未进入 Judge，不能误报为 Judge 拒绝。
+        judge_passed = verdict.get("passed") if "passed" in verdict else None
         failure_reasons = list(state.get("failure_reasons", []))
 
     agent_status = state.get("agent_status", "")
@@ -304,6 +305,22 @@ def finalize(state: CaseState) -> dict:
         if f"agent_status={agent_status}" not in failure_reasons:
             failure_reasons.append(f"agent_status={agent_status}")
 
+    failure_checks = (
+        (agent_success is False, "AGENT_FAILED"),
+        (route_accuracy is False, "ROUTE_MISMATCH"),
+        (required_tool_hit is False, "REQUIRED_TOOL_MISSING"),
+        (forbidden_called, "FORBIDDEN_TOOL_CALLED"),
+        (trace_complete is False, "TRACE_INCOMPLETE"),
+        (judge_passed is False, "JUDGE_REJECTED"),
+        (citation_present is False, "CITATION_MISSING"),
+        (expected_abstention is False, "ABSTENTION_MISMATCH"),
+    )
+    for failed, reason in failure_checks:
+        if failed and reason not in failure_reasons:
+            failure_reasons.append(reason)
+
+    input_tokens, output_tokens = _trace_token_totals(state.get("trace", {}))
+
     final = {
         "run_id": state["run_id"],
         "case_id": state["case"].get("id"),
@@ -324,7 +341,6 @@ def finalize(state: CaseState) -> dict:
         "failure_reasons": failure_reasons,
         "latency_ms": state.get("agent_response", {}).get("duration_ms"),
         "agent_run_id": state.get("trace", {}).get("agent_run_id"),
-        "result_checksum": _checksum(state),
         "status": "ok" if agent_status == "ok" else agent_status,
         "technical_error_code": (
             state.get("agent_response", {}).get("error_code")
@@ -334,8 +350,21 @@ def finalize(state: CaseState) -> dict:
             state.get("agent_response", {}).get("error_summary")
             if agent_status != "ok" else None
         ),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
     }
+    final["result_checksum"] = _checksum(final)
     return {"final_result": final}
+
+
+def _trace_token_totals(trace: dict) -> tuple[int, int]:
+    """Sum both Java camelCase and Python snake_case token trace fields."""
+    input_tokens = 0
+    output_tokens = 0
+    for item in trace.get("llm") or []:
+        input_tokens += int(item.get("inputTokens", item.get("input_tokens", 0)) or 0)
+        output_tokens += int(item.get("outputTokens", item.get("output_tokens", 0)) or 0)
+    return input_tokens, output_tokens
 
 
 def _route_after_rule(state: CaseState) -> Literal["judge_node", "finalize"]:
@@ -345,16 +374,9 @@ def _route_after_rule(state: CaseState) -> Literal["judge_node", "finalize"]:
     return "finalize"
 
 
-def _checksum(state: CaseState) -> str:
-    """result_checksum: 基于关键字段的 SHA-256（§6.2 幂等要求）。"""
-    key = json.dumps({
-        "run_id": state["run_id"],
-        "case_id": state["case"].get("id"),
-        "config_version_id": state.get("config_version_id"),
-        "verdict": state.get("judge_verdict", {}),
-        "rule": state.get("rule_result", {}),
-        "agent_status": state.get("agent_status"),
-    }, sort_keys=True)
+def _checksum(final_result: dict) -> str:
+    """对完整持久化结果计算 SHA-256，确保重放时任一指标变化可被识别。"""
+    key = json.dumps(final_result, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(key.encode()).hexdigest()
 
 

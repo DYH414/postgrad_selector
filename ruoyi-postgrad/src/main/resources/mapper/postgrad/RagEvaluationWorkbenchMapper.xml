@@ -74,11 +74,12 @@
 
     <insert id="insertRun">INSERT INTO rag_eval_run(run_id,dataset_id,dataset_checksum,status,evaluation_type,agent_config_version_id,modes_json,parameter_snapshot_json,agent_config_snapshot_json,qdrant_alias,qdrant_collection,embedding_model,rerank_model,git_commit,total_cases,completed_cases,created_by) VALUES(#{runId},#{datasetId},#{datasetChecksum},#{status},IFNULL(#{evaluationType},'RAG_RETRIEVAL'),#{agentConfigVersionId},#{modesJson},#{parameterSnapshotJson},#{agentConfigSnapshotJson},#{qdrantAlias},#{qdrantCollection},#{embeddingModel},#{rerankModel},#{gitCommit},#{totalCases},#{completedCases},#{createdBy})</insert>
     <select id="selectRunById" resultMap="runMap">SELECT * FROM rag_eval_run WHERE run_id=#{runId}</select>
+    <select id="selectRunByIdForUpdate" resultMap="runMap">SELECT * FROM rag_eval_run WHERE run_id=#{runId} FOR UPDATE</select>
     <select id="selectRuns" resultMap="runMap">SELECT * FROM rag_eval_run <where><if test="datasetId != null">dataset_id=#{datasetId}</if><if test="status != null and status != ''">AND status=#{status}</if><if test="runIdKeyword != null and runIdKeyword != ''">AND run_id LIKE CONCAT('%', #{runIdKeyword}, '%')</if><if test="datasetChecksum != null and datasetChecksum != ''">AND dataset_checksum = #{datasetChecksum}</if></where> ORDER BY created_at DESC</select>
     <select id="selectActiveEquivalentRun" resultMap="runMap">SELECT * FROM rag_eval_run WHERE dataset_id=#{datasetId} AND dataset_checksum &lt;=&gt; #{datasetChecksum} AND parameter_snapshot_json=#{parameterSnapshotJson} AND modes_json &lt;=&gt; #{modesJson} AND status IN ('PENDING','RUNNING') ORDER BY created_at DESC LIMIT 1</select>
     <update id="markRunStarted">UPDATE rag_eval_run SET status='RUNNING',started_at=CURRENT_TIMESTAMP(3) WHERE run_id=#{runId} AND status='PENDING'</update>
     <update id="updateRunProgress">UPDATE rag_eval_run SET completed_cases=#{completedCases} WHERE run_id=#{runId}</update>
-    <update id="completeRun">UPDATE rag_eval_run SET status=#{status},aggregate_metrics_json=#{metricsJson},error_code=#{errorCode},error_summary=#{errorSummary},finished_at=CURRENT_TIMESTAMP(3) WHERE run_id=#{runId} AND status NOT IN ('SUCCEEDED','FAILED','CANCELLED')</update>
+    <update id="completeRun">UPDATE rag_eval_run SET status=#{status},aggregate_metrics_json=#{metricsJson},error_code=#{errorCode},error_summary=#{errorSummary},finished_at=CURRENT_TIMESTAMP(3) WHERE run_id=#{runId} AND status NOT IN ('SUCCEEDED','FAILED','CANCELLED','INTERRUPTED')</update>
     <update id="requestCancel">UPDATE rag_eval_run SET cancel_requested=1 WHERE run_id=#{runId} AND status IN ('PENDING','RUNNING')</update>
     <update id="markRunningInterrupted">UPDATE rag_eval_run SET status='INTERRUPTED',finished_at=CURRENT_TIMESTAMP(3),error_code='APP_RESTART',error_summary='Evaluation interrupted by application restart' WHERE status='RUNNING'</update>
 
@@ -129,5 +130,5 @@
     <!-- recount completed_cases from agent_eval_case_result; only touches RUNNING runs to avoid clobbering terminal state -->
     <update id="updateAgentEvalProgress">UPDATE rag_eval_run SET completed_cases=(SELECT COUNT(*) FROM agent_eval_case_result WHERE run_id=#{runId}) WHERE run_id=#{runId} AND status='RUNNING'</update>
     <!-- CAS: only transitions to SUCCEEDED when all cases done and run is still non-terminal -->
-    <update id="completeAgentEvalRunIfDone">UPDATE rag_eval_run SET status='SUCCEEDED',finished_at=CURRENT_TIMESTAMP(3) WHERE run_id=#{runId} AND completed_cases &gt;= total_cases AND status NOT IN ('SUCCEEDED','FAILED','CANCELLED')</update>
+    <update id="completeAgentEvalRunIfDone">UPDATE rag_eval_run SET status='SUCCEEDED',finished_at=CURRENT_TIMESTAMP(3) WHERE run_id=#{runId} AND completed_cases &gt;= total_cases AND status NOT IN ('SUCCEEDED','FAILED','CANCELLED','INTERRUPTED')</update>
 </mapper>

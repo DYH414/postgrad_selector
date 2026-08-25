@@ -32,6 +32,8 @@ public interface RagEvaluationWorkbenchMapper {
 
     int insertRun(RagEvalRun run);
     RagEvalRun selectRunById(String runId);
+    /** Locks one run row for the lifetime of the current transaction. */
+    RagEvalRun selectRunByIdForUpdate(String runId);
     List<RagEvalRun> selectRuns(@Param("datasetId") Long datasetId, @Param("status") String status,
                                 @Param("runIdKeyword") String runIdKeyword,
                                 @Param("datasetChecksum") String datasetChecksum);

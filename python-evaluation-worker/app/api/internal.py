@@ -53,11 +53,16 @@ async def dispatch_run(
 
 async def _run_graph(request: DispatchRunRequest, settings: Settings) -> None:
     """后台运行主图，异常不会影响 HTTP 响应。"""
-    from app.graph.main_graph import run_main_graph  # 延迟导入，避免启动时循环
-    from app.clients.java_control_plane import JavaControlPlaneClient
-    from app.clients.judge_client import JudgeClient
+    import logging
+
+    logger = logging.getLogger(__name__)
+    java_client = None
 
     try:
+        from app.graph.main_graph import run_main_graph  # 延迟导入，避免启动时循环
+        from app.clients.java_control_plane import JavaControlPlaneClient
+        from app.clients.judge_client import JudgeClient
+
         # 实例化真实客户端（非测试桩）
         java_client = JavaControlPlaneClient(
             base_url=settings.java_control_plane_base_url,
@@ -82,9 +87,21 @@ async def _run_graph(request: DispatchRunRequest, settings: Settings) -> None:
             },
         )
     except Exception as exc:  # noqa: BLE001
-        # 记录错误（生产应接入 logging/alerting），不重新抛出
-        import logging
-        logging.getLogger(__name__).exception("eval run %s failed: %s", request.run_id, exc)
+        logger.exception("eval run %s failed: %s", request.run_id, exc)
+        if java_client is None:
+            return
+        try:
+            await java_client.fail_run(
+                request.run_id,
+                "EVAL_WORKER_EXECUTION_FAILED",
+                str(exc)[:500],
+            )
+        except Exception as callback_exc:  # noqa: BLE001
+            logger.exception(
+                "eval run %s failure callback failed: %s",
+                request.run_id,
+                callback_exc,
+            )
 
 
 @router.post("/{run_id}/resume", status_code=200, response_model=ResumeRunResponse)

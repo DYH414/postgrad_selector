@@ -148,6 +148,33 @@ class JavaControlPlaneClient:
                     raise
         raise RuntimeError(f"post_case_result failed: {last_exc}")  # unreachable
 
+    async def fail_run(
+        self,
+        run_id: str,
+        error_code: str,
+        error_summary: str,
+    ) -> str:
+        """Report a terminal worker failure so Java never leaves a run RUNNING."""
+        url = f"{self.base_url}/internal/v1/evaluation/runs/{run_id}/failure"
+        payload = {
+            "errorCode": error_code,
+            "errorSummary": (error_summary or error_code)[:500],
+        }
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_seconds, trust_env=False
+                ) as client:
+                    resp = await client.put(url, json=payload, headers=self._headers())
+                    resp.raise_for_status()
+                    return resp.json().get("outcome", "FAILED")
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt == 2:
+                    raise RuntimeError(f"fail_run callback failed: {exc}") from exc
+        raise RuntimeError(f"fail_run callback failed: {last_exc}")
+
 
 def _wrap_error(kind: str, cause: Exception | None) -> RuntimeError:
     return RuntimeError(f"agent_invocation_{kind}: {cause}")

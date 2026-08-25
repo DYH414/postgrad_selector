@@ -44,4 +44,17 @@ class RagEvaluationWorkbenchMapperXmlTest {
             assertFalse(xml.contains("${datasetChecksum}"));
         }
     }
+
+    @Test
+    void agentCallbackLocksRunRowAndNeverOverwritesInterruptedState() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream("/mapper/postgrad/RagEvaluationWorkbenchMapper.xml")) {
+            assertNotNull(in);
+            String xml = new String(in.readAllBytes(), StandardCharsets.UTF_8)
+                .replaceAll("\\s+", " ");
+
+            assertTrue(xml.contains("id=\"selectRunByIdForUpdate\""));
+            assertTrue(xml.contains("SELECT * FROM rag_eval_run WHERE run_id=#{runId} FOR UPDATE"));
+            assertTrue(xml.contains("status NOT IN ('SUCCEEDED','FAILED','CANCELLED','INTERRUPTED')"));
+        }
+    }
 }

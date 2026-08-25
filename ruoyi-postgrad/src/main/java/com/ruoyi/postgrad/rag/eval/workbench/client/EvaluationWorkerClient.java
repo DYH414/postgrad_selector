@@ -36,12 +36,10 @@ public class EvaluationWorkerClient {
      */
     public void dispatchRun(EvaluationDispatchRequest request) {
         if (workerBaseUrl == null || workerBaseUrl.isBlank()) {
-            log.warn("[EvalWorker] worker-base-url未配置，跳过分发 runId={}", request.runId());
-            return;
+            throw new IllegalStateException("EVAL_WORKER_BASE_URL_REQUIRED");
         }
         if (internalToken == null || internalToken.isBlank()) {
-            log.warn("[EvalWorker] internal-token未配置，跳过分发 runId={}", request.runId());
-            return;
+            throw new IllegalStateException("EVALUATION_INTERNAL_TOKEN_REQUIRED");
         }
 
         HttpHeaders headers = new HttpHeaders();

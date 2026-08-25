@@ -58,24 +58,80 @@ class AgentEvalRunServiceTest {
 
     @Test
     void saveAgentCaseResult_firstTime_insertAndRecount() {
-        when(mapper.selectRunById("run-1")).thenReturn(runningRun("run-1"));
+        when(mapper.selectRunByIdForUpdate("run-1")).thenReturn(runningRun("run-1"));
         when(mapper.selectCaseById(42L)).thenReturn(caseInDataset(42L, null));
         when(mapper.selectAgentEvalCaseResultByKey("run-1", 42L)).thenReturn(null);
         when(mapper.insertAgentEvalCaseResult(any())).thenReturn(1);
         when(mapper.updateAgentEvalProgress("run-1")).thenReturn(1);
-        when(mapper.completeAgentEvalRunIfDone("run-1")).thenReturn(0); // not yet done
+        when(mapper.selectAgentEvalCaseResultsByRunId("run-1")).thenReturn(List.of());
 
         String outcome = service.saveAgentCaseResult("run-1", 42L, result("abc123"));
 
         assertEquals("SAVED", outcome);
         verify(mapper).insertAgentEvalCaseResult(argThat(e -> "run-1".equals(e.getRunId()) && Long.valueOf(42L).equals(e.getCaseId())));
         verify(mapper).updateAgentEvalProgress("run-1");
-        verify(mapper).completeAgentEvalRunIfDone("run-1");
+        verify(mapper, never()).completeRun(eq("run-1"), eq("SUCCEEDED"), any(), any(), any());
+    }
+
+    @Test
+    void saveAgentCaseResult_serializesCallbacksByLockingRunBeforeResultChecks() {
+        RagEvalRun run = runningRun("run-locked");
+        run.setTotalCases(1);
+        when(mapper.selectRunByIdForUpdate("run-locked")).thenReturn(run);
+        when(mapper.selectCaseById(42L)).thenReturn(caseInDataset(42L, null));
+        when(mapper.selectAgentEvalCaseResultByKey("run-locked", 42L)).thenReturn(null);
+        when(mapper.insertAgentEvalCaseResult(any())).thenReturn(1);
+        when(mapper.updateAgentEvalProgress("run-locked")).thenReturn(1);
+        AgentEvalCaseResult persisted = result("locked-checksum");
+        when(mapper.selectAgentEvalCaseResultsByRunId("run-locked")).thenReturn(List.of(persisted));
+
+        assertEquals("SAVED", service.saveAgentCaseResult("run-locked", 42L, persisted));
+
+        var order = inOrder(mapper);
+        order.verify(mapper).selectRunByIdForUpdate("run-locked");
+        order.verify(mapper).selectAgentEvalCaseResultByKey("run-locked", 42L);
+        order.verify(mapper).insertAgentEvalCaseResult(any());
+        order.verify(mapper).completeRun(eq("run-locked"), eq("SUCCEEDED"), anyString(), isNull(), isNull());
+        verify(mapper, never()).selectRunById("run-locked");
+    }
+
+    @Test
+    void saveAgentCaseResult_lastCasePersistsAggregateMetricsBeforeSuccess() {
+        RagEvalRun run = runningRun("run-aggregate");
+        run.setTotalCases(2);
+        when(mapper.selectRunByIdForUpdate("run-aggregate")).thenReturn(run);
+        when(mapper.selectCaseById(42L)).thenReturn(caseInDataset(42L, null));
+        when(mapper.selectAgentEvalCaseResultByKey("run-aggregate", 42L)).thenReturn(null);
+        when(mapper.insertAgentEvalCaseResult(any())).thenReturn(1);
+        when(mapper.updateAgentEvalProgress("run-aggregate")).thenReturn(1);
+
+        AgentEvalCaseResult passed = result("first");
+        passed.setInputTokens(10);
+        passed.setOutputTokens(2);
+        passed.setLatencyMs(100L);
+        AgentEvalCaseResult failed = result("second");
+        failed.setPassed(false);
+        failed.setRouteAccuracy(false);
+        failed.setJudgePassed(false);
+        failed.setInputTokens(20);
+        failed.setOutputTokens(4);
+        failed.setLatencyMs(300L);
+        when(mapper.selectAgentEvalCaseResultsByRunId("run-aggregate"))
+            .thenReturn(List.of(passed, failed));
+
+        service.saveAgentCaseResult("run-aggregate", 42L, failed);
+
+        verify(mapper).completeRun(eq("run-aggregate"), eq("SUCCEEDED"),
+            argThat(json -> json != null
+                && json.contains("\"passRate\":0.5")
+                && json.contains("\"inputTokens\":30")
+                && json.contains("\"outputTokens\":6")),
+            isNull(), isNull());
     }
 
     @Test
     void saveAgentCaseResult_sameChecksum_replayed() {
-        when(mapper.selectRunById("run-1")).thenReturn(runningRun("run-1"));
+        when(mapper.selectRunByIdForUpdate("run-1")).thenReturn(runningRun("run-1"));
         when(mapper.selectCaseById(42L)).thenReturn(caseInDataset(42L, null));
         AgentEvalCaseResult existing = result("abc123");
         when(mapper.selectAgentEvalCaseResultByKey("run-1", 42L)).thenReturn(existing);
@@ -88,8 +144,22 @@ class AgentEvalRunServiceTest {
     }
 
     @Test
+    void saveAgentCaseResult_sameChecksumReplayedAfterRunSucceeded() {
+        RagEvalRun succeeded = runningRun("run-1");
+        succeeded.setStatus("SUCCEEDED");
+        when(mapper.selectRunByIdForUpdate("run-1")).thenReturn(succeeded);
+        when(mapper.selectAgentEvalCaseResultByKey("run-1", 42L)).thenReturn(result("abc123"));
+
+        String outcome = service.saveAgentCaseResult("run-1", 42L, result("abc123"));
+
+        assertEquals("REPLAYED", outcome);
+        verify(mapper, never()).insertAgentEvalCaseResult(any());
+        verify(mapper, never()).updateAgentEvalProgress(any());
+    }
+
+    @Test
     void saveAgentCaseResult_differentChecksum_throws409Conflict() {
-        when(mapper.selectRunById("run-1")).thenReturn(runningRun("run-1"));
+        when(mapper.selectRunByIdForUpdate("run-1")).thenReturn(runningRun("run-1"));
         when(mapper.selectCaseById(42L)).thenReturn(caseInDataset(42L, null));
         when(mapper.selectAgentEvalCaseResultByKey("run-1", 42L)).thenReturn(result("abc123"));
 
@@ -103,7 +173,7 @@ class AgentEvalRunServiceTest {
     void saveAgentCaseResult_cancelledRun_rejects() {
         RagEvalRun cancelled = runningRun("run-1");
         cancelled.setStatus("CANCELLED");
-        when(mapper.selectRunById("run-1")).thenReturn(cancelled);
+        when(mapper.selectRunByIdForUpdate("run-1")).thenReturn(cancelled);
 
         ServiceException ex = assertThrows(ServiceException.class,
             () -> service.saveAgentCaseResult("run-1", 42L, result("abc123")));
@@ -114,7 +184,18 @@ class AgentEvalRunServiceTest {
     void saveAgentCaseResult_succeededRun_rejectsAsTerminal() {
         RagEvalRun succeeded = runningRun("run-1");
         succeeded.setStatus("SUCCEEDED");
-        when(mapper.selectRunById("run-1")).thenReturn(succeeded);
+        when(mapper.selectRunByIdForUpdate("run-1")).thenReturn(succeeded);
+
+        ServiceException ex = assertThrows(ServiceException.class,
+            () -> service.saveAgentCaseResult("run-1", 42L, result("abc123")));
+        assertEquals("EVAL_RUN_TERMINAL", ex.getMessage());
+    }
+
+    @Test
+    void saveAgentCaseResult_interruptedRun_rejectsAsTerminal() {
+        RagEvalRun interrupted = runningRun("run-1");
+        interrupted.setStatus("INTERRUPTED");
+        when(mapper.selectRunByIdForUpdate("run-1")).thenReturn(interrupted);
 
         ServiceException ex = assertThrows(ServiceException.class,
             () -> service.saveAgentCaseResult("run-1", 42L, result("abc123")));
@@ -123,7 +204,7 @@ class AgentEvalRunServiceTest {
 
     @Test
     void saveAgentCaseResult_notFound_throws() {
-        when(mapper.selectRunById("no-such")).thenReturn(null);
+        when(mapper.selectRunByIdForUpdate("no-such")).thenReturn(null);
 
         ServiceException ex = assertThrows(ServiceException.class,
             () -> service.saveAgentCaseResult("no-such", 1L, result("x")));
@@ -137,7 +218,7 @@ class AgentEvalRunServiceTest {
         RagEvalCaseEntity foreignCase = new RagEvalCaseEntity();
         foreignCase.setId(42L);
         foreignCase.setDatasetId(8L);
-        when(mapper.selectRunById("run-1")).thenReturn(run);
+        when(mapper.selectRunByIdForUpdate("run-1")).thenReturn(run);
         when(mapper.selectCaseById(42L)).thenReturn(foreignCase);
 
         ServiceException ex = assertThrows(ServiceException.class,
@@ -228,6 +309,29 @@ class AgentEvalRunServiceTest {
 
         verify(mapper).completeRun(anyString(), eq("FAILED"), isNull(),
             eq("EVAL_WORKER_DISPATCH_FAILED"), anyString());
+    }
+
+    @Test
+    void failRun_transitionsRunningRunToFailedWithSanitizedError() {
+        when(mapper.selectRunById("run-1")).thenReturn(runningRun("run-1"));
+        when(mapper.completeRun(eq("run-1"), eq("FAILED"), isNull(),
+            eq("EVAL_WORKER_EXECUTION_FAILED"), eq("checkpoint failed"))).thenReturn(1);
+
+        service.failRun("run-1", "EVAL_WORKER_EXECUTION_FAILED", "checkpoint failed");
+
+        verify(mapper).completeRun("run-1", "FAILED", null,
+            "EVAL_WORKER_EXECUTION_FAILED", "checkpoint failed");
+    }
+
+    @Test
+    void failRun_isIdempotentForAlreadyFailedRun() {
+        RagEvalRun failed = runningRun("run-1");
+        failed.setStatus("FAILED");
+        when(mapper.selectRunById("run-1")).thenReturn(failed);
+
+        service.failRun("run-1", "EVAL_WORKER_EXECUTION_FAILED", "duplicate");
+
+        verify(mapper, never()).completeRun(anyString(), anyString(), any(), any(), any());
     }
 
     private static RagEvalDataset dispatchableDataset(Long id) {

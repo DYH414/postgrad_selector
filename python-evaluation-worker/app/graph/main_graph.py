@@ -110,18 +110,22 @@ async def run_case(send_input: dict, config: dict | None = None) -> dict:
     java_client = cfg_inner.get("java_client")
     if java_client:
         try:
-            await java_client.post_case_result(
+            outcome = await java_client.post_case_result(
                 run_id=send_input["run_id"],
                 case_id=combo["case"].get("id"),
                 result=result,
             )
+            if outcome == "CONFLICT":
+                raise RuntimeError("case result checksum conflict")
+            result["_case_result_callback_succeeded"] = True
         except Exception as callback_exc:  # noqa: BLE001
-            # 回调失败不影响图继续（Java 侧有 /case-results 查漏兜底）
+            # 首轮失败先记录，由 save_run 做第二轮补偿；两轮均失败才终止整个 Run。
             import logging
             logging.getLogger(__name__).warning(
                 "post_case_result failed run_id=%s case_id=%s: %s",
                 send_input["run_id"], combo["case"].get("id"), callback_exc
             )
+            result["_case_result_callback_succeeded"] = False
 
     return {"case_results": [result]}
 
@@ -156,11 +160,32 @@ def aggregate(state: RunState) -> dict:
             ) if vt else None,
         }
 
+    route_values = [r.get("route_accuracy") for r in results if r.get("route_accuracy") is not None]
+    tool_values = [r.get("required_tool_hit") for r in results if r.get("required_tool_hit") is not None]
+    judge_values = [r.get("judge_passed") for r in results if r.get("judge_passed") is not None]
+    faithfulness_values = [r.get("faithfulness") for r in results if r.get("faithfulness") is not None]
+    relevance_values = [r.get("answer_relevance") for r in results if r.get("answer_relevance") is not None]
+    latency_values = [r.get("latency_ms") for r in results if r.get("latency_ms") is not None]
+
+    def rate(values: list) -> float | None:
+        return round(sum(1 for value in values if value) / len(values), 4) if values else None
+
+    def average(values: list) -> float | None:
+        return round(sum(values) / len(values), 4) if values else None
+
     return {
         "aggregates": {
             "total": total,
             "passed": passed,
             "pass_rate": round(passed / total, 4) if total else 0.0,
+            "route_accuracy": rate(route_values),
+            "required_tool_hit_rate": rate(tool_values),
+            "judge_pass_rate": rate(judge_values),
+            "avg_faithfulness": average(faithfulness_values),
+            "avg_answer_relevance": average(relevance_values),
+            "avg_latency_ms": round(sum(latency_values) / len(latency_values)) if latency_values else None,
+            "input_tokens": sum(r.get("input_tokens") or 0 for r in results),
+            "output_tokens": sum(r.get("output_tokens") or 0 for r in results),
             "by_version": version_stats,
         }
     }
@@ -210,23 +235,33 @@ async def save_run(state: RunState, config: dict | None = None) -> dict:
         return {}
 
     seen_case_ids: set[int] = set()
+    unreconciled: list[tuple[int, Exception]] = []
     for result in state.get("case_results") or []:
         case_id = result.get("case_id")
         if case_id is None or case_id in seen_case_ids:
             continue
         seen_case_ids.add(case_id)
         try:
-            await java_client.post_case_result(
+            outcome = await java_client.post_case_result(
                 run_id=state["run_id"],
                 case_id=case_id,
                 result=result,
             )
+            if outcome == "CONFLICT":
+                raise RuntimeError("case result checksum conflict")
         except Exception as callback_exc:  # noqa: BLE001
             import logging
             logging.getLogger(__name__).warning(
                 "final post_case_result reconciliation failed run_id=%s case_id=%s: %s",
                 state["run_id"], case_id, callback_exc,
             )
+            if not result.get("_case_result_callback_succeeded", False):
+                unreconciled.append((case_id, callback_exc))
+    if unreconciled:
+        case_ids = ",".join(str(case_id) for case_id, _ in unreconciled)
+        raise RuntimeError(
+            f"case result reconciliation failed for case_ids={case_ids}"
+        ) from unreconciled[0][1]
     return {}
 
 

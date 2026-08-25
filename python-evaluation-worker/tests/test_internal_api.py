@@ -49,8 +49,14 @@ _DISPATCH_BODY = {
 
 
 @pytest.fixture(autouse=True)
-def clear_dispatch_store():
+def clear_dispatch_store(monkeypatch):
     """每个测试前后清空内存幂等表，防止用例互相干扰。"""
+    async def complete_background_task(*_args, **_kwargs):
+        return None
+
+    # API 契约测试不启动真实 SQLite 后台图，避免 TestClient 关闭事件循环后遗留线程。
+    monkeypatch.setattr("app.api.internal._run_graph", complete_background_task)
+    monkeypatch.setattr("app.api.internal._resume_graph", complete_background_task)
     _dispatched.clear()
     yield
     _dispatched.clear()
@@ -124,6 +130,81 @@ async def test_run_graph_builds_java_client_with_supported_token_argument(monkey
 
     assert captured["java"]["token"] == TOKEN
     assert captured["graph"]["extra_config"]["java_client"].__class__ is FakeJavaClient
+
+
+@pytest.mark.asyncio
+async def test_run_graph_reports_terminal_failure_to_java(monkeypatch):
+    captured = {}
+
+    class FakeJavaClient:
+        def __init__(self, base_url, token):
+            pass
+
+        async def fail_run(self, run_id, error_code, error_summary):
+            captured["failure"] = {
+                "run_id": run_id,
+                "error_code": error_code,
+                "error_summary": error_summary,
+            }
+
+    class FakeJudgeClient:
+        def __init__(self, base_url, api_key, model):
+            pass
+
+    async def failing_graph(**kwargs):
+        raise RuntimeError("checkpoint connection failed")
+
+    monkeypatch.setattr(
+        "app.clients.java_control_plane.JavaControlPlaneClient", FakeJavaClient)
+    monkeypatch.setattr("app.clients.judge_client.JudgeClient", FakeJudgeClient)
+    monkeypatch.setattr("app.graph.main_graph.run_main_graph", failing_graph)
+
+    await _run_graph(DispatchRunRequest.model_validate(_DISPATCH_BODY), get_settings())
+
+    assert captured["failure"]["run_id"] == "run-step7-001"
+    assert captured["failure"]["error_code"] == "EVAL_WORKER_EXECUTION_FAILED"
+    assert "checkpoint connection failed" in captured["failure"]["error_summary"]
+
+
+@pytest.mark.asyncio
+async def test_run_graph_reports_failure_when_judge_client_initialization_fails(monkeypatch):
+    captured = {}
+
+    class FakeJavaClient:
+        def __init__(self, base_url, token):
+            pass
+
+        async def fail_run(self, run_id, error_code, error_summary):
+            captured["failure"] = (run_id, error_code, error_summary)
+
+    class BrokenJudgeClient:
+        def __init__(self, base_url, api_key, model):
+            raise RuntimeError("judge config invalid")
+
+    monkeypatch.setattr(
+        "app.clients.java_control_plane.JavaControlPlaneClient", FakeJavaClient)
+    monkeypatch.setattr("app.clients.judge_client.JudgeClient", BrokenJudgeClient)
+
+    await _run_graph(DispatchRunRequest.model_validate(_DISPATCH_BODY), get_settings())
+
+    assert captured["failure"][0] == "run-step7-001"
+    assert "judge config invalid" in captured["failure"][2]
+
+
+@pytest.mark.asyncio
+async def test_run_graph_java_client_initialization_failure_does_not_leak_unbound_local(monkeypatch, caplog):
+    class BrokenJavaClient:
+        def __init__(self, base_url, token):
+            raise RuntimeError("java config invalid")
+
+    monkeypatch.setattr(
+        "app.clients.java_control_plane.JavaControlPlaneClient", BrokenJavaClient)
+
+    # 后台入口必须自行吸收异常；尤其不能在 except 中再触发 UnboundLocalError。
+    await _run_graph(DispatchRunRequest.model_validate(_DISPATCH_BODY), get_settings())
+
+    assert "UnboundLocalError" not in caplog.text
+    assert "local variable 'java_client'" not in caplog.text
 
 
 # ── token 鉴权 ─────────────────────────────────────────────────────────────────

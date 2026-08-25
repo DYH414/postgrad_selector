@@ -16,8 +16,25 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class EvaluationWorkerClientTest {
+
+    @Test
+    void dispatchRun_rejectsMissingInternalTokenInsteadOfSilentlyLeavingRunRunning() {
+        EvaluationWorkerClient client = new EvaluationWorkerClient(
+            "http://worker.test", "", new RestTemplate());
+
+        assertThrows(IllegalStateException.class, () -> client.dispatchRun(minimalRequest()));
+    }
+
+    @Test
+    void dispatchRun_rejectsMissingWorkerUrlInsteadOfSilentlyLeavingRunRunning() {
+        EvaluationWorkerClient client = new EvaluationWorkerClient(
+            "", "internal-token", new RestTemplate());
+
+        assertThrows(IllegalStateException.class, () -> client.dispatchRun(minimalRequest()));
+    }
 
     @Test
     void dispatchRun_serializesFastApiContractWithSnakeCaseAndLists() {
@@ -102,5 +119,18 @@ class EvaluationWorkerClientTest {
         client.dispatchRun(request);
 
         server.verify();
+    }
+
+    private static EvaluationDispatchRequest minimalRequest() {
+        return new EvaluationDispatchRequest(
+            "run-missing-config", "dataset-sha",
+            List.of(new EvaluationDispatchRequest.ConfigVersion(
+                1L, "v1", "prompt", "route", "model",
+                new BigDecimal("0.7"), "tool-sha")),
+            List.of(new EvaluationDispatchRequest.DispatchCase(
+                1L, "case-1", "query", "CLARIFY", "test", "easy",
+                new EvaluationDispatchRequest.AgentCaseSpec(
+                    List.of(), List.of(), false, List.of(), List.of(), List.of())))
+        );
     }
 }

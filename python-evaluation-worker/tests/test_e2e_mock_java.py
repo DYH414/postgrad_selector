@@ -299,6 +299,27 @@ async def test_java_client_serializes_case_result_to_java_contract():
 
 
 @pytest.mark.asyncio
+async def test_java_client_reports_run_failure_to_internal_endpoint():
+    import httpx
+    import respx
+
+    route = respx.put(
+        "http://localhost:8080/internal/v1/evaluation/runs/run-1/failure"
+    ).mock(return_value=httpx.Response(200, json={"outcome": "FAILED"}))
+
+    with respx.mock:
+        client = JavaControlPlaneClient("http://localhost:8080", "test-token")
+        outcome = await client.fail_run(
+            "run-1", "EVAL_WORKER_EXECUTION_FAILED", "checkpoint failed")
+        assert outcome == "FAILED"
+        payload = json.loads(route.calls[0].request.content)
+        assert payload == {
+            "errorCode": "EVAL_WORKER_EXECUTION_FAILED",
+            "errorSummary": "checkpoint failed",
+        }
+
+
+@pytest.mark.asyncio
 async def test_judge_client_disables_reasoning_to_preserve_json_output_budget():
     """Reasoning models must spend the output budget on the strict JSON verdict."""
     import httpx

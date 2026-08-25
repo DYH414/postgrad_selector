@@ -11,6 +11,8 @@ import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalRun;
 import com.ruoyi.postgrad.rag.eval.workbench.mapper.RagEvaluationWorkbenchMapper;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -34,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AgentEvalRunService {
 
-    private static final Set<String> TERMINAL_STATUSES = Set.of("SUCCEEDED", "FAILED", "CANCELLED");
+    private static final Set<String> TERMINAL_STATUSES = Set.of("SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED");
 
     private final RagEvaluationWorkbenchMapper mapper;
     private final EvaluationWorkerClient workerClient;
@@ -55,9 +57,20 @@ public class AgentEvalRunService {
      */
     @Transactional
     public String saveAgentCaseResult(String runId, Long caseId, AgentEvalCaseResult result) {
-        RagEvalRun run = mapper.selectRunById(runId);
+        // Serialize callbacks for the same run before any result read/write. Without this
+        // row lock, two final callbacks can each miss the other's uncommitted insert and
+        // both commit while leaving the run permanently RUNNING.
+        RagEvalRun run = mapper.selectRunByIdForUpdate(runId);
         if (run == null) throw new ServiceException("EVAL_RUN_NOT_FOUND");
         if ("CANCELLED".equals(run.getStatus())) throw new ServiceException("EVAL_RUN_CANCELLED");
+
+        // The Worker performs one final reconciliation pass. A Run may already be
+        // SUCCEEDED by then, but an identical persisted result is still a valid
+        // idempotent replay rather than a terminal-state error.
+        AgentEvalCaseResult existing = mapper.selectAgentEvalCaseResultByKey(runId, caseId);
+        if (existing != null && Objects.equals(existing.getResultChecksum(), result.getResultChecksum())) {
+            return "REPLAYED";
+        }
         if (TERMINAL_STATUSES.contains(run.getStatus())) throw new ServiceException("EVAL_RUN_TERMINAL");
 
         RagEvalCaseEntity evalCase = mapper.selectCaseById(caseId);
@@ -65,11 +78,7 @@ public class AgentEvalRunService {
             throw new ServiceException("EVAL_CASE_NOT_IN_RUN");
         }
 
-        AgentEvalCaseResult existing = mapper.selectAgentEvalCaseResultByKey(runId, caseId);
         if (existing != null) {
-            if (Objects.equals(existing.getResultChecksum(), result.getResultChecksum())) {
-                return "REPLAYED";
-            }
             throw new ServiceException("EVAL_RESULT_CONFLICT");
         }
 
@@ -84,8 +93,10 @@ public class AgentEvalRunService {
         }
         // 重算 completed_cases（COUNT(*) from agent_eval_case_result）
         mapper.updateAgentEvalProgress(runId);
-        // CAS：全部 case 完成且非终态时转 SUCCEEDED
-        mapper.completeAgentEvalRunIfDone(runId);
+        List<AgentEvalCaseResult> persisted = mapper.selectAgentEvalCaseResultsByRunId(runId);
+        if (persisted.size() >= run.getTotalCases()) {
+            mapper.completeRun(runId, "SUCCEEDED", JSON.toJSONString(aggregateMetrics(persisted)), null, null);
+        }
         return "SAVED";
     }
 
@@ -94,6 +105,49 @@ public class AgentEvalRunService {
         RagEvalRun run = mapper.selectRunById(runId);
         if (run == null) throw new ServiceException("EVAL_RUN_NOT_FOUND");
         return mapper.selectAgentEvalCaseResultsByRunId(runId);
+    }
+
+    /** Worker-level failures must always terminate a RUNNING run. Idempotent for terminal runs. */
+    public void failRun(String runId, String errorCode, String errorSummary) {
+        RagEvalRun run = mapper.selectRunById(runId);
+        if (run == null) throw new ServiceException("EVAL_RUN_NOT_FOUND");
+        if (TERMINAL_STATUSES.contains(run.getStatus()) || "INTERRUPTED".equals(run.getStatus())) return;
+        String code = blank(errorCode) ? "EVAL_WORKER_EXECUTION_FAILED" : errorCode.trim();
+        String summary = blank(errorSummary) ? code : errorSummary.trim();
+        if (summary.length() > 500) summary = summary.substring(0, 500);
+        mapper.completeRun(runId, "FAILED", null, code, summary);
+    }
+
+    private Map<String, Object> aggregateMetrics(List<AgentEvalCaseResult> results) {
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        int total = results.size();
+        long passed = results.stream().filter(r -> Boolean.TRUE.equals(r.getPassed())).count();
+        metrics.put("total", total);
+        metrics.put("passed", passed);
+        metrics.put("passRate", total == 0 ? 0D : (double) passed / total);
+        metrics.put("routeAccuracy", booleanRate(results.stream().map(AgentEvalCaseResult::getRouteAccuracy).toList()));
+        metrics.put("requiredToolHitRate", booleanRate(results.stream().map(AgentEvalCaseResult::getRequiredToolHit).toList()));
+        metrics.put("judgePassRate", booleanRate(results.stream().map(AgentEvalCaseResult::getJudgePassed).toList()));
+        metrics.put("avgFaithfulness", decimalAverage(results.stream().map(AgentEvalCaseResult::getFaithfulness).toList()));
+        metrics.put("avgAnswerRelevance", decimalAverage(results.stream().map(AgentEvalCaseResult::getAnswerRelevance).toList()));
+        metrics.put("avgLatencyMs", results.stream().filter(r -> r.getLatencyMs() != null)
+            .mapToLong(AgentEvalCaseResult::getLatencyMs).average().orElse(0D));
+        metrics.put("inputTokens", results.stream().map(AgentEvalCaseResult::getInputTokens)
+            .filter(Objects::nonNull).mapToInt(Integer::intValue).sum());
+        metrics.put("outputTokens", results.stream().map(AgentEvalCaseResult::getOutputTokens)
+            .filter(Objects::nonNull).mapToInt(Integer::intValue).sum());
+        return metrics;
+    }
+
+    private Double booleanRate(List<Boolean> values) {
+        List<Boolean> present = values.stream().filter(Objects::nonNull).toList();
+        if (present.isEmpty()) return null;
+        return (double) present.stream().filter(Boolean.TRUE::equals).count() / present.size();
+    }
+
+    private Double decimalAverage(List<java.math.BigDecimal> values) {
+        return values.stream().filter(Objects::nonNull).mapToDouble(java.math.BigDecimal::doubleValue)
+            .average().stream().boxed().findFirst().orElse(null);
     }
 
     /**

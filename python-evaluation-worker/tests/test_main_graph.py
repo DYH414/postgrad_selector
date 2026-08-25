@@ -138,6 +138,20 @@ async def test_save_run_replays_all_case_results_for_callback_reconciliation():
     assert callback_case_ids == {1, 2}
 
 
+@pytest.mark.asyncio
+async def test_save_run_fails_when_reconciliation_callback_still_fails():
+    """首轮与收尾补偿都失败时，Run 必须进入技术失败而不是假成功。"""
+    state = _make_run_state(n_versions=1, n_cases=1)
+    state["case_results"] = [
+        {"case_id": 1, "passed": False, "result_checksum": "a"},
+    ]
+    java_client = AsyncMock()
+    java_client.post_case_result.side_effect = RuntimeError("java unavailable")
+
+    with pytest.raises(RuntimeError, match="case result reconciliation failed"):
+        await save_run(state, config={"configurable": {"java_client": java_client}})
+
+
 # ── case 子图节点 ───────────────────────────────────────────────────────────────
 
 def _make_case_state(**kwargs) -> CaseState:
@@ -272,6 +286,116 @@ def test_finalize_agent_failed():
     assert "agent_status=failed" in result["final_result"]["failure_reasons"]
     assert result["final_result"]["technical_error_code"] == "AGENT_INVOCATION_FAILED"
     assert result["final_result"]["technical_error_summary"] == "provider rejected request"
+    assert result["final_result"]["judge_passed"] is None
+    assert "JUDGE_REJECTED" not in result["final_result"]["failure_reasons"]
+
+
+@pytest.mark.parametrize(
+    ("field", "changed_state"),
+    [
+        ("tokens", {"trace": {"llm": [{"inputTokens": 2, "outputTokens": 1}]}}),
+        ("latency", {"agent_response": {"duration_ms": 301}}),
+        ("failureReasons", {"failure_reasons": ["EXPLICIT_FAILURE"]}),
+        (
+            "error",
+            {
+                "agent_status": "http_error",
+                "agent_response": {
+                    "error_code": "UPSTREAM_TIMEOUT",
+                    "error_summary": "timeout",
+                },
+            },
+        ),
+    ],
+)
+def test_finalize_checksum_covers_persisted_observability_fields(field, changed_state):
+    base = _make_case_state(
+        agent_status="ok",
+        agent_response={"duration_ms": 300},
+        rule_result={
+            "agent_success": True,
+            "route_accuracy": True,
+            "required_tool_hit": None,
+            "forbidden_tool_called": False,
+            "trace_complete": True,
+            "citation_present": None,
+            "expected_abstention": None,
+        },
+        judge_verdict={"passed": True},
+    )
+    baseline = finalize(base)["final_result"]["result_checksum"]
+    variant = dict(base)
+    variant.update(changed_state)
+
+    assert finalize(variant)["final_result"]["result_checksum"] != baseline, field
+
+
+def test_finalize_records_rule_and_judge_failure_reasons_and_tokens():
+    state = _make_case_state(
+        agent_status="ok",
+        agent_response={"answer": "answer", "duration_ms": 120},
+        rule_result={
+            "agent_success": True,
+            "route_accuracy": False,
+            "required_tool_hit": False,
+            "forbidden_tool_called": False,
+            "trace_complete": True,
+            "citation_present": None,
+            "expected_abstention": None,
+        },
+        judge_verdict={
+            "passed": False,
+            "faithfulness": 0.2,
+            "answer_relevance": 0.3,
+            "variance": 0.0,
+            "valid_samples": 3,
+        },
+        trace={
+            "agent_run_id": "agent-run-2",
+            "llm": [
+                {"inputTokens": 120, "outputTokens": 30},
+                {"input_tokens": 20, "output_tokens": 5},
+            ],
+        },
+    )
+
+    final = finalize(state)["final_result"]
+
+    assert final["passed"] is False
+    assert set(final["failure_reasons"]) >= {
+        "ROUTE_MISMATCH", "REQUIRED_TOOL_MISSING", "JUDGE_REJECTED"
+    }
+    assert final["input_tokens"] == 140
+    assert final["output_tokens"] == 35
+
+
+def test_aggregate_includes_quality_latency_and_token_totals():
+    state = _make_run_state()
+    state["case_results"] = [
+        {
+            "config_version_id": 1, "passed": True, "route_accuracy": True,
+            "required_tool_hit": True, "judge_passed": True,
+            "faithfulness": 0.8, "answer_relevance": 0.7,
+            "latency_ms": 100, "input_tokens": 10, "output_tokens": 4,
+        },
+        {
+            "config_version_id": 1, "passed": False, "route_accuracy": False,
+            "required_tool_hit": None, "judge_passed": False,
+            "faithfulness": 0.4, "answer_relevance": 0.5,
+            "latency_ms": 300, "input_tokens": 20, "output_tokens": 6,
+        },
+    ]
+
+    metrics = aggregate(state)["aggregates"]
+
+    assert metrics["route_accuracy"] == 0.5
+    assert metrics["judge_pass_rate"] == 0.5
+    assert metrics["required_tool_hit_rate"] == 1.0
+    assert metrics["avg_faithfulness"] == 0.6
+    assert metrics["avg_answer_relevance"] == 0.6
+    assert metrics["avg_latency_ms"] == 200
+    assert metrics["input_tokens"] == 30
+    assert metrics["output_tokens"] == 10
 
 
 # ── 主图 end-to-end (stub) ─────────────────────────────────────────────────────
