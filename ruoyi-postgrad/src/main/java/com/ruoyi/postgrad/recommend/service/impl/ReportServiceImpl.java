@@ -114,7 +114,7 @@ public class ReportServiceImpl implements IReportService {
 
         // 7. 缓存 Redis
         redisTemplate.opsForValue().set(
-            REPORT_KEY_PREFIX + reportId,
+            reportCacheKey(userId, reportId),
             JSON.toJSONString(report),
             Duration.ofDays(TTL_DAYS));
 
@@ -129,7 +129,7 @@ public class ReportServiceImpl implements IReportService {
         }
 
         // 1. 先查 Redis 缓存
-        String cached = redisTemplate.opsForValue().get(REPORT_KEY_PREFIX + reportId);
+        String cached = redisTemplate.opsForValue().get(reportCacheKey(userId, reportId));
         if (cached != null && !cached.isBlank()) {
             try {
                 ReportVO report = JSON.parseObject(cached, ReportVO.class);
@@ -169,7 +169,7 @@ public class ReportServiceImpl implements IReportService {
 
         // 3. 回写 Redis 缓存
         redisTemplate.opsForValue().set(
-            REPORT_KEY_PREFIX + reportId,
+            reportCacheKey(userId, reportId),
             JSON.toJSONString(report),
             Duration.ofDays(TTL_DAYS));
 
@@ -217,6 +217,10 @@ public class ReportServiceImpl implements IReportService {
     }
 
     // ── private helpers ──
+
+    private String reportCacheKey(Long userId, Long reportId) {
+        return REPORT_KEY_PREFIX + userId + ":" + reportId;
+    }
 
     /**
      * 深拷贝草稿 tiers，并通过 DB 水合每个候选的完整 SchoolFact。
