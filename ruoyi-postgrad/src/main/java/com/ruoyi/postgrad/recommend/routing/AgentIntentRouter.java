@@ -92,18 +92,37 @@ public class AgentIntentRouter {
 
     private static String buildRoutingInput(String message, List<ChatMessageVO> history) {
         List<String> userTurns = new ArrayList<>();
+        String latestAssistantReply = null;
         if (history != null) {
             for (ChatMessageVO item : history) {
-                if (item != null && "user".equals(item.getRole())
-                    && item.getContent() != null && !item.getContent().isBlank()) {
+                if (item == null || item.getContent() == null || item.getContent().isBlank()) {
+                    continue;
+                }
+                if ("user".equals(item.getRole())) {
                     userTurns.add(item.getContent().trim());
+                } else if ("assistant".equals(item.getRole())) {
+                    latestAssistantReply = item.getContent().trim();
                 }
             }
         }
         int from = Math.max(0, userTurns.size() - HISTORY_USER_TURNS);
         List<String> recent = userTurns.subList(from, userTurns.size());
         String current = message == null ? "" : message.trim();
-        return "最近用户消息：\n" + String.join("\n", recent)
-            + "\n\n当前问题：\n" + current;
+        StringBuilder input = new StringBuilder()
+            .append("最近用户消息：\n")
+            .append(String.join("\n", recent));
+        if (needsAssistantReference(current) && latestAssistantReply != null) {
+            input.append("\n\n最近助手回复（仅用于解析指代，不作为事实）：\n")
+                .append(latestAssistantReply);
+        }
+        return input.append("\n\n当前问题：\n").append(current).toString();
+    }
+
+    private static boolean needsAssistantReference(String message) {
+        if (message == null || message.isBlank() || message.length() > 12) {
+            return false;
+        }
+        String normalized = message.replaceAll("[\\s，。！？!?,、]", "");
+        return normalized.matches("好|好的|可以|可以的|没问题|同意|确认|继续|继续吧|执行|就这样");
     }
 }

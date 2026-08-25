@@ -189,15 +189,27 @@ public class V2DraftActionTools {
         CandidateCardVO candidate = buildCandidateFromDb(ctx, addProgramId);
         if (candidate == null) return error("not_found", "Replacement candidate not found in workspace or database.");
 
-        // 直接移除旧候选（不触发 refill，避免双重添加 H2 bug）
-        DraftMutationResultVO removeMutation = draftMutationService.removeFromDraftDirect(
-            ctx.userId(), removeProgramId);
+        // DB fallback 也走统一替换边界：校验完成后再一次性写入新草稿。
+        // 禁止「先删后加」，否则 add 被容量/唯一性校验拒绝时会丢失原候选。
+        DraftReplacementRequest replacement = new DraftReplacementRequest();
+        replacement.setRemoveProgramId(removeProgramId);
+        replacement.setAddProgramId(addProgramId);
+        Map<String, Object> atomicResult = draftMutationService.batchReplace(
+            ctx.userId(), List.of(replacement), workspace, ignored -> candidate);
+        if (!Boolean.TRUE.equals(atomicResult.get("ok"))) {
+            return error("replace_failed", "Replacement was rejected; the original draft candidate was preserved.");
+        }
 
-        // 再添加新候选
-        DraftMutationResultVO addMutation = draftMutationService.addCandidateDirect(
-            ctx.userId(), candidate, tier);
-
-        return buildReplaceResult(removeProgramId, addProgramId, tier, addMutation);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ok", true);
+        result.put("action", "replace");
+        result.put("removedProgramId", removeProgramId);
+        result.put("addedProgramId", addProgramId);
+        result.put("tier", tier);
+        result.put("draftCount", atomicResult.get("draftCount"));
+        String json = JSON.toJSONString(result);
+        V2ChatToolContext.markWriteExecuted(json);
+        return json;
     }
 
     private String buildReplaceResult(long removeProgramId, long addProgramId, String tier, DraftMutationResultVO mutation) {

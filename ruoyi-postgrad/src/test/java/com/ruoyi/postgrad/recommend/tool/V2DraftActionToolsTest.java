@@ -368,29 +368,66 @@ class V2DraftActionToolsTest {
         row.put("admissionHigh", 310);
         when(mapper.selectProgramForRecommendation(2001L)).thenReturn(row);
 
-        // Mock removeFromDraftDirect → should be called (NOT removeCandidate)
-        DraftMutationResultVO removeResult = new DraftMutationResultVO();
-        removeResult.setOk(true);
-        removeResult.setAction("remove_direct");
-        removeResult.setDraft(draft);
-        removeResult.setDraftCount(0);
-        when(mutationService.removeFromDraftDirect(eq(1L), eq(1001L))).thenReturn(removeResult);
-
-        // Mock addCandidateDirect
-        DraftMutationResultVO addResult = new DraftMutationResultVO();
-        addResult.setOk(true);
-        addResult.setAction("add_external");
-        addResult.setDraft(draft);
-        addResult.setDraftCount(1);
-        when(mutationService.addCandidateDirect(eq(1L), any(), eq("reach"))).thenReturn(addResult);
+        Map<String, Object> replaceResult = new LinkedHashMap<>();
+        replaceResult.put("ok", true);
+        replaceResult.put("action", "batch_replace");
+        replaceResult.put("replaced", 1);
+        replaceResult.put("failed", 0);
+        replaceResult.put("draftCount", 1);
+        when(mutationService.batchReplace(eq(1L), any(), any(), any())).thenReturn(replaceResult);
 
         String json = tools.replaceDraftCandidate(1001L, 2001L);
         Map<String, Object> result = JSON.parseObject(json, Map.class);
 
         assertTrue((Boolean) result.get("ok"), "H2: replace should succeed");
         assertEquals("replace", result.get("action"));
-        // 关键：verify removeFromDraftDirect 被调用（不是 removeCandidate）
-        verify(mutationService).removeFromDraftDirect(1L, 1001L);
+        // 关键：DB fallback 也必须通过单个原子替换边界，不先删后加。
+        verify(mutationService).batchReplace(eq(1L), any(), any(), any());
+        verify(mutationService, never()).removeFromDraftDirect(anyLong(), anyLong());
+        verify(mutationService, never()).addCandidateDirect(anyLong(), any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void replaceDraftCandidateDbFallbackMustNotReportSuccessWhenAtomicReplaceFails() {
+        IDraftService draftService = mock(IDraftService.class);
+        IDraftMutationService mutationService = mock(IDraftMutationService.class);
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(ops);
+        when(ops.get(any())).thenReturn(null);
+
+        V2DraftActionTools tools = new V2DraftActionTools();
+        tools.setDraftServiceForTest(draftService);
+        tools.setDraftMutationServiceForTest(mutationService);
+        injectRedis(tools, redis);
+
+        RecommendationMapper mapper = mock(RecommendationMapper.class);
+        V2ChatToolContext.init(1L, redis, mapper);
+        when(draftService.getDraft(1L)).thenReturn(draftWithCandidate(1001L, "Old School"));
+
+        com.ruoyi.postgrad.domain.RowMap row = new com.ruoyi.postgrad.domain.RowMap();
+        row.put("programId", 2001L);
+        row.put("schoolName", "New School");
+        row.put("programName", "CS");
+        when(mapper.selectProgramForRecommendation(2001L)).thenReturn(row);
+
+        Map<String, Object> replaceResult = new LinkedHashMap<>();
+        replaceResult.put("ok", false);
+        replaceResult.put("action", "batch_replace");
+        replaceResult.put("replaced", 0);
+        replaceResult.put("failed", 1);
+        replaceResult.put("draftCount", 1);
+        when(mutationService.batchReplace(eq(1L), any(), any(), any())).thenReturn(replaceResult);
+
+        Map<String, Object> result = JSON.parseObject(
+            tools.replaceDraftCandidate(1001L, 2001L), Map.class);
+
+        assertEquals(false, result.get("ok"));
+        assertEquals("replace_failed", result.get("error"));
+        assertFalse(V2ChatToolContext.writeExecuted());
+        verify(mutationService, never()).removeFromDraftDirect(anyLong(), anyLong());
+        verify(mutationService, never()).addCandidateDirect(anyLong(), any(), any());
     }
 
     // ═══════════ H5: confirmRefillCandidate draft tier 回退 ═══════════

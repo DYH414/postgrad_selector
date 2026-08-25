@@ -349,12 +349,61 @@ public class DraftServiceImpl implements IDraftService {
 
     @Override
     public ReplaceResultVO replaceCandidate(Long userId, Long removeProgramId, String tier, String preference) {
-        // 仅执行移除；补充候选由用户另行发起
         CandidateWorkspaceVO ws = loadWorkspace(userId);
-        DraftMutationResultVO removeResult = draftMutationService.removeCandidate(userId, removeProgramId, ws);
+        if (ws == null) throw new IllegalStateException("工作集已过期，请重新生成草稿");
+        WorkspaceTierVO workspaceTier = ws.tierByLevel(tier);
+        if (workspaceTier == null || workspaceTier.getCandidates() == null) {
+            throw new IllegalStateException("工作集中该档位没有候选");
+        }
+
+        DraftVO current = getDraft(userId);
+        java.util.Set<Long> occupied = new java.util.LinkedHashSet<>();
+        if (current.getTiers() != null) {
+            for (TierCandidates item : current.getTiers()) {
+                if (item.getCandidates() == null) continue;
+                for (CandidateCardVO candidate : item.getCandidates()) {
+                    Long programId = candidate.getFact() != null ? candidate.getFact().getProgramId() : null;
+                    if (programId != null && !programId.equals(removeProgramId)) occupied.add(programId);
+                }
+            }
+        }
+
+        CandidateCardVO replacement = workspaceTier.getCandidates().stream()
+            .filter(candidate -> candidate.getFact() != null
+                && candidate.getFact().getProgramId() != null
+                && !candidate.getFact().getProgramId().equals(removeProgramId)
+                && !occupied.contains(candidate.getFact().getProgramId()))
+            .min(replacementComparator(preference))
+            .orElseThrow(() -> new IllegalStateException("该档位没有可用的新候选"));
+
+        DraftMutationResultVO mutation = draftMutationService.replaceCandidate(userId, removeProgramId,
+            replacement.getFact().getProgramId(), tier, ws);
+        if (mutation == null || !mutation.isOk()) {
+            throw new IllegalStateException("候选替换失败，原草稿保持不变");
+        }
         ReplaceResultVO result = new ReplaceResultVO();
-        result.setDraft(removeResult.getDraft());
+        result.setDraft(mutation.getDraft());
+        result.setReplacedWith(replacement);
         return result;
+    }
+
+    private java.util.Comparator<CandidateCardVO> replacementComparator(String preference) {
+        if ("safer".equals(preference)) {
+            return java.util.Comparator.comparingInt(
+                candidate -> -java.util.Optional.ofNullable(candidate.getFact().getScoreGap()).orElse(0));
+        }
+        if ("higher_tier".equals(preference)) {
+            return java.util.Comparator.comparingInt(
+                candidate -> -schoolTierWeight(candidate.getFact().getSchoolTier()));
+        }
+        return (left, right) -> 0;
+    }
+
+    private int schoolTierWeight(String schoolTier) {
+        if (schoolTier == null) return 0;
+        if (schoolTier.contains("985")) return 3;
+        if (schoolTier.contains("211") || schoolTier.contains("双一流")) return 2;
+        return 1;
     }
 
     @Override
@@ -406,6 +455,9 @@ public class DraftServiceImpl implements IDraftService {
 
         DraftMutationResultVO r = draftMutationService.addCandidate(userId,
             best.getFact().getProgramId(), tier, ws);
+        if (r == null || !r.isOk()) {
+            throw new IllegalStateException("候选无法补入，当前档位容量或唯一性校验未通过");
+        }
         return r.getDraft();
     }
 
@@ -414,17 +466,24 @@ public class DraftServiceImpl implements IDraftService {
         // 从 removedCandidates 找到候选的原始档位
         DraftVO draft = getDraft(userId);
         String tier = "steady";
+        CandidateCardVO removedCandidate = null;
         if (draft.getRemovedCandidates() != null) {
             for (CandidateCardVO c : draft.getRemovedCandidates()) {
                 if (programId.equals(c.getFact().getProgramId())) {
+                    removedCandidate = c;
                     String inferred = c.getFact().inferTier();
                     tier = inferred != null ? inferred : "reach";
                     break;
                 }
             }
         }
-        CandidateWorkspaceVO ws = loadWorkspace(userId);
-        DraftMutationResultVO r = draftMutationService.addCandidate(userId, programId, tier, ws);
+        if (removedCandidate == null) {
+            throw new IllegalStateException("未找到待加回的候选");
+        }
+        DraftMutationResultVO r = draftMutationService.addCandidateDirect(userId, removedCandidate, tier);
+        if (r == null || !r.isOk()) {
+            throw new IllegalStateException("候选无法加回，当前档位容量或唯一性校验未通过");
+        }
         return r.getDraft();
     }
 

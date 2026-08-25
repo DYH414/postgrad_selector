@@ -143,6 +143,14 @@ export function cancelAgentAction(confirmationToken) {
   })
 }
 
+/** 获取当前用户尚未过期、尚未处理的 Agent 提案 */
+export function getPendingAgentAction() {
+  return request({
+    url: '/app/ai-recommend-v2/chat/action/pending',
+    method: 'get'
+  })
+}
+
 /** 恢复对话 */
 export function resumeChat() {
   return request({

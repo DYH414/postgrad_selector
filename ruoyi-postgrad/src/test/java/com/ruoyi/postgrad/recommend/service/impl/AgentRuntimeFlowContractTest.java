@@ -26,6 +26,7 @@ import com.ruoyi.postgrad.recommend.tool.V2ChatTools;
 import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
 import dev.langchain4j.rag.RetrievalAugmentor;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,25 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 class AgentRuntimeFlowContractTest {
+
+    @Test
+    void chatPromptGuardsContinuationEvidenceAndScoreGapWording() throws Exception {
+        String path = "/prompts/v2/chat-system.txt";
+        try (var stream = AgentRuntimeFlowContractTest.class.getResourceAsStream(path)) {
+            assertTrue(stream != null, "chat system prompt should exist");
+            String prompt = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+
+            assertTrue(prompt.contains("当前草稿快照是唯一事实来源"));
+            assertTrue(prompt.contains("“继续”“可以”不等于界面确认"));
+            assertTrue(prompt.contains("不得重复生成同一提案"));
+            assertTrue(prompt.contains("不能声称系统不支持该能力"));
+            assertTrue(prompt.contains("预估分 - 录取均分"));
+            assertTrue(prompt.contains("不得为了凑数量编造风险"));
+            assertTrue(prompt.contains("草稿写入意图不得只生成操作说明"));
+            assertTrue(prompt.contains("必须调用本轮提供的对应写工具"));
+            assertTrue(prompt.contains("没有收到 confirmationRequired=true"));
+        }
+    }
 
     @Test
     void policyAndProgramRiskRunsPreserveRouteEvidenceAndRunId() throws Exception {

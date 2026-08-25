@@ -41,6 +41,8 @@ import com.ruoyi.postgrad.recommend.service.IRefillPolicyService;
 public class DraftMutationServiceImpl implements IDraftMutationService {
 
     private static final Logger log = LoggerFactory.getLogger(DraftMutationServiceImpl.class);
+    private static final int MAX_DRAFT_CANDIDATES = 10;
+    private static final Set<String> VALID_TIERS = Set.of("reach", "steady", "safe");
 
     @Autowired
     private IRefillPolicyService refillPolicyService;
@@ -97,7 +99,9 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         }
 
         DraftVO draft = readDraft(userId);
-        draft = addToDraft(draft, candidate, tier);
+        if (!addToDraft(draft, candidate, tier)) {
+            return rejectedMutation(result, draft);
+        }
         writeDraft(userId, draft);
 
         result.setDraft(draft);
@@ -126,7 +130,9 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         result.setAction("add_external");
 
         DraftVO draft = readDraft(userId);
-        draft = addToDraft(draft, candidate, tier);
+        if (!addToDraft(draft, candidate, tier)) {
+            return rejectedMutation(result, draft);
+        }
         writeDraft(userId, draft);
 
         result.setDraft(draft);
@@ -165,9 +171,22 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
             return fail;
         }
 
-        // 直接操作 draft 对象，只写一次 Redis
-        DraftVO draft = removeFromDraft(userId, removeProgramId);
-        draft = addToDraft(draft, replacement, tier);
+        if (!canAddToDraft(before, replacement, tier, removeProgramId)) {
+            DraftMutationResultVO fail = new DraftMutationResultVO();
+            fail.setOk(false);
+            fail.setAction("replace");
+            fail.setDraft(before);
+            fail.setDraftCount(countDraft(before));
+            return fail;
+        }
+
+        // 在内存快照上完成 swap，成功后只发布一次新草稿。
+        // 避免先删入 Redis，后续添加/写入失败导致原候选丢失。
+        DraftVO draft = JSON.parseObject(JSON.toJSONString(before), DraftVO.class);
+        removeFromDraftInMemory(draft, removeProgramId);
+        if (!addToDraft(draft, replacement, tier)) {
+            return rejectedMutation(newMutationResult("replace"), before);
+        }
         writeDraft(userId, draft);
 
         // 记录排除
@@ -208,7 +227,9 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         }
 
         DraftVO draft = readDraft(userId);
-        draft = addToDraft(draft, candidate, tier);
+        if (!addToDraft(draft, candidate, tier)) {
+            return rejectedMutation(result, draft);
+        }
         writeDraft(userId, draft);
 
         result.setDraft(draft);
@@ -293,17 +314,23 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
             return result;
         }
 
+        int added = 0;
         for (CandidateCardVO c : available) {
-            draft = addToDraft(draft, c, tier);
-            logDecision(userId, "fill_tier", c.getFact().getProgramId(),
-                c.getFact().getSchoolName(), tier, "system",
-                "批量填充" + tier + "档");
+            if (addToDraft(draft, c, tier)) {
+                added++;
+                logDecision(userId, "fill_tier", c.getFact().getProgramId(),
+                    c.getFact().getSchoolName(), tier, "system",
+                    "批量填充" + tier + "档");
+            }
+        }
+        if (added == 0) {
+            return rejectedMutation(result, draft);
         }
 
         writeDraft(userId, draft);
         result.setDraft(draft);
         result.setDraftCount(countDraft(draft));
-        log.info("[Mutation] fillTier userId={} tier={} added={}", userId, tier, available.size());
+        log.info("[Mutation] fillTier userId={} tier={} added={}", userId, tier, added);
         return result;
     }
 
@@ -485,29 +512,50 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
                 failed++;
                 continue;
             }
+            if (!canAddToDraft(draft, replacement, tier, removeId)) {
+                item.setOk(false);
+                item.setError("draft_invariant_violation");
+                item.setMessage("Replacement would violate draft capacity or uniqueness constraints.");
+                items.add(item);
+                failed++;
+                continue;
+            }
             item.setAddedSchoolName(replacement.getFact() != null ? replacement.getFact().getSchoolName() : "unknown");
 
-            // 4. Execute: remove then add (no refill — this is a swap)
-            draft = removeFromDraft(userId, removeId);
-            draft = addToDraft(draft, replacement, tier);
-            writeDraft(userId, draft);
-
-            // 5. Record exclusion for removed candidate
-            ExcludedCandidateVO excluded = new ExcludedCandidateVO();
-            excluded.setProgramId(removeId);
-            excluded.setSchoolName(item.getRemovedSchoolName());
-            excluded.setReasonType("replaced");
-            excluded.setTierAtRemoval(tier);
-            excluded.setCreatedAt(LocalDateTime.now());
-            saveExcluded(userId, excluded);
-
-            // 6. Log decision
-            logDecision(userId, "batch_replace", addId, item.getAddedSchoolName(), tier, "user",
-                "批量替换自 programId=" + removeId);
+            // 4. Execute on a per-item copy, so even an unexpected add rejection cannot
+            // leave the batch's working snapshot with only the removal applied.
+            DraftVO nextDraft = JSON.parseObject(JSON.toJSONString(draft), DraftVO.class);
+            removeFromDraftInMemory(nextDraft, removeId);
+            if (!addToDraft(nextDraft, replacement, tier)) {
+                item.setOk(false);
+                item.setError("draft_invariant_violation");
+                item.setMessage("Replacement would violate draft capacity or uniqueness constraints.");
+                items.add(item);
+                failed++;
+                continue;
+            }
+            draft = nextDraft;
 
             item.setOk(true);
             items.add(item);
             replaced++;
+        }
+
+        if (replaced > 0) {
+            writeDraft(userId, draft);
+            // 草稿发布成功后再写排除与决策日志，避免日志成功但草稿仍为旧版。
+            for (DraftReplacementItemResultVO item : items) {
+                if (!item.isOk()) continue;
+                ExcludedCandidateVO excluded = new ExcludedCandidateVO();
+                excluded.setProgramId(item.getRemoveProgramId());
+                excluded.setSchoolName(item.getRemovedSchoolName());
+                excluded.setReasonType("replaced");
+                excluded.setTierAtRemoval(item.getTier());
+                excluded.setCreatedAt(LocalDateTime.now());
+                saveExcluded(userId, excluded);
+                logDecision(userId, "batch_replace", item.getAddProgramId(), item.getAddedSchoolName(),
+                    item.getTier(), "user", "批量替换自 programId=" + item.getRemoveProgramId());
+            }
         }
 
         result.put("ok", replaced > 0);
@@ -561,28 +609,61 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         return null;
     }
 
-    private DraftVO addToDraft(DraftVO draft, CandidateCardVO candidate, String tier) {
-        candidate.setStatus("selected");
-        Long pid = candidate.getFact() != null ? candidate.getFact().getProgramId() : null;
-        for (TierCandidates t : draft.getTiers()) {
-            if (t.getLevel().equals(tier)) {
-                if (t.getCandidates() == null) t.setCandidates(new ArrayList<>());
-                // 去重：已存在则跳过
-                if (pid != null && t.getCandidates().stream()
-                        .anyMatch(c -> pid.equals(c.getFact() != null ? c.getFact().getProgramId() : null))) {
-                    return draft;
-                }
-                t.getCandidates().add(candidate);
-                t.setInsufficient(t.getCandidates().size() < t.getTargetCount());
-                break;
-            }
-        }
+    private boolean addToDraft(DraftVO draft, CandidateCardVO candidate, String tier) {
+        if (!canAddToDraft(draft, candidate, tier, null)) return false;
+        CandidateCardVO selected = candidate;
+        selected.setStatus("selected");
+        Long pid = selected.getFact().getProgramId();
+        TierCandidates targetTier = findDraftTier(draft, tier);
+        if (targetTier.getCandidates() == null) targetTier.setCandidates(new ArrayList<>());
+        targetTier.getCandidates().add(selected);
+        targetTier.setInsufficient(targetTier.getCandidates().size() < targetTier.getTargetCount());
+        targetTier.setInsufficientReason(null);
         // 从 removedCandidates 中清除，防止重复累积
         if (pid != null && draft.getRemovedCandidates() != null) {
             draft.getRemovedCandidates().removeIf(
                 c -> pid.equals(c.getFact() != null ? c.getFact().getProgramId() : null));
         }
-        return draft;
+        return true;
+    }
+
+    private boolean canAddToDraft(DraftVO draft, CandidateCardVO candidate, String tier,
+                                  Long programIdToRemove) {
+        if (draft == null || draft.getTiers() == null || !VALID_TIERS.contains(tier)
+                || candidate == null || candidate.getFact() == null
+                || candidate.getFact().getProgramId() == null) {
+            return false;
+        }
+        TierCandidates targetTier = findDraftTier(draft, tier);
+        if (targetTier == null) return false;
+
+        Long candidateId = candidate.getFact().getProgramId();
+        String existingTier = findCandidateTier(draft, candidateId);
+        if (existingTier != null && !candidateId.equals(programIdToRemove)) return false;
+
+        int totalAfterRemoval = countDraft(draft)
+            - (programIdToRemove != null && findCandidateTier(draft, programIdToRemove) != null ? 1 : 0);
+        if (totalAfterRemoval >= MAX_DRAFT_CANDIDATES) return false;
+
+        int tierSize = targetTier.getCandidates() == null ? 0 : targetTier.getCandidates().size();
+        if (programIdToRemove != null && tier.equals(findCandidateTier(draft, programIdToRemove))) {
+            tierSize--;
+        }
+        return tierSize < targetTier.getTargetCount();
+    }
+
+    private DraftMutationResultVO rejectedMutation(DraftMutationResultVO result, DraftVO draft) {
+        result.setOk(false);
+        result.setDraft(draft);
+        result.setDraftCount(countDraft(draft));
+        return result;
+    }
+
+    private DraftMutationResultVO newMutationResult(String action) {
+        DraftMutationResultVO result = new DraftMutationResultVO();
+        result.setOk(false);
+        result.setAction(action);
+        return result;
     }
 
     private int countDraft(DraftVO draft) {
@@ -645,7 +726,14 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
 
     private DraftVO removeFromDraft(Long userId, Long programId) {
         DraftVO draft = readDraft(userId);
-        if (draft.getTiers() == null) return draft;
+        if (removeFromDraftInMemory(draft, programId)) {
+            writeDraft(userId, draft);
+        }
+        return draft;
+    }
+
+    private boolean removeFromDraftInMemory(DraftVO draft, Long programId) {
+        if (draft.getTiers() == null) return false;
         for (TierCandidates tier : draft.getTiers()) {
             List<CandidateCardVO> candidates = tier.getCandidates();
             if (candidates == null) continue;
@@ -669,12 +757,11 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
                             "%s候选不足，当前仅 %d 所。可手动加回或替换。",
                             tier.getLabel(), candidates.size()));
                     }
-                    writeDraft(userId, draft);
-                    return draft;
+                    return true;
                 }
             }
         }
-        return draft;
+        return false;
     }
 
     private DraftVO emptyDraft() {

@@ -30,6 +30,7 @@ import com.ruoyi.postgrad.recommend.domain.dto.AddBackCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ChatSendRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.RemoveCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ReplaceCandidateRequest;
+import com.ruoyi.postgrad.recommend.domain.AgentActionProposal;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.DraftGenerationCallback;
 import com.ruoyi.postgrad.recommend.service.IDraftGenerationTaskService;
@@ -37,6 +38,7 @@ import com.ruoyi.postgrad.recommend.service.IDraftService;
 import com.ruoyi.postgrad.recommend.service.IReportService;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
 import com.ruoyi.postgrad.recommend.service.AgentActionConfirmationService;
+import com.ruoyi.postgrad.recommend.service.AgentActionProposalService;
 
 /**
  * AI 推荐 v2 Controller —— 新 AI 推荐报告流程。
@@ -61,6 +63,9 @@ public class AppV2RecommendController {
 
     @Autowired
     private AgentActionConfirmationService agentActionConfirmationService;
+
+    @Autowired
+    private AgentActionProposalService agentActionProposalService;
 
     @Autowired
     private ThreadPoolTaskExecutor threadPoolTaskExecutor;
@@ -523,6 +528,21 @@ public class AppV2RecommendController {
         Map<String, Object> result = agentActionConfirmationService.cancel(user.getUserId(), token);
         return Boolean.TRUE.equals(result.get("ok")) ? AjaxResult.success(result)
             : AjaxResult.error(String.valueOf(result.get("error")));
+    }
+
+    /** 获取当前登录用户仍然有效的待确认提案。 */
+    @GetMapping("/chat/action/pending")
+    public AjaxResult pendingAgentAction() {
+        AppLoginUser user = requireLogin();
+        AgentActionProposal proposal = agentActionProposalService.pending(user.getUserId());
+        if (proposal == null) return AjaxResult.success();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("confirmationRequired", true);
+        result.put("confirmationToken", proposal.getToken());
+        result.put("summary", proposal.getSummary());
+        result.put("runId", proposal.getRunId());
+        result.put("expiresAt", proposal.getExpiresAt());
+        return AjaxResult.success(result);
     }
 
     /**

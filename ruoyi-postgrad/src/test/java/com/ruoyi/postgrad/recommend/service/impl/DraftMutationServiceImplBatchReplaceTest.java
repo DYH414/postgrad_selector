@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -64,6 +65,7 @@ class DraftMutationServiceImplBatchReplaceTest {
 
     private final AtomicReference<String> draftState = new AtomicReference<>();
     private final AtomicReference<String> excludedState = new AtomicReference<>();
+    private final AtomicInteger draftWrites = new AtomicInteger();
 
     @BeforeEach
     @SuppressWarnings("unchecked")
@@ -79,6 +81,7 @@ class DraftMutationServiceImplBatchReplaceTest {
         // Simulate Redis draft key get/set
         when(ops.get(eq(DRAFT_KEY))).thenAnswer(inv -> draftState.get());
         doAnswer(inv -> {
+            draftWrites.incrementAndGet();
             draftState.set(inv.getArgument(1, String.class));
             return null;
         }).when(ops).set(eq(DRAFT_KEY), anyString(), any(Duration.class));
@@ -115,6 +118,7 @@ class DraftMutationServiceImplBatchReplaceTest {
         assertEquals(0, result.get("failed"));
         assertEquals(3, result.get("draftCount")); // count unchanged: 3 removed 2 added 2 = 3
         assertNotNull(result.get("items"));
+        assertEquals(1, draftWrites.get(), "batch replace must publish the completed draft in one write");
     }
 
     // ── Test 2: duplicate candidate ──

@@ -76,7 +76,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { isDraftGenerating, getRestoredGenerationMessage } from './generationRecovery.mjs'
 import {
   getDraft, startGenerateDraft, openDraftGenerationStream, removeCandidate, replaceCandidate,
-  addBackCandidate, addFromWorkspace, generateReport, sendChatMessage, confirmAgentAction, cancelAgentAction, startChat, resumeChat
+  addBackCandidate, addFromWorkspace, generateReport, sendChatMessage, confirmAgentAction,
+  cancelAgentAction, startChat, resumeChat, getPendingAgentAction
 } from '@/api/recommend-v2'
 import { getProfile } from '@/api/profile'
 import { closeEventSource } from '@/utils/event-source'
@@ -130,6 +131,8 @@ const chatStreaming = ref(false)
 const chatStreamingText = ref('')
 const currentToolCall = ref('')
 const pendingAction = ref(null)
+const handledActionTokens = new Set()
+let actionDialogPromise = null
 const generationBubbleQueue = ref([])
 const generationBubbleKeys = new Set()
 let generationBubbleTimer = null
@@ -458,6 +461,51 @@ async function handleReplace({ removeProgramId, tier, preference }) {
   }
 }
 
+async function presentAgentAction(action) {
+  const token = action?.confirmationToken
+  if (!action?.confirmationRequired || !token || handledActionTokens.has(token)) return
+  if (actionDialogPromise) return actionDialogPromise
+
+  pendingAction.value = action
+  actionDialogPromise = (async () => {
+    try {
+      try {
+        await ElMessageBox.confirm(
+          action.summary || '确认执行这项草稿调整？',
+          '确认草稿调整',
+          { confirmButtonText: '确认执行', cancelButtonText: '暂不调整', type: 'warning' }
+        )
+      } catch (choice) {
+        if (choice === 'cancel' || choice === 'close') {
+          await cancelAgentAction(token)
+          handledActionTokens.add(token)
+          return
+        }
+        throw choice
+      }
+      await confirmAgentAction(token)
+      handledActionTokens.add(token)
+      await loadDraftData()
+      ElMessage.success('草稿已更新')
+    } catch (_) {
+      ElMessage.error('操作未执行，提案可能已过期或草稿已变化')
+    } finally {
+      pendingAction.value = null
+      actionDialogPromise = null
+    }
+  })()
+  return actionDialogPromise
+}
+
+async function restorePendingAgentAction() {
+  try {
+    const res = await getPendingAgentAction()
+    await presentAgentAction(res.data)
+  } catch (_) {
+    // 恢复失败不阻断画像、草稿和聊天记录加载。
+  }
+}
+
 async function handleAddFromWorkspace({ tier, preference }) {
   try {
     const res = await addFromWorkspace(tier, preference || 'safer')
@@ -518,7 +566,7 @@ async function handleChatSend(message) {
             if (currentEvent === 'tool_call') {
               currentToolCall.value = data.tool || ''
             } else if (currentEvent === 'confirmation_required') {
-              pendingAction.value = data
+              await presentAgentAction(data)
             } else if (currentEvent === 'token') {
               currentToolCall.value = ''
               assistantText += data.text
@@ -530,27 +578,7 @@ async function handleChatSend(message) {
               if (data.draftChanged) {
                 await loadDraftData()
               }
-              const action = pendingAction.value || data.toolActionResult
-              if (action?.confirmationRequired && action?.confirmationToken) {
-                try {
-                  await ElMessageBox.confirm(
-                    action.summary || '确认执行这项草稿调整？',
-                    '确认草稿调整',
-                    { confirmButtonText: '确认执行', cancelButtonText: '暂不调整', type: 'warning' }
-                  )
-                  await confirmAgentAction(action.confirmationToken)
-                  await loadDraftData()
-                  ElMessage.success('草稿已更新')
-                } catch (confirmError) {
-                  if (confirmError === 'cancel' || confirmError === 'close') {
-                    await cancelAgentAction(action.confirmationToken)
-                  } else {
-                    ElMessage.error('操作未执行，提案可能已过期或草稿已变化')
-                  }
-                } finally {
-                  pendingAction.value = null
-                }
-              }
+              await presentAgentAction(data.toolActionResult)
             } else if (currentEvent === 'error') {
               currentToolCall.value = ''
               chatStreamingText.value = ''
@@ -688,9 +716,12 @@ function startDraftPolling() {
 
 // ── 初始化 ──
 onMounted(async () => {
-  await loadProfileData()
-  await loadDraftData()
-  await loadChatHistory({ preserveGenerationStatus: true })
+  await Promise.allSettled([
+    loadProfileData(),
+    loadDraftData(),
+    loadChatHistory({ preserveGenerationStatus: true })
+  ])
+  await restorePendingAgentAction()
 
   // Refresh recovery: if draft is still generating, restore UI state
   if (isDraftGenerating(draft.value)) {
