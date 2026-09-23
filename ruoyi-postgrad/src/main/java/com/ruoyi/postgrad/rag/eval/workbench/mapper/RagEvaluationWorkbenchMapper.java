@@ -1,7 +1,5 @@
 package com.ruoyi.postgrad.rag.eval.workbench.mapper;
 
-import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentConfigVersion;
-import com.ruoyi.postgrad.rag.eval.workbench.domain.AgentEvalCaseResult;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseResultEntity;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalDataset;
@@ -54,19 +52,4 @@ public interface RagEvaluationWorkbenchMapper {
     List<RagEvalCaseResultEntity> selectCaseResultsByRunId(String runId);
     int reviewCaseResult(@Param("id") Long id, @Param("category") String category,
                          @Param("note") String note, @Param("reviewedBy") String reviewedBy);
-
-    // ── AGENT_E2E: AgentConfigVersion（不可变配置版本）──
-    int insertAgentConfigVersion(AgentConfigVersion version);
-    AgentConfigVersion selectAgentConfigVersionById(Long id);
-    List<AgentConfigVersion> selectAgentConfigVersions(@Param("status") String status);
-    int archiveAgentConfigVersion(@Param("id") Long id);
-
-    // ── AGENT_E2E: agent_eval_case_result（Python 回调落库）──
-    int insertAgentEvalCaseResult(AgentEvalCaseResult result);
-    AgentEvalCaseResult selectAgentEvalCaseResultByKey(@Param("runId") String runId, @Param("caseId") Long caseId);
-    List<AgentEvalCaseResult> selectAgentEvalCaseResultsByRunId(String runId);
-    /** 按 agent_eval_case_result COUNT(*) 重算 completed_cases；只更新 RUNNING 状态的 run。 */
-    int updateAgentEvalProgress(@Param("runId") String runId);
-    /** CAS：completed_cases >= total_cases 且非终态时转 SUCCEEDED；返回 1 表示已转态。 */
-    int completeAgentEvalRunIfDone(@Param("runId") String runId);
 }

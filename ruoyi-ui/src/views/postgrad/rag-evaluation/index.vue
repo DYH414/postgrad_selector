@@ -83,39 +83,6 @@
         <pagination v-show="runTotal > 0" :total="runTotal" :page.sync="runQuery.pageNum" :limit.sync="runQuery.pageSize" @pagination="loadRuns" />
       </el-tab-pane>
 
-      <!-- ── Agent 评测标签页 ── -->
-      <el-tab-pane label="Agent 评测" name="agent">
-        <div class="section-heading" style="margin-bottom:12px"><h3>配置版本</h3><el-button v-hasPermi="['postgrad:ragEval:edit']" type="primary" size="mini" icon="el-icon-plus" @click="openAgentVersion">新建版本</el-button></div>
-        <el-table :data="agentConfigVersions" stripe size="mini" style="margin-bottom:18px">
-          <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="versionName" label="版本名称" min-width="140" />
-          <el-table-column prop="model" label="模型" width="160" />
-          <el-table-column prop="temperature" label="温度" width="70" />
-          <el-table-column prop="status" label="状态" width="90"><template slot-scope="s"><el-tag size="mini" :type="s.row.status === 'ACTIVE' ? 'success' : 'info'">{{ s.row.status }}</el-tag></template></el-table-column>
-          <el-table-column prop="createdAt" label="创建时间" width="160" />
-        </el-table>
-
-        <div class="section-heading" style="margin:16px 0 10px"><h3>启动 Agent 评测</h3></div>
-        <div class="toolbar">
-          <el-select v-model="agentRunForm.datasetId" size="mini" placeholder="选择 AGENT_E2E 冻结数据集" style="width:260px"><el-option v-for="d in agentDatasets" :key="d.id" :label="`${d.name} / ${d.version}`" :value="d.id" /></el-select>
-          <el-select v-model="agentRunForm.agentConfigVersionId" size="mini" placeholder="选择 ACTIVE 配置版本" style="width:220px"><el-option v-for="v in agentConfigVersions.filter(v=>v.status==='ACTIVE')" :key="v.id" :label="v.versionName" :value="v.id" /></el-select>
-          <el-button v-hasPermi="['postgrad:ragEval:run']" type="primary" size="mini" :loading="loading.agentStart" @click="handleStartAgentRun">提交评测</el-button>
-        </div>
-        <p class="tip-text">提交后 Run 进入 PENDING，由 Python Worker（python-evaluation-worker）接单执行。</p>
-
-        <div class="section-heading" style="margin:18px 0 10px"><h3>Agent 评测 Runs</h3><el-button size="mini" icon="el-icon-refresh" @click="loadRuns">刷新</el-button></div>
-        <el-table :data="agentRunRows" stripe size="mini">
-          <el-table-column prop="runId" label="Run ID" width="135" show-overflow-tooltip />
-          <el-table-column prop="status" label="状态" width="105"><template slot-scope="s"><el-tag size="mini" :type="runTag(s.row.status)">{{ s.row.status }}</el-tag></template></el-table-column>
-          <el-table-column label="进度" width="150"><template slot-scope="s"><el-progress :percentage="progress(s.row)" :stroke-width="8" /></template></el-table-column>
-          <el-table-column prop="agentConfigVersionId" label="配置版本" width="90" />
-          <el-table-column prop="datasetChecksum" label="数据集校验值" min-width="150" show-overflow-tooltip />
-          <el-table-column prop="createdAt" label="创建时间" width="170" />
-          <el-table-column prop="finishedAt" label="完成时间" width="170" />
-          <el-table-column label="操作" width="120"><template slot-scope="s"><el-button type="text" @click="openAgentRunDetail(s.row)">结果</el-button><el-button v-if="s.row.status === 'RUNNING'" type="text" @click="handleCancel(s.row)">取消</el-button></template></el-table-column>
-        </el-table>
-      </el-tab-pane>
-
       <el-tab-pane label="对比" name="compare">
         <div class="toolbar"><el-select v-model="compareForm.baselineRunId" filterable size="mini" placeholder="基线 Run" class="run-select"><el-option v-for="r in succeededRuns" :key="r.runId" :label="runOptionLabel(r)" :value="r.runId" /></el-select><span>对比</span><el-select v-model="compareForm.candidateRunId" filterable size="mini" placeholder="候选 Run" class="run-select"><el-option v-for="r in succeededRuns" :key="r.runId" :label="runOptionLabel(r)" :value="r.runId" /></el-select><el-button type="primary" size="mini" :disabled="!canCompare" @click="handleCompare">开始对比</el-button></div>
         <el-alert v-if="comparison && !comparison.compatible" :title="comparison.warning" type="warning" :closable="false" show-icon />
@@ -125,56 +92,21 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog :title="datasetForm.id ? '编辑数据集' : '新建开发集'" :visible.sync="datasetDialog" width="520px"><el-form :model="datasetForm" label-width="90px"><el-form-item label="标识"><el-input v-model="datasetForm.datasetKey" /></el-form-item><el-form-item label="名称"><el-input v-model="datasetForm.name" /></el-form-item><el-form-item label="版本"><el-input v-model="datasetForm.version" /></el-form-item><el-form-item label="用途"><el-select v-model="datasetForm.evaluationType"><el-option label="RAG 检索评测" value="RAG_RETRIEVAL" /><el-option label="Agent 端到端评测" value="AGENT_E2E" /></el-select></el-form-item><el-form-item label="类型"><el-select v-model="datasetForm.datasetType"><el-option label="DEV" value="DEV" /><el-option label="SAFETY" value="SAFETY" /></el-select></el-form-item><el-form-item label="说明"><el-input v-model="datasetForm.description" type="textarea" /></el-form-item></el-form><span slot="footer"><el-button @click="datasetDialog=false">取消</el-button><el-button type="primary" @click="submitDataset">保存</el-button></span></el-dialog>
+    <el-dialog :title="datasetForm.id ? '编辑数据集' : '新建开发集'" :visible.sync="datasetDialog" width="520px"><el-form :model="datasetForm" label-width="90px"><el-form-item label="标识"><el-input v-model="datasetForm.datasetKey" /></el-form-item><el-form-item label="名称"><el-input v-model="datasetForm.name" /></el-form-item><el-form-item label="版本"><el-input v-model="datasetForm.version" /></el-form-item><el-form-item label="用途"><el-select v-model="datasetForm.evaluationType"><el-option label="RAG 检索评测" value="RAG_RETRIEVAL" /></el-select></el-form-item><el-form-item label="类型"><el-select v-model="datasetForm.datasetType"><el-option label="DEV" value="DEV" /><el-option label="SAFETY" value="SAFETY" /></el-select></el-form-item><el-form-item label="说明"><el-input v-model="datasetForm.description" type="textarea" /></el-form-item></el-form><span slot="footer"><el-button @click="datasetDialog=false">取消</el-button><el-button type="primary" @click="submitDataset">保存</el-button></span></el-dialog>
 
-    <el-dialog title="评测用例" :visible.sync="caseDialog" width="720px"><el-form :model="caseForm" label-width="110px"><el-form-item label="Case ID"><el-input v-model="caseForm.caseKey" /></el-form-item><el-form-item label="用户问题"><el-input v-model="caseForm.queryText" type="textarea" /></el-form-item><el-form-item label="分类/难度"><el-input v-model="caseForm.category" style="width:48%" /><el-select v-model="caseForm.difficulty" style="width:48%;margin-left:3%"><el-option label="easy" value="easy" /><el-option label="medium" value="medium" /><el-option label="hard" value="hard" /></el-select></el-form-item><el-form-item label="No-answer"><el-switch v-model="caseForm.noAnswer" /></el-form-item><el-form-item label="Metadata JSON"><el-input v-model="caseForm.expectedMetadataJson" type="textarea" :rows="3" /></el-form-item><el-form-item label="相关条件 JSON"><el-input v-model="caseForm.relevantConditionsJson" type="textarea" :rows="4" /></el-form-item><el-form-item label="相关来源 JSON"><el-input v-model="caseForm.relevantSourcesJson" type="textarea" :rows="2" /></el-form-item><el-form-item label="Agent 规格 JSON"><el-input v-model="caseForm.agentSpecJson" type="textarea" :rows="4" placeholder='{"requiredTools":[],"forbiddenTools":[],"expectedAbstention":false}' /></el-form-item><el-form-item label="审核备注"><el-input v-model="caseForm.reviewerNote" type="textarea" /></el-form-item></el-form><span slot="footer"><el-button @click="caseDialog=false">取消</el-button><el-button type="primary" @click="submitCase">保存 Ground Truth</el-button></span></el-dialog>
+    <el-dialog title="评测用例" :visible.sync="caseDialog" width="720px"><el-form :model="caseForm" label-width="110px"><el-form-item label="Case ID"><el-input v-model="caseForm.caseKey" /></el-form-item><el-form-item label="用户问题"><el-input v-model="caseForm.queryText" type="textarea" /></el-form-item><el-form-item label="分类/难度"><el-input v-model="caseForm.category" style="width:48%" /><el-select v-model="caseForm.difficulty" style="width:48%;margin-left:3%"><el-option label="easy" value="easy" /><el-option label="medium" value="medium" /><el-option label="hard" value="hard" /></el-select></el-form-item><el-form-item label="No-answer"><el-switch v-model="caseForm.noAnswer" /></el-form-item><el-form-item label="Metadata JSON"><el-input v-model="caseForm.expectedMetadataJson" type="textarea" :rows="3" /></el-form-item><el-form-item label="相关条件 JSON"><el-input v-model="caseForm.relevantConditionsJson" type="textarea" :rows="4" /></el-form-item><el-form-item label="相关来源 JSON"><el-input v-model="caseForm.relevantSourcesJson" type="textarea" :rows="2" /></el-form-item><el-form-item label="审核备注"><el-input v-model="caseForm.reviewerNote" type="textarea" /></el-form-item></el-form><span slot="footer"><el-button @click="caseDialog=false">取消</el-button><el-button type="primary" @click="submitCase">保存 Ground Truth</el-button></span></el-dialog>
 
     <el-drawer title="实验结果" :visible.sync="runDrawer" size="68%"><div class="drawer-body"><el-descriptions v-if="runDetail.run" :column="2" border size="small"><el-descriptions-item label="Run ID">{{ runDetail.run.runId }}</el-descriptions-item><el-descriptions-item label="状态">{{ runDetail.run.status }}</el-descriptions-item><el-descriptions-item label="数据集校验值">{{ runDetail.run.datasetChecksum || '--' }}</el-descriptions-item><el-descriptions-item label="完成时间">{{ formatTime(runDetail.run.finishedAt) }}</el-descriptions-item></el-descriptions><div v-for="group in metricGroups" :key="group.mode" class="metric-section"><h4>{{ modeLabel(group.mode) }}</h4><div class="metric-grid"><div v-for="metric in group.metrics" :key="metric.key" class="metric-item"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div></div></div><el-collapse v-if="runDetail.run" class="diagnostic-collapse"><el-collapse-item title="原始参数与指标" name="raw"><pre>{{ prettyJson(runDetail.run.parameterSnapshotJson) }}</pre><pre>{{ prettyJson(runDetail.run.aggregateMetricsJson) }}</pre></el-collapse-item></el-collapse><div class="toolbar result-toolbar"><el-select v-model="resultFilter" size="mini"><el-option label="全部用例" value="all" /><el-option label="仅失败" value="failed" /><el-option label="仅技术错误" value="technical" /></el-select><el-select v-model="resultModeFilter" clearable size="mini" placeholder="全部模式"><el-option label="Vector Only" value="VECTOR_ONLY" /><el-option label="Vector + Rerank" value="VECTOR_RERANK" /></el-select></div><el-table :data="filteredResults" stripe size="mini"><el-table-column label="问题" min-width="220" show-overflow-tooltip><template slot-scope="s">{{ caseQuery(s.row.caseId) }}</template></el-table-column><el-table-column prop="evalMode" label="模式" width="150"><template slot-scope="s">{{ modeLabel(s.row.evalMode) }}</template></el-table-column><el-table-column prop="passed" label="通过" width="70"><template slot-scope="s">{{ s.row.passed ? '是' : '否' }}</template></el-table-column><el-table-column prop="firstRelevantRank" label="首个相关排名" width="110" /><el-table-column label="失败原因" min-width="150"><template slot-scope="s">{{ failureLabel(s.row.failureReason, s.row.technicalErrorCode) }}</template></el-table-column><el-table-column prop="latencyMs" label="耗时(ms)" width="90" /><el-table-column label="操作" width="130"><template slot-scope="s"><el-button type="text" @click="inspectResult(s.row)">诊断</el-button><el-button type="text" @click="review(s.row)">标注</el-button></template></el-table-column></el-table></div></el-drawer>
     <el-dialog title="用例诊断" :visible.sync="resultDialog" width="760px"><el-descriptions v-if="selectedResult" :column="1" border><el-descriptions-item label="预期 Metadata">{{ selectedResult.expectedMetadataJson }}</el-descriptions-item><el-descriptions-item label="相关条件">{{ selectedResult.relevantConditionsJson }}</el-descriptions-item><el-descriptions-item label="候选与排名"><pre>{{ prettyJson(selectedResult.candidateSummaryJson) }}</pre></el-descriptions-item><el-descriptions-item label="选中证据"><pre>{{ prettyJson(selectedResult.selectedEvidenceJson) }}</pre></el-descriptions-item><el-descriptions-item label="技术错误">{{ selectedResult.technicalErrorCode || '-' }} {{ selectedResult.technicalErrorSummary || '' }}</el-descriptions-item></el-descriptions></el-dialog>
 
-    <!-- Agent 配置版本新建对话框 -->
-    <el-dialog title="新建 Agent 配置版本" :visible.sync="agentVersionDialog" width="640px">
-      <el-form :model="agentVersionForm" label-width="120px">
-        <el-form-item label="版本名称"><el-input v-model="agentVersionForm.versionName" placeholder="e.g. v2-optimized-prompt" /></el-form-item>
-        <el-form-item label="模型名称"><el-input v-model="agentVersionForm.model" placeholder="e.g. deepseek-chat" /></el-form-item>
-        <el-form-item label="温度 Temperature"><el-input-number v-model="agentVersionForm.temperature" :min="0" :max="2" :step="0.1" /></el-form-item>
-        <el-form-item label="业务 Prompt"><el-input v-model="agentVersionForm.businessPromptText" type="textarea" :rows="5" /></el-form-item>
-        <el-form-item label="路由 Prompt"><el-input v-model="agentVersionForm.routingPromptText" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="状态"><el-select v-model="agentVersionForm.status"><el-option label="ACTIVE（可被新 Run 选）" value="ACTIVE" /><el-option label="ARCHIVED" value="ARCHIVED" /></el-select></el-form-item>
-      </el-form>
-      <span slot="footer"><el-button @click="agentVersionDialog=false">取消</el-button><el-button type="primary" @click="submitAgentVersion">创建版本</el-button></span>
-    </el-dialog>
-
-    <!-- Agent Run 结果抽屉 -->
-    <el-drawer title="Agent 评测结果" :visible.sync="agentResultDrawer" size="68%">
-      <div class="drawer-body">
-        <el-descriptions v-if="agentRunDetail" :column="2" border size="small">
-          <el-descriptions-item label="Run ID">{{ agentRunDetail.runId }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ agentRunDetail.status }}</el-descriptions-item>
-          <el-descriptions-item label="配置版本 ID">{{ agentRunDetail.agentConfigVersionId }}</el-descriptions-item>
-          <el-descriptions-item label="完成时间">{{ formatTime(agentRunDetail.finishedAt) }}</el-descriptions-item>
-        </el-descriptions>
-        <el-table :data="agentResults" stripe size="mini" style="margin-top:16px">
-          <el-table-column prop="caseId" label="Case ID" width="80" />
-          <el-table-column prop="agentRunId" label="Agent Run ID" width="130" show-overflow-tooltip />
-          <el-table-column prop="passed" label="通过" width="60"><template slot-scope="s"><el-tag size="mini" :type="s.row.passed ? 'success' : 'danger'">{{ s.row.passed ? '是' : '否' }}</el-tag></template></el-table-column>
-          <el-table-column prop="routeAccuracy" label="路由准" width="70"><template slot-scope="s">{{ s.row.routeAccuracy == null ? '--' : (s.row.routeAccuracy ? '是' : '否') }}</template></el-table-column>
-          <el-table-column prop="faithfulness" label="Faithfulness" width="100" />
-          <el-table-column prop="judgeVariance" label="Judge方差" width="90" />
-          <el-table-column prop="latencyMs" label="耗时(ms)" width="80" />
-          <el-table-column prop="technicalErrorCode" label="技术错误" min-width="120" show-overflow-tooltip />
-        </el-table>
-      </div>
-    </el-drawer>
   </div>
 </template>
 
 <script>
 import { saveAs } from 'file-saver'
 import * as api from '@/api/postgrad/ragEvaluation'
-import { startAgentRun, listAgentConfigVersions, createAgentConfigVersion } from '@/api/postgrad/ragEvaluation'
 
-const emptyCase = () => ({ id: null, datasetId: null, caseKey: '', queryText: '', category: 'fact', difficulty: 'medium', noAnswer: false, sourceDataAvailable: true, expectedFallback: false, expectedMetadataJson: '{}', relevantConditionsJson: '[]', relevantSourcesJson: '[]', agentSpecJson: '', tagsJson: '[]', reviewerNote: '' })
+const emptyCase = () => ({ id: null, datasetId: null, caseKey: '', queryText: '', category: 'fact', difficulty: 'medium', noAnswer: false, sourceDataAvailable: true, expectedFallback: false, expectedMetadataJson: '{}', relevantConditionsJson: '[]', relevantSourcesJson: '[]', tagsJson: '[]', reviewerNote: '' })
 const METRICS = [
   ['mrr', 'MRR'], ['hitAt1', 'Hit@1'], ['hitAt3', 'Hit@3'], ['hitAt5', 'Hit@5'],
   ['ndcg5', 'nDCG@5'], ['passRate', '通过率'], ['filterAccuracy', 'Filter Accuracy'],
@@ -184,11 +116,9 @@ const PERCENT_METRICS = new Set(['hitAt1', 'hitAt3', 'hitAt5', 'passRate', 'filt
 const FAILURE_LABELS = { NO_RECALL: '未召回相关证据', WRONG_RANK: '相关证据排名不足', FILTER_MISMATCH: 'Metadata 过滤不符合预期', FALSE_POSITIVE: '无答案问题发生误召回', TECHNICAL_ERROR: '检索链路技术错误' }
 export default {
   name: 'RagEvaluationWorkbench',
-  data() { return { activeTab: 'datasets', loading: { datasets: false, runs: false, start: false, agentStart: false }, datasetRows: [], caseRows: [], runRows: [], runQuery: { pageNum: 1, pageSize: 10, datasetId: null, status: '', runIdKeyword: '' }, runTotal: 0, poller: null, runLoadInFlight: false, runReloadQueued: false, runQueryVersion: 0, isDestroyed: false, selectedDataset: null, datasetDialog: false, caseDialog: false, runDrawer: false, resultDialog: false, resultFilter: 'all', resultModeFilter: '', selectedResult: null, datasetForm: {}, caseForm: emptyCase(), runForm: { datasetId: null, modes: ['VECTOR_ONLY', 'VECTOR_RERANK'] }, compareForm: { baselineRunId: '', candidateRunId: '' }, comparison: null, runDetail: {}, agentConfigVersions: [], agentRunForm: { datasetId: null, agentConfigVersionId: null }, agentVersionDialog: false, agentVersionForm: { versionName: '', model: '', temperature: 0.7, businessPromptText: '', routingPromptText: '', status: 'ACTIVE' }, agentResultDrawer: false, agentResults: [], agentRunDetail: null } },
+  data() { return { activeTab: 'datasets', loading: { datasets: false, runs: false, start: false }, datasetRows: [], caseRows: [], runRows: [], runQuery: { pageNum: 1, pageSize: 10, datasetId: null, status: '', runIdKeyword: '' }, runTotal: 0, poller: null, runLoadInFlight: false, runReloadQueued: false, runQueryVersion: 0, isDestroyed: false, selectedDataset: null, datasetDialog: false, caseDialog: false, runDrawer: false, resultDialog: false, resultFilter: 'all', resultModeFilter: '', selectedResult: null, datasetForm: {}, caseForm: emptyCase(), runForm: { datasetId: null, modes: ['VECTOR_ONLY', 'VECTOR_RERANK'] }, compareForm: { baselineRunId: '', candidateRunId: '' }, comparison: null, runDetail: {} } },
   computed: {
     succeededRuns() { return this.runRows.filter(r => r.status === 'SUCCEEDED') },
-    agentDatasets() { return this.datasetRows.filter(d => d.evaluationType === 'AGENT_E2E' && d.lifecycleState === 'FROZEN') },
-    agentRunRows() { return this.runRows.filter(r => r.evaluationType === 'AGENT_E2E') },
     canCompare() { return this.compareForm.baselineRunId && this.compareForm.candidateRunId && this.compareForm.baselineRunId !== this.compareForm.candidateRunId },
     metricGroups() { const values = this.parseObject(this.runDetail.run && this.runDetail.run.aggregateMetricsJson); return Object.entries(values).filter(([, metrics]) => metrics && typeof metrics === 'object' && !Array.isArray(metrics)).map(([mode, metrics]) => ({ mode, metrics: METRICS.map(([key, label]) => ({ key, label, value: this.metricValue(metrics, key, PERCENT_METRICS.has(key)) })) })) },
     metricDeltaRows() { return Object.entries((this.comparison && this.comparison.metricDeltas) || {}).map(([metric, delta]) => ({ metric, delta })) },
@@ -197,7 +127,7 @@ export default {
   async created() { await this.refreshAll(); await this.openTraceDraft() },
   beforeDestroy() { this.isDestroyed = true; this.stopRunPolling() },
   methods: {
-    async refreshAll() { await Promise.all([this.loadDatasets(), this.loadRuns(), this.loadAgentConfigVersions()]) },
+    async refreshAll() { await Promise.all([this.loadDatasets(), this.loadRuns()]) },
     async openTraceDraft() { const traceId = this.$route.query.traceId; if (!traceId) return; const target = this.datasetRows.find(d => d.lifecycleState !== 'FROZEN'); if (!target) return this.$message.warning('请先创建可编辑的 DEV 数据集'); const r = await api.getTraceDraft(traceId); this.caseForm = { ...emptyCase(), ...(r.data || {}), datasetId: target.id }; this.caseDialog = true },
     async loadDatasets() { this.loading.datasets = true; try { const r = await api.listDatasets({ pageNum: 1, pageSize: 1000 }); this.datasetRows = r.rows || r.data || [] } finally { this.loading.datasets = false } },
     async loadRuns() { if (this.isDestroyed) return; this.runQueryVersion += 1; if (this.runLoadInFlight) { this.runReloadQueued = true; return } await this.fetchRuns(this.runQueryVersion) },
@@ -210,7 +140,7 @@ export default {
     openDataset() { this.datasetForm = { datasetKey: '', name: '', version: 'dev-v1', datasetType: 'DEV', evaluationType: 'RAG_RETRIEVAL', description: '' }; this.datasetDialog = true },
     async submitDataset() { await api.createDataset(this.datasetForm); this.datasetDialog = false; this.$message.success('数据集已创建'); this.loadDatasets() },
     openCase(row, dataset) { this.caseForm = row ? { ...row } : { ...emptyCase(), datasetId: (dataset || this.selectedDataset).id }; this.caseDialog = true },
-    async submitCase() { JSON.parse(this.caseForm.expectedMetadataJson || '{}'); JSON.parse(this.caseForm.relevantConditionsJson || '[]'); JSON.parse(this.caseForm.relevantSourcesJson || '[]'); if (this.caseForm.agentSpecJson) JSON.parse(this.caseForm.agentSpecJson); if (this.caseForm.id) await api.updateCase(this.caseForm.id, this.caseForm); else await api.saveCase(this.caseForm.datasetId, this.caseForm); this.caseDialog = false; this.$message.success('Ground Truth 已保存'); this.selectDataset(this.selectedDataset) },
+    async submitCase() { JSON.parse(this.caseForm.expectedMetadataJson || '{}'); JSON.parse(this.caseForm.relevantConditionsJson || '[]'); JSON.parse(this.caseForm.relevantSourcesJson || '[]'); if (this.caseForm.id) await api.updateCase(this.caseForm.id, this.caseForm); else await api.saveCase(this.caseForm.datasetId, this.caseForm); this.caseDialog = false; this.$message.success('Ground Truth 已保存'); this.selectDataset(this.selectedDataset) },
     async removeCase(row) { await this.$confirm('删除该评测用例？'); await api.deleteCase(row.id); this.selectDataset(this.selectedDataset) },
     async handleFreeze(row) { const { value } = await this.$prompt('输入新的冻结版本号', '冻结数据集', { inputValue: `frozen-${Date.now()}` }); await api.freezeDataset(row.id, value); this.$message.success('冻结版本已发布'); this.loadDatasets() },
     async handleImport(name) { await api.importBundled(name); this.$message.success(`${name} 已导入`); this.loadDatasets() },
@@ -236,40 +166,7 @@ export default {
     evidenceSummary(row) { return row.relevantConditionsJson !== '[]' ? row.relevantConditionsJson : row.relevantSourcesJson },
     runTag(status) { return status === 'SUCCEEDED' ? 'success' : status === 'FAILED' ? 'danger' : status === 'RUNNING' ? 'warning' : 'info' },
     progress(row) { return row.totalCases ? Math.round((row.completedCases || 0) * 100 / row.totalCases) : 0 },
-    formatDelta(value) { if (value === null || value === undefined || Number.isNaN(Number(value))) return '--'; const n = Number(value); return `${n > 0 ? '+' : ''}${n.toFixed(4)}` },
-
-    // ── Agent 评测方法 ─────────────────────────────────────────────────────────
-    async loadAgentConfigVersions() {
-      const r = await listAgentConfigVersions({ pageNum: 1, pageSize: 100 })
-      this.agentConfigVersions = r.rows || r.data || []
-    },
-    openAgentVersion() {
-      this.agentVersionForm = { versionName: '', model: '', temperature: 0.7, businessPromptText: '', routingPromptText: '', status: 'ACTIVE' }
-      this.agentVersionDialog = true
-    },
-    async submitAgentVersion() {
-      await createAgentConfigVersion(this.agentVersionForm)
-      this.agentVersionDialog = false
-      this.$message.success('配置版本已创建')
-      await this.loadAgentConfigVersions()
-    },
-    async handleStartAgentRun() {
-      if (!this.agentRunForm.datasetId) return this.$message.warning('请选择数据集')
-      if (!this.agentDatasets.some(d => d.id === this.agentRunForm.datasetId)) return this.$message.warning('请选择 AGENT_E2E 冻结数据集')
-      if (!this.agentRunForm.agentConfigVersionId) return this.$message.warning('请选择配置版本')
-      this.loading.agentStart = true
-      try {
-        const r = await startAgentRun(this.agentRunForm)
-        this.$message.success(`Agent 评测已提交: ${r.data.runId}`)
-        this.activeTab = 'agent'
-        await this.loadRuns()
-      } finally { this.loading.agentStart = false }
-    },
-    async openAgentRunDetail(row) {
-      this.agentRunDetail = row
-      try { const r = await api.listAgentRunResults(row.runId); this.agentResults = r.rows || r.data || [] } catch (_) { this.agentResults = [] }
-      this.agentResultDrawer = true
-    }
+    formatDelta(value) { if (value === null || value === undefined || Number.isNaN(Number(value))) return '--'; const n = Number(value); return `${n > 0 ? '+' : ''}${n.toFixed(4)}` }
   }
 }
 </script>
@@ -290,5 +187,4 @@ export default {
 .comparison-summary { display:grid; grid-template-columns:repeat(3, minmax(120px, 180px)); gap:12px; margin:16px 0; }
 .comparison-summary div { border:1px solid #dcdfe6; padding:14px; background:#fff; }.comparison-summary b { display:block; font-size:24px; }.comparison-summary span { color:#6b7280; }
 @media (max-width: 900px) { .run-select { width:100%; }.drawer-body { padding:0 12px 20px; } }
-.tip-text { color:#909399; font-size:12px; margin:6px 0 0; }
 </style>

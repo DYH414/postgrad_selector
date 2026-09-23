@@ -46,7 +46,7 @@ class RagEvaluationWorkbenchMapperXmlTest {
     }
 
     @Test
-    void agentCallbackLocksRunRowAndNeverOverwritesInterruptedState() throws Exception {
+    void runProgressLocksRunRowAndNeverOverwritesInterruptedState() throws Exception {
         try (InputStream in = getClass().getResourceAsStream("/mapper/postgrad/RagEvaluationWorkbenchMapper.xml")) {
             assertNotNull(in);
             String xml = new String(in.readAllBytes(), StandardCharsets.UTF_8)

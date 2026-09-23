@@ -6,7 +6,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.argThat;
@@ -138,80 +137,24 @@ class RagEvalDatasetServiceTest {
     }
 
     @Test
-    void agentCaseRoundTripsThroughImportAndExportWithoutLosingSpec() {
-        RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
-        List<RagEvalCaseEntity> stored = new ArrayList<>();
-        doAnswer(invocation -> { ((RagEvalDataset) invocation.getArgument(0)).setId(7L); return 1; })
-            .when(mapper).insertDataset(any());
-        doAnswer(invocation -> {
-            RagEvalCaseEntity e = invocation.getArgument(0);
-            e.setId((long) (stored.size() + 1));
-            stored.add(e);
-            return 1;
-        }).when(mapper).insertCase(any());
-        when(mapper.selectCasesByDatasetId(7L)).thenReturn(stored);
-
-        String jsonl = "{\"id\":\"agent-01\",\"query\":\"深圳大学计算机专硕近两年录取分数怎样？\","
-            + "\"expectedRoute\":\"PROGRAM_FACTS\",\"category\":\"program_facts\",\"difficulty\":\"medium\","
-            + "\"agent\":{\"requiredTools\":[\"searchPrograms\"],\"forbiddenTools\":[\"addDraftCandidate\"],"
-            + "\"expectedAbstention\":false,\"expectedClaims\":[\"必须说明数据年份\"],\"forbiddenClaims\":[\"保证录取\"],"
-            + "\"referenceEvidence\":[{\"evidenceKey\":\"szu-cs-2025\",\"citationTokens\":[\"深圳大学\",\"2025\"]}]}}";
-
-        RagEvalDatasetService service = new RagEvalDatasetService(mapper);
-        service.importJsonl("agent-set", "Agent Set", "v1", "DEV", jsonl, "admin");
-
-        // 入库时 agent 规格被序列化保存
-        assertEquals(1, stored.size());
-        org.junit.jupiter.api.Assertions.assertNotNull(stored.get(0).getAgentSpecJson());
-        // 导出往返：agent 块完整保留（含工具/断言/证据 token）
-        String exported = service.exportJsonl(7L);
-        org.junit.jupiter.api.Assertions.assertTrue(exported.contains("\"searchPrograms\""));
-        org.junit.jupiter.api.Assertions.assertTrue(exported.contains("\"必须说明数据年份\""));
-        org.junit.jupiter.api.Assertions.assertTrue(exported.contains("\"szu-cs-2025\""));
-        org.junit.jupiter.api.Assertions.assertTrue(exported.contains("\"2025\""));
-    }
-
-    @Test
-    void agentOnlyPositiveCasePassesValidation() {
-        RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
-        when(mapper.selectDatasetById(1L)).thenReturn(dataset(1L, "DRAFT"));
-        RagEvalCaseEntity evalCase = new RagEvalCaseEntity();
-        evalCase.setDatasetId(1L); evalCase.setCaseKey("agent-1"); evalCase.setQueryText("成电408要多少分");
-        evalCase.setNoAnswer(false); evalCase.setRelevantConditionsJson("[]"); evalCase.setRelevantSourcesJson("[]");
-        evalCase.setAgentSpecJson("{\"requiredTools\":[\"searchPrograms\"]}");
-
-        // 无 conditions/sources 但有 agentSpec → 不应被拒
-        new RagEvalDatasetService(mapper).saveCase(evalCase, "admin");
-        verify(mapper, times(1)).insertCase(any());
-    }
-
-    @Test
-    void createPreservesAgentEvaluationType() {
+    void createRejectsEvaluationTypeOtherThanRagRetrieval() {
         RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
         RagEvalDataset requested = dataset(null, "DRAFT");
         requested.setEvaluationType("AGENT_E2E");
 
-        RagEvalDataset created = new RagEvalDatasetService(mapper).create(requested, "admin");
-
-        assertEquals("AGENT_E2E", created.getEvaluationType());
-        verify(mapper).insertDataset(argThat(d -> "AGENT_E2E".equals(d.getEvaluationType())));
+        assertThrows(ServiceException.class,
+            () -> new RagEvalDatasetService(mapper).create(requested, "admin"));
     }
 
     @Test
-    void freezePreservesAgentEvaluationType() {
+    void createDefaultsEvaluationTypeToRagRetrieval() {
         RagEvaluationWorkbenchMapper mapper = mock(RagEvaluationWorkbenchMapper.class);
-        RagEvalDataset source = dataset(1L, "READY");
-        source.setEvaluationType("AGENT_E2E");
-        when(mapper.selectDatasetById(1L)).thenReturn(source);
-        when(mapper.selectCasesByDatasetId(1L)).thenReturn(List.of(validAgentCase(1L)));
-        doAnswer(invocation -> { ((RagEvalDataset) invocation.getArgument(0)).setId(2L); return 1; })
-            .when(mapper).insertDataset(any());
+        RagEvalDataset requested = dataset(null, "DRAFT");
 
-        RagEvalDataset frozen = new RagEvalDatasetService(mapper, tempDir)
-            .freeze(1L, "agent-frozen-v1", "admin");
+        RagEvalDataset created = new RagEvalDatasetService(mapper).create(requested, "admin");
 
-        assertEquals("AGENT_E2E", frozen.getEvaluationType());
-        verify(mapper).insertDataset(argThat(d -> "AGENT_E2E".equals(d.getEvaluationType())));
+        assertEquals("RAG_RETRIEVAL", created.getEvaluationType());
+        verify(mapper).insertDataset(argThat(d -> "RAG_RETRIEVAL".equals(d.getEvaluationType())));
     }
 
     private RagEvalDataset dataset(Long id, String state) {
@@ -226,13 +169,6 @@ class RagEvalDatasetServiceTest {
         evalCase.setDatasetId(datasetId); evalCase.setCaseKey("case-1"); evalCase.setQueryText("深圳大学复试线");
         evalCase.setDifficulty("medium"); evalCase.setNoAnswer(false); evalCase.setRelevantConditionsJson("[{\"programId\":\"1\"}]");
         evalCase.setRelevantSourcesJson("[]"); evalCase.setExpectedMetadataJson("{}"); evalCase.setTagsJson("[]");
-        return evalCase;
-    }
-
-    private RagEvalCaseEntity validAgentCase(Long datasetId) {
-        RagEvalCaseEntity evalCase = validCase(datasetId);
-        evalCase.setRelevantConditionsJson("[]");
-        evalCase.setAgentSpecJson("{\"requiredTools\":[]}");
         return evalCase;
     }
 }

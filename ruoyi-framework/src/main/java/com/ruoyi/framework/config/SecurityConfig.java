@@ -16,10 +16,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.web.filter.CorsFilter;
-import org.springframework.beans.factory.annotation.Value;
 import com.ruoyi.framework.config.properties.PermitAllUrlProperties;
 import com.ruoyi.framework.security.filter.AppAuthenticationFilter;
-import com.ruoyi.framework.security.filter.InternalTokenAuthenticationFilter;
 import com.ruoyi.framework.security.filter.JwtAuthenticationTokenFilter;
 import com.ruoyi.framework.security.handle.AuthenticationEntryPointImpl;
 import com.ruoyi.framework.security.handle.LogoutSuccessHandlerImpl;
@@ -65,17 +63,6 @@ public class SecurityConfig
      */
     @Autowired
     private PermitAllUrlProperties permitAllUrl;
-
-    /**
-     * 内部评测端点共享密钥（Python Worker → Java）。为空则内部端点全部拒绝（fail-closed）。
-     */
-    @Value("${app.ai.evaluation.internal-token:}")
-    private String evaluationInternalToken;
-
-    @Bean
-    public InternalTokenAuthenticationFilter internalTokenAuthenticationFilter() {
-        return new InternalTokenAuthenticationFilter(evaluationInternalToken);
-    }
 
 	/**
 	 * 身份验证实现
@@ -129,8 +116,6 @@ public class SecurityConfig
                     // 静态资源，可匿名访问
                     .requestMatchers(HttpMethod.GET, "/", "/*.html", "/**.html", "/**.css", "/**.js", "/profile/**").permitAll()
                     .requestMatchers("/druid/**").authenticated()
-                    // 内部评测端点：仅共享密钥认证（Python Worker），不接受普通登录 JWT
-                    .requestMatchers("/internal/**").hasRole("INTERNAL_EVAL")
                     // 除上面外的所有请求全部需要鉴权认证
                     .anyRequest().authenticated();
             })
@@ -140,8 +125,6 @@ public class SecurityConfig
             .addFilterBefore(authenticationTokenFilter, UsernamePasswordAuthenticationFilter.class)
             // 添加App用户认证 filter
             .addFilterBefore(appAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-            // 添加内部评测 token filter（仅作用于 /internal/**）
-            .addFilterBefore(internalTokenAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
             // 添加CORS filter
             .addFilterBefore(corsFilter, JwtAuthenticationTokenFilter.class)
             .addFilterBefore(corsFilter, LogoutFilter.class)

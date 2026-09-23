@@ -28,9 +28,6 @@ public class RagEvaluationCase {
     private List<String> tags = new ArrayList<>();
     private String category;
 
-    /** AGENT_E2E 用例规格；非 Agent 用例为 null（不序列化，不影响 RAG 冻结集 checksum）。 */
-    private AgentCaseSpec agent;
-
     public RagEvaluationCase() {}
 
     public RagEvaluationCase(String id, String query, Map<String, String> expectedMetadata) {
@@ -75,8 +72,6 @@ public class RagEvaluationCase {
     public void setTags(List<String> tags) { this.tags = tags != null ? tags : new ArrayList<>(); }
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
-    public AgentCaseSpec getAgent() { return agent; }
-    public void setAgent(AgentCaseSpec agent) { this.agent = agent; }
 
     // ── 相关性条件（内部类） ──
 

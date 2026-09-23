@@ -4,7 +4,6 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.TypeReference;
 import com.ruoyi.common.exception.ServiceException;
-import com.ruoyi.postgrad.rag.eval.AgentCaseSpec;
 import com.ruoyi.postgrad.rag.eval.RagEvaluationCase;
 import com.ruoyi.postgrad.rag.eval.RagEvaluationDatasetLoader;
 import com.ruoyi.postgrad.rag.eval.workbench.domain.RagEvalCaseEntity;
@@ -65,8 +64,8 @@ public class RagEvalDatasetService {
         }
         dataset.setDatasetType(type);
         String evaluationType = normalize(dataset.getEvaluationType(), "RAG_RETRIEVAL");
-        if (!List.of("RAG_RETRIEVAL", "AGENT_E2E").contains(evaluationType)) {
-            throw new ServiceException("evaluationType must be RAG_RETRIEVAL or AGENT_E2E");
+        if (!"RAG_RETRIEVAL".equals(evaluationType)) {
+            throw new ServiceException("Unsupported evaluationType: only RAG_RETRIEVAL is supported");
         }
         dataset.setEvaluationType(evaluationType);
         dataset.setLifecycleState("DRAFT");
@@ -217,9 +216,8 @@ public class RagEvalDatasetService {
         boolean noAnswer = Boolean.TRUE.equals(c.getNoAnswer());
         boolean hasConditions = !emptyJsonArray(c.getRelevantConditionsJson());
         boolean hasSources = !emptyJsonArray(c.getRelevantSourcesJson());
-        boolean hasAgentSpec = !blank(c.getAgentSpecJson());
-        if (!noAnswer && !hasConditions && !hasSources && !hasAgentSpec) {
-            throw new ServiceException("Positive cases require relevant conditions, relevant sources or an agent spec");
+        if (!noAnswer && !hasConditions && !hasSources) {
+            throw new ServiceException("Positive cases require relevant conditions or relevant sources");
         }
     }
 
@@ -255,7 +253,6 @@ public class RagEvalDatasetService {
         c.setRelevantConditions(parse(e.getRelevantConditionsJson(), new TypeReference<List<RagEvaluationCase.RelevantCondition>>() {}, new ArrayList<>()));
         c.setRelevantSources(parse(e.getRelevantSourcesJson(), new TypeReference<List<String>>() {}, new ArrayList<>()));
         c.setTags(parse(e.getTagsJson(), new TypeReference<List<String>>() {}, new ArrayList<>()));
-        c.setAgent(parse(e.getAgentSpecJson(), new TypeReference<AgentCaseSpec>() {}, null));
         return c;
     }
 
@@ -266,7 +263,6 @@ public class RagEvalDatasetService {
         e.setRelevantConditionsJson(JSON.toJSONString(c.getRelevantConditions())); e.setRelevantSourcesJson(JSON.toJSONString(c.getRelevantSources()));
         e.setNoAnswer(c.isNoAnswer()); e.setSourceDataAvailable(c.isSourceDataAvailable()); e.setExpectedFallback(c.isExpectedFallback());
         e.setExpectedRoute(c.getExpectedRoute());
-        e.setAgentSpecJson(c.getAgent() == null ? null : JSON.toJSONString(c.getAgent()));
         e.setTagsJson(JSON.toJSONString(c.getTags())); e.setCreatedBy(operator); e.setUpdatedBy(operator);
         return e;
     }
@@ -277,7 +273,7 @@ public class RagEvalDatasetService {
         c.setDifficulty(s.getDifficulty()); c.setExpectedMetadataJson(s.getExpectedMetadataJson()); c.setRelevantConditionsJson(s.getRelevantConditionsJson());
         c.setRelevantSourcesJson(s.getRelevantSourcesJson()); c.setNoAnswer(s.getNoAnswer()); c.setSourceDataAvailable(s.getSourceDataAvailable());
         c.setExpectedFallback(s.getExpectedFallback()); c.setExpectedRoute(s.getExpectedRoute());
-        c.setAgentSpecJson(s.getAgentSpecJson()); c.setTagsJson(s.getTagsJson());
+        c.setTagsJson(s.getTagsJson());
         c.setReviewerNote(s.getReviewerNote()); c.setCreatedBy(operator); c.setUpdatedBy(operator); return c;
     }
 

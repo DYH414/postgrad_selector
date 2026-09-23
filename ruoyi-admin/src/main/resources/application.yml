@@ -146,11 +146,6 @@ app:
         batch-size: 100
         build-timeout-minutes: 30
       data-dir: ${RAG_DATA_DIR:./rag-data}
-    # Agent 评测（内部端点鉴权 + Python Worker）
-    evaluation:
-      internal-token: ${EVALUATION_INTERNAL_TOKEN:}
-      worker-base-url: ${EVALUATION_WORKER_BASE_URL:http://localhost:8100}
-      subject-user-id: ${EVALUATION_SUBJECT_USER_ID:1}
 
 # token配置
 token:
