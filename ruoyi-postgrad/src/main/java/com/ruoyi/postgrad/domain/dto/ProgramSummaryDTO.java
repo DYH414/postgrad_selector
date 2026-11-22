@@ -120,8 +120,22 @@ public class ProgramSummaryDTO implements Serializable {
         d.sourceOwner = str(row.get("sourceOwner"));
 
         // 计算字段
-        d.examCombo = examComboBySubjects(d.subjectCodes);
-        d.examSubjectsLabel = subjectsLabel(d.examCombo);
+        if (d.subjectCodes != null && !d.subjectCodes.isBlank()) {
+            switch (d.subjectCodes) {
+                case "101,201,301,408" -> {
+                    d.examCombo = "11408";
+                    d.examSubjectsLabel = "政治 + 英语一 + 数学一 + 408";
+                }
+                case "101,204,302,408" -> {
+                    d.examCombo = "22408";
+                    d.examSubjectsLabel = "政治 + 英语二 + 数学二 + 408";
+                }
+                default -> {
+                    d.examCombo = d.subjectCodes;
+                    d.examSubjectsLabel = d.subjectCodes;
+                }
+            }
+        }
         d.degreeTypeLabel = degreeTypeLabel(d.degreeType);
 
         int score = estimatedScore <= 0 ? 0 : estimatedScore;
@@ -144,15 +158,6 @@ public class ProgramSummaryDTO implements Serializable {
     }
 
     // ── 计算逻辑（从 ProgramRecommendationServiceImpl 移入）──
-
-    private static String examComboBySubjects(String codes) {
-        return "101,204,302,408".equals(codes) ? "22408" : "11408";
-    }
-
-    private static String subjectsLabel(String combo) {
-        return "22408".equals(combo) ? "政治 + 英语二 + 数学二 + 408"
-            : "政治 + 英语一 + 数学一 + 408";
-    }
 
     private static String degreeTypeLabel(String s) {
         return "academic".equals(s) ? "学硕" : "专硕";
