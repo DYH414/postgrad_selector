@@ -549,6 +549,7 @@ async function handleChatSend(message) {
     let buffer = ''
     let currentEvent = ''
     let assistantText = ''
+    let completed = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -573,6 +574,7 @@ async function handleChatSend(message) {
               assistantText += data.text
               chatStreamingText.value = sanitizeAssistantText(assistantText)
             } else if (currentEvent === 'done') {
+              completed = true
               currentToolCall.value = ''
               chatStreamingText.value = ''
               chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message) })
@@ -581,6 +583,7 @@ async function handleChatSend(message) {
               }
               await presentAgentAction(data.toolActionResult)
             } else if (currentEvent === 'error') {
+              completed = true
               currentToolCall.value = ''
               chatStreamingText.value = ''
               ElMessage.error(safeUserError(data.message, '对话失败，请稍后重试'))
@@ -589,6 +592,7 @@ async function handleChatSend(message) {
         }
       }
     }
+    if (!completed) throw new Error('Chat stream closed before completion')
   } catch (e) {
     currentToolCall.value = ''
     chatStreamingText.value = ''
