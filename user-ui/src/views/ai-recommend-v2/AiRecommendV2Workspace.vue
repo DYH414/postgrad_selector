@@ -353,7 +353,7 @@ async function handleGenerate() {
   try {
     const res = await startGenerateDraft()
     const task = res.data || {}
-    if (task.status === 'busy') {
+    if (task.status === 'locked') {
       generating.value = false
       stopProgress()
       resetGenerationBubbles()
