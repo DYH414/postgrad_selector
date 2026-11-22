@@ -260,7 +260,12 @@ function compareSelected() {
     ElMessage.warning('至少选择 2 个项目进行对比')
     return
   }
-  saveCompareIds([...new Set([...compareIds.value, ...ids])])
+  const nextIds = [...new Set([...compareIds.value, ...ids])]
+  if (nextIds.length > COMPARE_MAX_ITEMS) {
+    ElMessage.warning(`最多对比 ${COMPARE_MAX_ITEMS} 所学校`)
+    return
+  }
+  saveCompareIds(nextIds)
   if (profileScore.value) {
     localStorage.setItem(COMPARE_SCORE_KEY, String(profileScore.value))
   }
