@@ -28,6 +28,7 @@ import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.ChatRunLockService;
+import com.ruoyi.postgrad.recommend.service.ConversationChatModelFactory;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 import com.ruoyi.postgrad.recommend.tool.V2BoundChatTools;
@@ -47,7 +48,6 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.ToolErrorHandlerResult;
@@ -73,7 +73,7 @@ public class AiChatServiceImpl implements IAiChatService {
     private ChatModel chatModel;
 
     @Autowired
-    private OpenAiStreamingChatModel streamingChatModel;
+    private ConversationChatModelFactory conversationChatModelFactory;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -226,7 +226,7 @@ public class AiChatServiceImpl implements IAiChatService {
             var writeTools = new V2BoundDraftActionTools(v2DraftActionTools, toolContext, agentToolRuntime);
             var scopedTools = AgentToolScope.select(routeDecision.route(), readTools, writeTools);
             AiServices<StreamAssistant> assistantBuilder = AiServices.builder(StreamAssistant.class)
-                .streamingChatModel(streamingChatModel)
+                .streamingChatModel(conversationChatModelFactory.forConversation(conversation.getId()))
                 .tools(scopedTools)
                 .hallucinatedToolNameStrategy(request -> ToolExecutionResultMessage.from(request,
                     agentToolRuntime.rejectWithoutExecution(toolContext, request.name(), "TOOL_NOT_FOUND",
