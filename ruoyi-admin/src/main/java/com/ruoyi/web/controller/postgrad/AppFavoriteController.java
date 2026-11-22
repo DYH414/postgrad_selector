@@ -82,7 +82,7 @@ public class AppFavoriteController
             item.put("id", row.get("id"));
             item.put("programId", row.get("program_id"));
             item.put("schoolName", row.get("school_name"));
-            item.put("tier", row.get("tier"));
+            item.put("tier", row.get("school_tier"));
             item.put("collegeName", row.get("college_name"));
             item.put("programName", row.get("program_name"));
             item.put("programCode", row.get("program_code"));
