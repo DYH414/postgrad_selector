@@ -32,22 +32,22 @@ public class RagEvidenceService {
     }
 
     public RagEvidenceResponse retrieveProgramEvidence(RagEvidenceRequest request) {
-        RagSearchTestResponse strict = retrieve(toSearchRequest(request, false));
-        if (hasEvidence(strict)) {
+        RagRetrievalResult strict = ragRetrievalService.retrieve(toSearchRequest(request, false));
+        if (hasEvidence(strict.response())) {
             RagEvidenceResponse response = toEvidenceResponse(request, strict, false, null);
-            recordTrace(request, strict, response);
+            recordTrace(request, strict.response(), response);
             return response;
         }
 
         if (shouldFallback(request)) {
-            RagSearchTestResponse fallback = retrieve(toSearchRequest(request, true));
+            RagRetrievalResult fallback = ragRetrievalService.retrieve(toSearchRequest(request, true));
             RagEvidenceResponse response = toEvidenceResponse(request, fallback, true, "metadata_broad");
-            recordTrace(request, fallback, response);
+            recordTrace(request, fallback.response(), response);
             return response;
         }
 
         RagEvidenceResponse response = toEvidenceResponse(request, strict, false, null);
-        recordTrace(request, strict, response);
+        recordTrace(request, strict.response(), response);
         return response;
     }
 
@@ -72,19 +72,13 @@ public class RagEvidenceService {
         return search;
     }
 
-    private RagSearchTestResponse retrieve(RagSearchTestRequest request) {
-        return ragRetrievalService.retrieve(request).response();
-    }
-
-    private RagEvidenceResponse toEvidenceResponse(RagEvidenceRequest request, RagSearchTestResponse search,
+    private RagEvidenceResponse toEvidenceResponse(RagEvidenceRequest request, RagRetrievalResult retrieval,
                                                    boolean fallbackUsed, String fallbackMode) {
         RagEvidenceResponse response = new RagEvidenceResponse();
         response.setQuery(request != null ? request.getQuery() : null);
         response.setFallbackUsed(fallbackUsed);
         response.setFallbackMode(fallbackMode);
-        if (search == null) {
-            return response;
-        }
+        RagSearchTestResponse search = retrieval.response();
         response.setErrorSummary(search.getErrorSummary());
         response.setAppliedFilters(search.getAppliedFilters());
         List<RagChunkResult> selected = search.getChunks().stream()
@@ -96,6 +90,9 @@ public class RagEvidenceService {
         response.setSelectedChunks(selected);
         response.setCitations(selected.stream()
             .map(RagCitation::fromChunkResult)
+            .toList());
+        response.setPassages(retrieval.selectedSegments().stream()
+            .map(segment -> new RagEvidenceResponse.Passage(segment.metadata().getString("source_name"), segment.text()))
             .toList());
         return response;
     }

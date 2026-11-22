@@ -115,6 +115,7 @@ public class V2ChatTools {
             result.put("fallbackMode", evidence.getFallbackMode());
             result.put("citations", evidence.getCitations());
             result.put("selectedChunks", evidence.getSelectedChunks());
+            result.put("passages", evidence.getPassages());
             if (evidence.getErrorSummary() != null) {
                 result.put("error", evidence.getErrorSummary());
             }
@@ -462,6 +463,7 @@ public class V2ChatTools {
             result.put("fallbackUsed", evidence.isFallbackUsed());
             result.put("citations", evidence.getCitations());
             result.put("selectedChunks", evidence.getSelectedChunks());
+            result.put("passages", evidence.getPassages());
             if (evidence.getErrorSummary() != null) {
                 result.put("error", evidence.getErrorSummary());
             }

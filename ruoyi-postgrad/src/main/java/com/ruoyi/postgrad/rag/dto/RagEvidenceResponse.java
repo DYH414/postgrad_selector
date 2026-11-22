@@ -16,6 +16,9 @@ public class RagEvidenceResponse {
     private Map<String, String> appliedFilters = Map.of();
     private List<RagChunkResult> selectedChunks = List.of();
     private List<RagCitation> citations = List.of();
+    private List<Passage> passages = List.of();
+
+    public record Passage(String sourceName, String text) {}
 
     public String getQuery() { return query; }
     public void setQuery(String query) { this.query = query; }
@@ -37,4 +40,6 @@ public class RagEvidenceResponse {
     public void setCitations(List<RagCitation> citations) {
         this.citations = citations != null ? citations : List.of();
     }
+    public List<Passage> getPassages() { return passages; }
+    public void setPassages(List<Passage> passages) { this.passages = List.copyOf(passages); }
 }
