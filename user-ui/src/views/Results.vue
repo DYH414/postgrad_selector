@@ -306,6 +306,9 @@
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，仅作风险边界参考。">
                     <span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong>
                   </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业进入复试的分数门槛。">
+                    <span>复试线</span><strong>{{ school.scoreLine ?? '-' }}</strong>
+                  </div>
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
                     <span>拟录取区间</span><strong>{{ school.range }}</strong>
                   </div>
@@ -356,6 +359,8 @@
                     <div class="direction-stats">
                       <span>均分 {{ direction.avgScore || '-' }}</span>
                       <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
+                      <span>复试线 {{ direction.scoreLine ?? '-' }}</span>
+                      <span>最低录取分 {{ direction.admissionLow ?? '-' }}</span>
                       <span>区间 {{ direction.range }}</span>
                       <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}（{{ direction.quotaDisplay.hint }}）</span>
                     </div>
@@ -717,7 +722,11 @@ function normalizeSchool(item) {
 
 function groupSchools(items) {
   const grouped = new Map()
-  items.forEach(item => {
+  const catalogSearch = isCatalogSearch.value
+  const ordered = catalogSearch
+    ? [...items].sort((a, b) => Number(hasAdmissionScores(b)) - Number(hasAdmissionScores(a)))
+    : items
+  ordered.forEach(item => {
     const key = item.schoolName || item.cardKey
     if (!grouped.has(key)) {
       grouped.set(key, [])
@@ -725,7 +734,7 @@ function groupSchools(items) {
     grouped.get(key).push(item)
   })
   return Array.from(grouped.values()).map(directions => {
-    const sorted = [...directions].sort(directionComparator)
+    const sorted = catalogSearch ? directions : directions.sort(directionComparator)
     const primary = sorted[0]
     return {
       ...primary,
@@ -734,6 +743,10 @@ function groupSchools(items) {
       directions: sorted
     }
   })
+}
+
+function hasAdmissionScores(item) {
+  return item.scoreLine != null || item.admissionLow != null || item.avgScore !== '-'
 }
 
 function directionComparator(a, b) {
