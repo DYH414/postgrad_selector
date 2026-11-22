@@ -106,7 +106,7 @@
               </div>
               <div class="panel-actions">
                 <span>已选择 {{ shortlistSelectedIds.length }} 项</span>
-                <el-button type="primary" :disabled="selectedRows.length < 2" @click="compareSelected">对比所选</el-button>
+                <el-button type="primary" :disabled="shortlistSelectedIds.length < 2" @click="compareSelected">对比所选</el-button>
                 <el-button v-if="compareIds.length > 0" type="success" size="small" plain @click="goToCompare">
                   查看对比 ({{ compareIds.length }})
                 </el-button>
@@ -146,7 +146,7 @@
                 <div class="shortlist-card-main">
                   <el-checkbox
                     :model-value="shortlistSelectedIds.includes(item.programId)"
-                    @change="toggleShortlistSelection(item)"
+                    @update:model-value="setShortlistSelection(item.programId, $event)"
                   />
                   <div class="shortlist-card-copy">
                     <div class="shortlist-title-row">
@@ -276,7 +276,7 @@ const form = reactive({
 })
 
 const favorites = ref([])
-const selectedRows = ref([])
+const shortlistSelectedIds = ref([])
 const compareIds = ref([])
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -329,8 +329,6 @@ const profileRows = computed(() => [
   { label: '目标地区', value: regionText.value },
   { label: '择校偏好', value: priorityLabels[normalizePriority(profile.schoolTierPreference)] || '安全上岸优先' }
 ])
-
-const shortlistSelectedIds = computed(() => selectedRows.value.map(row => row.programId).filter(Boolean))
 
 const shortlistOverview = computed(() => {
   const professional = favorites.value.filter(item => item.degreeType === 'professional').length
@@ -406,15 +404,15 @@ function handleRemove(row) {
   removeFavorite(row.programId).then(() => {
     ElMessage.success('已移出备选')
     favorites.value = favorites.value.filter(f => f.programId !== row.programId)
-    selectedRows.value = selectedRows.value.filter(f => f.programId !== row.programId)
+    shortlistSelectedIds.value = shortlistSelectedIds.value.filter(id => id !== row.programId)
   })
 }
 
-function toggleShortlistSelection(row) {
-  const exists = selectedRows.value.some(item => item.programId === row.programId)
-  selectedRows.value = exists
-    ? selectedRows.value.filter(item => item.programId !== row.programId)
-    : [...selectedRows.value, row]
+function setShortlistSelection(programId, checked) {
+  if (shortlistSelectedIds.value.includes(programId) === checked) return
+  shortlistSelectedIds.value = checked
+    ? [...shortlistSelectedIds.value, programId]
+    : shortlistSelectedIds.value.filter(id => id !== programId)
 }
 
 function loadCompareState() {
@@ -452,9 +450,13 @@ function goToCompare() {
 }
 
 function compareSelected() {
-  const ids = selectedRows.value.map(row => row.programId).filter(Boolean)
+  const ids = shortlistSelectedIds.value
   if (ids.length < 2) {
     ElMessage.warning('至少选择 2 个项目进行对比')
+    return
+  }
+  if (ids.length > COMPARE_MAX_ITEMS) {
+    ElMessage.warning(`最多对比 ${COMPARE_MAX_ITEMS} 所学校`)
     return
   }
   router.push({

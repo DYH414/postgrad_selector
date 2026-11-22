@@ -7,6 +7,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core')
 const evidence = process.argv[2]
 const { readStudent } = require('./student-account.cjs')
 const { checkCompareHeaders } = require('./compare-headers.cjs')
+const { repeatCheckedChange, readShortlistSelection, checkShortlistPair } = require('./shortlist-selection.cjs')
 const base = process.env.POSTGRAD_VERIFY_URL || 'http://127.0.0.1:18082'
 const programs = ['验证计算机科学', '验证计算机技术']
 const ids = [900001, 900002]
@@ -165,10 +166,18 @@ async function verify() {
     const profileShortlist = await api('student-profile-shortlist', 'GET', '/app/favorites', profileShortlistTab)
     assert.deepEqual(profileShortlist.data.map(item => item.programId).sort(), ids)
     const profileCompareButton = button('对比所选')
-    for (const name of programs) {
-      assert.equal(await profileCompareButton.isDisabled(), true)
-      await page.locator('.shortlist-card').filter({ hasText: name }).locator('label.el-checkbox').click()
+    const shortlistCheckboxes = programs.map(name =>
+      page.locator('.shortlist-card').filter({ hasText: name }).getByRole('checkbox'))
+    assert.equal(await profileCompareButton.isDisabled(), true)
+    await shortlistCheckboxes[0].locator('..').click()
+    assert.equal(await profileCompareButton.isDisabled(), true)
+    await shortlistCheckboxes[1].press('Space')
+    checkShortlistPair(await readShortlistSelection(page))
+    for (const checkbox of shortlistCheckboxes) {
+      await checkbox.press('Space')
+      await repeatCheckedChange(checkbox)
     }
+    checkShortlistPair(await readShortlistSelection(page))
     const profileComparison = await api('student-profile-compare', 'GET', '/app/programs/compare', () =>
       profileCompareButton.click())
     await checkRoute('/results')
