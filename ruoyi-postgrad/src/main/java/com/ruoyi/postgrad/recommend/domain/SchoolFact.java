@@ -2,6 +2,7 @@ package com.ruoyi.postgrad.recommend.domain;
 
 import java.io.Serializable;
 
+import com.ruoyi.postgrad.domain.ProgramExamCombo;
 import com.ruoyi.postgrad.domain.RowMap;
 
 /**
@@ -257,7 +258,8 @@ public class SchoolFact implements Serializable {
         f.setProgramName(strVal(row.get("programName")));
         f.setProgramCode(strVal(row.get("programCode")));
         f.setDegreeType(strVal(row.get("degreeType")));
-        f.setExamCombo(strVal(row.get("examCombo")));
+        ProgramExamCombo combo = ProgramExamCombo.fromSubjects(strVal(row.get("subjectCodes")));
+        f.setExamCombo(combo != null ? combo.code() : strVal(row.get("examCombo")));
         f.setScoreLine(intVal(row.get("scoreLine")));
         f.setAvgAdmittedScore(intVal(row.get("avgAdmittedScore")));
         f.setAdmissionLow(intVal(row.get("admissionLow")));

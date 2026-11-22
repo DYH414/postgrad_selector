@@ -146,7 +146,8 @@ public class DraftServiceImpl implements IDraftService {
             currentTitle = "筛选408专业";
             callback.onProgress(RecommendationProgressEvent.running(
                 currentPhase, currentTitle, "正在筛选408专业...", null, null));
-            List<TierCandidates> allTiers = candidatePoolService.buildPool(estimatedScore, regions, schoolTierPref);
+            List<TierCandidates> allTiers = candidatePoolService.buildPool(
+                estimatedScore, regions, schoolTierPref, up.getExamCombo());
             int totalCandidates = allTiers.stream().mapToInt(t -> t.getCandidates().size()).sum();
             callback.onProgress(RecommendationProgressEvent.success(
                 currentPhase, currentTitle, null, totalCandidates, null));
@@ -678,6 +679,7 @@ public class DraftServiceImpl implements IDraftService {
     private ProfileBasisVO buildProfileBasis(UserProfile up, int candidateCount) {
         ProfileBasisVO b = new ProfileBasisVO();
         b.setEstimatedScore(up.getEstimatedScore());
+        b.setExamCombo(up.getExamCombo());
         b.setTargetRegions(up.getTargetRegions() != null ? up.getTargetRegions() : "不限");
         b.setSchoolTierPreference(priorityLabel(up.getSchoolTierPreference()));
         b.setCandidateScope("系统按画像自动选择最多 " + candidateCount + " 个具备录取数据的 408 项目");

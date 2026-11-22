@@ -1,6 +1,7 @@
 package com.ruoyi.postgrad.domain.dto;
 
 import com.ruoyi.postgrad.domain.ProgramDegreeType;
+import com.ruoyi.postgrad.domain.ProgramExamCombo;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
 import java.io.Serializable;
@@ -122,20 +123,9 @@ public class ProgramSummaryDTO implements Serializable {
 
         // 计算字段
         if (d.subjectCodes != null && !d.subjectCodes.isBlank()) {
-            switch (d.subjectCodes) {
-                case "101,201,301,408" -> {
-                    d.examCombo = "11408";
-                    d.examSubjectsLabel = "政治 + 英语一 + 数学一 + 408";
-                }
-                case "101,204,302,408" -> {
-                    d.examCombo = "22408";
-                    d.examSubjectsLabel = "政治 + 英语二 + 数学二 + 408";
-                }
-                default -> {
-                    d.examCombo = d.subjectCodes;
-                    d.examSubjectsLabel = d.subjectCodes;
-                }
-            }
+            ProgramExamCombo combo = ProgramExamCombo.fromSubjects(d.subjectCodes);
+            d.examCombo = combo != null ? combo.code() : d.subjectCodes;
+            d.examSubjectsLabel = combo != null ? combo.label() : d.subjectCodes;
         }
         d.degreeTypeLabel = degreeTypeLabel(d.degreeType);
 

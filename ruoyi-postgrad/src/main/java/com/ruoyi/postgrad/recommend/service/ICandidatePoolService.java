@@ -16,7 +16,9 @@ public interface ICandidatePoolService {
      * @param estimatedScore        预估分数
      * @param targetRegions         目标地区列表（空 = 不限）
      * @param schoolTierPreference  学校层次偏好（用于综合得分加权）
+     * @param examCombo             考试组合（不限时查询两种组合）
      * @return 三档候选列表，顺序为 [reach, steady, safe]
      */
-    List<TierCandidates> buildPool(int estimatedScore, List<String> targetRegions, String schoolTierPreference);
+    List<TierCandidates> buildPool(int estimatedScore, List<String> targetRegions,
+                                   String schoolTierPreference, String examCombo);
 }

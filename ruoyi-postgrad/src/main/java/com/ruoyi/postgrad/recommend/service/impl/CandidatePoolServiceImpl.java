@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.ruoyi.postgrad.domain.ProgramExamCombo;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
@@ -32,24 +33,18 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
     /** 每档 AI 选择前的上限（粗筛后给 AI 的候选数） */
     private static final int PER_TIER_LIMIT = 15;
 
-    /** 408 考试科目组合 */
-    private static final List<String> EXAM_408_SUBJECT_CODES = List.of(
-        "101,204,302,408", // 22408: 政治 + 英语二 + 数学二 + 408
-        "101,201,301,408"  // 11408: 政治 + 英语一 + 数学一 + 408
-    );
-
     @Autowired
     private RecommendationMapper recommendationMapper;
 
     @Override
     public List<TierCandidates> buildPool(int estimatedScore, List<String> targetRegions,
-                                           String schoolTierPreference) {
+                                           String schoolTierPreference, String examCombo) {
         if (targetRegions == null) {
             targetRegions = Collections.emptyList();
         }
 
-        // 1. 查询两个 408 exam combo → 合并去重
-        List<RowMap> allRows = queryAllExamCombos(targetRegions, estimatedScore);
+        List<RowMap> allRows = queryCandidates(targetRegions, estimatedScore,
+            ProgramExamCombo.subjectsForPreference(examCombo));
         log.info("[CandidatePool] Queried {} raw candidates for score={}, regions={}",
             allRows.size(), estimatedScore, targetRegions.isEmpty() ? "不限" : targetRegions);
 
@@ -97,13 +92,10 @@ public class CandidatePoolServiceImpl implements ICandidatePoolService {
 
     // ── private helpers ──
 
-    /**
-     * 查询两个 408 exam combo 的候选，按 programId 去重。
-     */
-    private List<RowMap> queryAllExamCombos(List<String> regions, int estimatedScore) {
+    private List<RowMap> queryCandidates(List<String> regions, int estimatedScore, List<String> subjectCombinations) {
         List<RowMap> merged = new ArrayList<>();
         LinkedHashSet<Long> seen = new LinkedHashSet<>();
-        for (String subjectCodes : EXAM_408_SUBJECT_CODES) {
+        for (String subjectCodes : subjectCombinations) {
             List<RowMap> rows = recommendationMapper.selectCandidates(
                 subjectCodes, regions, null, estimatedScore, SCORE_RANGE, "full_time");
             if (rows != null) {

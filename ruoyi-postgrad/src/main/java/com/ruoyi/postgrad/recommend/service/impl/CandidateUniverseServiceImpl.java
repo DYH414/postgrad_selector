@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.ruoyi.postgrad.domain.ProgramExamCombo;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateUniverseVO;
@@ -33,11 +34,6 @@ public class CandidateUniverseServiceImpl implements ICandidateUniverseService {
     private static final int SCORE_RANGE = 30;
     private static final String POLICY_VERSION = "v2-hybrid-1";
 
-    private static final List<String> EXAM_408_SUBJECT_CODES = List.of(
-        "101,204,302,408",
-        "101,201,301,408"
-    );
-
     @Autowired
     private RecommendationMapper recommendationMapper;
 
@@ -52,8 +48,8 @@ public class CandidateUniverseServiceImpl implements ICandidateUniverseService {
         universe.setGeneratedAt(LocalDateTime.now());
         universe.setPolicyVersion(POLICY_VERSION);
 
-        // 1. 双考试组合 + programId 去重
-        List<RowMap> allRows = queryAllExamCombos(targetRegions, estimatedScore);
+        List<String> subjectCombinations = ProgramExamCombo.subjectsForPreference(profile.getExamCombo());
+        List<RowMap> allRows = queryCandidates(targetRegions, estimatedScore, subjectCombinations);
         int rawCount = allRows.size();
 
         // 2. RowMap → SchoolFact + 计算字段
@@ -89,7 +85,7 @@ public class CandidateUniverseServiceImpl implements ICandidateUniverseService {
         summary.put("rawCount", rawCount);
         summary.put("filteredCount", facts.size());
         summary.put("scoreRange", SCORE_RANGE);
-        summary.put("examCombos", EXAM_408_SUBJECT_CODES);
+        summary.put("examCombos", subjectCombinations);
         summary.put("regions", targetRegions != null ? targetRegions : List.of());
         universe.setSourceSummary(summary);
 
@@ -122,10 +118,10 @@ public class CandidateUniverseServiceImpl implements ICandidateUniverseService {
         return "不满足保底条件";
     }
 
-    private List<RowMap> queryAllExamCombos(List<String> regions, int estimatedScore) {
+    private List<RowMap> queryCandidates(List<String> regions, int estimatedScore, List<String> subjectCombinations) {
         List<RowMap> merged = new ArrayList<>();
         LinkedHashSet<Long> seen = new LinkedHashSet<>();
-        for (String subjectCodes : EXAM_408_SUBJECT_CODES) {
+        for (String subjectCodes : subjectCombinations) {
             List<RowMap> rows = recommendationMapper.selectCandidates(
                 subjectCodes, regions, null, estimatedScore, SCORE_RANGE, "full_time");
             if (rows != null) {
