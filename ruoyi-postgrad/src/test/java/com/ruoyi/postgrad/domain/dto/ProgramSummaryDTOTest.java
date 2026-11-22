@@ -13,6 +13,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProgramSummaryDTOTest {
 
+    @ParameterizedTest
+    @CsvSource({
+        "085400, academic, professional, 专硕",
+        "085400, professional, professional, 专硕",
+        "085404, academic, professional, 专硕",
+        "081251, academic, professional, 专硕",
+        "081200, academic, academic, 学硕",
+        "081200, professional, professional, 专硕",
+        "0854000, academic, academic, 学硕",
+        "0854Z1, academic, academic, 学硕",
+        ", academic, academic, 学硕"
+    })
+    void fromRowMapResolvesDegreeTypeFromProfessionalProgramCodes(
+        String programCode, String storedType, String expectedType, String expectedLabel
+    ) {
+        RowMap row = new RowMap();
+        row.put("programCode", programCode);
+        row.put("degreeType", storedType);
+
+        ProgramSummaryDTO dto = ProgramSummaryDTO.fromRowMap(row, 0);
+
+        assertEquals(expectedType, dto.getDegreeType());
+        assertEquals(expectedLabel, dto.getDegreeTypeLabel());
+    }
+
     @Test
     void fromRowMapPreservesSchoolTierBadges() {
         RowMap row = new RowMap();

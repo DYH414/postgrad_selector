@@ -59,6 +59,10 @@
               <td v-for="s in compareSchools" :key="s.compareKey">{{ s.college || '-' }}</td>
             </tr>
             <tr>
+              <td>学位</td>
+              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.degreeTypeLabel }}</td>
+            </tr>
+            <tr>
               <td>考试组合</td>
               <td v-for="s in compareSchools" :key="s.compareKey">{{ s.exam || '-' }}</td>
             </tr>
@@ -236,6 +240,7 @@ watch(compareIds, (ids, _, onCleanup) => {
         name: item.schoolName || '-',
         program: item.programName || '-',
         college: item.collegeName || '-',
+        degreeTypeLabel: item.degreeTypeLabel || '-',
         exam: item.examSubjectsLabel || '-',
         score: item.scoreLine ?? '-',
         admissionLow: item.admissionLow ?? '-',

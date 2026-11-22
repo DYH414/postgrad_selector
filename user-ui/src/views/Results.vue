@@ -490,6 +490,7 @@ const optionRegions = ref(['福建', '广东', '浙江', '上海'])
 const compareRows = [
   { label: '学校', type: 'name' },
   { label: '专业', key: 'program' },
+  { label: '学位', key: 'degreeTypeLabel' },
   { label: '考试组合', key: 'exam' },
   { label: '数据年份', key: 'dataYearLabel' },
   { label: '复试线', key: 'score' },
@@ -1005,6 +1006,7 @@ function loadCompare() {
           : `local:${school.schoolName}:${school.collegeName}:${school.programName}:${school.examCombo}`,
         name: school.schoolName,
         program: school.programName,
+        degreeTypeLabel: item.degreeTypeLabel || '-',
         exam: school.exam,
         dataYear: school.dataYear,
         dataYearLabel: school.dataYear ? `${school.dataYear}年` : '年份待补',

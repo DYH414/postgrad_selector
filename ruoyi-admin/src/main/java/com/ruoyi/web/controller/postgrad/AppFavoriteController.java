@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.postgrad.domain.ProgramDegreeType;
 import com.ruoyi.postgrad.service.IUserFavoriteProgramService;
 
 @RestController
@@ -79,14 +81,15 @@ public class AppFavoriteController
         for (Map<String, Object> row : favorites)
         {
             Map<String, Object> item = new LinkedHashMap<>();
+            String programCode = Objects.toString(row.get("program_code"), null);
             item.put("id", row.get("id"));
             item.put("programId", row.get("program_id"));
             item.put("schoolName", row.get("school_name"));
             item.put("tier", row.get("school_tier"));
             item.put("collegeName", row.get("college_name"));
             item.put("programName", row.get("program_name"));
-            item.put("programCode", row.get("program_code"));
-            item.put("degreeType", row.get("degree_type"));
+            item.put("programCode", programCode);
+            item.put("degreeType", ProgramDegreeType.resolve(programCode, Objects.toString(row.get("degree_type"), null)));
             item.put("studyMode", row.get("study_mode"));
             item.put("createdAt", row.get("created_at"));
             item.put("note", row.get("note"));

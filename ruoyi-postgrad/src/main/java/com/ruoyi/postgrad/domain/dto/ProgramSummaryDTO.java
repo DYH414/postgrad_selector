@@ -1,5 +1,6 @@
 package com.ruoyi.postgrad.domain.dto;
 
+import com.ruoyi.postgrad.domain.ProgramDegreeType;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
 import java.io.Serializable;
@@ -104,7 +105,7 @@ public class ProgramSummaryDTO implements Serializable {
         d.programName = str(row.get("programName"));
         d.programCode = str(row.get("programCode"));
         d.researchDirection = str(row.get("researchDirection"));
-        d.degreeType = str(row.get("degreeType"));
+        d.degreeType = ProgramDegreeType.resolve(d.programCode, str(row.get("degreeType")));
         d.subjectCodes = str(row.get("subjectCodes"));
         d.scoreLine = toInt(row.get("scoreLine"));
         d.avgAdmittedScore = toInt(row.get("avgAdmittedScore"));
