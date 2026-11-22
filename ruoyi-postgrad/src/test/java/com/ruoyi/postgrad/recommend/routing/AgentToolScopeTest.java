@@ -42,6 +42,16 @@ class AgentToolScopeTest {
     }
 
     @Test
+    void hybridRouteCanReadTheDraftWithoutExposingDraftWrites() {
+        Set<String> names = names(AgentToolScope.select(AgentIntentRoute.HYBRID, reads, writes));
+
+        assertTrue(names.containsAll(Set.of("getDraftContext", "getProgramDetail", "searchKnowledgeBase")),
+            () -> "Hybrid tools: " + names);
+        assertFalse(names.contains("removeDraftCandidate"));
+        assertFalse(names.contains("replaceDraftCandidate"));
+    }
+
+    @Test
     void draftWriteRouteIncludesReadContextAndConfirmedWriteTools() {
         Set<String> names = names(AgentToolScope.select(
             AgentIntentRoute.DRAFT_WRITE, reads, writes));

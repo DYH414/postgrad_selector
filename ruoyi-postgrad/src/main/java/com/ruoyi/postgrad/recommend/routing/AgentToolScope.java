@@ -19,7 +19,7 @@ public final class AgentToolScope {
     private static final Set<String> PROGRAM = Set.of(
         "searchPrograms", "getProgramDetail", "comparePrograms");
     private static final Set<String> HYBRID = union(PROGRAM,
-        Set.of("searchKnowledgeBase", "getProgramEvidence"));
+        Set.of("searchKnowledgeBase", "getProgramEvidence", "getDraftContext"));
     private static final Set<String> DRAFT_READ = Set.of(
         "getDraftContext", "analyzeDraftHealth", "getUserProfile",
         "getProgramDetail", "comparePrograms");
