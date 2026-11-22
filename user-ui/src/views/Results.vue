@@ -243,7 +243,7 @@
           </section>
         </template>
 
-        <div v-if="activeTab !== 'compare' && !hasResult" class="empty-result">
+        <div v-if="activeTab !== 'compare' && !isCatalogSearch && !hasResult" class="empty-result">
           <i class="el-icon-document"></i>
           <strong>还没有筛选结果</strong>
           <p>请先填写报考条件开始筛选；系统不会用演示院校替代你的真实结果。</p>
@@ -261,7 +261,7 @@
           </div>
         </div>
 
-        <template v-if="activeTab !== 'compare' && hasResult && !result.aiAnalysis">
+        <template v-if="activeTab !== 'compare' && (hasResult || isCatalogSearch) && !result.aiAnalysis">
           <div v-if="filteredItems.length === 0" class="empty-group">暂无匹配结果</div>
           <div v-else class="school-grid">
             <article v-for="school in filteredItems" :key="school.cardKey" class="school-card">
@@ -509,6 +509,8 @@ const currentHeader = computed(() => {
   return activeTab.value === 'compare' ? 'compare' : 'results'
 })
 
+const isCatalogSearch = computed(() => Boolean(route.query.keyword && !route.query.id))
+
 const hasResult = computed(() => {
   return (result.value.items || []).length > 0
 })
@@ -557,7 +559,9 @@ const keywordFilter = computed(() => (filterForm.value.keyword || '').trim().toL
 const filteredItems = computed(() => {
   const kw = keywordFilter.value
   const items = result.value.items || []
-  const filtered = !kw ? items : items.filter(school =>
+  const filtered = !kw || (isCatalogSearch.value && kw === String(route.query.keyword).toLowerCase())
+    ? items
+    : items.filter(school =>
     (school.schoolName || '').toLowerCase().includes(kw) ||
     (school.collegeName || '').toLowerCase().includes(kw) ||
     (school.programName || '').toLowerCase().includes(kw) ||
@@ -614,31 +618,34 @@ function loadOptions() {
   }).catch(() => {})
 }
 
-function loadResult() {
-  const id = route.query.id || window.sessionStorage.getItem('app-recommend-id')
+function loadResult(id, keyword, isCurrent) {
   const cached = window.sessionStorage.getItem('app-recommend-result')
   if (cached) {
     try {
       const parsed = JSON.parse(cached)
-      result.value = normalizeResult(parsed)
-      restoreFilters(parsed)
-      if (activeTab.value === 'compare') {
-        loadCompare()
-        loadBackupGroups()
+      if (!id || String(parsed.recommendationId) === String(id)) {
+        result.value = normalizeResult(parsed)
+        restoreFilters(parsed)
+        if (keyword) filterForm.value.keyword = keyword
       }
     } catch (e) {}
   }
   if (!id) return
   loading.value = true
   getRecommendationResult(id).then(res => {
-    result.value = normalizeResult(res.data || {})
-    restoreFilters(res.data || {})
-    window.sessionStorage.setItem('app-recommend-result', JSON.stringify(res.data || {}))
+    if (!isCurrent()) return
+    const data = res.data || {}
+    result.value = normalizeResult(data)
+    restoreFilters(data)
+    if (keyword) filterForm.value.keyword = keyword
+    window.sessionStorage.setItem('app-recommend-result', JSON.stringify(data))
     if (activeTab.value === 'compare') {
       loadCompare()
       loadBackupGroups()
     }
-  }).finally(() => { loading.value = false })
+  }).catch(() => {}).finally(() => {
+    if (isCurrent()) loading.value = false
+  })
 }
 
 function normalizeResult(data) {
@@ -1266,36 +1273,31 @@ watch(() => route.query.programIds, () => {
   if (activeTab.value === 'compare') loadCompare()
 })
 
-watch(() => route.query.id, () => {
-  loadResult()
-})
+watch([() => route.query.id, () => route.query.keyword], ([id, keyword], _, onCleanup) => {
+  let current = true
+  onCleanup(() => { current = false })
+  result.value = emptyResult()
+  filterForm.value = { ...emptyFilters(), keyword: keyword || '' }
+  appliedFilters.value = emptyFilters()
+  loading.value = false
 
-watch(() => route.query.keyword, (newKw) => {
-  filterForm.value.keyword = newKw || ''
-  // Header 搜索跳转：无筛选结果时自动调搜索 API
-  if (newKw && !hasResult.value) {
-    searchPrograms(newKw, 50).then(res => {
-      const data = res.data || {}
-      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : [])
-      const schools = items.map(normalizeSchool)
-      if (schools.length > 0) {
-        result.value = {
-          ...emptyResult(),
-          score: '-',
-          exam: '-',
-          region: '不限',
-          scoreRange: null,
-          totalCandidates: schools.length,
-          items: schools
-        }
-      }
-    }).catch(() => {})
+  if (!isCatalogSearch.value) {
+    loadResult(id || window.sessionStorage.getItem('app-recommend-id'), keyword, () => current)
+    return
   }
+
+  loading.value = true
+  searchPrograms(keyword, 50).then(res => {
+    if (!current) return
+    result.value = normalizeResult(res.data)
+    result.value.score = '-'
+    result.value.exam = '-'
+  }).catch(() => {}).finally(() => {
+    if (current) loading.value = false
+  })
 }, { immediate: true })
 
-// --- created (top-level execution) ---
 loadOptions()
-loadResult()
 loadFavoriteIds()
 if (activeTab.value === 'compare') {
   loadCompare()
