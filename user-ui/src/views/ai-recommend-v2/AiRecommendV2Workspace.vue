@@ -348,10 +348,6 @@ async function handleGenerate() {
   resetProgress()
   startProgress()
   applyProgress({ phase: 'queued', message: '正在准备生成草稿...' })
-  draft.value = null
-  pendingFinalDraft.value = null
-  chatMessages.value = []
-  enqueueGenerationBubble(getGenerationStartMessage())
   closeEventSource(draftEventSource)
 
   try {
@@ -368,6 +364,11 @@ async function handleGenerate() {
     if (!task.taskId || !task.streamToken) {
       throw new Error('生成任务创建失败')
     }
+
+    draft.value = null
+    pendingFinalDraft.value = null
+    chatMessages.value = []
+    enqueueGenerationBubble(getGenerationStartMessage())
 
     const source = openDraftGenerationStream({
       taskId: task.taskId,
@@ -426,13 +427,13 @@ async function handleGenerate() {
       ElMessage.error(message)
     })
   } catch (e) {
-    const msg = e.message || '网络错误'
+    const msg = safeUserError(e.message, '生成草稿失败，请稍后重试')
     if (msg.includes('正在生成')) {
       ElMessage.warning('已有草稿正在生成，请稍候')
     } else {
-      ElMessage.error('生成草稿失败，请稍后重试')
+      ElMessage.error(msg)
     }
-    applyProgress({ phase: 'error', message: safeUserError(msg, '生成草稿失败，请稍后重试') })
+    applyProgress({ phase: 'error', message: msg })
     generating.value = false
     stopProgress()
     clearRevealTimers()

@@ -8,6 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +24,7 @@ import com.ruoyi.common.annotation.Anonymous;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
+import com.ruoyi.framework.config.AiConfig;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskState;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskVO;
 import com.ruoyi.postgrad.recommend.domain.RecommendationProgressEvent;
@@ -48,6 +50,10 @@ import com.ruoyi.postgrad.recommend.service.AgentActionProposalService;
 @RestController
 @RequestMapping("/app/ai-recommend-v2")
 public class AppV2RecommendController {
+    private static final String AI_UNAVAILABLE = "AI 服务未配置，请联系管理员";
+
+    @Autowired
+    private AiConfig aiConfig;
 
     @Autowired
     private IDraftService draftService;
@@ -91,6 +97,9 @@ public class AppV2RecommendController {
     @PostMapping("/draft/generate/start")
     public AjaxResult startGenerateDraft() {
         AppLoginUser user = requireLogin();
+        if (!aiConfig.isChatConfigured()) {
+            return AjaxResult.error(HttpStatus.SERVICE_UNAVAILABLE.value(), AI_UNAVAILABLE);
+        }
         DraftGenerationTaskVO task = draftGenerationTaskService.start(user.getUserId());
         return AjaxResult.success(task);
     }
@@ -210,6 +219,9 @@ public class AppV2RecommendController {
     @PostMapping(value = "/draft/generate", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter generateDraft() {
         AppLoginUser user = requireLogin();
+        if (!aiConfig.isChatConfigured()) {
+            return unavailableStream();
+        }
         SseEmitter emitter = new SseEmitter(120_000L);
 
         CompletableFuture.runAsync(() -> {
@@ -422,6 +434,9 @@ public class AppV2RecommendController {
     @PostMapping(value = "/chat/send", produces = "text/event-stream;charset=UTF-8")
     public SseEmitter chat(@RequestBody ChatSendRequest request) {
         AppLoginUser user = requireLogin();
+        if (!aiConfig.isChatConfigured()) {
+            return unavailableStream();
+        }
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             SseEmitter err = new SseEmitter();
             sendSseEvent(err, "error", Map.of("message", "消息不能为空"));
@@ -588,6 +603,13 @@ public class AppV2RecommendController {
      * @param payload   事件数据
      * @return true 发送成功，false 客户端已断开
      */
+    private SseEmitter unavailableStream() {
+        SseEmitter emitter = new SseEmitter();
+        sendSseEvent(emitter, "error", Map.of("message", AI_UNAVAILABLE));
+        emitter.complete();
+        return emitter;
+    }
+
     private boolean sendSseEvent(SseEmitter emitter, String eventName, Map<String, Object> payload) {
         try {
             emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(new LinkedHashMap<>(payload))));

@@ -17,6 +17,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 
 /**
  * AI 模型统一配置 —— 替代各处散落的 buildChatModel() / buildStreamingChatModel()。
@@ -67,6 +68,10 @@ public class AiConfig {
         this.meterRegistry = meterRegistry;
         this.snapshotRecorder = snapshotRecorder;
         this.tracePersistenceService = tracePersistenceService;
+    }
+
+    public boolean isChatConfigured() {
+        return StringUtils.hasText(apiKey);
     }
 
     @Bean
