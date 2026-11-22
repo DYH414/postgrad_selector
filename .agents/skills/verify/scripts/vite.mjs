@@ -11,7 +11,7 @@ const server = await createServer({
     host: '127.0.0.1',
     port: 18082,
     strictPort: true,
-    proxy: { '/dev-api': { target: 'http://127.0.0.1:18080' } },
+    proxy: { '/dev-api': { target: 'http://127.0.0.1:18080', changeOrigin: false } },
   },
 })
 await server.listen()

@@ -31,5 +31,5 @@ curl -fsS "$api/compare?programIds=900001,900002&estimatedScore=330"
 
 ## Gotchas
 
-- The baseline seeds program identities without cutoff rows. Record detail and comparison as blocked when those rows are absent. An empty comparison or a detail error cannot pass the journey.
+- The fixture has cutoff rows for both programs. Header search works from the screening results page with a recommendation already loaded. Expand the school card to see both programs.
 - The search route has a Redis-backed rate limit. Space out repeat runs.

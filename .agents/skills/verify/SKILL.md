@@ -1,27 +1,30 @@
 ---
 name: verify
-description: Drive the PostgradSelector applicant web UI and HTTP API on Linux. Use to verify rule screening, program search and comparison, account and shortlist journeys, and AI workspace entry points.
+description: Drive PostgradSelector on Linux. Verify anonymous screening, the signed-in student journey, and the AI workspace without a provider key.
 ---
 
 # Verify PostgradSelector
 
 ## Launch
 
-From the repository root, build the Java 17 backend and install the Vue 3 applicant UI dependencies. Use JDK 17 or later, Maven 3.9+, and Node.js 18+. Install MariaDB server and client, Redis, Python 3, curl, and iproute2. The Linux recipe uses MariaDB's `/usr/sbin/mariadbd`.
+Install JDK 17 or later, Maven 3.9+, Node.js 18+, MariaDB server and client, Redis, Python 3, curl, iproute2, and Chromium. The Linux recipe uses `/usr/sbin/mariadbd`.
+
+Use an absolute path to a private Markdown credentials file outside the checkout, such as `/tmp/codex-postgrad/test-accounts.md`. Give the file mode `0600`. Include a table row whose first cell is `Student`, second cell is a disposable email, and third cell is a password of at least six characters. Use one line and omit pipe characters in the email and password.
+
+From the repository root, run the following commands.
 
 ```bash
 mvn -B package -DskipTests
 npm --prefix user-ui ci
+export POSTGRAD_TEST_ACCOUNTS=/tmp/codex-postgrad/test-accounts.md
 verify=.agents/skills/verify/scripts/run.sh
 run=$(mktemp -d /tmp/postgrad-verify.XXXXXXXX)
 "$verify" launch "$run"
 ```
 
-If the Maven mirror in `pom.xml` is unreachable, run with `-s` and a local Maven settings file that mirrors all repositories to Maven Central.
+If the Maven mirror in `pom.xml` is unreachable, pass `-s` with local Maven settings that mirror all repositories to Maven Central.
 
-Launch imports the four bootstrap scripts in order into a new database. It adds the synthetic school **验证大学** in **验证省** and two programs. It starts MariaDB on 13306, Redis on 16379, the API on 18080, and the applicant UI on 18082. All listeners bind to loopback. Launch refuses occupied ports. The developer server on 8082 can run alongside it.
-
-Wait for `READY http://127.0.0.1:18082`. Readiness requires the API startup runner to complete and the UI proxy to return the seeded region. The API uses lazy initialization for the anonymous journeys and receives an empty JWT signing configuration. Authenticated journeys and live AI/RAG require their own configured test environment.
+Launch imports the four bootstrap scripts into a disposable database. It seeds **验证大学** in **验证省** with two 22408 programs and 2025 admissions scores. It registers the student through the applicant API and generates a signing secret for the local API process. It starts MariaDB on 13306, Redis on 16379, the API on 18080, and the applicant UI on 18082. The listeners bind to loopback and can run alongside the 8080–8082 developer stack.
 
 ## Doctor
 
@@ -29,38 +32,35 @@ Wait for `READY http://127.0.0.1:18082`. Readiness requires the API startup runn
 "$verify" doctor "$run"
 ```
 
-Doctor checks that the recorded processes own all four ports, the JAR hash matches launch, Redis answers, and the applicant proxy returns the fixture and exam combinations in a successful options response. Drive the instance only after doctor prints `READY`.
+Wait for `READY` before driving the browser. Doctor checks listener ownership, the backend JAR checksum, Redis, and the fixture options through the UI proxy. It also signs in, checks the authenticated applicant identity, and signs out. The transcript records HTTP and JSON status codes.
 
 ## Drive
 
-Choose a recipe in the [feature map](features/README.md). For the scripted browser recipe, install Playwright Core outside the checkout and point it at a local Chromium binary.
+Install Playwright Core outside the checkout and point it at local Chromium.
 
 ```bash
 browser_tools=$(mktemp -d /tmp/postgrad-browser.XXXXXXXX)
 npm install --prefix "$browser_tools" --no-save --no-package-lock playwright-core@1.65.1
 export PLAYWRIGHT_MODULE="$browser_tools/node_modules/playwright-core"
 export CHROME_BIN=/usr/bin/google-chrome
+"$verify" drive "$run"
 ```
 
-The [screening form](features/rule-screening.md) recipe exercises both browser routes. The HTTP paths in the map are the same API paths the applicant UI calls through `/dev-api`.
+Drive runs doctor, the anonymous screening recipe, and the signed-in [student journey](features/applicant-account.md). The student signs in, saves and reloads a profile, generates screening results for 330 and 22408 in 验证省, searches the catalog, opens program details, compares two programs, adds and removes shortlist entries, and opens **我的** at `/profile`. The script checks that draft generation and chat explain missing provider configuration. It then signs out and verifies that a returning student reaches the requested page after signing in again.
+
+Use the [feature map](features/README.md) for individual browser and HTTP checks. The applicant UI calls the API through `/dev-api`.
 
 ## Evidence
 
-Keep command output and exit status, browser screenshots and accessibility snapshots, and HTTP status and response bodies under `"$run/evidence"`. Record the feature ID, entry point, action, and resulting state. Capture successful writes through a fresh read. Report a missing precondition with the attempted entry point and leave the journey unverified. Use the real UI and API. The SQL fixture supplies data through the database.
+Find the doctor, screening, and student transcripts in `"$run/evidence"`. The browser scripts save screenshots, accessibility snapshots, and HTTP statuses and responses. Write checks use a fresh read after the UI action. Keep passwords, signed session tokens, and stream tokens out of evidence.
 
 ## Cleanup
 
-Run cleanup after success or failure. Check that the artifacts still exist.
+Run cleanup after success or failure. Check that the evidence remains.
 
 ```bash
 "$verify" cleanup "$run"
 find "$run/evidence" -maxdepth 1 -type f -print
 ```
 
-Cleanup sends TERM to the recorded processes after checking their start times. It removes `"$run/state"` and preserves `"$run/evidence"`. The optional `"$browser_tools"` directory contains only Playwright dependencies and can be deleted after the browser closes.
-
-## Helpers
-
-- `scripts/run.sh {launch|doctor|cleanup} "$run"` manages the isolated stack.
-- `scripts/screening.cjs "$run"` drives the browser and saves evidence. See the screening recipe for the transcript command.
-- Launch runs `scripts/vite.mjs` against `user-ui` and the run's cache directory. Launch imports `scripts/fixtures.sql` after the repository schema scripts.
+Cleanup checks process start times before sending TERM. It removes `"$run/state"` and preserves `"$run/evidence"`. The optional `"$browser_tools"` directory contains Playwright dependencies.

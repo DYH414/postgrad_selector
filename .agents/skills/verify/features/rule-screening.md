@@ -18,7 +18,7 @@ Applicants choose an estimated score, exam combination, region, and score range 
 Run doctor and install Playwright as described in the [verification skill](../SKILL.md).
 
 - **Anonymous form and login prompt.** From the repository root run `.agents/skills/verify/scripts/screening.cjs "$run" > "$run/evidence/screening.log" 2>&1`. It opens both routes, waits for options from the live API, enters 330, and selects **22408**, **验证省**, and **均分+10**. Expect those values in the form and summary. It clicks **开始筛选** and expects **需要登录**. On `/` it dismisses the prompt and checks that the score remains 330. On `/recommend` it follows the login link and checks that the redirect points back to `/recommend`.
-- **Signed-in results.** In a configured disposable stack, sign in and fill the same form with a score and exam combination that match the imported admissions data. Click **开始筛选**. Expect `POST /dev-api/app/recommendation/generate` to return JSON `code: 200`, a candidate, and a recommendation ID. Reload `/results?id=<recommendationId>`. Confirm the same candidate and a successful `GET /dev-api/app/recommendation/result/<recommendationId>`.
+- **Signed-in results.** Run the signed-in student journey with the fixture account. Fill the form with 330, **22408**, **验证省**, and **均分+10**. Click **开始筛选**. Expect `POST /dev-api/app/recommendation/generate` to return JSON `code: 200`, both fixture programs, and a recommendation ID. Reload `/results?id=<recommendationId>`. Confirm the same candidate and a successful `GET /dev-api/app/recommendation/result/<recommendationId>`.
 
 For a fresh run, confirm that the anonymous actions sent no generation request and created no recommendation row.
 
@@ -30,6 +30,6 @@ test "$(cat "$run/evidence/recommendation-log-count.txt")" = 0
 
 ## Gotchas
 
-- The anonymous recipe proves form behavior and the login gate. Generating results needs a signing secret, a test account, and programs with exam subjects and admissions scores. The baseline fixture lacks those preconditions.
+- Launch supplies a signing secret, a student account, and both cutoff and average admitted scores. Anonymous and signed-in browser checks use separate contexts.
 - The backend supplies its defaults asynchronously. Wait for 300 before changing the score.
 - The score-range button opens a tooltip. Select the region first so the tooltip cannot cover its field.

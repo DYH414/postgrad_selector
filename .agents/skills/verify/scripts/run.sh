@@ -52,7 +52,7 @@ http() {
   curl --noproxy '*' -fsS --max-time 10 "$1"
 }
 
-doctor() {
+services_ready() {
   local service port
   while read -r service port; do
     listener "$service" "$port" || { echo "$service does not own port $port" >&2; return 1; }
@@ -75,7 +75,12 @@ assert [item["code"] for item in data["examCombos"]] == ["11408", "22408"], data
 assert data["regions"] == ["验证省"], data
 assert data["defaultProfile"]["estimatedScore"] == 300, data
 ' || return 1
-  printf 'READY %s (API %s). Anonymous options and fixture verified.\n' "$ui" "$api"
+}
+
+doctor() {
+  services_ready || return 1
+  node "$scripts/student-account.cjs" doctor "$ui" || return 1
+  printf 'READY %s (API %s). Fixture options and student session verified.\n' "$ui" "$api"
 }
 
 case "$command" in
@@ -84,6 +89,7 @@ case "$command" in
     for port in 13306 16379 18080 18082; do
       [[ -z "$(ss -H -ltn "sport = :$port")" ]] || { echo "Port $port is already in use." >&2; exit 1; }
     done
+    test -r "${POSTGRAD_TEST_ACCOUNTS:?Set POSTGRAD_TEST_ACCOUNTS to the local credentials file}"
     test -f "$jar"
     test -d "$repo/user-ui/node_modules/vite"
     mkdir -p "$state/"{db,redis,logs,uploads} "$evidence"
@@ -112,18 +118,22 @@ SQL
     start redis redis-server --bind 127.0.0.1 --port 16379 --dir "$state/redis" --save '' --appendonly no
     sed "s|/home/ruoyi/logs|$state/logs|g" "$repo/ruoyi-admin/src/main/resources/logback.xml" > "$state/logback.xml"
     cd "$state"
-    start api env -u JWT_SECRET -u DEEPSEEK_API_KEY -u SILICONFLOW_API_KEY -u QDRANT_API_KEY \
+    JWT_SECRET=$(node -p "require('node:crypto').randomBytes(64).toString('base64')")
+    export JWT_SECRET
+    start api env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u DEEPSEEK_API_KEY -u SILICONFLOW_API_KEY -u QDRANT_API_KEY \
       -u MYSQL_PASSWORD -u REDIS_PASSWORD java "-Dlogback.configurationFile=$state/logback.xml" -jar "$jar" \
-      --server.address=127.0.0.1 --server.port=18080 --spring.main.lazy-initialization=true --token.secret= \
+      --server.address=127.0.0.1 --server.port=18080 --spring.main.lazy-initialization=true \
       "--logging.config=$state/logback.xml" "--ruoyi.profile=$state/uploads" "--app.ai.rag.data-dir=$state/rag" \
       --app.ai.rag.qdrant.url=http://127.0.0.1:1 --app.ai.rag.qdrant.host=127.0.0.1 --app.ai.rag.qdrant.grpc-port=1 \
       --spring.datasource.druid.master.username=postgrad_verify \
       --spring.datasource.druid.master.url=jdbc:mysql://127.0.0.1:13306/postgrad_selector \
       --spring.data.redis.host=127.0.0.1 --spring.data.redis.port=16379
+    unset JWT_SECRET
     start ui env -u VITE_APP_BASE_API node "$scripts/vite.mjs" "$repo/user-ui" "$state/vite-cache"
     for attempt in {1..60}; do
-      if doctor > "$evidence/readiness.log" 2>&1; then
-        cat "$evidence/readiness.log"
+      if services_ready > "$evidence/readiness.log" 2>&1; then
+        node "$scripts/student-account.cjs" register "$ui" | tee "$evidence/fixture-account.log"
+        doctor | tee "$evidence/readiness.log"
         exit 0
       fi
       sleep 1
@@ -134,6 +144,12 @@ SQL
     ;;
   doctor)
     doctor
+    ;;
+  drive)
+    doctor | tee "$evidence/doctor.log"
+    unset POSTGRAD_VERIFY_URL
+    node "$scripts/screening.cjs" "$run" 2>&1 | tee "$evidence/screening.log"
+    node "$scripts/student.cjs" "$evidence" 2>&1 | tee "$evidence/student.log"
     ;;
   cleanup)
     for service in ui api redis db; do
@@ -153,7 +169,7 @@ SQL
     printf 'Stopped verification processes. Evidence remains in %s.\n' "$evidence"
     ;;
   *)
-    echo "Usage: $0 {launch|doctor|cleanup} RUN_DIR" >&2
+    echo "Usage: $0 {launch|doctor|drive|cleanup} RUN_DIR" >&2
     exit 2
     ;;
 esac
