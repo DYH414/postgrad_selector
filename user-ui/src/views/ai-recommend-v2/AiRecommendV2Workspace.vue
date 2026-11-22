@@ -534,6 +534,7 @@ function handleAskAbout(programId, schoolName, programName) {
 }
 
 async function handleChatSend(message) {
+  if (chatStreaming.value) return
   chatVisible.value = true
   chatMessages.value.push({ role: 'user', content: message })
   chatStreaming.value = true
