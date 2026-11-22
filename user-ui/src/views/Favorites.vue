@@ -105,7 +105,7 @@
         <el-button type="primary" @click="$router.push('/recommend')">去生成推荐</el-button>
       </div>
     </div>
-    <el-drawer title="备选专业详情" :visible.sync="detailVisible" size="520px" append-to-body>
+    <el-drawer title="备选专业详情" v-model="detailVisible" size="520px" append-to-body>
       <div class="detail-drawer" v-loading="detailLoading">
         <template v-if="detail">
           <h2>{{ detail.basic.schoolName }}</h2>
