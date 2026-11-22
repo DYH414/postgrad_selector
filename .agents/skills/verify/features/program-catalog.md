@@ -27,7 +27,7 @@ curl -fsS "$api/compare?programIds=900001,900002&estimatedScore=330"
 
 - **Search.** Expect JSON `code: 200`, `total: 2`, and IDs 900001 and 900002 in either order. The absent keyword should return `total: 0` and an empty `items` array. In Playwright, fill the header placeholder with **验证大学**, press Enter, and wait for **验证大学** in the results.
 - **Detail.** Expect `data.basic.schoolName` to be **验证大学**. In Playwright, click **查看详情** on the matching card and wait for the school heading in the detail panel.
-- **Compare.** Expect `data.estimatedScore` to be 330 and `data.items` to contain both requested IDs. To cover the browser comparison from a signed-in fixture, select the two programs in `/favorites`, choose **对比所选**, and confirm both program names appear in the comparison.
+- **Compare.** Expect `data.estimatedScore` to be 330 and `data.items` to contain both requested IDs. Follow the [signed-in shortlist journey](applicant-account.md) to verify the comparison through **我的** and `/favorites` and confirm both program names and their cutoff scores.
 
 ## Gotchas
 

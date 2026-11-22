@@ -5,6 +5,7 @@ Use this map for user-visible journeys. Start with [launch and doctor](../SKILL.
 ## Baseline preconditions
 
 - Applicant UI at `http://127.0.0.1:18082`, with its API on 18080.
+- Admin UI at `http://127.0.0.1:18081` with a disposable school viewer.
 - Disposable MariaDB and Redis instances owned by the same run.
 - Synthetic school **验证大学**, region **验证省**, and programs 900001 and 900002 with 22408 subjects and 2025 admissions data.
 - A fresh browser context for anonymous journeys and a disposable student registered by launch.
@@ -15,7 +16,7 @@ Use this map for user-visible journeys. Start with [launch and doctor](../SKILL.
 - Verify both HTTP status and JSON `code`. The API can return HTTP 200 for an application error.
 - Report each entry point you drove. Use a fresh profile or a disposable account with the required permissions for authenticated flows.
 
-Run `scripts/run.sh drive "$run"` from the skill directory, or use the commands in [Verify PostgradSelector](../SKILL.md), to cover the anonymous and signed-in journeys together.
+Run `scripts/run.sh drive "$run"` from the skill directory, or use the commands in [Verify PostgradSelector](../SKILL.md), to cover the applicant and admin journeys together.
 
 ## Evidence
 
@@ -27,3 +28,4 @@ Record the entry point and the response or screen it produces in the run's evide
 - [Program search and comparison](program-catalog.md) covers public search, detail, and comparison.
 - [Account, profile, and shortlist](applicant-account.md) covers applicant entry points and persistence.
 - [AI workspace and reports](ai-workspace.md) covers draft, chat, and saved reports.
+- [Admin school workspace](admin-workspace.md) covers the school counts, completeness chart, and school catalog navigation.

@@ -14,10 +14,17 @@ const profilePath = '/app/profile'
 async function verify() {
   const { account, password } = await readStudent()
   const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome' })
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
-  page.setDefaultTimeout(12000)
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } })
   const errors = []
-  page.on('pageerror', error => errors.push(error.message))
+
+  async function openTab() {
+    const tab = await context.newPage()
+    tab.setDefaultTimeout(12000)
+    tab.on('pageerror', error => errors.push(error.message))
+    return tab
+  }
+
+  let page = await openTab()
 
   const heading = name => page.getByRole('heading', { name, exact: true })
   const button = name => page.getByRole('button', { name, exact: true })
@@ -145,6 +152,40 @@ async function verify() {
     }
     await screen('student-catalog')
 
+    await page.close()
+    page = await openTab()
+    await page.goto(base + '/')
+    await nav('我的').click()
+    await checkRoute('/profile')
+    await heading('我的').waitFor()
+    await page.getByText('330 分', { exact: true }).waitFor()
+    const profileShortlistTab = () => page.getByRole('tab', { name: '备选学校', exact: true }).click()
+    const profileShortlist = await api('student-profile-shortlist', 'GET', '/app/favorites', profileShortlistTab)
+    assert.deepEqual(profileShortlist.data.map(item => item.programId).sort(), ids)
+    const profileCompareButton = button('对比所选')
+    for (const name of programs) {
+      assert.equal(await profileCompareButton.isDisabled(), true)
+      await page.locator('.shortlist-card').filter({ hasText: name }).locator('label.el-checkbox').click()
+    }
+    const profileComparison = await api('student-profile-compare', 'GET', '/app/programs/compare', () =>
+      profileCompareButton.click())
+    await checkRoute('/results')
+    const table = page.locator('.compare-table')
+    const compareRow = name => table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) })
+    const cutoffRow = compareRow('复试线')
+    await cutoffRow.getByRole('cell', { name: '310', exact: true }).waitFor()
+    const comparedPrograms = await compareRow('专业').getByRole('cell').allTextContents()
+    const cutoffs = await cutoffRow.getByRole('cell').allTextContents()
+    const gaps = await compareRow('与最低录取分差距').getByRole('cell').allTextContents()
+    await screen('student-profile-compare')
+    console.log(`我的 → 备选学校 → 对比所选 | ${comparedPrograms.join(' / ')} | 复试线 ${cutoffs.join(' / ')} | 与最低录取分差距 ${gaps.join(' / ')} | 预估分 ${profileComparison.data.estimatedScore}`)
+    assert.deepEqual(profileComparison.data.items.map(item => item.programId).sort(), ids)
+    assert.deepEqual(comparedPrograms, programs)
+    assert.deepEqual(cutoffs, ['310', '315'])
+    assert.deepEqual(gaps, ['+15', '+10'])
+    assert.equal(profileComparison.data.estimatedScore, 330)
+    await button('清空对比').click()
+
     const saved = await api('student-shortlist', 'GET', '/app/favorites', () => page.goto(base + '/favorites'))
     assert.deepEqual(saved.data.map(item => item.programId).sort(), ids)
     const favoriteRow = name => page.getByRole('row').filter({ hasText: name })
@@ -180,6 +221,12 @@ async function verify() {
     await heading('我的').waitFor()
     await page.getByText('330 分', { exact: true }).waitFor()
     await screen('student-mine')
+    const emptyProfileShortlist = await api('student-profile-shortlist-empty', 'GET', '/app/favorites', profileShortlistTab)
+    assert.deepEqual(emptyProfileShortlist.data, [])
+    await heading('暂无备选方案').waitFor()
+    assert.equal(await profileCompareButton.isDisabled(), true)
+    await screen('student-profile-shortlist-empty')
+    console.log('我的 → 备选学校 | 暂无备选方案 | 备选总数 0')
 
     await api('student-ai-workspace', 'GET', '/app/ai-recommend-v2/draft', () => nav('AI 推荐').click())
     await checkRoute('/ai-recommend')
