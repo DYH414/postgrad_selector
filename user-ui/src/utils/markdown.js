@@ -5,6 +5,7 @@ const md = new MarkdownIt({
   linkify: true,
   html: false
 })
+md.linkify.set({ fuzzyLink: false })
 
 /**
  * 渲染 markdown 字符串为 HTML。
