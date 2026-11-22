@@ -562,11 +562,11 @@ const filteredItems = computed(() => {
   const filtered = !kw || (isCatalogSearch.value && kw === String(route.query.keyword).toLowerCase())
     ? items
     : items.filter(school =>
-    (school.schoolName || '').toLowerCase().includes(kw) ||
-    (school.collegeName || '').toLowerCase().includes(kw) ||
-    (school.programName || '').toLowerCase().includes(kw) ||
-    (school.programCode || '').toLowerCase().includes(kw)
-  )
+      (school.schoolName || '').toLowerCase().includes(kw) ||
+      (school.collegeName || '').toLowerCase().includes(kw) ||
+      (school.programName || '').toLowerCase().includes(kw) ||
+      (school.programCode || '').toLowerCase().includes(kw)
+    )
   return groupSchools(filtered)
 })
 
@@ -910,7 +910,9 @@ function applyFilters() {
     window.sessionStorage.setItem('app-recommend-result', JSON.stringify(data))
     if (data.recommendationId) {
       window.sessionStorage.setItem('app-recommend-id', data.recommendationId)
-      router.replace({ path: '/results', query: { ...route.query, id: data.recommendationId } }).catch(() => {})
+      const query = { ...route.query, id: data.recommendationId }
+      delete query.keyword
+      router.replace({ path: '/results', query }).catch(() => {})
     }
     ElMessage.success('筛选结果已更新')
   }).finally(() => {
