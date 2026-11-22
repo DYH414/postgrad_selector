@@ -104,7 +104,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit 300
     </select>
 
-    <select id="selectProgramForRecommendation" resultType="com.ruoyi.postgrad.domain.RowMap">
+    <sql id="CatalogProgramById">
         select
             p.id as programId, s.id as schoolId, s.name as schoolName,
             s.province as province, s.city as city, s.tier as schoolTier,
@@ -118,7 +118,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             p.is_joint_program as isJointProgram,
             subj.subject_codes as subjectCodes,
             subj.subject_names as subjectNames,
-            sc.year as dataYear, sc.score_line as scoreLine,
+            coalesce(sc.year, recent.year) as dataYear, sc.score_line as scoreLine,
             ap.total_plan as planCount, ap.unified_exam_quota as unifiedExamQuota,
             ap.retest_count as retestCount,
             ar.admitted_count as admittedCount,
@@ -141,18 +141,34 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             join subject sub on ps.subject_id = sub.id
             group by ps.program_id
         ) subj on subj.program_id = p.id
-        join admission_score sc on sc.program_id = p.id
+        left join admission_score sc on sc.program_id = p.id
           and sc.year = (
             select max(sc2.year) from admission_score sc2
             where sc2.program_id = p.id and sc2.score_line is not null
           )
-        left join admission_plan ap on ap.program_id = p.id and ap.year = sc.year
-        left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
-        left join program_year_data_quality q on q.program_id = p.id and q.year = sc.year
+        left join (
+            select max(year) as year from (
+                select year from admission_plan where program_id = #{programId}
+                union all
+                select year from admission_result where program_id = #{programId}
+            ) admission_years
+        ) recent on sc.year is null
+        left join admission_plan ap on ap.program_id = p.id and ap.year = coalesce(sc.year, recent.year)
+        left join admission_result ar on ar.program_id = p.id and ar.year = coalesce(sc.year, recent.year)
+        left join program_year_data_quality q on q.program_id = p.id and q.year = coalesce(sc.year, recent.year)
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
         where p.id = #{programId} and p.status = 'active' and s.status = 'active'
+    </sql>
+
+    <select id="selectProgramForRecommendation" resultType="com.ruoyi.postgrad.domain.RowMap">
+        <include refid="CatalogProgramById"/>
+        and sc.score_line is not null
+    </select>
+
+    <select id="selectCatalogProgram" resultType="com.ruoyi.postgrad.domain.RowMap">
+        <include refid="CatalogProgramById"/>
     </select>
 
     <select id="selectTrends" resultType="com.ruoyi.postgrad.domain.RowMap">

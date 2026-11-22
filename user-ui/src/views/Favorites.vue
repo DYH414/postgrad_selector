@@ -73,9 +73,10 @@
             <tr>
               <td>与预估分差距</td>
               <td v-for="s in compareSchools" :key="s.compareKey">
-                <span class="score-diff" :class="{ positive: s.admissionLowGap >= 0, negative: s.admissionLowGap < 0 }">
+                <span v-if="s.admissionLowGap != null" class="score-diff" :class="{ positive: s.admissionLowGap >= 0, negative: s.admissionLowGap < 0 }">
                   {{ s.admissionLowGap > 0 ? '+' : '' }}{{ s.admissionLowGap }}
                 </span>
+                <span v-else>-</span>
               </td>
             </tr>
             <tr>
@@ -116,7 +117,7 @@
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
-            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine }}</strong></div>
+            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine ?? '-' }}</strong></div>
             <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
           </div>
           <div class="drawer-warning">
@@ -238,7 +239,7 @@ watch(compareIds, (ids, _, onCleanup) => {
         exam: item.examSubjectsLabel || '-',
         score: item.scoreLine ?? '-',
         admissionLow: item.admissionLow ?? '-',
-        admissionLowGap: item.admissionLowGap ?? 0,
+        admissionLowGap: item.admissionLowGap,
         range: item.admissionRangeLabel || '-',
         quota: item.planCount || '-',
         confidence: item.dataCompleteness || '-'

@@ -220,7 +220,7 @@
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
-            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine }}</strong></div>
+            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine ?? '-' }}</strong></div>
             <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
           </div>
           <div class="drawer-warning">

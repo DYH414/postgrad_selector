@@ -125,7 +125,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     @Override
     public Map<String, Object> programDetail(Long programId, Integer estimatedScore)
     {
-        var row = recommendationMapper.selectProgramForRecommendation(programId);
+        var row = recommendationMapper.selectCatalogProgram(programId);
         if (row == null) throw new RuntimeException("专业不存在或已停招");
         int score = estimatedScore == null ? 0 : estimatedScore;
         ProgramSummaryDTO item = ProgramSummaryDTO.fromRowMap(row, score);
@@ -153,7 +153,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         {
             try
             {
-                var row = recommendationMapper.selectProgramForRecommendation(programId);
+                var row = recommendationMapper.selectCatalogProgram(programId);
                 if (row != null) items.add(compareProgramItem(ProgramSummaryDTO.fromRowMap(row, score)));
             }
             catch (Exception ignored) {}
