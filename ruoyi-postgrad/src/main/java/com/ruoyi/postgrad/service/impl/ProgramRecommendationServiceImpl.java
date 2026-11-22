@@ -365,6 +365,9 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     private Map<String, Object> compareProgramItem(ProgramSummaryDTO item)
     {
         Map<String, Object> compareItem = new LinkedHashMap<>(basicInfo(item));
+        compareItem.put("is985", item.getIs985());
+        compareItem.put("is211", item.getIs211());
+        compareItem.put("isDoubleFirst", item.getIsDoubleFirst());
         compareItem.putAll(recommendationOverview(item));
         compareItem.remove("fitLevel");
         compareItem.remove("fitLevelLabel");

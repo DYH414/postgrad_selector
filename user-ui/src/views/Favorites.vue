@@ -45,18 +45,20 @@
         <table v-if="compareSchools.length" class="compare-table">
           <thead>
             <tr>
-              <th></th>
-              <th v-for="s in compareSchools" :key="s.compareKey">{{ s.name }}</th>
+              <th scope="col">项目</th>
+              <th v-for="s in compareSchools" :key="s.compareKey" scope="col">
+                <CompareProgramHeader :program="s" />
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td>专业</td>
-              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.program }}</td>
+              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.programName }}</td>
             </tr>
             <tr>
               <td>学院</td>
-              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.college || '-' }}</td>
+              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.collegeName || '-' }}</td>
             </tr>
             <tr>
               <td>学位</td>
@@ -138,6 +140,7 @@ import { ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
+import CompareProgramHeader from '@/components/CompareProgramHeader.vue'
 import { useUserStore } from '@/stores/user'
 import { listFavorites, removeFavorite } from '@/api/favorites'
 import { getProgramDetail, comparePrograms } from '@/api/programs'
@@ -237,9 +240,12 @@ watch(compareIds, (ids, _, onCleanup) => {
       const items = (res.data && res.data.items) || []
       compareSchools.value = items.map(item => ({
         compareKey: `p:${item.programId || item.program_id}`,
-        name: item.schoolName || '-',
-        program: item.programName || '-',
-        college: item.collegeName || '-',
+        schoolName: item.schoolName || '-',
+        collegeName: item.collegeName,
+        programName: item.programName || '-',
+        is985: item.is985,
+        is211: item.is211,
+        isDoubleFirst: item.isDoubleFirst,
         degreeTypeLabel: item.degreeTypeLabel || '-',
         exam: item.examSubjectsLabel || '-',
         score: item.scoreLine ?? '-',

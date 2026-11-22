@@ -142,12 +142,19 @@
               </div>
             </div>
             <table v-if="activeCompareTab === 'compare' && compareSchools.length" class="compare-table">
+              <thead>
+                <tr>
+                  <th scope="col">项目</th>
+                  <th v-for="school in compareSchools" :key="school.compareKey" scope="col">
+                    <CompareProgramHeader :program="school" />
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 <tr v-for="row in compareRows" :key="row.label">
                   <th>{{ row.label }}</th>
                   <td v-for="school in compareSchools" :key="school.compareKey + row.label">
-                    <template v-if="row.type === 'name'"><strong>{{ school.name }}</strong></template>
-                    <template v-else-if="row.type === 'diff'">
+                    <template v-if="row.type === 'diff'">
                       <span class="score-diff" :class="{ positive: school[row.key] >= 0, negative: school[row.key] < 0 }">
                         {{ school[row.key] > 0 ? '+' : '' }}{{ school[row.key] }}
                       </span>
@@ -437,6 +444,7 @@ import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
+import CompareProgramHeader from '@/components/CompareProgramHeader.vue'
 import { generateRecommendation, getRecommendationOptions, getRecommendationResult } from '@/api/recommendation'
 import { comparePrograms, getProgramDetail, searchPrograms } from '@/api/programs'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
@@ -488,8 +496,7 @@ const filterForm = ref(emptyFilters())
 const appliedFilters = ref(emptyFilters())
 const optionRegions = ref(['福建', '广东', '浙江', '上海'])
 const compareRows = [
-  { label: '学校', type: 'name' },
-  { label: '专业', key: 'program' },
+  { label: '专业', key: 'programName' },
   { label: '学位', key: 'degreeTypeLabel' },
   { label: '考试组合', key: 'exam' },
   { label: '数据年份', key: 'dataYearLabel' },
@@ -1004,8 +1011,12 @@ function loadCompare() {
         compareKey: school.programId
           ? `program:${school.programId}`
           : `local:${school.schoolName}:${school.collegeName}:${school.programName}:${school.examCombo}`,
-        name: school.schoolName,
-        program: school.programName,
+        schoolName: school.schoolName,
+        collegeName: school.collegeName,
+        programName: school.programName,
+        is985: school.is985,
+        is211: school.is211,
+        isDoubleFirst: school.isDoubleFirst,
         degreeTypeLabel: item.degreeTypeLabel || '-',
         exam: school.exam,
         dataYear: school.dataYear,
@@ -2089,10 +2100,13 @@ if (activeTab.value === 'compare') {
 }
 
 .compare-table th {
-  width: 155px;
   background: #f8fbff;
-  text-align: left;
   color: #1f2937;
+}
+
+.compare-table th:first-child {
+  width: 155px;
+  text-align: left;
 }
 
 .star {

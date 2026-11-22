@@ -6,9 +6,11 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core')
 
 const evidence = process.argv[2]
 const { readStudent } = require('./student-account.cjs')
+const { checkCompareHeaders } = require('./compare-headers.cjs')
 const base = process.env.POSTGRAD_VERIFY_URL || 'http://127.0.0.1:18082'
 const programs = ['验证计算机科学', '验证计算机技术']
 const ids = [900001, 900002]
+const compareHeaders = programs.map(name => ['验证大学', '验证计算机学院', name, '985 211 双一流'])
 const profilePath = '/app/profile'
 
 async function verify() {
@@ -174,6 +176,7 @@ async function verify() {
     const compareRow = name => table.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) })
     const cutoffRow = compareRow('复试线')
     await cutoffRow.getByRole('cell', { name: '310', exact: true }).waitFor()
+    await checkCompareHeaders(table, compareHeaders)
     const comparedPrograms = await compareRow('专业').getByRole('cell').allTextContents()
     const cutoffs = await cutoffRow.getByRole('cell').allTextContents()
     const gaps = await compareRow('与最低录取分差距').getByRole('cell').allTextContents()
@@ -194,7 +197,8 @@ async function verify() {
       button('对比所选').click())
     assert.deepEqual(comparison.data.items.map(item => item.programId).sort(), ids)
     await heading('院校对比').waitFor()
-    for (const name of programs) await page.locator('.compare-table').getByText(name, { exact: true }).waitFor()
+    for (const name of programs) await page.locator('.compare-table tbody').getByText(name, { exact: true }).waitFor()
+    await checkCompareHeaders(page.locator('.compare-table'), compareHeaders)
     assert.equal(comparison.data.estimatedScore, 330)
     await screen('student-compare')
 

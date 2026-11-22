@@ -1,5 +1,5 @@
-INSERT INTO school (id, name, province, city)
-VALUES (900001, '验证大学', '验证省', '验证市');
+INSERT INTO school (id, name, province, city, tier, is_985, is_211, is_double_first)
+VALUES (900001, '验证大学', '验证省', '验证市', '985', 1, 1, 1);
 
 INSERT INTO college (id, school_id, name)
 VALUES (900001, 900001, '验证计算机学院');
