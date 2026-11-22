@@ -457,7 +457,10 @@ function compareSelected() {
     ElMessage.warning('至少选择 2 个项目进行对比')
     return
   }
-  router.push({ path: '/results', query: { tab: 'compare', programIds: ids.join(',') } })
+  router.push({
+    path: '/results',
+    query: { tab: 'compare', programIds: ids.join(','), score: profile.estimatedScore || undefined }
+  })
 }
 
 function openDetail(row) {
