@@ -13,8 +13,8 @@ export const useUserStore = defineStore('user', () => {
 
   async function loginAction(credentials) {
     const res = await login(credentials)
+    clearSession()
     token.value = res.token
-    userId.value = res.userId
     setToken(res.token)
     return res
   }
