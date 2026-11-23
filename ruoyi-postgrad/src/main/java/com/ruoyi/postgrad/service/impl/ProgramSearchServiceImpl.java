@@ -65,6 +65,8 @@ public class ProgramSearchServiceImpl implements IProgramSearchService
         item.put("scoreLineGap", null);
         item.put("unifiedExamQuota", row.get("unifiedExamQuota"));
         item.put("planCount", row.get("planCount"));
+        item.put("admittedCount", row.get("admittedCount"));
+        item.put("retestCount", row.get("retestCount"));
         item.put("dataCompleteness", row.get("dataCompleteness"));
         item.put("sourceUrl", row.get("sourceUrl"));
         item.put("sourceTitle", row.get("sourceTitle"));

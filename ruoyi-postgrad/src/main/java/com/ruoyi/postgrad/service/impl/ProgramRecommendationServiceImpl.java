@@ -162,12 +162,12 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
 
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("basic", basicInfo(item));
-        detail.put("recommendationOverview", recommendationOverview(item));
+        detail.put("recommendationOverview", recommendationOverview(item, row.get("avgAdmittedScore")));
         detail.put("trends", computeTrends(programId, score));
         detail.put("riskWarnings", Arrays.asList(
             "复试线只代表进入复试门槛，不代表最低录取分。",
             "筛选学校不代表只有这些学校可以报，平台结果仅是基于现有数据的候选线索。",
-            "N诺数据可能遗漏、过时或错误，请以院校官方公告为准。"
+            "数据可能遗漏、过时或错误，请以院校官方公告为准。"
         ));
         detail.put("source", sourceInfo(item));
         detail.put("dataCompleteness", dataCompletenessInfo(item.getDataCompleteness() != null ? item.getDataCompleteness() : "C"));
@@ -184,7 +184,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             try
             {
                 var row = recommendationMapper.selectCatalogProgram(programId);
-                if (row != null) items.add(compareProgramItem(ProgramSummaryDTO.fromRowMap(row, score)));
+                if (row != null) items.add(compareProgramItem(ProgramSummaryDTO.fromRowMap(row, score), row.get("avgAdmittedScore")));
             }
             catch (Exception ignored) {}
         }
@@ -320,21 +320,22 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         return basic;
     }
 
-    private Map<String, Object> recommendationOverview(ProgramSummaryDTO item)
+    private Map<String, Object> recommendationOverview(ProgramSummaryDTO item, Object average)
     {
         Map<String, Object> overview = new LinkedHashMap<>();
         for (String key : Arrays.asList("fitLevel", "fitLevelLabel", "scoreLine", "scoreLineGap",
-            "admissionLow", "admissionLowGap", "admissionRangeLabel", "avgAdmittedScore", "avgScoreGap",
+            "admissionLow", "admissionLowGap", "admissionRangeLabel", "avgScoreGap",
             "admissionHigh", "admissionHighGap", "planCount", "unifiedExamQuota", "retestCount",
             "admittedCount", "retestAdmissionRatio"))
             overview.put(key, getField(item, key));
+        overview.put("avgAdmittedScore", average);
         return overview;
     }
 
     private Map<String, Object> sourceInfo(ProgramSummaryDTO item)
     {
         Map<String, Object> source = new LinkedHashMap<>();
-        source.put("sourceName", item.getSourceName());
+        source.put("sourceName", item.getSourceOwner() != null ? item.getSourceOwner() : item.getSourceName());
         source.put("sourceType", item.getSourceType());
         source.put("dataYear", item.getDataYear());
         source.put("sourceUrl", item.getSourceUrl());
@@ -369,7 +370,6 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             case "admissionLowGap" -> item.getAdmissionLowGap();
             case "admissionHigh" -> item.getAdmissionHigh();
             case "admissionHighGap" -> item.getAdmissionHighGap();
-            case "avgAdmittedScore" -> item.getAvgAdmittedScore();
             case "avgScoreGap" -> item.getAvgScoreGap();
             case "admissionRangeLabel" -> item.getAdmissionRangeLabel();
             case "planCount" -> item.getPlanCount();
@@ -381,13 +381,13 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
         };
     }
 
-    private Map<String, Object> compareProgramItem(ProgramSummaryDTO item)
+    private Map<String, Object> compareProgramItem(ProgramSummaryDTO item, Object average)
     {
         Map<String, Object> compareItem = new LinkedHashMap<>(basicInfo(item));
         compareItem.put("is985", item.getIs985());
         compareItem.put("is211", item.getIs211());
         compareItem.put("isDoubleFirst", item.getIsDoubleFirst());
-        compareItem.putAll(recommendationOverview(item));
+        compareItem.putAll(recommendationOverview(item, average));
         compareItem.remove("fitLevel");
         compareItem.remove("fitLevelLabel");
         compareItem.put("dataCompleteness",
@@ -433,10 +433,11 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("level", level);
-        item.put("label", "N诺数据完整度 " + level);
+        item.put("label", "数据完整度 " + level);
         item.put("description", switch (level) {
             case "A" -> "含复试线、拟录取区间、人数等字段";
             case "B" -> "含主要分数字段，部分字段缺失";
+            case "D" -> "缺少复试总分线";
             default -> "仅有复试线或基础字段";
         });
         return item;
@@ -450,8 +451,8 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             row("admissionLow", "最低录取分"), row("admissionLowGap", "与最低录取分差距"),
             row("admissionHigh", "最高录取分"), row("admissionHighGap", "与最高录取分差距"),
             row("avgScoreGap", "与拟录取均分差距"), row("admissionRangeLabel", "拟录取区间（总分）"),
-            row("planCount", "招生人数（含推免）"), row("dataCompleteness", "N诺数据完整度"),
-            row("sourceUrl", "N诺来源"));
+            row("planCount", "招生人数（含推免）"), row("dataCompleteness", "数据完整度"),
+            row("sourceUrl", "数据来源"));
     }
 
     private Map<String, Object> option(String value, String label) { Map<String, Object> m = new LinkedHashMap<>(); m.put("value", value); m.put("label", label); return m; }
@@ -460,7 +461,7 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
     private List<String> globalWarnings()
     {
         return Arrays.asList("复试线不是最低录取分。", "推荐学校不代表只有这些学校可以报。",
-            "N诺数据可能遗漏、过时或错误，最终以院校官方公告为准。");
+            "数据可能遗漏、过时或错误，最终以院校官方公告为准。");
     }
 
     // ── value converters (kept for RowMap access in trends / detail) ──

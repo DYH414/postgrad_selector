@@ -169,7 +169,7 @@
                       </span>
                     </template>
                     <template v-else-if="row.type === 'source'">
-                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="school.sourceUrl" target="_blank" rel="noopener noreferrer">查看来源</a>
+                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="school.sourceUrl" target="_blank" rel="noopener noreferrer">{{ school.sourceLabel || '查看来源' }}</a>
                       <span v-else>-</span>
                     </template>
                     <template v-else-if="row.type === 'action'"><button class="detail-link" type="button" @click="openDetail(school.programId)">查看详情</button></template>
@@ -339,7 +339,7 @@
                   :href="school.sourceUrl"
                   target="_blank"
                   rel="noopener noreferrer">
-                  <i class="el-icon-link"></i> 来源链接
+                  <i class="el-icon-link"></i> {{ school.sourceLabel || '来源链接' }}
                 </a>
                 <span v-else class="source-link source-missing">
                   <i class="el-icon-link"></i> 来源待补充
@@ -370,6 +370,13 @@
                       <span>最低录取分 {{ direction.admissionLow ?? '-' }}</span>
                       <span>区间 {{ direction.range }}</span>
                       <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}（{{ direction.quotaDisplay.hint }}）</span>
+                      <span>完整度{{ direction.confidence }}</span>
+                      <a
+                        v-if="direction.sourceUrl"
+                        class="source-link"
+                        :href="direction.sourceUrl"
+                        target="_blank"
+                        rel="noopener noreferrer">{{ direction.sourceLabel || '来源链接' }}</a>
                     </div>
                     <div class="direction-actions">
                       <button
@@ -405,6 +412,7 @@
             <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine ?? '-' }}</strong></div>
             <div><small>最低录取分</small><strong>{{ detail.recommendationOverview.admissionLow || '-' }}</strong></div>
             <div><small>与最低录取分差距</small><strong>{{ formatDiff(detail.recommendationOverview.admissionLowGap) }}</strong></div>
+            <div><small>拟录取均分</small><strong>{{ detail.recommendationOverview.avgAdmittedScore ?? '-' }}</strong></div>
             <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
             <div><small>与拟录取均分差距</small><strong>{{ formatDiff(detail.recommendationOverview.avgScoreGap) }}</strong></div>
           </div>
@@ -417,7 +425,7 @@
             :href="detail.source.sourceUrl"
             target="_blank"
             rel="noopener noreferrer">
-            <i class="el-icon-link"></i> 查看来源
+            <i class="el-icon-link"></i> {{ detail.source.sourceTitle || detail.source.sourceOwner || '查看来源' }}
           </a>
           <table class="trend-table">
             <thead>
@@ -426,7 +434,7 @@
             <tbody>
               <tr v-for="item in detail.trends" :key="item.year">
                 <td>{{ item.year }}</td>
-                <td>{{ item.scoreLine }}</td>
+                <td>{{ item.scoreLine ?? '-' }}</td>
                 <td>{{ item.avgAdmittedScore || '-' }}</td>
                 <td>{{ item.admissionLow || '-' }} - {{ item.admissionHigh || '-' }}</td>
               </tr>
@@ -728,8 +736,7 @@ function normalizeSchool(item) {
     avgScore: item.avgAdmittedScore || '-',
     avgScoreGap: item.avgScoreGap,
     sourceUrl: item.sourceUrl,
-    sourceTitle: item.sourceTitle,
-    sourceOwner: item.sourceOwner,
+    sourceLabel: item.sourceTitle || item.sourceOwner,
     confidence: item.dataCompleteness || 'C',
     tag: item.fitLevelLabel || '数据不足',
     fitLevelClass: item.fitLevel || 'insufficient_data',
@@ -753,7 +760,10 @@ function groupSchools(items) {
     grouped.get(key).push(item)
   })
   return Array.from(grouped.values()).map(directions => {
-    const sorted = catalogSearch ? directions : directions.sort(directionComparator)
+    const sorted = catalogSearch
+      ? directions.sort((a, b) => Number(hasAdmissionScores(b)) - Number(hasAdmissionScores(a))
+        || (b.dataYear ?? 0) - (a.dataYear ?? 0))
+      : directions.sort(directionComparator)
     const primary = sorted[0]
     return {
       ...primary,
@@ -1039,7 +1049,8 @@ function loadCompare() {
         avgScore: school.avgScore,
         avgScoreGap: school.avgScoreGap,
         quota: item.planCount || '-',
-        sourceUrl: item.sourceUrl,
+        sourceUrl: school.sourceUrl,
+        sourceLabel: school.sourceLabel,
         confidence: school.confidence,
         star: school.star
       }
@@ -1293,7 +1304,8 @@ function dataCompletenessText(level) {
   const map = {
     A: '含复试线、拟录取区间、人数等字段',
     B: '含主要分数字段，部分字段缺失',
-    C: '仅有复试线或基础字段'
+    C: '仅有复试线或基础字段',
+    D: '缺少复试总分线'
   }
   return map[level] || '字段完整度待核验'
 }
@@ -1996,7 +2008,8 @@ if (activeTab.value === 'compare') {
   border: 1px solid #b7d1ff;
 }
 
-.grade-c {
+.grade-c,
+.grade-d {
   color: #d46b08;
   background: #fff3dd;
 }

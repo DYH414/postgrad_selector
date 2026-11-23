@@ -97,6 +97,38 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit 300
     </select>
 
+    <sql id="LatestFactYear">fact_year.year</sql>
+
+    <sql id="LatestFactYearJoins">
+        left join (
+            select program_id, max(year) as year
+            from (
+                select program_id, year from admission_score where score_line is not null
+                union all
+                select program_id, year from admission_result
+                union all
+                select program_id, year from admission_plan
+            ) annual_facts
+            group by program_id
+        ) fact_year on fact_year.program_id = p.id
+        left join admission_score sc on sc.program_id = p.id and sc.year = fact_year.year
+        left join admission_plan ap on ap.program_id = p.id and ap.year = fact_year.year
+        left join admission_result ar on ar.program_id = p.id and ar.year = fact_year.year
+        left join program_year_data_quality q on q.program_id = p.id and q.year = fact_year.year
+    </sql>
+
+    <sql id="CutoffYear">sc.year</sql>
+
+    <sql id="CutoffYearJoins">
+        left join admission_score sc on sc.program_id = p.id and sc.year = (
+            select max(sc2.year) from admission_score sc2
+            where sc2.program_id = p.id and sc2.score_line is not null
+        )
+        left join admission_plan ap on ap.program_id = p.id and ap.year = sc.year
+        left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
+        left join program_year_data_quality q on q.program_id = p.id and q.year = sc.year
+    </sql>
+
     <sql id="CatalogProgramById">
         select
             p.id as programId, s.id as schoolId, s.name as schoolName,
@@ -111,7 +143,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             p.is_joint_program as isJointProgram,
             subj.subject_codes as subjectCodes,
             subj.subject_names as subjectNames,
-            coalesce(sc.year, recent.year) as dataYear, sc.score_line as scoreLine,
+            <include refid="${yearColumn}"/> as dataYear, sc.score_line as scoreLine,
             ap.total_plan as planCount, ap.unified_exam_quota as unifiedExamQuota,
             ap.retest_count as retestCount,
             ar.admitted_count as admittedCount,
@@ -134,21 +166,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             join subject sub on ps.subject_id = sub.id
             group by ps.program_id
         ) subj on subj.program_id = p.id
-        left join admission_score sc on sc.program_id = p.id
-          and sc.year = (
-            select max(sc2.year) from admission_score sc2
-            where sc2.program_id = p.id and sc2.score_line is not null
-          )
-        left join (
-            select max(year) as year from (
-                select year from admission_plan where program_id = #{programId}
-                union all
-                select year from admission_result where program_id = #{programId}
-            ) admission_years
-        ) recent on sc.year is null
-        left join admission_plan ap on ap.program_id = p.id and ap.year = coalesce(sc.year, recent.year)
-        left join admission_result ar on ar.program_id = p.id and ar.year = coalesce(sc.year, recent.year)
-        left join program_year_data_quality q on q.program_id = p.id and q.year = coalesce(sc.year, recent.year)
+        <include refid="${yearJoins}"/>
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
@@ -157,24 +175,34 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </sql>
 
     <select id="selectProgramForRecommendation" resultType="com.ruoyi.postgrad.domain.RowMap">
-        <include refid="CatalogProgramById"/>
+        <include refid="CatalogProgramById">
+            <property name="yearColumn" value="CutoffYear"/>
+            <property name="yearJoins" value="CutoffYearJoins"/>
+        </include>
         and sc.score_line is not null
     </select>
 
     <select id="selectCatalogProgram" resultType="com.ruoyi.postgrad.domain.RowMap">
-        <include refid="CatalogProgramById"/>
+        <include refid="CatalogProgramById">
+            <property name="yearColumn" value="LatestFactYear"/>
+            <property name="yearJoins" value="LatestFactYearJoins"/>
+        </include>
     </select>
 
     <select id="selectTrends" resultType="com.ruoyi.postgrad.domain.RowMap">
-        select sc.year as year, sc.score_line as scoreLine,
+        select fact_year.year, sc.score_line as scoreLine,
                ar.avg_admitted_score as avgAdmittedScore,
                ar.min_admitted_score as admissionLow,
                ar.max_admitted_score as admissionHigh,
                ar.admitted_count as admittedCount
-        from admission_score sc
-        left join admission_result ar on ar.program_id = sc.program_id and ar.year = sc.year
-        where sc.program_id = #{programId} and sc.score_line is not null
-        order by sc.year desc
+        from (
+            select year from admission_score where program_id = #{programId} and score_line is not null
+            union
+            select year from admission_result where program_id = #{programId}
+        ) fact_year
+        left join admission_score sc on sc.year = fact_year.year and sc.program_id = #{programId}
+        left join admission_result ar on ar.year = fact_year.year and ar.program_id = #{programId}
+        order by fact_year.year desc
         limit 3
     </select>
 

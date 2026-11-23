@@ -138,7 +138,8 @@ public class ProgramSummaryDTO implements Serializable {
         d.admissionRangeLabel = rangeLabel(d.admissionLow, d.admissionHigh);
         d.retestAdmissionRatio = ratio(d.retestCount, d.admittedCount);
 
-        String completeness = AiRecommendationSafety.computedCompleteness(row);
+        String completeness = d.scoreLine == null && "D".equals(row.get("dataCompleteness"))
+            ? "D" : AiRecommendationSafety.computedCompleteness(row);
         d.dataCompleteness = completeness;
         d.dataCompletenessText = dataCompletenessDescription(completeness);
 
@@ -189,6 +190,7 @@ public class ProgramSummaryDTO implements Serializable {
         return switch (level) {
             case "A" -> "含复试线、拟录取区间、人数等字段";
             case "B" -> "含主要分数字段，部分字段缺失";
+            case "D" -> "缺少复试总分线";
             default -> "仅有复试线或基础字段";
         };
     }
@@ -197,7 +199,7 @@ public class ProgramSummaryDTO implements Serializable {
         List<String> w = new ArrayList<>();
         w.add("复试线不是最低录取分。");
         w.add("筛选学校不代表只有这些学校可以报。");
-        if (!"A".equals(completeness)) w.add("N诺数据字段不完整，请重点核对院校官方公告。");
+        if (!"A".equals(completeness)) w.add("数据字段不完整，请重点核对院校官方公告。");
         if (d.unifiedExamQuota != null && d.unifiedExamQuota < 10) w.add("统考名额较少，波动风险较高。");
         if (!Boolean.TRUE.equals(d.officialVerified)) w.add("保护一志愿信息不明确或不保护，需单独核实。");
         return w;
