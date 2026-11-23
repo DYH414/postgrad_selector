@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.tool;
 
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -521,6 +523,7 @@ public class V2ChatTools {
                 return "{\"ok\":false,\"message\":\"尚未生成草稿，无法分析。\"}";
             }
             DraftVO draft = JSON.parseObject(json, DraftVO.class);
+            if (draft != null) ApplicantCandidateFilter.draft(draft, V2ChatToolContext.current().mapper());
             if (draft.getTiers() == null || draft.getTiers().isEmpty()) {
                 return "{\"ok\":false,\"message\":\"草稿中没有候选学校，无法分析。\"}";
             }
@@ -651,6 +654,7 @@ public class V2ChatTools {
 
         try {
             DraftVO draft = JSON.parseObject(json, DraftVO.class);
+            if (draft != null) ApplicantCandidateFilter.draft(draft, V2ChatToolContext.current().mapper());
             return formatDraftSummary(draft);
         } catch (Exception e) {
             return "草稿数据解析失败。";
@@ -673,7 +677,7 @@ public class V2ChatTools {
                     if (tier.getCandidates() != null) all.addAll(tier.getCandidates());
                 }
             }
-            return all;
+            return ApplicantCandidateFilter.cards(all, V2ChatToolContext.current().mapper());
         } catch (Exception e) { return new ArrayList<>(); }
     }
 
@@ -682,7 +686,8 @@ public class V2ChatTools {
             .opsForValue().get(DraftServiceImpl.DRAFT_POOL_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return new ArrayList<>();
         try {
-            return JSON.parseArray(json, CandidateCardVO.class);
+            return ApplicantCandidateFilter.cards(
+                JSON.parseArray(json, CandidateCardVO.class), V2ChatToolContext.current().mapper());
         } catch (Exception e) { return new ArrayList<>(); }
     }
 

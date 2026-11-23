@@ -78,6 +78,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             left join data_source ar_ds on ar_ds.id = ar.source_id
         where p.status = 'active'
           and s.status = 'active'
+          and p.study_mode = 'full_time'
           and (
               sc.program_id is not null
               or ap.program_id is not null
@@ -171,6 +172,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             left join data_source ar_ds on ar_ds.id = ar.source_id
         where p.status = 'active'
           and s.status = 'active'
+          and p.study_mode = 'full_time'
         order by s.name, c.name, p.program_code, p.program_name, y.year
     </select>
 </mapper>

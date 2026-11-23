@@ -72,14 +72,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
         where p.status = 'active' and s.status = 'active' and p.is_408 = 1
-        <choose>
-            <when test="studyMode != null">
-                and p.study_mode = #{studyMode}
-            </when>
-            <otherwise>
-                and p.study_mode = 'full_time'
-            </otherwise>
-        </choose>
+        and p.study_mode = 'full_time'
           and subj.subject_codes = #{subjectCodes}
         <if test="regions != null and regions.size() > 0">
             and (s.province in
@@ -160,6 +153,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
         where p.id = #{programId} and p.status = 'active' and s.status = 'active'
+          and p.study_mode = 'full_time'
     </sql>
 
     <select id="selectProgramForRecommendation" resultType="com.ruoyi.postgrad.domain.RowMap">
@@ -182,6 +176,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where sc.program_id = #{programId} and sc.score_line is not null
         order by sc.year desc
         limit 3
+    </select>
+
+    <select id="selectApplicantProgramIds" resultType="java.lang.Long">
+        select p.id from program p
+        join college c on c.id = p.college_id
+        join school s on s.id = c.school_id
+        where p.status = 'active' and s.status = 'active' and p.study_mode = 'full_time'
+          and p.id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 
     <select id="selectProgramsByIds" resultType="com.ruoyi.postgrad.domain.RowMap">

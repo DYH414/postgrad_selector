@@ -22,6 +22,27 @@ import org.mockito.ArgumentCaptor;
 class RagEvidenceServiceTest {
 
     @Test
+    void excludesIndexedFactsForProgramsOutsideApplicantCatalog() {
+        RagRetrievalService retrieval = mock(RagRetrievalService.class);
+        RagSearchTestResponse search = new RagSearchTestResponse();
+        RagChunkResult eligible = chunk("eligible", true);
+        eligible.setProgramId("1");
+        RagChunkResult excluded = chunk("excluded", true);
+        excluded.setProgramId("2");
+        search.setChunks(java.util.List.of(eligible, excluded));
+        when(retrieval.retrieve(any(RagSearchTestRequest.class))).thenReturn(result(search));
+        com.ruoyi.postgrad.mapper.RecommendationMapper mapper = mock(com.ruoyi.postgrad.mapper.RecommendationMapper.class);
+        when(mapper.selectApplicantProgramIds(any())).thenReturn(java.util.List.of(1L));
+        RagEvidenceService service = new RagEvidenceService(retrieval);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "recommendationMapper", mapper);
+
+        RagEvidenceResponse response = service.retrieveProgramEvidence(new RagEvidenceRequest());
+
+        assertEquals(java.util.List.of("1"), response.getSelectedChunks().stream().map(RagChunkResult::getProgramId).toList());
+        assertEquals(1, response.getCitations().size());
+    }
+
+    @Test
     void shouldSearchSchoolGuideEvidenceWithMetadataFilters() {
         RagRetrievalService retrievalService = mock(RagRetrievalService.class);
         RagSearchTestResponse searchResponse = new RagSearchTestResponse();

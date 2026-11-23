@@ -74,6 +74,9 @@ class DraftMutationServiceImplBatchReplaceTest {
         injectField(service, "redisTemplate", redisTemplate);
         injectField(service, "decisionLogService", decisionLogService);
         injectField(service, "refillPolicyService", refillPolicyService);
+        var recommendationMapper = mock(com.ruoyi.postgrad.mapper.RecommendationMapper.class);
+        when(recommendationMapper.selectApplicantProgramIds(any())).thenAnswer(inv -> inv.getArgument(0));
+        injectField(service, "recommendationMapper", recommendationMapper);
 
         ValueOperations<String, String> ops = mock(ValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(ops);

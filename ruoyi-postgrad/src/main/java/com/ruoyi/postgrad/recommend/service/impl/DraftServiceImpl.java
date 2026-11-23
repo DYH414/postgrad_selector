@@ -1,5 +1,9 @@
 package com.ruoyi.postgrad.recommend.service.impl;
 
+import com.ruoyi.postgrad.mapper.RecommendationMapper;
+
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
+
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -80,6 +84,9 @@ public class DraftServiceImpl implements IDraftService {
 
     @Autowired
     private UserProfileMapper userProfileMapper;
+
+    @Autowired
+    private RecommendationMapper recommendationMapper;
 
     @Autowired
     private ICandidatePoolService candidatePoolService;
@@ -335,6 +342,7 @@ public class DraftServiceImpl implements IDraftService {
                 if (latest == null || latest.equals(json)) return emptyDraft();
                 draft = JSON.parseObject(latest, DraftVO.class);
             }
+            if (draft != null) ApplicantCandidateFilter.draft(draft, recommendationMapper);
             return draft != null ? draft : emptyDraft();
         } catch (Exception e) {
             log.warn("[Draft] Failed to parse draft for userId={}: {}", userId, e.getMessage());
@@ -357,7 +365,8 @@ public class DraftServiceImpl implements IDraftService {
     private CandidateWorkspaceVO loadWorkspace(Long userId) {
         String json = redisTemplate.opsForValue().get(WORKSPACE_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return null;
-        try { return JSON.parseObject(json, CandidateWorkspaceVO.class); }
+        try { return ApplicantCandidateFilter.workspace(
+            JSON.parseObject(json, CandidateWorkspaceVO.class), recommendationMapper); }
         catch (Exception e) { return null; }
     }
 

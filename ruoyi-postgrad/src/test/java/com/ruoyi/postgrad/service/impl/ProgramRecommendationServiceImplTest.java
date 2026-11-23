@@ -3,6 +3,7 @@ package com.ruoyi.postgrad.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.domain.RecommendationLog;
@@ -41,11 +42,30 @@ class ProgramRecommendationServiceImplTest
         service = new ProgramRecommendationServiceImpl();
         setField("recommendationMapper", recommendationMapper);
         setField("logMapper", logMapper);
-        when(logMapper.insertRecommendationLog(any(RecommendationLog.class))).thenAnswer(invocation -> {
+        lenient().when(logMapper.insertRecommendationLog(any(RecommendationLog.class))).thenAnswer(invocation -> {
             RecommendationLog log = invocation.getArgument(0);
             log.setId(83L);
             return 1;
         });
+    }
+
+    @Test
+    void hidesUnavailableProgramsFromStoredRecommendation()
+    {
+        RowMap stored = new RowMap();
+        stored.put("result_json", """
+            {"items":[{"programId":2945},{"programId":2939}],
+             "groups":[{"schools":[{"program_id":2945},{"program_id":2939}]}],
+             "totalCandidates":2}
+            """);
+        when(logMapper.selectLogByIdAndUserId(8L, 1L)).thenReturn(stored);
+        when(recommendationMapper.selectApplicantProgramIds(List.of(2945L, 2939L))).thenReturn(List.of(2945L));
+
+        Map<String, Object> result = service.loadRecommendationResult(1L, 8L);
+
+        assertEquals(1, result.get("totalCandidates"));
+        assertEquals(List.of(Map.of("programId", 2945)), result.get("items"));
+        assertEquals(List.of(Map.of("schools", List.of(Map.of("program_id", 2945)))), result.get("groups"));
     }
 
     @Nested

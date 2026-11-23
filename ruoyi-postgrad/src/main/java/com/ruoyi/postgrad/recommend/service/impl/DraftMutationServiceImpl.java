@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.service.impl;
 
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -707,7 +709,9 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         String json = redisTemplate.opsForValue().get(DraftServiceImpl.DRAFT_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return emptyDraft();
         try {
-            return com.alibaba.fastjson2.JSON.parseObject(json, DraftVO.class);
+            DraftVO draft = com.alibaba.fastjson2.JSON.parseObject(json, DraftVO.class);
+            if (draft != null) ApplicantCandidateFilter.draft(draft, recommendationMapper);
+            return draft != null ? draft : emptyDraft();
         } catch (Exception e) {
             log.warn("[Mutation] Failed to parse draft userId={}: {}", userId, e.getMessage());
             return emptyDraft();

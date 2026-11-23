@@ -22,6 +22,9 @@ public class RagEvidenceService {
     private final RagTraceRecorder traceRecorder;
 
     @Autowired
+    private com.ruoyi.postgrad.mapper.RecommendationMapper recommendationMapper;
+
+    @Autowired
     public RagEvidenceService(RagRetrievalService ragRetrievalService, RagTraceRecorder traceRecorder) {
         this.ragRetrievalService = ragRetrievalService;
         this.traceRecorder = traceRecorder;
@@ -87,14 +90,31 @@ public class RagEvidenceService {
         if (selected.isEmpty()) {
             selected = search.getChunks();
         }
+        java.util.Set<String> allowedIds = allowedProgramIds(selected);
+        selected = selected.stream().filter(chunk -> allowedProgram(chunk.getProgramId(), allowedIds)).toList();
         response.setSelectedChunks(selected);
         response.setCitations(selected.stream()
             .map(RagCitation::fromChunkResult)
             .toList());
         response.setPassages(retrieval.selectedSegments().stream()
+            .filter(segment -> allowedProgram(segment.metadata().getString("program_id"), allowedIds))
             .map(segment -> new RagEvidenceResponse.Passage(segment.metadata().getString("source_name"), segment.text()))
             .toList());
         return response;
+    }
+
+    private java.util.Set<String> allowedProgramIds(List<RagChunkResult> chunks) {
+        List<Long> ids = chunks.stream().map(RagChunkResult::getProgramId)
+            .filter(id -> id != null && !id.isBlank()).map(id -> {
+                try { return Long.valueOf(id); } catch (NumberFormatException e) { return null; }
+            }).filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) return java.util.Set.of();
+        return recommendationMapper.selectApplicantProgramIds(ids).stream()
+            .map(String::valueOf).collect(java.util.stream.Collectors.toSet());
+    }
+
+    private boolean allowedProgram(String id, java.util.Set<String> allowedIds) {
+        return id == null || id.isBlank() || allowedIds.contains(id);
     }
 
     private boolean hasEvidence(RagSearchTestResponse response) {

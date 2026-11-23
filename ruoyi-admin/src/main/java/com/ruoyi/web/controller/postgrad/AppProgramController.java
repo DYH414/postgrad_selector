@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.ruoyi.common.annotation.Anonymous;
+import com.ruoyi.common.constant.HttpStatus;
 import com.ruoyi.common.core.domain.AjaxResult;
+import com.ruoyi.common.exception.ServiceException;
 import com.ruoyi.postgrad.service.IProgramRecommendationService;
 import com.ruoyi.postgrad.service.IProgramSearchService;
 
@@ -33,6 +35,10 @@ public class AppProgramController
         try
         {
             return AjaxResult.success(recommendationService.programDetail(programId, estimatedScore));
+        }
+        catch (ServiceException e)
+        {
+            return AjaxResult.error(HttpStatus.NOT_FOUND, e.getMessage());
         }
         catch (Exception e)
         {

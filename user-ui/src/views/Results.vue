@@ -472,7 +472,6 @@ const emptyResult = () => ({
   exam: '-',
   region: '不限',
   majorDirections: [],
-  studyMode: '不限',
   scoreRange: null,
   aiAnalysis: null,
   summary: null,
@@ -678,7 +677,6 @@ function normalizeResult(data) {
     exam: request.examCombo || data.exam || '22408',
     region: request.targetRegions && request.targetRegions.length ? request.targetRegions.join('、') : '不限',
     majorDirections: Array.isArray(request.majorDirections) ? request.majorDirections : [],
-    studyMode: studyModeText(request.studyMode || data.studyMode),
     scoreRange: request.scoreRange != null ? request.scoreRange : null,
     aiAnalysis: data.aiAnalysis || null,
     summary: data.summary || null,
@@ -790,11 +788,6 @@ function isPendingCollege(name) {
 
 function displayCollegeName(name) {
   return isPendingCollege(name) ? '学院待核验' : name
-}
-
-function studyModeText(value) {
-  const map = { any: '不限', full_time: '全日制', part_time: '非全日制' }
-  return map[value] || value || '不限'
 }
 
 function tierLabel(value) {

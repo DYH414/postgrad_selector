@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.service.impl;
 
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
+
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -72,6 +74,8 @@ public class ReportServiceImpl implements IReportService {
             throw new IllegalStateException("草稿数据解析失败，请重新生成草稿");
         }
 
+        ApplicantCandidateFilter.tiers(draft.getTiers(), recommendationMapper);
+
         // 2. 校验：至少 1 个可信候选
         int totalCount = 0;
         if (draft.getTiers() != null) {
@@ -134,6 +138,7 @@ public class ReportServiceImpl implements IReportService {
             try {
                 ReportVO report = JSON.parseObject(cached, ReportVO.class);
                 if (report != null) {
+                    filterReport(report);
                     report.setReportId(reportId);
                     report.setStatus("COMPLETED");
                     return report;
@@ -158,6 +163,7 @@ public class ReportServiceImpl implements IReportService {
             throw new IllegalStateException("报告数据解析失败");
         }
 
+        filterReport(report);
         report.setReportId(reportId);
         report.setStatus("COMPLETED");
         Object createdAt = row.get("created_at");
@@ -174,6 +180,17 @@ public class ReportServiceImpl implements IReportService {
             Duration.ofDays(TTL_DAYS));
 
         return report;
+    }
+
+    private void filterReport(ReportVO report) {
+        if (report == null || report.getTiers() == null) return;
+        int before = report.getTiers().stream().mapToInt(t -> t.getCandidates() == null ? 0 : t.getCandidates().size()).sum();
+        ApplicantCandidateFilter.tiers(report.getTiers(), recommendationMapper);
+        int after = report.getTiers().stream().mapToInt(t -> t.getCandidates() == null ? 0 : t.getCandidates().size()).sum();
+        if (before != after) {
+            report.setSummary(buildSummary(report.getTiers()));
+            report.setRagCitations(java.util.Collections.emptyList());
+        }
     }
 
     @Override
@@ -194,6 +211,7 @@ public class ReportServiceImpl implements IReportService {
             if (resultJson != null && !resultJson.isBlank()) {
                 try {
                     ReportVO report = JSON.parseObject(resultJson, ReportVO.class);
+                    if (report != null) filterReport(report);
                     if (report != null && report.getSummary() != null) {
                         vo.setSummary(report.getSummary());
                     }
