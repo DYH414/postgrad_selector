@@ -297,7 +297,8 @@ public class ProgramRecommendationServiceImpl implements IProgramRecommendationS
             var profile = userProfileMapper.selectUserProfileByUserId(userId);
             if (profile != null)
             {
-                defaults.put("estimatedScore", profile.getEstimatedScore());
+                if (profile.getEstimatedScore() != null) defaults.put("estimatedScore", profile.getEstimatedScore());
+                if (profile.getExamCombo() != null && !profile.getExamCombo().isBlank()) defaults.put("examCombo", profile.getExamCombo());
                 defaults.put("targetRegions", parseJsonList(profile.getTargetRegions()));
                 defaults.put("riskPreference", profile.getRiskPreference());
             }

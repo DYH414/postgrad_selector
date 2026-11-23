@@ -4,7 +4,7 @@
 
     <main class="result-layout" :class="{ 'result-layout--compare': activeTab === 'compare' }">
       <aside class="filter-sidebar" :class="{ 'shortlist-sidebar': activeTab === 'compare' }">
-        <template v-if="activeTab !== 'compare'">
+        <template v-if="activeTab !== 'compare' && !defaultsLoading">
           <div class="sidebar-title">
             <strong>筛选条件</strong>
             <button type="button" @click="resetFilters">清空</button>
@@ -59,7 +59,7 @@
           </div>
         </template>
 
-        <template v-else>
+        <template v-else-if="activeTab === 'compare'">
           <div class="shortlist-header">
             <strong>我的备选</strong>
             <span>{{ backupTotal }} 个方案</span>
@@ -454,6 +454,7 @@ import { formatAdmissionQuota } from '@/utils/admissionDisplay.mjs'
 
 const router = useRouter()
 const route = useRoute()
+const signedIn = Boolean(getToken())
 
 const FILTER_STORAGE_PREFIX = 'app-results-filters'
 const emptyFilters = () => ({
@@ -493,6 +494,8 @@ const favoriteProgramIds = ref([])
 const favoriteLoadingIds = ref([])
 const filterForm = ref(emptyFilters())
 const appliedFilters = ref(emptyFilters())
+const defaultsLoading = ref(signedIn)
+let defaultProfile
 const optionRegions = ref(['福建', '广东', '浙江', '上海'])
 const compareRows = [
   { label: '专业', key: 'programName' },
@@ -622,12 +625,22 @@ const aiParagraphs = computed(() => {
 // --- methods ---
 
 function loadOptions() {
-  getRecommendationOptions().then(res => {
+  return getRecommendationOptions().then(res => {
     const data = res.data || {}
+    defaultProfile = data.defaultProfile
     if (data.regions && data.regions.length) {
       optionRegions.value = data.regions
     }
   }).catch(() => {})
+}
+
+function sidebarDefaults() {
+  const filters = emptyFilters()
+  if (signedIn) {
+    filters.score = defaultProfile?.estimatedScore ?? ''
+    filters.exam = defaultProfile?.examCombo ?? ''
+  }
+  return filters
 }
 
 function loadResult(id, keyword, isCurrent) {
@@ -846,7 +859,7 @@ function sanitizeFilters(filters = {}) {
 }
 
 function defaultFiltersFromRequest(request = {}) {
-  const filters = emptyFilters()
+  const filters = sidebarDefaults()
   if (request.estimatedScore) filters.score = Number(request.estimatedScore)
   if (request.examCombo) filters.exam = request.examCombo
   if (Array.isArray(request.targetRegions) && request.targetRegions.length) {
@@ -872,6 +885,10 @@ function restoreFilters(data = {}) {
         filters = {
           ...defaults,
           ...sanitizeFilters(savedFilters)
+        }
+        if (signedIn) {
+          filters.score = defaults.score
+          filters.exam = defaults.exam
         }
         if (Object.prototype.hasOwnProperty.call(data.request || {}, 'scoreRange')) {
           filters.scoreRange = defaults.scoreRange
@@ -942,7 +959,7 @@ function clearHeaderChip(key) {
 }
 
 function resetFilters() {
-  filterForm.value = emptyFilters()
+  filterForm.value = sidebarDefaults()
   applyFilters()
 }
 
@@ -1294,16 +1311,30 @@ watch(() => route.query.programIds, () => {
   if (activeTab.value === 'compare') loadCompare()
 })
 
+const optionsReady = loadOptions()
+
 watch([() => route.query.id, () => route.query.keyword], ([id, keyword], _, onCleanup) => {
   let current = true
   onCleanup(() => { current = false })
   result.value = emptyResult()
-  filterForm.value = { ...emptyFilters(), keyword: keyword || '' }
-  appliedFilters.value = emptyFilters()
   loading.value = false
 
+  function initializeFilters() {
+    if (!current) return
+    filterForm.value = { ...sidebarDefaults(), keyword: keyword || '' }
+    appliedFilters.value = sidebarDefaults()
+    defaultsLoading.value = false
+    if (!isCatalogSearch.value) {
+      loadResult(id || window.sessionStorage.getItem('app-recommend-id'), keyword, () => current)
+    }
+  }
+  if (defaultsLoading.value) {
+    optionsReady.then(initializeFilters)
+  } else {
+    initializeFilters()
+  }
+
   if (!isCatalogSearch.value) {
-    loadResult(id || window.sessionStorage.getItem('app-recommend-id'), keyword, () => current)
     return
   }
 
@@ -1318,7 +1349,6 @@ watch([() => route.query.id, () => route.query.keyword], ([id, keyword], _, onCl
   })
 }, { immediate: true })
 
-loadOptions()
 loadFavoriteIds()
 if (activeTab.value === 'compare') {
   loadCompare()
