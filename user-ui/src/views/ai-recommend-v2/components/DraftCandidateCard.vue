@@ -30,6 +30,10 @@
         <dt>城市</dt>
         <dd>{{ candidate.fact.city || '—' }}</dd>
       </div>
+      <div class="fact">
+        <dt>考试组合</dt>
+        <dd class="t-num">{{ candidate.fact.examCombo || '—' }}</dd>
+      </div>
     </dl>
 
     <template v-if="!candidate.fallback">
@@ -187,7 +191,7 @@ function displayGap(value) {
 /* ── Fact grid ── */
 .fact-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0;
   margin: 12px 0 0;
   padding: 10px 0;
