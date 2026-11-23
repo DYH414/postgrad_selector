@@ -43,7 +43,6 @@ import com.ruoyi.postgrad.recommend.routing.AgentToolScope;
 import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationContext;
 
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
@@ -175,25 +174,25 @@ public class AiChatServiceImpl implements IAiChatService {
 
             // 3. 构建 ChatMemory
             ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(MAX_MESSAGES);
+            List<ChatMessageVO> userHistory = new ArrayList<>();
             for (ChatMessageVO m : history) {
-                if ("system".equals(m.getRole())) continue;
+                if (!"user".equals(m.getRole())) continue;
+                userHistory.add(m);
                 if (m.getContent() == null || m.getContent().isBlank()) continue;
-                if ("assistant".equals(m.getRole())) {
-                    chatMemory.add(AiMessage.from(m.getContent()));
-                } else if ("user".equals(m.getRole())) {
-                    chatMemory.add(UserMessage.from(m.getContent()));
-                }
+                chatMemory.add(UserMessage.from(m.getContent()));
             }
 
             // 4. 保存用户消息
             persistMessage(userId, conversation.getId(), "user", message, null);
-            history.add(new ChatMessageVO("user", message));
+            ChatMessageVO userTurn = new ChatMessageVO("user", message);
+            history.add(userTurn);
+            userHistory.add(userTurn);
             saveHistory(userId, history);
 
             AiInvocationContext.setOperationKey("ai-chat-route");
             AgentRouteDecision routeDecision;
             try {
-                routeDecision = agentIntentRouter.route(message, history);
+                routeDecision = agentIntentRouter.route(message, userHistory);
             } finally {
                 AiInvocationContext.setOperationKey("ai-chat");
             }
@@ -386,13 +385,15 @@ public class AiChatServiceImpl implements IAiChatService {
         List<AiChatMessage> rows = aiChatMapper.selectMessages(conversationId, 200);
         List<ChatMessageVO> result = new ArrayList<>();
         for (AiChatMessage row : rows) {
-            if ("system".equals(row.getRole())) continue;
-            ChatMessageVO vo = new ChatMessageVO(row.getRole(),
-                row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent());
+            if (!"user".equals(row.getRole()) && !"assistant".equals(row.getRole())) continue;
+            boolean assistant = "assistant".equals(row.getRole());
+            ChatMessageVO vo = new ChatMessageVO(row.getRole(), assistant
+                ? "历史回答未验证，请重新提问。"
+                : row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent());
             vo.setMessageType(row.getMessageType());
             vo.setStatus(row.getStatus());
             vo.setSeq(row.getSeq());
-            vo.setMetadataJson(row.getMetadataJson());
+            if (!assistant) vo.setMetadataJson(row.getMetadataJson());
             result.add(vo);
         }
         return result;
@@ -402,7 +403,6 @@ public class AiChatServiceImpl implements IAiChatService {
         List<AiChatMessage> rows = aiChatMapper.selectMessages(conversationId, MAX_MESSAGES);
         List<ChatMessageVO> result = new ArrayList<>();
         for (AiChatMessage row : rows) {
-            if ("system".equals(row.getRole())) continue;
             if (!"user".equals(row.getRole()) && !"assistant".equals(row.getRole())) continue;
             String content = row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent();
             if (content == null || content.isBlank()) continue;

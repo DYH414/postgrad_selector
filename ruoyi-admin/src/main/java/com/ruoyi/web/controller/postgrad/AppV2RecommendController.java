@@ -20,23 +20,29 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONException;
 import com.ruoyi.common.annotation.Anonymous;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.AppLoginUser;
 import com.ruoyi.common.utils.SecurityUtils;
 import com.ruoyi.framework.config.AiConfig;
+import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskState;
 import com.ruoyi.postgrad.recommend.domain.DraftGenerationTaskVO;
+import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.RecommendationProgressEvent;
+import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.domain.dto.AddBackCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ChatSendRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.RemoveCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.dto.ReplaceCandidateRequest;
 import com.ruoyi.postgrad.recommend.domain.AgentActionProposal;
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.DraftGenerationCallback;
 import com.ruoyi.postgrad.recommend.service.IDraftGenerationTaskService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
+import com.ruoyi.postgrad.recommend.service.IDraftSummaryMessageService;
 import com.ruoyi.postgrad.recommend.service.IReportService;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
 import com.ruoyi.postgrad.recommend.service.AgentActionConfirmationService;
@@ -59,7 +65,13 @@ public class AppV2RecommendController {
     private IDraftService draftService;
 
     @Autowired
+    private RecommendationMapper recommendationMapper;
+
+    @Autowired
     private IDraftGenerationTaskService draftGenerationTaskService;
+
+    @Autowired
+    private IDraftSummaryMessageService draftSummaryMessageService;
 
     @Autowired
     private IReportService reportService;
@@ -150,27 +162,28 @@ public class AppV2RecommendController {
                         List<Object> streamEvents = JSON.parseArray(state.getStreamEventsJson(), Object.class);
                         while (sentStreamEventCount < streamEvents.size()) {
                             Object payload = streamEvents.get(sentStreamEventCount);
-                            safeSend(emitter, "progress", payloadToMap(payload), closed);
+                            safeSend(emitter, "progress", filterProgress(payloadToMap(payload)), closed);
                             sentStreamEventCount++;
                         }
                     }
                     if (DraftGenerationTaskState.STATUS_DONE.equals(state.getStatus())) {
                         Map<String, Object> payload = new LinkedHashMap<>();
-                        payload.put("draft", JSON.parseObject(state.getDraftJson()));
+                        DraftVO draft = JSON.parseObject(state.getDraftJson(), DraftVO.class);
+                        ApplicantCandidateFilter.draft(draft, recommendationMapper);
+                        payload.put("draft", draft);
                         if (state.getProfileBasisJson() != null) {
                             payload.put("profileBasis", JSON.parseObject(state.getProfileBasisJson()));
                         }
                         payload.put("removedCount", state.getRemovedCount());
                         if (state.getSummaryMessage() != null) {
-                            payload.put("summaryMessage", state.getSummaryMessage());
+                            String summary = draftSummaryMessageService.generateSummary(draft);
+                            if (summary != null) {
+                                payload.put("summaryMessage", summary);
+                            }
                         }
                         // 传递降级档位信息
-                        Object draftObj = payload.get("draft");
-                        if (draftObj instanceof Map<?, ?> dm) {
-                            Object ft = dm.get("fallbackTiers");
-                            if (ft instanceof List<?> ftl && !ftl.isEmpty()) {
-                                payload.put("fallbackTiers", ftl);
-                            }
+                        if (draft != null && draft.getFallbackTiers() != null && !draft.getFallbackTiers().isEmpty()) {
+                            payload.put("fallbackTiers", draft.getFallbackTiers());
                         }
                         safeSend(emitter, "done", payload, closed);
                         break;
@@ -190,9 +203,9 @@ public class AppV2RecommendController {
                         }
                         // 逐档实时数据：某档 AI 选完后立即推送候选卡片
                         if (state.getTierJson() != null) {
-                            payload.put("tierData", JSON.parseObject(state.getTierJson()));
+                            payload.put("tierData", state.getTierJson());
                         }
-                        safeSend(emitter, "progress", payload, closed);
+                        safeSend(emitter, "progress", filterProgress(payload), closed);
                     }
                 }
 
@@ -205,7 +218,12 @@ public class AppV2RecommendController {
             }
             closed.set(true);
             emitter.complete();
-        }, threadPoolTaskExecutor);
+        }, threadPoolTaskExecutor).exceptionally(error -> {
+            safeSend(emitter, "error", Map.of("message", userFacingSseError(error)), closed);
+            closed.set(true);
+            emitter.complete();
+            return null;
+        });
 
         return emitter;
     }
@@ -644,6 +662,23 @@ public class AppV2RecommendController {
             return "请求参数不正确，请检查后重试";
         }
         return "AI 服务暂时不可用，请稍后重试";
+    }
+
+    private Map<String, Object> filterProgress(Map<String, Object> payload) {
+        Object tierData = payload.remove("tierData");
+        if (tierData == null) return payload;
+        TierCandidates tier;
+        try {
+            tier = JSON.parseObject(tierData instanceof String ? (String) tierData : JSON.toJSONString(tierData),
+                TierCandidates.class);
+        } catch (JSONException ignored) {
+            return payload;
+        }
+        if (tier != null) {
+            ApplicantCandidateFilter.tiers(List.of(tier), recommendationMapper);
+            payload.put("tierData", tier);
+        }
+        return payload;
     }
 
     @SuppressWarnings("unchecked")
