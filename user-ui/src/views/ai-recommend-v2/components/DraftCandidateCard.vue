@@ -16,15 +16,15 @@
     <dl class="fact-grid">
       <div class="fact">
         <dt>均分</dt>
-        <dd class="t-num">{{ displayVal(candidate.fact.avgAdmittedScore) }}</dd>
+        <dd class="t-num">{{ displayMetric(candidate.fact.avgAdmittedScore) }}</dd>
       </div>
       <div class="fact">
         <dt>差距</dt>
-        <dd :class="['t-num', gapClass]">{{ displayGap(candidate.fact.scoreGap) }}</dd>
+        <dd :class="['t-num', gapClass]">{{ formatScoreGap(candidate.fact.scoreGap) }}</dd>
       </div>
       <div class="fact">
-        <dt>名额</dt>
-        <dd class="t-num">{{ candidate.fact.unifiedExamQuota || candidate.fact.planCount || '—' }}</dd>
+        <dt>{{ quota.hint || '名额' }}</dt>
+        <dd class="t-num">{{ quota.value }}</dd>
       </div>
       <div class="fact">
         <dt>城市</dt>
@@ -74,6 +74,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { displayMetric, formatAdmissionQuota, formatScoreGap } from '@/utils/admissionDisplay.mjs'
 
 const props = defineProps({
   candidate: { type: Object, required: true },
@@ -81,6 +82,8 @@ const props = defineProps({
 })
 
 defineEmits(['remove', 'ask-about'])
+
+const quota = computed(() => formatAdmissionQuota(props.candidate.fact, { allowZero: true }))
 
 const gapClass = computed(() => {
   const g = props.candidate.fact.scoreGap
@@ -99,15 +102,6 @@ const sourceLabel = computed(() => {
   const f = props.candidate.fact || {}
   return f.sourceOwner || '查看来源'
 })
-
-function displayVal(value) {
-  return value != null ? value : '—'
-}
-
-function displayGap(value) {
-  if (value == null) return '—'
-  return value >= 0 ? `+${value}` : `${value}`
-}
 </script>
 
 <style scoped>

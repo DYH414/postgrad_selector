@@ -1,14 +1,22 @@
 import assert from 'node:assert/strict'
-import { formatAdmissionQuota, displayMetric, formatAdmissionRange, presentationSourceUrl } from './admissionDisplay.mjs'
+import { formatAdmissionQuota, displayMetric, formatAdmissionRange, formatScoreGap, presentationSourceUrl } from './admissionDisplay.mjs'
 
 assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: 12, planCount: 20 }), { label: '预计招生', value: 12, hint: '统考名额' })
 assert.deepEqual(formatAdmissionQuota({ planCount: 20 }), { label: '预计招生', value: 20, hint: '计划人数' })
 assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: 0, planCount: null }), { label: '预计招生', value: '暂无', hint: '' })
 assert.deepEqual(formatAdmissionQuota({}), { label: '预计招生', value: '暂无', hint: '' })
+assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: 0, planCount: 20 }, { allowZero: true }), { label: '预计招生', value: 0, hint: '统考名额' })
+assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: '', planCount: '0' }, { allowZero: true }), { label: '预计招生', value: 0, hint: '计划人数' })
+assert.deepEqual(formatAdmissionQuota({ admittedCount: 8 }, { allowZero: true }), { label: '预计招生', value: '暂无', hint: '' })
 assert.equal(displayMetric(0), 0)
 assert.equal(displayMetric(null), '暂无')
 assert.equal(displayMetric('-'), '暂无')
 assert.equal(displayMetric(''), '暂无')
+assert.equal(formatScoreGap(null), '暂无')
+assert.equal(formatScoreGap('-'), '暂无')
+assert.equal(formatScoreGap(0), '0')
+assert.equal(formatScoreGap(15), '+15')
+assert.equal(formatScoreGap(-15), '-15')
 assert.equal(formatAdmissionRange(320, 390), '320 - 390')
 assert.equal(formatAdmissionRange(null, 390), '最高分 390')
 assert.equal(formatAdmissionRange(320, null), '最低分 320')

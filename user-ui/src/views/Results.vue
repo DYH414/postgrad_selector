@@ -528,7 +528,7 @@ import { comparePrograms, getProgramDetail, searchPrograms } from '@/api/program
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getToken } from '@/api/request'
-import { displayMetric, formatAdmissionQuota, formatAdmissionRange, presentationSourceUrl } from '@/utils/admissionDisplay.mjs'
+import { displayMetric, formatAdmissionQuota, formatAdmissionRange, formatScoreGap as formatDiff, presentationSourceUrl } from '@/utils/admissionDisplay.mjs'
 import {
   catalogProgressLabel,
   directionListHeader,
@@ -575,6 +575,8 @@ const CATALOG_PAGE_SIZE = 500
 
 const loading = ref(false)
 const catalogLoadingMore = ref(false)
+const catalogOffset = ref(0)
+let isCurrentCatalogSearch = () => false
 const filtering = ref(false)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -714,7 +716,7 @@ const catalogTrueTotal = computed(() => (
   result.value.catalogTotal != null ? result.value.catalogTotal : catalogListedCount.value
 ))
 const catalogHasMore = computed(() => (
-  isCatalogSearch.value && catalogListedCount.value < catalogTrueTotal.value
+  isCatalogSearch.value && catalogOffset.value < catalogTrueTotal.value
 ))
 const catalogProgressText = computed(() => (
   catalogProgressLabel(catalogListedCount.value, catalogTrueTotal.value)
@@ -740,14 +742,17 @@ function loadOptions() {
 
 function loadMoreCatalog() {
   if (!isCatalogSearch.value || catalogLoadingMore.value || !catalogHasMore.value) return
+  const isCurrent = isCurrentCatalogSearch
   const keyword = String(route.query.keyword || '').trim()
-  if (!keyword) return
-  const offset = catalogListedCount.value
+  if (!keyword || !isCurrent()) return
+  const offset = catalogOffset.value
   catalogLoadingMore.value = true
   searchPrograms(keyword, CATALOG_PAGE_SIZE, offset).then(res => {
+    if (!isCurrent()) return
     const data = res.data || {}
+    const page = data.items || []
     const known = new Set((result.value.items || []).map(item => item.programId))
-    const extra = (data.items || [])
+    const extra = page
       .filter(item => item.programId == null || !known.has(item.programId))
       .map(normalizeSchool)
     result.value = {
@@ -755,8 +760,9 @@ function loadMoreCatalog() {
       items: [...(result.value.items || []), ...extra],
       catalogTotal: data.total != null ? Number(data.total) : result.value.catalogTotal
     }
+    catalogOffset.value = offset + page.length
   }).catch(() => {}).finally(() => {
-    catalogLoadingMore.value = false
+    if (isCurrent()) catalogLoadingMore.value = false
   })
 }
 
@@ -1431,11 +1437,6 @@ function openDetail(programId) {
   }).finally(() => { detailLoading.value = false })
 }
 
-function formatDiff(value) {
-  if (value === null || value === undefined) return '-'
-  return (value > 0 ? '+' : '') + value
-}
-
 function dataCompletenessText(level) {
   const map = {
     A: '含复试线、拟录取区间、人数等字段',
@@ -1463,9 +1464,13 @@ const optionsReady = loadOptions()
 
 watch([() => route.query.id, () => route.query.keyword], ([id, keyword], _, onCleanup) => {
   let current = true
+  const isCurrent = () => current && route.query.id === id && route.query.keyword === keyword
+  isCurrentCatalogSearch = isCurrent
   onCleanup(() => { current = false })
   result.value = emptyResult()
   loading.value = false
+  catalogLoadingMore.value = false
+  catalogOffset.value = 0
 
   function initializeFilters() {
     if (!current) return
@@ -1488,12 +1493,13 @@ watch([() => route.query.id, () => route.query.keyword], ([id, keyword], _, onCl
 
   loading.value = true
   searchPrograms(keyword, CATALOG_PAGE_SIZE, 0).then(res => {
-    if (!current) return
+    if (!isCurrent()) return
     result.value = normalizeResult(res.data)
     result.value.score = '-'
     result.value.exam = '-'
+    catalogOffset.value = res.data?.items?.length ?? 0
   }).catch(() => {}).finally(() => {
-    if (current) loading.value = false
+    if (isCurrent()) loading.value = false
   })
 }, { immediate: true })
 

@@ -1,6 +1,7 @@
-function positiveCount(value) {
+function admissionCount(value, allowZero) {
+  if (value == null || (typeof value === 'string' && value.trim() === '')) return null
   const count = Number(value)
-  return Number.isFinite(count) && count > 0 ? Math.trunc(count) : null
+  return Number.isFinite(count) && (allowZero ? count >= 0 : count > 0) ? Math.trunc(count) : null
 }
 
 function isBlankLabel(value) {
@@ -16,6 +17,11 @@ export function displayMetric(value) {
   }
   if (value == null || value === '' || isBlankLabel(value)) return '暂无'
   return value
+}
+
+export function formatScoreGap(value) {
+  const gap = displayMetric(value)
+  return (gap > 0 ? '+' : '') + gap
 }
 
 export function formatAdmissionRange(low, high, fallbackLabel) {
@@ -46,8 +52,8 @@ export function presentationSourceUrl(url) {
   return url
 }
 
-export function formatAdmissionQuota(item = {}) {
-  const unifiedExamQuota = positiveCount(item.unifiedExamQuota)
+export function formatAdmissionQuota(item = {}, { allowZero = false } = {}) {
+  const unifiedExamQuota = admissionCount(item.unifiedExamQuota, allowZero)
   if (unifiedExamQuota != null) {
     return {
       label: '预计招生',
@@ -56,7 +62,7 @@ export function formatAdmissionQuota(item = {}) {
     }
   }
 
-  const planCount = positiveCount(item.planCount)
+  const planCount = admissionCount(item.planCount, allowZero)
   if (planCount != null) {
     return {
       label: '预计招生',
