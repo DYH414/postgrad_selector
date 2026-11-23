@@ -19,6 +19,8 @@ class ProgramSummaryDTOTest {
         "085400, professional, professional, 专硕",
         "085404, academic, professional, 专硕",
         "081251, academic, professional, 专硕",
+        "145200, academic, professional, 专硕",
+        "140100, academic, academic, 学硕",
         "081200, academic, academic, 学硕",
         "081200, professional, professional, 专硕",
         "0854000, academic, academic, 学硕",
