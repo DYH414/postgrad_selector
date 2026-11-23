@@ -37,3 +37,14 @@ test('missing and unsafe citation URLs stay unlinked', () => {
   assert.equal(renderMarkdown('one.md two.md', sources), '<p>one.md two.md</p>\n')
   assert.equal(renderMarkdown('[one.md](https://other.org)', sources), '<p>one.md</p>\n')
 })
+
+test('methodology citation keeps its primary link and provides the official backup', () => {
+  const name = '05-择校方法论.md'
+  const url = 'https://www.moe.gov.cn/srcsite/A15/moe_778/s3261/202509/t20250918_1413836.html'
+  const backup = { name: '研招网', url: 'https://yzst.chsi.com.cn/kyzx/jybzc/202509/20250925/2293432170-9.html' }
+  const sources = getMessageEvidence({ metadata: { ragCitations: [{ sourceName: name, sourceUrl: url }] } })
+  assert.deepEqual(sources, [{ name, url, backup }])
+  assert.equal(renderMarkdown(name, sources), `<p><a href="${url}" target="_blank" rel="noreferrer">${name}</a></p>\n`)
+  assert.deepEqual(getMessageEvidence({ metadata: { ragCitations: [{ sourceName: name, sourceUrl: 'https://example.org/' }] } }),
+    [{ name, url: 'https://example.org/' }])
+})

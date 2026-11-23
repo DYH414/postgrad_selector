@@ -107,7 +107,7 @@ public class AiChatServiceImpl implements IAiChatService {
         dev.langchain4j.service.TokenStream chat(String message);
     }
 
-    private record ChatSource(String sourceName, String sourceUrl, String title) {}
+    private record ChatSource(String sourceName, String sourceUrl, String sourceBackupUrl, String title) {}
 
     @Override
     public void finalizeConversation(Long userId) {
@@ -265,7 +265,7 @@ public class AiChatServiceImpl implements IAiChatService {
                         saveHistory(userId, history);
                         List<ChatSource> sources = toolContext.ragCitations().stream()
                             .map(citation -> new ChatSource(citation.getSourceName(), citation.getSourceUrl(),
-                                citation.getTitle()))
+                                citation.getSourceBackupUrl(), citation.getTitle()))
                             .distinct()
                             .toList();
                         String metadataJson = sources.isEmpty() ? null

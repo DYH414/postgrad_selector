@@ -172,6 +172,7 @@ public class RagRetrievalService {
         chunk.setSourceName(metadata != null ? metadata.getString("source_name") : null);
         chunk.setSourceId(metadata != null ? metadata.getString("source_id") : null);
         chunk.setSourceUrl(metadata != null ? metadata.getString("source_url") : null);
+        chunk.setSourceBackupUrl(metadata != null ? metadata.getString("source_backup_url") : null);
         chunk.setDocType(metadata != null ? metadata.getString("doc_type") : null);
         chunk.setSchoolId(metadata != null ? metadata.getString("school_id") : null);
         chunk.setProgramId(metadata != null ? metadata.getString("program_id") : null);

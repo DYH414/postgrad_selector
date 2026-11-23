@@ -7,6 +7,9 @@ const md = new MarkdownIt({
 })
 md.linkify.set({ fuzzyLink: false })
 
+const methodologySource = 'https://www.moe.gov.cn/srcsite/A15/moe_778/s3261/202509/t20250918_1413836.html'
+const methodologyBackup = 'https://yzst.chsi.com.cn/kyzx/jybzc/202509/20250925/2293432170-9.html'
+
 function citationUrl(value) {
   if (typeof value !== 'string' || !/^https?:\/\//i.test(value)) return ''
   try {
@@ -28,7 +31,12 @@ export function getMessageEvidence(message) {
     const name = citation?.sourceName || citation?.title || citation?.docType
     if (typeof name !== 'string' || !name.trim()) continue
     const url = citationUrl(citation.sourceUrl)
-    if (!sources.has(name) || (!sources.get(name).url && url)) sources.set(name, { name, url })
+    const source = sources.get(name) || { name, url: '' }
+    if (!source.url) source.url = url
+    if (name === '05-择校方法论.md' && url === methodologySource) {
+      source.backup = { name: '研招网', url: citationUrl(citation.sourceBackupUrl) || methodologyBackup }
+    }
+    sources.set(name, source)
   }
   return [...sources.values()]
 }

@@ -8,6 +8,7 @@ public class RagCitation {
     private String title;
     private String sourceName;
     private String sourceUrl;
+    private String sourceBackupUrl;
     private String docType;
     private String schoolId;
     private String programId;
@@ -43,6 +44,7 @@ public class RagCitation {
         citation.setTitle(chunk.getChunkTitle());
         citation.setSourceName(chunk.getSourceName());
         citation.setSourceUrl(chunk.getSourceUrl());
+        citation.setSourceBackupUrl(chunk.getSourceBackupUrl());
         citation.setDocType(chunk.getDocType());
         citation.setSchoolId(chunk.getSchoolId());
         citation.setProgramId(chunk.getProgramId());
@@ -89,6 +91,8 @@ public class RagCitation {
     public void setSourceName(String sourceName) { this.sourceName = sourceName; }
     public String getSourceUrl() { return sourceUrl; }
     public void setSourceUrl(String sourceUrl) { this.sourceUrl = sourceUrl; }
+    public String getSourceBackupUrl() { return sourceBackupUrl; }
+    public void setSourceBackupUrl(String sourceBackupUrl) { this.sourceBackupUrl = sourceBackupUrl; }
     public String getDocType() { return docType; }
     public void setDocType(String docType) { this.docType = docType; }
     public String getSchoolId() { return schoolId; }

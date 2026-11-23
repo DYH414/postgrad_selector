@@ -30,16 +30,15 @@
             <div class="md-body" v-html="renderMarkdown(msg.content, messageEvidence[i])"></div>
             <div v-if="messageEvidence[i].length" class="evidence-sources">
               <span>引用</span>
-              <component
-                v-for="source in messageEvidence[i]"
-                :is="source.url ? 'a' : 'span'"
-                :key="source.name"
-                :href="source.url || undefined"
-                :target="source.url ? '_blank' : undefined"
-                :rel="source.url ? 'noreferrer' : undefined"
-              >
-                {{ source.name }}
-              </component>
+              <template v-for="source in messageEvidence[i]" :key="source.name">
+                <component
+                  :is="source.url ? 'a' : 'span'"
+                  :href="source.url || undefined"
+                  :target="source.url ? '_blank' : undefined"
+                  :rel="source.url ? 'noreferrer' : undefined"
+                >{{ source.name }}</component>
+                <a v-if="source.backup" :href="source.backup.url" target="_blank" rel="noreferrer">{{ source.backup.name }}</a>
+              </template>
             </div>
           </template>
           <template v-else>

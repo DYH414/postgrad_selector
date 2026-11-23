@@ -92,6 +92,21 @@ class RagCorpusAssemblerTest {
         }));
     }
 
+    @Test
+    void methodologyChunksKeepTheMinistryPrimaryAndTheOfficialBackup() {
+        AssembledCorpus corpus = new RagCorpusAssembler().assemble(START_YEAR, END_YEAR);
+        List<TextSegment> chunks = corpus.chunks().stream()
+            .filter(seg -> "05-择校方法论.md".equals(seg.metadata().getString("source_name")))
+            .toList();
+
+        assertFalse(chunks.isEmpty());
+        assertTrue(chunks.stream().allMatch(seg ->
+            "https://www.moe.gov.cn/srcsite/A15/moe_778/s3261/202509/t20250918_1413836.html"
+                .equals(seg.metadata().getString("source_url"))
+            && "https://yzst.chsi.com.cn/kyzx/jybzc/202509/20250925/2293432170-9.html"
+                .equals(seg.metadata().getString("source_backup_url"))));
+    }
+
     // --- helpers ---
 
     private static void injectDocumentsPath(RagCorpusAssembler assembler, String documentsPath) {
