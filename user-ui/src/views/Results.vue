@@ -276,8 +276,8 @@
               :key="school.cardKey"
               class="school-card"
               :class="{
-                'has-multiple-directions': school.directionCount > 1,
-                'is-expanded': school.directionCount > 1 && isSchoolExpanded(school.cardKey)
+                'has-multiple-directions': listedDirectionCount(school) > 1,
+                'is-expanded': listedDirectionCount(school) > 1 && isSchoolExpanded(school.cardKey)
               }">
                 <div class="card-top">
                   <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
@@ -288,15 +288,21 @@
                       / {{ school.programName }}
                     </p>
                     <button
-                      v-if="school.directionCount > 1"
+                      v-if="listedDirectionCount(school) > 1"
                       class="direction-count"
                       type="button"
                       :aria-expanded="isSchoolExpanded(school.cardKey) ? 'true' : 'false'"
                       @click="toggleSchoolDirections(school.cardKey)">
-                      {{ directionToggleLabel(school.directionCount, isSchoolExpanded(school.cardKey)) }}
+                      {{ directionToggleLabel(listedDirectionCount(school), isSchoolExpanded(school.cardKey)) }}
                     </button>
                     <div class="school-meta-line">
-                      <span>{{ school.exam }} | {{ school.province || '-' }}</span>
+                      <span
+                        v-if="hasExamCombo(school.examCombo || school.exam)"
+                        class="exam-combo-tip"
+                        tabindex="0"
+                        data-tip="该专业考试科目组合"
+                        title="该专业考试科目组合">{{ formatExamCombo(school.examCombo || school.exam) }}</span>
+                      <span v-if="school.province">{{ school.province }}</span>
                       <em v-if="school.dataYear" class="data-year-badge">{{ school.dataYear }}年数据</em>
                       <em v-else class="data-year-badge muted">年份待补</em>
                     </div>
@@ -368,31 +374,52 @@
                     {{ isFavorited(school) ? '已加入备选' : '加入备选' }}
                   </button>
                 </div>
-                <div v-if="school.directionCount > 1 && isSchoolExpanded(school.cardKey)" class="direction-list">
+                <div v-if="listedDirectionCount(school) > 1 && isSchoolExpanded(school.cardKey)" class="direction-list">
+                  <div class="direction-list-header">已列出全部 {{ listedDirectionCount(school) }} 个符合方向</div>
                   <div v-for="direction in school.directions" :key="direction.cardKey" class="direction-row">
                     <div class="direction-main">
                       <strong>
                         <span :class="{ 'pending-field': isPendingCollege(direction.collegeName) }">{{ displayCollegeName(direction.collegeName) }}</span>
                         / {{ direction.programName }}
                       </strong>
-                      <small>{{ direction.exam }} | {{ direction.dataYear ? `${direction.dataYear}年数据` : '年份待补' }}</small>
-                    </div>
-                    <div class="direction-stats">
-                      <span>均分 {{ displayMetric(direction.avgScore) }}</span>
-                      <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
-                      <span>复试线 {{ displayMetric(direction.scoreLine) }}</span>
-                      <span>最低录取分 {{ displayMetric(direction.admissionLow) }}</span>
-                      <span>最高分 {{ displayMetric(direction.admissionHigh) }}</span>
-                      <span>区间 {{ direction.range }}</span>
-                      <span>拟录取人数 {{ displayMetric(direction.admittedCount) }}</span>
-                      <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}（{{ direction.quotaDisplay.hint }}）</span>
-                      <span>完整度{{ direction.confidence }}</span>
+                      <small class="direction-meta">
+                        <span
+                          v-if="hasExamCombo(direction.examCombo || direction.exam)"
+                          class="exam-combo-tip"
+                          tabindex="0"
+                          data-tip="该专业考试科目组合"
+                          title="该专业考试科目组合">{{ formatExamCombo(direction.examCombo || direction.exam) }}</span>
+                        <span>{{ direction.dataYear ? `${direction.dataYear}年数据` : '年份待补' }}</span>
+                      </small>
+                      <div class="direction-metrics">
+                        <div class="direction-metric">
+                          <span>拟录取均分</span>
+                          <strong>{{ displayMetric(direction.avgScore) }}</strong>
+                        </div>
+                        <div class="direction-metric">
+                          <span>拟录取人数</span>
+                          <strong>{{ displayMetric(direction.admittedCount) }}</strong>
+                        </div>
+                        <div class="direction-metric">
+                          <span>拟录取区间</span>
+                          <strong>{{ direction.range }}</strong>
+                        </div>
+                      </div>
+                      <div class="direction-secondary">
+                        <span>复试线 {{ displayMetric(direction.scoreLine) }}</span>
+                        <span>最低录取分 {{ displayMetric(direction.admissionLow) }}</span>
+                        <span>最高分 {{ displayMetric(direction.admissionHigh) }}</span>
+                        <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
+                        <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}（{{ direction.quotaDisplay.hint }}）</span>
+                        <span>完整度{{ direction.confidence }}</span>
+                      </div>
                       <a
                         v-if="direction.sourceUrl"
-                        class="source-link"
+                        class="source-link direction-source"
                         :href="presentationSourceUrl(direction.sourceUrl)"
                         target="_blank"
                         rel="noopener noreferrer">{{ direction.sourceLabel || '来源链接' }}</a>
+                      <span v-else class="direction-source source-missing">来源待补充</span>
                     </div>
                     <div class="direction-actions">
                       <button
@@ -421,7 +448,13 @@
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span :title="'该专业考试科目组合'">{{ detail.basic.examCombo || '暂无' }}</span>
+            <span
+              v-if="hasExamCombo(detail.basic.examCombo)"
+              class="exam-combo-tip"
+              tabindex="0"
+              data-tip="该专业考试科目组合"
+              title="该专业考试科目组合">{{ formatExamCombo(detail.basic.examCombo) }}</span>
+            <span v-else>暂无</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
@@ -478,7 +511,8 @@ import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getToken } from '@/api/request'
 import { displayMetric, formatAdmissionQuota, formatAdmissionRange, presentationSourceUrl } from '@/utils/admissionDisplay.mjs'
-import { directionToggleLabel, isDirectionListExpanded } from '@/utils/schoolDirections.mjs'
+import { directionToggleLabel, isDirectionListExpanded, listedDirectionCount } from '@/utils/schoolDirections.mjs'
+import { formatExamCombo, hasExamCombo } from '@/utils/examComboDisplay.mjs'
 
 const router = useRouter()
 const route = useRoute()
@@ -791,8 +825,8 @@ function groupSchools(items) {
     return {
       ...primary,
       cardKey: `school:${primary.schoolName}:${primary.examCombo}:${primary.province || ''}`,
-      directionCount: sorted.length,
-      directions: sorted
+      directions: sorted,
+      directionCount: sorted.length
     }
   })
 }
@@ -1846,18 +1880,25 @@ if (activeTab.value === 'compare') {
 }
 
 .direction-list {
-  margin-top: 14px;
+  margin-top: 16px;
   border-top: 1px solid #eef2f7;
-  padding-top: 10px;
+  padding-top: 12px;
+}
+
+.direction-list-header {
+  margin-bottom: 8px;
+  color: #5f6f85;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .direction-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.3fr) minmax(0, 1fr) auto;
-  gap: 12px 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 20px;
   align-items: start;
-  padding: 12px 0;
-  border-bottom: 1px solid #f1f5fb;
+  padding: 16px 0;
+  border-bottom: 1px solid #e8eef6;
 }
 
 .direction-row:last-child {
@@ -1880,19 +1921,61 @@ if (activeTab.value === 'compare') {
   margin-top: 2px;
 }
 
-.direction-stats {
+.direction-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 14px;
-  color: #5f6f85;
+  gap: 6px 10px;
+  margin-top: 4px;
+}
+
+.direction-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.direction-metric {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f6f9ff;
+}
+
+.direction-metric span {
+  display: block;
+  color: #7a879a;
   font-size: 12px;
-  line-height: 1.7;
-  min-width: 0;
+}
+
+.direction-metric strong {
+  display: block;
+  margin-top: 2px;
+  color: #1f2937;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.direction-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  color: #7a879a;
+  font-size: 12px;
+}
+
+.direction-source {
+  display: inline-block;
+  margin-top: 10px;
+  color: #7a879a;
+  font-size: 12px;
 }
 
 .direction-actions {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 .direction-actions button {
@@ -2732,5 +2815,50 @@ if (activeTab.value === 'compare') {
   .shortlist-sidebar {
     display: none;
   }
+}
+</style>
+
+<style>
+/* exam-combo-tip global — also covers the append-to-body drawer */
+.exam-combo-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+  outline: none;
+  border-bottom: 1px dashed #9aa8bc;
+}
+
+.exam-combo-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(280px, 78vw);
+  padding: 7px 9px;
+  border: 1px solid #dbe7ff;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 37, 76, 0.14);
+  color: #526278;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+  pointer-events: none;
+}
+
+.exam-combo-tip:hover::after,
+.exam-combo-tip:focus::after,
+.exam-combo-tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 </style>

@@ -118,7 +118,13 @@
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span :title="'该专业考试科目组合'">{{ detail.basic.examCombo || '暂无' }}</span>
+            <span
+              v-if="hasExamCombo(detail.basic.examCombo)"
+              class="exam-combo-tip"
+              tabindex="0"
+              data-tip="该专业考试科目组合"
+              title="该专业考试科目组合">{{ formatExamCombo(detail.basic.examCombo) }}</span>
+            <span v-else>暂无</span>
             <span>{{ detail.basic.studyModeLabel }}</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
@@ -148,6 +154,7 @@ import CompareProgramHeader from '@/components/CompareProgramHeader.vue'
 import { useUserStore } from '@/stores/user'
 import { listFavorites, removeFavorite } from '@/api/favorites'
 import { displayMetric, formatAdmissionRange } from '@/utils/admissionDisplay.mjs'
+import { formatExamCombo, hasExamCombo } from '@/utils/examComboDisplay.mjs'
 import { getProgramDetail, comparePrograms } from '@/api/programs'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getProfile } from '@/api/profile'
@@ -361,4 +368,45 @@ onMounted(() => {
 .detail-score-grid strong { font-size: 22px; }
 .drawer-warning { border: 1px solid #ffd7a8; border-radius: 8px; padding: 12px; background: #fff8e8; }
 .drawer-warning p { color: #9a4d00; margin: 4px 0; }
+</style>
+
+<style>
+.exam-combo-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+  outline: none;
+  border-bottom: 1px dashed #9aa8bc;
+}
+.exam-combo-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(280px, 78vw);
+  padding: 7px 9px;
+  border: 1px solid #dbe7ff;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 37, 76, 0.14);
+  color: #526278;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+.exam-combo-tip:hover::after,
+.exam-combo-tip:focus::after,
+.exam-combo-tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
 </style>
