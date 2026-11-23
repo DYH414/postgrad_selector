@@ -4,7 +4,7 @@ import java.util.regex.Pattern;
 
 public final class ProgramDegreeType
 {
-    private static final Pattern PROFESSIONAL_CODE = Pattern.compile("0854[0-9]{2}|08[0-9]{2}51");
+    private static final Pattern PROFESSIONAL_CODE = Pattern.compile("0854[0-9]{2}|08[0-9]{2}51|145200");
 
     private ProgramDegreeType()
     {
