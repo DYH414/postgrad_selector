@@ -95,6 +95,7 @@ async function verify() {
 
     const options = await api('student-options', 'GET', '/app/recommendation/options', () =>
       page.getByRole('link', { name: '首页', exact: true }).click())
+    assert.equal(options.data.defaultProfile.examCombo, '22408')
     const score = page.getByPlaceholder('请输入你的预计初试总分')
     await page.waitForFunction(expected =>
       document.querySelector('input[placeholder="请输入你的预计初试总分"]')?.value === expected,
@@ -124,6 +125,9 @@ async function verify() {
     const noMatches = await api('student-catalog-empty', 'GET', '/app/programs/search', () => search.press('Enter'))
     assert.deepEqual(noMatches.data.items, [])
     await page.getByText('暂无匹配结果', { exact: true }).waitFor()
+    await page.waitForFunction(() =>
+      document.querySelector('.filter-sidebar input[placeholder="请输入分数"]')?.value === '330')
+    await page.locator('.filter-sidebar').getByText(/^22408（数学二/).waitFor()
     await screen('student-catalog-empty')
     await page.getByPlaceholder('学校/专业/学院名称').fill(programs[0])
     await page.getByPlaceholder('请输入分数').fill('330')

@@ -8,10 +8,13 @@ import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.domain.UserProfile;
 import com.ruoyi.postgrad.domain.dto.ProgramSummaryDTO;
 import com.ruoyi.postgrad.domain.vo.RecommendResultVO;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.mapper.SchoolMapper;
+import com.ruoyi.postgrad.mapper.UserProfileMapper;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -36,17 +39,48 @@ class ProgramRecommendationServiceImplTest
     @Mock
     private RecommendationLogMapper logMapper;
 
+    @Mock
+    private UserProfileMapper userProfileMapper;
+
+    @Mock
+    private SchoolMapper schoolMapper;
+
     @BeforeEach
     void setUp() throws Exception
     {
         service = new ProgramRecommendationServiceImpl();
         setField("recommendationMapper", recommendationMapper);
         setField("logMapper", logMapper);
+        setField("userProfileMapper", userProfileMapper);
+        setField("schoolMapper", schoolMapper);
         lenient().when(logMapper.insertRecommendationLog(any(RecommendationLog.class))).thenAnswer(invocation -> {
             RecommendationLog log = invocation.getArgument(0);
             log.setId(83L);
             return 1;
         });
+    }
+
+    @Test
+    void optionsUseSavedScoreAndExamCombo()
+    {
+        UserProfile profile = new UserProfile();
+        profile.setEstimatedScore(350);
+        profile.setExamCombo("22408");
+        when(userProfileMapper.selectUserProfileByUserId(1L)).thenReturn(profile);
+
+        Map<?, ?> defaults = (Map<?, ?>) service.recommendationOptions(1L).get("defaultProfile");
+
+        assertEquals(350, defaults.get("estimatedScore"));
+        assertEquals("22408", defaults.get("examCombo"));
+    }
+
+    @Test
+    void anonymousOptionsKeepDefaultScoreAndExamCombo()
+    {
+        Map<?, ?> defaults = (Map<?, ?>) service.recommendationOptions(null).get("defaultProfile");
+
+        assertEquals(300, defaults.get("estimatedScore"));
+        assertEquals("11408", defaults.get("examCombo"));
     }
 
     @Test
