@@ -43,6 +43,7 @@ import com.ruoyi.postgrad.recommend.routing.AgentToolScope;
 import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationContext;
 
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
@@ -174,25 +175,24 @@ public class AiChatServiceImpl implements IAiChatService {
 
             // 3. 构建 ChatMemory
             ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(MAX_MESSAGES);
-            List<ChatMessageVO> userHistory = new ArrayList<>();
             for (ChatMessageVO m : history) {
-                if (!"user".equals(m.getRole())) continue;
-                userHistory.add(m);
                 if (m.getContent() == null || m.getContent().isBlank()) continue;
-                chatMemory.add(UserMessage.from(m.getContent()));
+                if ("assistant".equals(m.getRole())) {
+                    chatMemory.add(AiMessage.from(m.getContent()));
+                } else if ("user".equals(m.getRole())) {
+                    chatMemory.add(UserMessage.from(m.getContent()));
+                }
             }
 
             // 4. 保存用户消息
             persistMessage(userId, conversation.getId(), "user", message, null);
-            ChatMessageVO userTurn = new ChatMessageVO("user", message);
-            history.add(userTurn);
-            userHistory.add(userTurn);
+            history.add(new ChatMessageVO("user", message));
             saveHistory(userId, history);
 
             AiInvocationContext.setOperationKey("ai-chat-route");
             AgentRouteDecision routeDecision;
             try {
-                routeDecision = agentIntentRouter.route(message, userHistory);
+                routeDecision = agentIntentRouter.route(message, history);
             } finally {
                 AiInvocationContext.setOperationKey("ai-chat");
             }
@@ -386,14 +386,12 @@ public class AiChatServiceImpl implements IAiChatService {
         List<ChatMessageVO> result = new ArrayList<>();
         for (AiChatMessage row : rows) {
             if (!"user".equals(row.getRole()) && !"assistant".equals(row.getRole())) continue;
-            boolean assistant = "assistant".equals(row.getRole());
-            ChatMessageVO vo = new ChatMessageVO(row.getRole(), assistant
-                ? "历史回答未验证，请重新提问。"
-                : row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent());
+            ChatMessageVO vo = new ChatMessageVO(row.getRole(),
+                row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent());
             vo.setMessageType(row.getMessageType());
             vo.setStatus(row.getStatus());
             vo.setSeq(row.getSeq());
-            if (!assistant) vo.setMetadataJson(row.getMetadataJson());
+            vo.setMetadataJson(row.getMetadataJson());
             result.add(vo);
         }
         return result;
