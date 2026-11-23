@@ -215,13 +215,17 @@
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span>{{ detail.basic.examCombo || '-' }}</span>
+            <span :title="'该专业考试科目组合'">{{ detail.basic.examCombo || '暂无' }}</span>
             <span>{{ detail.basic.studyModeLabel }}</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
-            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine ?? '-' }}</strong></div>
-            <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
+            <div><small>复试线</small><strong>{{ displayMetric(detail.recommendationOverview.scoreLine) }}</strong></div>
+            <div><small>最低录取分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionLow) }}</strong></div>
+            <div><small>最高分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionHigh) }}</strong></div>
+            <div><small>拟录取均分</small><strong>{{ displayMetric(detail.recommendationOverview.avgAdmittedScore) }}</strong></div>
+            <div><small>拟录取区间</small><strong>{{ formatAdmissionRange(detail.recommendationOverview.admissionLow, detail.recommendationOverview.admissionHigh, detail.recommendationOverview.admissionRangeLabel) }}</strong></div>
+            <div><small>拟录取人数</small><strong>{{ displayMetric(detail.recommendationOverview.admittedCount) }}</strong></div>
           </div>
           <div class="drawer-warning">
             <p v-for="warning in detail.riskWarnings" :key="warning">· {{ warning }}</p>
@@ -240,6 +244,7 @@ import AppHeader from '@/components/AppHeader.vue'
 import { useUserStore } from '@/stores/user'
 import { getProfile, saveProfile } from '@/api/profile'
 import { listFavorites, removeFavorite } from '@/api/favorites'
+import { displayMetric, formatAdmissionRange } from '@/utils/admissionDisplay.mjs'
 import { getProgramDetail } from '@/api/programs'
 import { listReports } from '@/api/recommend-v2'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'

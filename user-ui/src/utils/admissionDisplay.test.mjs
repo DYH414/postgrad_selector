@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict'
-import { formatAdmissionQuota } from './admissionDisplay.mjs'
+import { formatAdmissionQuota, displayMetric, formatAdmissionRange, presentationSourceUrl } from './admissionDisplay.mjs'
 
-assert.deepEqual(
-  formatAdmissionQuota({ unifiedExamQuota: 12, planCount: 20 }),
-  { label: '预计招生', value: 12, hint: '统考名额' }
-)
-
-assert.deepEqual(
-  formatAdmissionQuota({ planCount: 20 }),
-  { label: '预计招生', value: 20, hint: '计划人数' }
-)
-
-assert.deepEqual(
-  formatAdmissionQuota({ unifiedExamQuota: 0, planCount: null }),
-  { label: '预计招生', value: '-', hint: '待补' }
-)
+assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: 12, planCount: 20 }), { label: '预计招生', value: 12, hint: '统考名额' })
+assert.deepEqual(formatAdmissionQuota({ planCount: 20 }), { label: '预计招生', value: 20, hint: '计划人数' })
+assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: 0, planCount: null }), { label: '预计招生', value: '暂无', hint: '待补' })
+assert.deepEqual(formatAdmissionQuota({}), { label: '预计招生', value: '暂无', hint: '待补' })
+assert.equal(displayMetric(0), 0)
+assert.equal(displayMetric(null), '暂无')
+assert.equal(displayMetric('-'), '暂无')
+assert.equal(displayMetric(''), '暂无')
+assert.equal(formatAdmissionRange(320, 390), '320 - 390')
+assert.equal(formatAdmissionRange(null, 390), '最高分 390')
+assert.equal(formatAdmissionRange(320, null), '最低分 320')
+assert.equal(formatAdmissionRange(null, null, '320-390'), '320-390')
+assert.equal(formatAdmissionRange(null, null), '暂无')
+assert.equal(formatAdmissionRange(null, null, '- - -'), '暂无')
+const raw = 'https://laz8noy.github.io/kaoyan408-share/06-%E9%99%A2%E6%A0%A1%E6%95%B0%E6%8D%AE%E5%BA%93/data/dai408_scores.json'
+assert.equal(presentationSourceUrl(raw), 'https://laz8noy.github.io/kaoyan408-share/06-院校数据库/院校数据浏览器.html')
+assert.equal(presentationSourceUrl('https://example.com'), 'https://example.com')

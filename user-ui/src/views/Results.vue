@@ -169,7 +169,7 @@
                       </span>
                     </template>
                     <template v-else-if="row.type === 'source'">
-                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="school.sourceUrl" target="_blank" rel="noopener noreferrer">{{ school.sourceLabel || '查看来源' }}</a>
+                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="presentationSourceUrl(school.sourceUrl)" target="_blank" rel="noopener noreferrer">{{ school.sourceLabel || '查看来源' }}</a>
                       <span v-else>-</span>
                     </template>
                     <template v-else-if="row.type === 'action'"><button class="detail-link" type="button" @click="openDetail(school.programId)">查看详情</button></template>
@@ -271,7 +271,14 @@
         <template v-if="activeTab !== 'compare' && (hasResult || isCatalogSearch) && !result.aiAnalysis">
           <div v-if="filteredItems.length === 0" class="empty-group">暂无匹配结果</div>
           <div v-else class="school-grid">
-            <article v-for="school in filteredItems" :key="school.cardKey" class="school-card">
+            <article
+              v-for="school in filteredItems"
+              :key="school.cardKey"
+              class="school-card"
+              :class="{
+                'has-multiple-directions': school.directionCount > 1,
+                'is-expanded': school.directionCount > 1 && isSchoolExpanded(school.cardKey)
+              }">
                 <div class="card-top">
                   <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
                   <div>
@@ -284,8 +291,9 @@
                       v-if="school.directionCount > 1"
                       class="direction-count"
                       type="button"
+                      :aria-expanded="isSchoolExpanded(school.cardKey) ? 'true' : 'false'"
                       @click="toggleSchoolDirections(school.cardKey)">
-                      共 {{ school.directionCount }} 个符合方向
+                      {{ directionToggleLabel(school.directionCount, isSchoolExpanded(school.cardKey)) }}
                     </button>
                     <div class="school-meta-line">
                       <span>{{ school.exam }} | {{ school.province || '-' }}</span>
@@ -305,19 +313,25 @@
 
                 <div class="score-line">
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的平均总分，是本次筛选范围的主依据。">
-                    <span>拟录取均分</span><strong>{{ school.avgScore || '-' }}</strong>
+                    <span>拟录取均分</span><strong>{{ displayMetric(school.avgScore) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="你的预计初试总分减去拟录取均分，负数代表低于历史均分。">
                     <span>均分差距</span><strong :class="{ positive: school.avgScoreGap >= 0, negative: school.avgScoreGap < 0 }">{{ formatDiff(school.avgScoreGap) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，仅作风险边界参考。">
-                    <span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong>
+                    <span>最低录取分</span><strong>{{ displayMetric(school.admissionLow) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="该专业进入复试的分数门槛。">
-                    <span>复试线</span><strong>{{ school.scoreLine ?? '-' }}</strong>
+                    <span>复试线</span><strong>{{ displayMetric(school.scoreLine) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
                     <span>拟录取区间</span><strong>{{ school.range }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业对应年份拟录取名单中的人数。">
+                    <span>拟录取人数</span><strong>{{ displayMetric(school.admittedCount) }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最高总分。">
+                    <span>最高分</span><strong>{{ displayMetric(school.admissionHigh) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="优先展示该专业统考名额；缺少统考名额时展示计划人数，计划人数可能包含推免。">
                     <span>{{ school.quotaDisplay.label }}</span>
@@ -336,7 +350,7 @@
                 <a
                   v-if="school.sourceUrl"
                   class="source-link"
-                  :href="school.sourceUrl"
+                  :href="presentationSourceUrl(school.sourceUrl)"
                   target="_blank"
                   rel="noopener noreferrer">
                   <i class="el-icon-link"></i> {{ school.sourceLabel || '来源链接' }}
@@ -364,17 +378,19 @@
                       <small>{{ direction.exam }} | {{ direction.dataYear ? `${direction.dataYear}年数据` : '年份待补' }}</small>
                     </div>
                     <div class="direction-stats">
-                      <span>均分 {{ direction.avgScore || '-' }}</span>
+                      <span>均分 {{ displayMetric(direction.avgScore) }}</span>
                       <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
-                      <span>复试线 {{ direction.scoreLine ?? '-' }}</span>
-                      <span>最低录取分 {{ direction.admissionLow ?? '-' }}</span>
+                      <span>复试线 {{ displayMetric(direction.scoreLine) }}</span>
+                      <span>最低录取分 {{ displayMetric(direction.admissionLow) }}</span>
+                      <span>最高分 {{ displayMetric(direction.admissionHigh) }}</span>
                       <span>区间 {{ direction.range }}</span>
+                      <span>拟录取人数 {{ displayMetric(direction.admittedCount) }}</span>
                       <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}（{{ direction.quotaDisplay.hint }}）</span>
                       <span>完整度{{ direction.confidence }}</span>
                       <a
                         v-if="direction.sourceUrl"
                         class="source-link"
-                        :href="direction.sourceUrl"
+                        :href="presentationSourceUrl(direction.sourceUrl)"
                         target="_blank"
                         rel="noopener noreferrer">{{ direction.sourceLabel || '来源链接' }}</a>
                     </div>
@@ -405,15 +421,17 @@
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span>{{ detail.basic.examCombo || '-' }}</span>
+            <span :title="'该专业考试科目组合'">{{ detail.basic.examCombo || '暂无' }}</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
-            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine ?? '-' }}</strong></div>
-            <div><small>最低录取分</small><strong>{{ detail.recommendationOverview.admissionLow || '-' }}</strong></div>
+            <div><small>复试线</small><strong>{{ displayMetric(detail.recommendationOverview.scoreLine) }}</strong></div>
+            <div><small>最低录取分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionLow) }}</strong></div>
+            <div><small>最高分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionHigh) }}</strong></div>
             <div><small>与最低录取分差距</small><strong>{{ formatDiff(detail.recommendationOverview.admissionLowGap) }}</strong></div>
-            <div><small>拟录取均分</small><strong>{{ detail.recommendationOverview.avgAdmittedScore ?? '-' }}</strong></div>
-            <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
+            <div><small>拟录取均分</small><strong>{{ displayMetric(detail.recommendationOverview.avgAdmittedScore) }}</strong></div>
+            <div><small>拟录取区间</small><strong>{{ formatAdmissionRange(detail.recommendationOverview.admissionLow, detail.recommendationOverview.admissionHigh, detail.recommendationOverview.admissionRangeLabel) }}</strong></div>
+            <div><small>拟录取人数</small><strong>{{ displayMetric(detail.recommendationOverview.admittedCount) }}</strong></div>
             <div><small>与拟录取均分差距</small><strong>{{ formatDiff(detail.recommendationOverview.avgScoreGap) }}</strong></div>
           </div>
           <div class="drawer-warning">
@@ -422,21 +440,22 @@
           <a
             v-if="detail.source && detail.source.sourceUrl"
             class="drawer-source-link"
-            :href="detail.source.sourceUrl"
+            :href="presentationSourceUrl(detail.source.sourceUrl)"
             target="_blank"
             rel="noopener noreferrer">
             <i class="el-icon-link"></i> {{ detail.source.sourceTitle || detail.source.sourceOwner || '查看来源' }}
           </a>
           <table class="trend-table">
             <thead>
-              <tr><th>年份</th><th>复试线</th><th>拟录取均分</th><th>录取区间</th></tr>
+              <tr><th>年份</th><th>复试线</th><th>拟录取人数</th><th>拟录取均分</th><th>录取区间</th></tr>
             </thead>
             <tbody>
               <tr v-for="item in detail.trends" :key="item.year">
                 <td>{{ item.year }}</td>
-                <td>{{ item.scoreLine ?? '-' }}</td>
-                <td>{{ item.avgAdmittedScore || '-' }}</td>
-                <td>{{ item.admissionLow || '-' }} - {{ item.admissionHigh || '-' }}</td>
+                <td>{{ displayMetric(item.scoreLine) }}</td>
+                <td>{{ displayMetric(item.admittedCount) }}</td>
+                <td>{{ displayMetric(item.avgAdmittedScore) }}</td>
+                <td>{{ formatAdmissionRange(item.admissionLow, item.admissionHigh) }}</td>
               </tr>
             </tbody>
           </table>
@@ -458,7 +477,8 @@ import { comparePrograms, getProgramDetail, searchPrograms } from '@/api/program
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getToken } from '@/api/request'
-import { formatAdmissionQuota } from '@/utils/admissionDisplay.mjs'
+import { displayMetric, formatAdmissionQuota, formatAdmissionRange, presentationSourceUrl } from '@/utils/admissionDisplay.mjs'
+import { directionToggleLabel, isDirectionListExpanded } from '@/utils/schoolDirections.mjs'
 
 const router = useRouter()
 const route = useRoute()
@@ -526,6 +546,7 @@ const backupGroups = ref([])
 const backupLoaded = ref(false)
 const selectedBackupCompareIds = ref([])
 const expandedSchoolKeys = ref([])
+const collapsedSchoolKeys = ref([])
 
 // --- computed properties ---
 const currentHeader = computed(() => {
@@ -731,9 +752,11 @@ function normalizeSchool(item) {
     planCount: item.planCount,
     quotaDisplay: formatAdmissionQuota(item),
     admissionLow: item.admissionLow,
+    admissionHigh: item.admissionHigh,
     admissionLowGap: item.admissionLowGap,
-    range: item.admissionRangeLabel || '-',
-    avgScore: item.avgAdmittedScore || '-',
+    admittedCount: item.admittedCount,
+    range: formatAdmissionRange(item.admissionLow, item.admissionHigh, item.admissionRangeLabel),
+    avgScore: item.avgAdmittedScore,
     avgScoreGap: item.avgScoreGap,
     sourceUrl: item.sourceUrl,
     sourceLabel: item.sourceTitle || item.sourceOwner,
@@ -774,8 +797,12 @@ function groupSchools(items) {
   })
 }
 
+function hasNumericScore(value) {
+  return value != null && value !== '' && value !== '-' && value !== '暂无' && Number.isFinite(Number(value))
+}
+
 function hasAdmissionScores(item) {
-  return item.scoreLine != null || item.admissionLow != null || item.avgScore !== '-'
+  return hasNumericScore(item.scoreLine) || hasNumericScore(item.admissionLow) || hasNumericScore(item.avgScore)
 }
 
 function directionComparator(a, b) {
@@ -974,13 +1001,22 @@ function resetFilters() {
 }
 
 function isSchoolExpanded(cardKey) {
-  return expandedSchoolKeys.value.includes(cardKey)
+  return isDirectionListExpanded({
+    cardKey,
+    isCatalogSearch: isCatalogSearch.value,
+    expandedKeys: expandedSchoolKeys.value,
+    collapsedKeys: collapsedSchoolKeys.value
+  })
 }
 
 function toggleSchoolDirections(cardKey) {
-  expandedSchoolKeys.value = isSchoolExpanded(cardKey)
-    ? expandedSchoolKeys.value.filter(key => key !== cardKey)
-    : [...expandedSchoolKeys.value, cardKey]
+  if (isSchoolExpanded(cardKey)) {
+    collapsedSchoolKeys.value = [...collapsedSchoolKeys.value, cardKey]
+    expandedSchoolKeys.value = expandedSchoolKeys.value.filter(key => key !== cardKey)
+  } else {
+    collapsedSchoolKeys.value = collapsedSchoolKeys.value.filter(key => key !== cardKey)
+    expandedSchoolKeys.value = [...expandedSchoolKeys.value, cardKey]
+  }
 }
 
 function matchSchoolFilters(school, filters) {
@@ -1791,14 +1827,20 @@ if (activeTab.value === 'compare') {
   white-space: nowrap;
 }
 
+.school-card.has-multiple-directions.is-expanded {
+  grid-column: 1 / -1;
+}
+
 .direction-count {
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #c5d8ff;
   background: #eef4ff;
   color: #1769f6;
   border-radius: 999px;
-  padding: 3px 9px;
-  margin-top: 4px;
-  font-size: 12px;
+  padding: 6px 12px;
+  margin-top: 8px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -1811,10 +1853,10 @@ if (activeTab.value === 'compare') {
 
 .direction-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 9px 0;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(0, 1fr) auto;
+  gap: 12px 16px;
+  align-items: start;
+  padding: 12px 0;
   border-bottom: 1px solid #f1f5fb;
 }
 
@@ -1823,8 +1865,7 @@ if (activeTab.value === 'compare') {
 }
 
 .direction-main strong,
-.direction-main small,
-.direction-stats span {
+.direction-main small {
   display: block;
 }
 
@@ -1840,9 +1881,13 @@ if (activeTab.value === 'compare') {
 }
 
 .direction-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
   color: #5f6f85;
   font-size: 12px;
   line-height: 1.7;
+  min-width: 0;
 }
 
 .direction-actions {
