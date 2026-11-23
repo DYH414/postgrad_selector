@@ -32,4 +32,11 @@ public enum ProgramExamCombo {
         }
         return null;
     }
+
+    public static ProgramExamCombo fromCode(String code) {
+        for (ProgramExamCombo combo : values()) {
+            if (combo.code.equals(code)) return combo;
+        }
+        return null;
+    }
 }

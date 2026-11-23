@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.ProgramExamCombo;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
@@ -222,6 +223,11 @@ public class V2ChatTools {
         item.put("collegeName", f.getCollegeName());
         item.put("programName", f.getProgramName());
         item.put("programCode", f.getProgramCode());
+        item.put("examCombo", f.getExamCombo());
+        ProgramExamCombo examCombo = ProgramExamCombo.fromCode(f.getExamCombo());
+        if (examCombo != null) {
+            item.put("examSubjectsLabel", examCombo.label());
+        }
         item.put("degreeType", f.getDegreeType());
         item.put("dataYear", f.getDataYear());
         item.put("displayName", displayName(f));
@@ -700,9 +706,11 @@ public class V2ChatTools {
 
     private String formatFactCard(com.ruoyi.postgrad.recommend.domain.SchoolFact f) {
         if (f == null) return "无数据";
+        ProgramExamCombo examCombo = ProgramExamCombo.fromCode(f.getExamCombo());
         return String.format(
-            "%s | %s | 层次:%s | 城市:%s | 均分:%s | 差距:%s | 招生:%s | %s | 可保底:%s | 数据:%s",
+            "%s | %s | 层次:%s | 城市:%s | 考试组合:%s | 均分:%s | 差距:%s | 招生:%s | %s | 可保底:%s | 数据:%s",
             f.getSchoolName(), f.getProgramName(), f.getSchoolTier(), f.getCity(),
+            examCombo != null ? examCombo.label() : "-",
             f.getAvgAdmittedScore() != null ? String.valueOf(f.getAvgAdmittedScore()) : "-",
             f.getGapLabel() != null ? f.getGapLabel() : "-",
             f.getUnifiedExamQuota() != null ? String.valueOf(f.getUnifiedExamQuota())
@@ -719,6 +727,9 @@ public class V2ChatTools {
         sb.append(row.get("programName")).append(" | ");
         sb.append("层次:").append(row.get("schoolTier")).append(" | ");
         sb.append("城市:").append(row.get("city")).append(" | ");
+        if (row.get("subjectNames") != null) {
+            sb.append("考试科目:").append(row.get("subjectNames")).append(" | ");
+        }
         sb.append("均分:").append(row.get("avgAdmittedScore") != null ? row.get("avgAdmittedScore") : "-").append(" | ");
         sb.append("招生:").append(row.get("unifiedExamQuota") != null ? row.get("unifiedExamQuota")
             : (row.get("planCount") != null ? row.get("planCount") : "-")).append(" | ");

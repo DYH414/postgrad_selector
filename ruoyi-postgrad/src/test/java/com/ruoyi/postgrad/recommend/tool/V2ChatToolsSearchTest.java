@@ -45,14 +45,22 @@ class V2ChatToolsSearchTest {
         row.put("dataCompleteness", "A");
         row.put("admissionLow", 290);
         row.put("admissionHigh", 320);
+        row.put("subjectCodes", "101,204,302,408");
+        row.put("subjectNames", "政治 + 英语二 + 数学二 + 408");
         when(mapper.selectCandidates(anyString(), any(), any(), anyInt(), any(), anyString()))
             .thenReturn(List.of(row));
+        when(mapper.selectProgramForRecommendation(2501L)).thenReturn(row);
 
         V2ChatToolContext.init(1L, redis, mapper);
-        String result = new V2ChatTools().searchPrograms("深圳大学", null, null);
+        V2ChatTools tools = new V2ChatTools();
+        String result = tools.searchPrograms("深圳大学", null, null);
 
         assertTrue(result.contains("深圳大学"), result);
         assertTrue(result.contains("2501"), result);
+        assertTrue(result.contains("\"examCombo\":\"22408\""), result);
+        assertTrue(result.contains("\"examSubjectsLabel\":\"政治 + 英语二 + 数学二 + 408\""), result);
+        String detail = tools.getProgramDetail(2501L);
+        assertTrue(detail.contains("考试科目:政治 + 英语二 + 数学二 + 408"), detail);
     }
 
     @Test
