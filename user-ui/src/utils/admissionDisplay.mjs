@@ -68,6 +68,6 @@ export function formatAdmissionQuota(item = {}) {
   return {
     label: '预计招生',
     value: '暂无',
-    hint: '待补'
+    hint: ''
   }
 }

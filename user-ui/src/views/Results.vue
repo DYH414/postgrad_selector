@@ -316,7 +316,7 @@
                         title="该专业考试科目组合">{{ formatExamCombo(school.examCombo || school.exam) }}</span>
                       <span v-if="school.province">{{ school.province }}</span>
                       <em v-if="school.dataYear" class="data-year-badge">{{ school.dataYear }}年数据</em>
-                      <em v-else class="data-year-badge muted">年份待补</em>
+                      <em v-else class="data-year-badge muted">暂无</em>
                     </div>
                   </div>
                   <button
@@ -355,7 +355,7 @@
                     <span>{{ school.quotaDisplay.label }}</span>
                     <strong>
                       {{ school.quotaDisplay.value }}
-                      <small>{{ school.quotaDisplay.hint }}</small>
+                      <small v-if="school.quotaDisplay.hint">{{ school.quotaDisplay.hint }}</small>
                     </strong>
                   </div>
                 </div>
@@ -427,7 +427,7 @@
                         <span>最低录取分 {{ displayMetric(direction.admissionLow) }}</span>
                         <span>最高分 {{ displayMetric(direction.admissionHigh) }}</span>
                         <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
-                        <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}（{{ direction.quotaDisplay.hint }}）</span>
+                        <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}<template v-if="direction.quotaDisplay.hint">（{{ direction.quotaDisplay.hint }}）</template></span>
                         <span>完整度{{ direction.confidence }}</span>
                       </div>
                       <a
@@ -1176,7 +1176,7 @@ function loadCompare() {
         degreeTypeLabel: item.degreeTypeLabel || '-',
         exam: school.exam,
         dataYear: school.dataYear,
-        dataYearLabel: school.dataYear ? `${school.dataYear}年` : '年份待补',
+        dataYearLabel: school.dataYear ? `${school.dataYear}年` : '暂无',
         score: school.scoreLine,
         scoreLineGap: school.scoreLineGap,
         admissionLow: school.admissionLow,

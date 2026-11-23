@@ -3,8 +3,8 @@ import { formatAdmissionQuota, displayMetric, formatAdmissionRange, presentation
 
 assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: 12, planCount: 20 }), { label: '预计招生', value: 12, hint: '统考名额' })
 assert.deepEqual(formatAdmissionQuota({ planCount: 20 }), { label: '预计招生', value: 20, hint: '计划人数' })
-assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: 0, planCount: null }), { label: '预计招生', value: '暂无', hint: '待补' })
-assert.deepEqual(formatAdmissionQuota({}), { label: '预计招生', value: '暂无', hint: '待补' })
+assert.deepEqual(formatAdmissionQuota({ unifiedExamQuota: 0, planCount: null }), { label: '预计招生', value: '暂无', hint: '' })
+assert.deepEqual(formatAdmissionQuota({}), { label: '预计招生', value: '暂无', hint: '' })
 assert.equal(displayMetric(0), 0)
 assert.equal(displayMetric(null), '暂无')
 assert.equal(displayMetric('-'), '暂无')

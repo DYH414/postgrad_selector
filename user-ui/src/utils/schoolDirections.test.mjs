@@ -28,7 +28,7 @@ assert.equal(directionToggleLabel(listedDirectionCount({ directions: Array.from(
 assert.equal(directionMetaExam('101,204,302,892'), '101/204/302/892')
 assert.equal(directionMetaYear(2025), '2025年数据')
 assert.equal(directionMetaExam('22408'), '22408（101/204/302/408）')
-assert.equal(directionMetaYear(null), '年份待补')
+assert.equal(directionMetaYear(null), '暂无')
 
 // Never claim 全部 while the backend still has more matching directions.
 assert.equal(directionListHeader(101, 101), '已列出全部 101 个符合方向')

@@ -29,7 +29,7 @@ export function directionMetaExam(value) {
 }
 
 export function directionMetaYear(dataYear) {
-  return dataYear ? `${dataYear}年数据` : '年份待补'
+  return dataYear ? `${dataYear}年数据` : '暂无'
 }
 
 /**
