@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
@@ -29,6 +30,7 @@ import dev.langchain4j.rag.RetrievalAugmentor;
 
 import com.ruoyi.postgrad.mapper.AiChatMapper;
 import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
+import com.ruoyi.postgrad.recommend.domain.AiChatMessage;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
@@ -223,6 +225,35 @@ class AiChatServiceImplTest {
             "Prompt 应明确禁止依赖后端自动 general RAG 注入");
         assertFalse(prompt.contains("系统已自动从工作集补充"),
             "已废弃的自动补位行为不能继续出现在 Prompt 中");
+    }
+
+    @Test
+    void resumedHistoryOnlyDisplaysMessagesFromTheActiveAccountConversation() throws Exception {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class, RETURNS_DEEP_STUBS);
+        when(redis.opsForValue().get("ai:v2:chat:7")).thenReturn("SYNTHETIC_RUNTIME_PROMPT");
+
+        AiChatMapper mapper = mock(AiChatMapper.class);
+        AiChatConversation conversation = new AiChatConversation();
+        conversation.setId(42L);
+        when(mapper.selectActiveConversation(7L)).thenReturn(conversation);
+        AiChatMessage internalMessage = new AiChatMessage();
+        internalMessage.setRole("system");
+        internalMessage.setContent("SYNTHETIC_HIDDEN_INSTRUCTIONS");
+        AiChatMessage answer = new AiChatMessage();
+        answer.setRole("assistant");
+        answer.setContent("公开回答");
+        answer.setMetadataJson("{\"ragCitations\":[{\"sourceName\":\"policy.md\"}]}");
+        when(mapper.selectMessages(42L, 200)).thenReturn(List.of(internalMessage, answer));
+
+        AiChatServiceImpl service = new AiChatServiceImpl();
+        injectField(service, "redisTemplate", redis);
+        injectField(service, "aiChatMapper", mapper);
+        var messages = service.resumeChat(7L).getMessages();
+
+        assertEquals(1, messages.size());
+        assertEquals("公开回答", messages.get(0).getContent());
+        assertEquals(answer.getMetadataJson(), messages.get(0).getMetadataJson());
+        verify(mapper).selectActiveConversation(7L);
     }
 
     private static void injectField(Object target, String fieldName, Object value) throws Exception {
