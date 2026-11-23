@@ -70,14 +70,15 @@ public class AppProgramController
     @RateLimiter(count = 30, time = 60, limitType = LimitType.IP)
     @GetMapping("/search")
     public AjaxResult search(@RequestParam String keyword,
-                             @RequestParam(defaultValue = "20") int limit)
+                             @RequestParam(defaultValue = "20") int limit,
+                             @RequestParam(defaultValue = "0") int offset)
     {
         if (keyword == null || keyword.trim().isEmpty())
             return AjaxResult.error("请输入搜索关键词");
 
         try
         {
-            return AjaxResult.success(programSearchService.searchPrograms(keyword.trim(), limit));
+            return AjaxResult.success(programSearchService.searchPrograms(keyword.trim(), limit, offset));
         }
         catch (Exception e)
         {

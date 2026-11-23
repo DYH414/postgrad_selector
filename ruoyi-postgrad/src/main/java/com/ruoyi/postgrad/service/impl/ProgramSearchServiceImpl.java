@@ -13,13 +13,14 @@ import com.ruoyi.postgrad.service.IProgramSearchService;
 @Service
 public class ProgramSearchServiceImpl implements IProgramSearchService
 {
-    private static final int MAX_RESULTS = 50;
+    /** Largest school currently has 101 full-time programs; keep one request able to hold a whole school. */
+    private static final int MAX_RESULTS = 500;
 
     @Autowired
     private ProgramSearchMapper programSearchMapper;
 
     @Override
-    public Map<String, Object> searchPrograms(String keyword, int limit)
+    public Map<String, Object> searchPrograms(String keyword, int limit, int offset)
     {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("keyword", keyword);
@@ -27,19 +28,24 @@ public class ProgramSearchServiceImpl implements IProgramSearchService
         if (keyword == null || keyword.trim().isEmpty())
         {
             result.put("total", 0);
+            result.put("offset", 0);
             result.put("items", new ArrayList<>());
             return result;
         }
 
+        String trimmed = keyword.trim();
         int clampedLimit = Math.max(1, Math.min(limit > 0 ? limit : 20, MAX_RESULTS));
-        List<RowMap> rows = programSearchMapper.searchByKeyword(keyword.trim(), clampedLimit);
+        int clampedOffset = Math.max(0, offset);
+        List<RowMap> rows = programSearchMapper.searchByKeyword(trimmed, clampedLimit, clampedOffset);
 
         List<Map<String, Object>> items = new ArrayList<>();
         for (RowMap row : rows)
         {
             items.add(normalizeSearchResult(row));
         }
-        result.put("total", items.size());
+        result.put("total", programSearchMapper.countByKeyword(trimmed));
+        result.put("limit", clampedLimit);
+        result.put("offset", clampedOffset);
         result.put("items", items);
         return result;
     }
@@ -71,6 +77,7 @@ public class ProgramSearchServiceImpl implements IProgramSearchService
         item.put("sourceUrl", row.get("sourceUrl"));
         item.put("sourceTitle", row.get("sourceTitle"));
         item.put("sourceOwner", row.get("sourceOwner"));
+        item.put("schoolTotal", row.get("schoolTotal"));
         item.put("is985", row.get("is985"));
         item.put("is211", row.get("is211"));
         item.put("isDoubleFirst", row.get("isDoubleFirst"));

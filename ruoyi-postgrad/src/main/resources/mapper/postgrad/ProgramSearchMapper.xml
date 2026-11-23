@@ -27,9 +27,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.max_admitted_score as admissionHigh,
             <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.DynamicDataCompleteness"/> as dataCompleteness,
             q.has_official_source as officialVerified,
-            coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
-            coalesce(ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
-            coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
+            coalesce(preferred_ds.url, ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
+            coalesce(preferred_ds.title, ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
+            coalesce(preferred_ds.source_owner, ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner,
+            count(*) over (partition by s.id) as schoolTotal
         from program p
         join college c on p.college_id = c.id
         join school s on c.school_id = s.id
@@ -42,6 +43,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             group by ps.program_id
         ) subj on subj.program_id = p.id
         <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.LatestFactYearJoins"/>
+        <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.PreferredSourceJoin"/>
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
@@ -58,8 +60,24 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                  when s.name like concat(#{keyword}, '%') then 1
                  else 2 end,
             case when sc.score_line is null then 1 else 0 end,
-            s.tier asc
-        limit #{limit}
+            s.tier asc,
+            p.id asc
+        limit #{limit} offset #{offset}
+    </select>
+
+    <select id="countByKeyword" resultType="int">
+        select count(distinct p.id)
+        from program p
+        join college c on p.college_id = c.id
+        join school s on c.school_id = s.id
+        where p.status = 'active' and s.status = 'active' and p.study_mode = 'full_time'
+          and (
+              s.name like concat('%', #{keyword}, '%')
+              or s.short_name like concat('%', #{keyword}, '%')
+              or c.name like concat('%', #{keyword}, '%')
+              or p.program_name like concat('%', #{keyword}, '%')
+              or p.program_code like concat('%', #{keyword}, '%')
+          )
     </select>
 
 </mapper>

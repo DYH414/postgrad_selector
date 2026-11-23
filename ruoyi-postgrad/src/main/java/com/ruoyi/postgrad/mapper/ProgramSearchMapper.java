@@ -6,5 +6,8 @@ import com.ruoyi.postgrad.domain.RowMap;
 
 public interface ProgramSearchMapper
 {
-    List<RowMap> searchByKeyword(@Param("keyword") String keyword, @Param("limit") int limit);
+    List<RowMap> searchByKeyword(@Param("keyword") String keyword, @Param("limit") int limit,
+        @Param("offset") int offset);
+
+    int countByKeyword(@Param("keyword") String keyword);
 }

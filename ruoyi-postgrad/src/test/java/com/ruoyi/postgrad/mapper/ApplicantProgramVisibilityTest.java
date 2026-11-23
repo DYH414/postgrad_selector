@@ -14,7 +14,8 @@ class ApplicantProgramVisibilityTest
     @Test
     void searchAndDirectLookupsRequireFullTime()
     {
-        assertFullTime("ProgramSearchMapper", "searchByKeyword", Map.of("keyword", "非全日制", "limit", 20));
+        assertFullTime("ProgramSearchMapper", "searchByKeyword", Map.of("keyword", "非全日制", "limit", 20, "offset", 0));
+        assertFullTime("ProgramSearchMapper", "countByKeyword", Map.of("keyword", "非全日制"));
         assertFullTime("RecommendationMapper", "selectCatalogProgram", Map.of("programId", 2939L));
     }
 
@@ -33,9 +34,22 @@ class ApplicantProgramVisibilityTest
 
     private void assertFullTime(String mapper, String statement, Object parameters)
     {
-        String resource = "mapper/postgrad/" + mapper + ".xml";
         Configuration configuration = new Configuration();
         configuration.getTypeAliasRegistry().registerAlias(UserFavoriteProgram.class);
+        // ProgramSearchMapper reuses SQL fragments from RecommendationMapper.
+        if ("ProgramSearchMapper".equals(mapper))
+        {
+            parse(configuration, "RecommendationMapper");
+        }
+        parse(configuration, mapper);
+        String sql = configuration.getMappedStatement("com.ruoyi.postgrad.mapper." + mapper + "." + statement)
+            .getBoundSql(parameters).getSql();
+        assertTrue(sql.contains("p.study_mode = 'full_time'"), sql);
+    }
+
+    private void parse(Configuration configuration, String mapper)
+    {
+        String resource = "mapper/postgrad/" + mapper + ".xml";
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(resource))
         {
             new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();
@@ -44,8 +58,5 @@ class ApplicantProgramVisibilityTest
         {
             throw new AssertionError(e);
         }
-        String sql = configuration.getMappedStatement("com.ruoyi.postgrad.mapper." + mapper + "." + statement)
-            .getBoundSql(parameters).getSql();
-        assertTrue(sql.contains("p.study_mode = 'full_time'"), sql);
     }
 }

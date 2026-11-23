@@ -113,6 +113,18 @@
           <el-button v-if="activeTab !== 'compare'" plain type="primary" icon="el-icon-download">导出结果</el-button>
         </div>
 
+        <div v-if="isCatalogSearch" class="catalog-progress-bar">
+          <span class="catalog-progress-text">{{ catalogProgressText }}</span>
+          <button
+            v-if="catalogHasMore"
+            type="button"
+            class="catalog-more-btn"
+            :disabled="catalogLoadingMore"
+            @click="loadMoreCatalog">
+            {{ catalogLoadingMore ? '加载中…' : '加载更多符合方向' }}
+          </button>
+        </div>
+
         <div class="data-alert">
           <i class="el-icon-warning"></i>
           复试线不是最低录取分；筛选学校不代表只有这些学校可以报。数据来源为第三方公开信息整理，可能存在遗漏或错误，请以院校官网为准。
@@ -357,6 +369,7 @@
                   v-if="school.sourceUrl"
                   class="source-link"
                   :href="presentationSourceUrl(school.sourceUrl)"
+                  :title="school.sourceLabel"
                   target="_blank"
                   rel="noopener noreferrer">
                   <i class="el-icon-link"></i> {{ school.sourceLabel || '来源链接' }}
@@ -375,7 +388,7 @@
                   </button>
                 </div>
                 <div v-if="listedDirectionCount(school) > 1 && isSchoolExpanded(school.cardKey)" class="direction-list">
-                  <div class="direction-list-header">已列出全部 {{ listedDirectionCount(school) }} 个符合方向</div>
+                  <div class="direction-list-header">{{ directionListHeader(listedDirectionCount(school), school.schoolTotal) }}</div>
                   <div v-for="direction in school.directions" :key="direction.cardKey" class="direction-row">
                     <div class="direction-main">
                       <strong>
@@ -388,8 +401,12 @@
                           class="exam-combo-tip"
                           tabindex="0"
                           data-tip="该专业考试科目组合"
-                          title="该专业考试科目组合">{{ formatExamCombo(direction.examCombo || direction.exam) }}</span>
-                        <span>{{ direction.dataYear ? `${direction.dataYear}年数据` : '年份待补' }}</span>
+                          title="该专业考试科目组合">{{ directionMetaExam(direction.examCombo || direction.exam) }}</span>
+                        <span
+                          v-if="hasExamCombo(direction.examCombo || direction.exam)"
+                          class="direction-meta-sep"
+                          aria-hidden="true">·</span>
+                        <span class="direction-year">{{ directionMetaYear(direction.dataYear) }}</span>
                       </small>
                       <div class="direction-metrics">
                         <div class="direction-metric">
@@ -417,6 +434,7 @@
                         v-if="direction.sourceUrl"
                         class="source-link direction-source"
                         :href="presentationSourceUrl(direction.sourceUrl)"
+                        :title="direction.sourceLabel"
                         target="_blank"
                         rel="noopener noreferrer">{{ direction.sourceLabel || '来源链接' }}</a>
                       <span v-else class="direction-source source-missing">来源待补充</span>
@@ -511,7 +529,15 @@ import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getToken } from '@/api/request'
 import { displayMetric, formatAdmissionQuota, formatAdmissionRange, presentationSourceUrl } from '@/utils/admissionDisplay.mjs'
-import { directionToggleLabel, isDirectionListExpanded, listedDirectionCount } from '@/utils/schoolDirections.mjs'
+import {
+  catalogProgressLabel,
+  directionListHeader,
+  directionMetaExam,
+  directionMetaYear,
+  directionToggleLabel,
+  isDirectionListExpanded,
+  listedDirectionCount
+} from '@/utils/schoolDirections.mjs'
 import { formatExamCombo, hasExamCombo } from '@/utils/examComboDisplay.mjs'
 
 const router = useRouter()
@@ -531,6 +557,7 @@ const emptyFilters = () => ({
 const emptyResult = () => ({
   recommendationId: null,
   totalCandidates: 0,
+  catalogTotal: null,
   score: '-',
   exam: '-',
   region: '不限',
@@ -544,7 +571,10 @@ const emptyResult = () => ({
 })
 
 // --- data properties ---
+const CATALOG_PAGE_SIZE = 500
+
 const loading = ref(false)
+const catalogLoadingMore = ref(false)
 const filtering = ref(false)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -679,6 +709,17 @@ const backupPreviewItems = computed(() => {
 
 const filteredTotal = computed(() => filteredItems.value.length)
 
+const catalogListedCount = computed(() => (result.value.items || []).length)
+const catalogTrueTotal = computed(() => (
+  result.value.catalogTotal != null ? result.value.catalogTotal : catalogListedCount.value
+))
+const catalogHasMore = computed(() => (
+  isCatalogSearch.value && catalogListedCount.value < catalogTrueTotal.value
+))
+const catalogProgressText = computed(() => (
+  catalogProgressLabel(catalogListedCount.value, catalogTrueTotal.value)
+))
+
 const aiParagraphs = computed(() => {
   const text = result.value.aiAnalysis
   if (!text) return []
@@ -695,6 +736,28 @@ function loadOptions() {
       optionRegions.value = data.regions
     }
   }).catch(() => {})
+}
+
+function loadMoreCatalog() {
+  if (!isCatalogSearch.value || catalogLoadingMore.value || !catalogHasMore.value) return
+  const keyword = String(route.query.keyword || '').trim()
+  if (!keyword) return
+  const offset = catalogListedCount.value
+  catalogLoadingMore.value = true
+  searchPrograms(keyword, CATALOG_PAGE_SIZE, offset).then(res => {
+    const data = res.data || {}
+    const known = new Set((result.value.items || []).map(item => item.programId))
+    const extra = (data.items || [])
+      .filter(item => item.programId == null || !known.has(item.programId))
+      .map(normalizeSchool)
+    result.value = {
+      ...result.value,
+      items: [...(result.value.items || []), ...extra],
+      catalogTotal: data.total != null ? Number(data.total) : result.value.catalogTotal
+    }
+  }).catch(() => {}).finally(() => {
+    catalogLoadingMore.value = false
+  })
 }
 
 function sidebarDefaults() {
@@ -748,7 +811,8 @@ function normalizeResult(data) {
   }
   return {
     recommendationId: data.recommendationId,
-    totalCandidates: data.totalCandidates || items.length,
+    totalCandidates: data.totalCandidates || data.total || items.length,
+    catalogTotal: data.total != null ? Number(data.total) : null,
     score: request.estimatedScore || data.score || 300,
     exam: request.examCombo || data.exam || '22408',
     region: request.targetRegions && request.targetRegions.length ? request.targetRegions.join('、') : '不限',
@@ -794,6 +858,7 @@ function normalizeSchool(item) {
     avgScoreGap: item.avgScoreGap,
     sourceUrl: item.sourceUrl,
     sourceLabel: item.sourceTitle || item.sourceOwner,
+    schoolTotal: item.schoolTotal,
     confidence: item.dataCompleteness || 'C',
     tag: item.fitLevelLabel || '数据不足',
     fitLevelClass: item.fitLevel || 'insufficient_data',
@@ -826,7 +891,8 @@ function groupSchools(items) {
       ...primary,
       cardKey: `school:${primary.schoolName}:${primary.examCombo}:${primary.province || ''}`,
       directions: sorted,
-      directionCount: sorted.length
+      directionCount: sorted.length,
+      schoolTotal: primary.schoolTotal || sorted.length
     }
   })
 }
@@ -1421,7 +1487,7 @@ watch([() => route.query.id, () => route.query.keyword], ([id, keyword], _, onCl
   }
 
   loading.value = true
-  searchPrograms(keyword, 50).then(res => {
+  searchPrograms(keyword, CATALOG_PAGE_SIZE, 0).then(res => {
     if (!current) return
     result.value = normalizeResult(res.data)
     result.value.score = '-'
@@ -1669,6 +1735,40 @@ if (activeTab.value === 'compare') {
 
 .result-head span {
   color: #6b778a;
+}
+
+.catalog-progress-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: -8px 0 16px;
+  padding: 8px 12px;
+  border: 1px solid #e2ebf8;
+  border-radius: 8px;
+  background: #f7faff;
+  color: #5f6f85;
+  font-size: 13px;
+}
+
+.catalog-progress-text {
+  font-weight: 700;
+}
+
+.catalog-more-btn {
+  border: 1px solid #c9dcff;
+  border-radius: 6px;
+  background: #fff;
+  color: #1769f6;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+
+.catalog-more-btn:disabled {
+  color: #93a3b8;
+  cursor: default;
 }
 
 .chips {
@@ -1921,11 +2021,22 @@ if (activeTab.value === 'compare') {
   margin-top: 2px;
 }
 
-.direction-meta {
+/* Higher specificity than `.direction-main small`, otherwise the meta line renders as a block
+   and Vue's whitespace trimming glues the exam combo to the year. */
+.direction-main small.direction-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  align-items: center;
+  gap: 6px 8px;
   margin-top: 4px;
+}
+
+.direction-meta-sep {
+  color: #a6b1c2;
+}
+
+.direction-year {
+  white-space: nowrap;
 }
 
 .direction-metrics {
@@ -1966,9 +2077,13 @@ if (activeTab.value === 'compare') {
 
 .direction-source {
   display: inline-block;
+  max-width: 100%;
   margin-top: 10px;
   color: #7a879a;
   font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .direction-actions {

@@ -117,6 +117,33 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join program_year_data_quality q on q.program_id = p.id and q.year = fact_year.year
     </sql>
 
+    <!--
+      Pick the most complete data_source attached to the same program's admission facts.
+      Short placeholder titles such as 'N诺考研择校-中国科学院大学-' end with a dash; prefer
+      a title that carries the program/major suffix, newest year first.
+    -->
+    <sql id="PreferredSourceJoin">
+        left join (
+            select program_id, url, title, source_owner
+            from (
+                select ar2.program_id, ds2.url, ds2.title, ds2.source_owner,
+                       row_number() over (
+                           partition by ar2.program_id
+                           order by case
+                               when ds2.title is null or trim(ds2.title) = '' or trim(ds2.title) like '%-' then 1
+                               else 0
+                           end,
+                           ar2.year desc,
+                           char_length(ds2.title) desc,
+                           ds2.id desc
+                       ) as rn
+                from admission_result ar2
+                join data_source ds2 on ds2.id = ar2.source_id
+            ) ranked_sources
+            where rn = 1
+        ) preferred_ds on preferred_ds.program_id = p.id
+    </sql>
+
     <sql id="CutoffYear">sc.year</sql>
 
     <sql id="CutoffYearJoins">
@@ -152,9 +179,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.max_admitted_score as admissionHigh,
             <include refid="DynamicDataCompleteness"/> as dataCompleteness,
             q.has_official_source as officialVerified,
-            coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
-            coalesce(ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
-            coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
+            coalesce(preferred_ds.url, ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
+            coalesce(preferred_ds.title, ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
+            coalesce(preferred_ds.source_owner, ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
         from program p
         join college c on p.college_id = c.id
         join school s on c.school_id = s.id
@@ -167,6 +194,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             group by ps.program_id
         ) subj on subj.program_id = p.id
         <include refid="${yearJoins}"/>
+        <include refid="PreferredSourceJoin"/>
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
