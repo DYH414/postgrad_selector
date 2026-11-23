@@ -66,7 +66,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active' and s.status = 'active'
+        where <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.ApplicantVisibleProgram"/>
         <if test="keyword != null and keyword != ''">
             and (s.name like concat('%', #{keyword}, '%')
                  or c.name like concat('%', #{keyword}, '%')

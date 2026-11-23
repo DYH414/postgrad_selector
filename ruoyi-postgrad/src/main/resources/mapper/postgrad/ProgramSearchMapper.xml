@@ -47,7 +47,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active' and s.status = 'active' and p.study_mode = 'full_time'
+        where <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.ApplicantVisibleProgram"/>
           and (
               s.name like concat('%', #{keyword}, '%')
               or s.short_name like concat('%', #{keyword}, '%')
@@ -70,7 +70,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         from program p
         join college c on p.college_id = c.id
         join school s on c.school_id = s.id
-        where p.status = 'active' and s.status = 'active' and p.study_mode = 'full_time'
+        where <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.ApplicantVisibleProgram"/>
           and (
               s.name like concat('%', #{keyword}, '%')
               or s.short_name like concat('%', #{keyword}, '%')

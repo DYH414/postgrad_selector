@@ -76,9 +76,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             left join data_source sc_ds on sc_ds.id = sc.source_id
             left join data_source ap_ds on ap_ds.id = ap.source_id
             left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active'
-          and s.status = 'active'
-          and p.study_mode = 'full_time'
+        where <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.ApplicantVisibleProgram"/>
           and (
               sc.program_id is not null
               or ap.program_id is not null
@@ -170,9 +168,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             left join data_source sc_ds on sc_ds.id = sc.source_id
             left join data_source ap_ds on ap_ds.id = ap.source_id
             left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active'
-          and s.status = 'active'
-          and p.study_mode = 'full_time'
+        where <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.ApplicantVisibleProgram"/>
         order by s.name, c.name, p.program_code, p.program_name, y.year
     </select>
 </mapper>

@@ -4,6 +4,25 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.postgrad.mapper.RecommendationMapper">
 
+    <!--
+      Applicant-visible programs: active full-time programs on active schools whose
+      exam subject list contains 408. program.is_408 is not a reliable source of
+      truth on its own (the live catalog has both false positives and false
+      negatives), so the program_subject rows decide.
+    -->
+    <sql id="ApplicantVisibleProgram">
+        p.status = 'active'
+        and s.status = 'active'
+        and p.study_mode = 'full_time'
+        and exists (
+            select 1
+            from program_subject ps408
+            join subject sub408 on sub408.id = ps408.subject_id
+            where ps408.program_id = p.id
+              and sub408.code = '408'
+        )
+    </sql>
+
     <sql id="DynamicDataCompleteness">
         case
             when sc.score_line is not null
@@ -71,8 +90,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active' and s.status = 'active' and p.is_408 = 1
-        and p.study_mode = 'full_time'
+        where <include refid="ApplicantVisibleProgram"/>
           and subj.subject_codes = #{subjectCodes}
         <if test="regions != null and regions.size() > 0">
             and (s.province in
@@ -198,8 +216,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.id = #{programId} and p.status = 'active' and s.status = 'active'
-          and p.study_mode = 'full_time'
+        where p.id = #{programId}
+          and <include refid="ApplicantVisibleProgram"/>
     </sql>
 
     <select id="selectProgramForRecommendation" resultType="com.ruoyi.postgrad.domain.RowMap">
@@ -238,7 +256,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         select p.id from program p
         join college c on c.id = p.college_id
         join school s on s.id = c.school_id
-        where p.status = 'active' and s.status = 'active' and p.study_mode = 'full_time'
+        where <include refid="ApplicantVisibleProgram"/>
           and p.id in
         <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
@@ -295,8 +313,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <foreach collection="ids" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
-        and p.status = 'active' and s.status = 'active'
-        and p.study_mode = 'full_time'
+        and <include refid="ApplicantVisibleProgram"/>
     </select>
 
     <select id="selectForAnalysis" resultType="com.ruoyi.postgrad.domain.RowMap">
@@ -329,8 +346,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active' and s.status = 'active' and p.is_408 = 1
-          and p.study_mode = 'full_time'
+        where <include refid="ApplicantVisibleProgram"/>
           and (sc.score_line is not null or ar.avg_admitted_score is not null)
           and ar.avg_admitted_score >= #{minScore}
           and ar.avg_admitted_score &lt;= #{maxScore}
@@ -381,9 +397,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active' and s.status = 'active'
-          and p.is_408 = 1
-          and p.study_mode = 'full_time'
+        where <include refid="ApplicantVisibleProgram"/>
           and (sc.score_line is not null or ar.avg_admitted_score is not null)
           and (ar.avg_admitted_score is null or ar.avg_admitted_score between #{minScore} and #{maxScore})
         <if test="regions != null and regions.size() > 0">
