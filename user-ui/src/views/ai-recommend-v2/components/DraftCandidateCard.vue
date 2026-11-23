@@ -162,9 +162,7 @@ function displayGap(value) {
   font-size: 12px;
   line-height: 1.4;
   color: var(--ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .remove-btn {
