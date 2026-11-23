@@ -578,7 +578,7 @@ async function handleChatSend(message) {
               completed = true
               currentToolCall.value = ''
               chatStreamingText.value = ''
-              chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message) })
+              chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message), metadataJson: data.metadataJson || null })
               if (data.draftChanged) {
                 await loadDraftData()
               }

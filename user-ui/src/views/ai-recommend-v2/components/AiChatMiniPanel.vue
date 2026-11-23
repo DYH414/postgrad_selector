@@ -27,18 +27,19 @@
         </span>
         <div class="msg-body">
           <template v-if="msg.role === 'assistant'">
-            <div class="md-body" v-html="renderMarkdown(msg.content)"></div>
-            <div v-if="getMessageEvidence(msg).length" class="evidence-sources">
+            <div class="md-body" v-html="renderMarkdown(msg.content, messageEvidence[i])"></div>
+            <div v-if="messageEvidence[i].length" class="evidence-sources">
               <span>引用</span>
-              <a
-                v-for="source in getMessageEvidence(msg)"
-                :key="evidenceKey(source)"
-                :href="source.sourceUrl || undefined"
-                :target="source.sourceUrl ? '_blank' : undefined"
-                :rel="source.sourceUrl ? 'noreferrer' : undefined"
+              <component
+                v-for="source in messageEvidence[i]"
+                :is="source.url ? 'a' : 'span'"
+                :key="source.name"
+                :href="source.url || undefined"
+                :target="source.url ? '_blank' : undefined"
+                :rel="source.url ? 'noreferrer' : undefined"
               >
-                {{ source.title || source.sourceName || source.docType || '知识库证据' }}
-              </a>
+                {{ source.name }}
+              </component>
             </div>
           </template>
           <template v-else>
@@ -86,8 +87,8 @@
 </template>
 
 <script setup>
-import { ref, nextTick, watch } from 'vue'
-import { renderMarkdown } from '@/utils/markdown'
+import { computed, ref, nextTick, watch } from 'vue'
+import { getMessageEvidence, renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -101,6 +102,7 @@ const emit = defineEmits(['send', 'toggle'])
 
 const inputText = ref('')
 const msgBox = ref(null)
+const messageEvidence = computed(() => props.messages.map(getMessageEvidence))
 
 function scrollToBottom() {
   nextTick(() => {
@@ -146,31 +148,6 @@ function toolLabel(name) {
   return map[name] || '处理中'
 }
 
-function getMessageEvidence(message) {
-  const metadata = parseMetadata(message?.metadataJson || message?.metadata || message?.extra)
-  const evidence = metadata?.ragCitations || metadata?.citations || metadata?.evidence?.citations || []
-  return Array.isArray(evidence) ? evidence.filter(Boolean).slice(0, 3) : []
-}
-
-function parseMetadata(value) {
-  if (!value) return {}
-  if (typeof value === 'object') return value
-  try {
-    return JSON.parse(value)
-  } catch {
-    return {}
-  }
-}
-
-function evidenceKey(source) {
-  return [
-    source.programId,
-    source.contentHash,
-    source.title,
-    source.sourceName,
-    source.section
-  ].filter(Boolean).join(':')
-}
 </script>
 
 <style scoped>

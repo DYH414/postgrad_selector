@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { renderMarkdown } from './markdown.js'
+import { getMessageEvidence, renderMarkdown } from './markdown.js'
 
 test('knowledge-document filenames render as text', () => {
   const filename = '02-考研国家线与复试.md'
@@ -11,4 +11,29 @@ test('explicit URLs still render as links', () => {
   const url = 'https://example.org/docs/reference.md'
   assert.equal(renderMarkdown(url), `<p><a href="${url}">${url}</a></p>\n`)
   assert.equal(renderMarkdown(`[招生简章](${url})`), `<p><a href="${url}">招生简章</a></p>\n`)
+})
+
+test('citation metadata links filename mentions and deduplicates sources', () => {
+  const filename = '02-考研国家线与复试.md'
+  const url = 'https://example.org/official'
+  const metadataJson = JSON.stringify({ ragCitations: [
+    { sourceName: filename, title: '复试', sourceUrl: url },
+    { sourceName: filename, sourceUrl: url }
+  ] })
+  const sources = getMessageEvidence({ metadataJson })
+  assert.deepEqual(sources, [{ name: filename, url }])
+  assert.equal(renderMarkdown(filename), `<p>${filename}</p>\n`)
+  assert.equal(renderMarkdown(filename, sources), `<p><a href="${url}" target="_blank" rel="noreferrer">${filename}</a></p>\n`)
+  assert.equal(renderMarkdown(`**${filename}** [${filename}](https://other.org) \`${filename}\``, sources),
+    `<p><strong><a href="${url}" target="_blank" rel="noreferrer">${filename}</a></strong> <a href="${url}" target="_blank" rel="noreferrer">${filename}</a> <a href="${url}" target="_blank" rel="noreferrer"><code>${filename}</code></a></p>\n`)
+  assert.equal(renderMarkdown(`other-${filename}`, sources), `<p>other-${filename}</p>\n`)
+})
+
+test('missing and unsafe citation URLs stay unlinked', () => {
+  const sources = getMessageEvidence({ metadataJson: JSON.stringify({ ragCitations: [
+    { sourceName: 'one.md' }, { sourceName: 'two.md', sourceUrl: 'javascript:alert(1)' }
+  ] }) })
+  assert.deepEqual(sources, [{ name: 'one.md', url: '' }, { name: 'two.md', url: '' }])
+  assert.equal(renderMarkdown('one.md two.md', sources), '<p>one.md two.md</p>\n')
+  assert.equal(renderMarkdown('[one.md](https://other.org)', sources), '<p>one.md</p>\n')
 })

@@ -484,13 +484,17 @@ public class AppV2RecommendController {
                     public void onDone(String fullMessage,
                                        boolean draftChanged,
                                        String toolActionResultJson,
-                                       String runId) {
+                                       String runId,
+                                       String metadataJson) {
                         Map<String, Object> payload = new LinkedHashMap<>();
                         payload.put("message", fullMessage);
                         payload.put("draftChanged", draftChanged);
                         payload.put("runId", runId);
                         if (toolActionResultJson != null && !toolActionResultJson.isBlank()) {
                             payload.put("toolActionResult", JSON.parseObject(toolActionResultJson));
+                        }
+                        if (metadataJson != null) {
+                            payload.put("metadataJson", metadataJson);
                         }
                         sendSseEvent(emitter, "done", payload);
                         emitter.complete();

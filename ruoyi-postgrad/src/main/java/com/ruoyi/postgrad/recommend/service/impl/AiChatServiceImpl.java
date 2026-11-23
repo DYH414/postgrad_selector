@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -106,6 +107,8 @@ public class AiChatServiceImpl implements IAiChatService {
         dev.langchain4j.service.TokenStream chat(String message);
     }
 
+    private record ChatSource(String sourceName, String sourceUrl, String title) {}
+
     @Override
     public void finalizeConversation(Long userId) {
         aiChatMapper.finalizeActiveConversations(userId);
@@ -183,7 +186,7 @@ public class AiChatServiceImpl implements IAiChatService {
             }
 
             // 4. 保存用户消息
-            persistMessage(userId, conversation.getId(), "user", message, message);
+            persistMessage(userId, conversation.getId(), "user", message, null);
             history.add(new ChatMessageVO("user", message));
             saveHistory(userId, history);
 
@@ -260,11 +263,18 @@ public class AiChatServiceImpl implements IAiChatService {
 
                         history.add(new ChatMessageVO("assistant", aiText));
                         saveHistory(userId, history);
-                        persistMessage(userId, conversation.getId(), "assistant", aiText, aiText);
+                        List<ChatSource> sources = toolContext.ragCitations().stream()
+                            .map(citation -> new ChatSource(citation.getSourceName(), citation.getSourceUrl(),
+                                citation.getTitle()))
+                            .distinct()
+                            .toList();
+                        String metadataJson = sources.isEmpty() ? null
+                            : JSON.toJSONString(Map.of("ragCitations", sources));
+                        persistMessage(userId, conversation.getId(), "assistant", aiText, metadataJson);
 
                         boolean draftChanged = toolContext.draftChanged();
                         String toolActionResultJson = toolContext.lastActionResultJson();
-                        callback.onDone(aiText, draftChanged, toolActionResultJson, runId);
+                        callback.onDone(aiText, draftChanged, toolActionResultJson, runId, metadataJson);
                     } catch (Exception e) {
                         log.error("[AiChat] Failed to complete stream for userId={}: {}", userId, e.getMessage());
                         callback.onError(e, runId);
@@ -356,18 +366,18 @@ public class AiChatServiceImpl implements IAiChatService {
         return conversation;
     }
 
-    private void persistMessage(Long userId, Long conversationId, String role, String content, String displayContent) {
+    private void persistMessage(Long userId, Long conversationId, String role, String content, String metadataJson) {
         AiChatMessage message = new AiChatMessage();
         message.setConversationId(conversationId);
         message.setUserId(userId);
         message.setRole(role);
         message.setContent(content);
-        message.setDisplayContent(displayContent != null ? displayContent : content);
+        message.setDisplayContent(content);
         message.setMessageType("text");
         message.setStatus("completed");
         Integer seq = aiChatMapper.selectNextSeq(conversationId);
         message.setSeq(seq != null ? seq : 1);
-        message.setMetadataJson(null);
+        message.setMetadataJson(metadataJson);
         aiChatMapper.insertMessage(message);
         aiChatMapper.touchConversation(conversationId);
     }

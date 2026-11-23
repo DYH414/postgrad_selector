@@ -109,6 +109,7 @@ public class V2ChatTools {
             request.setMaxResults(6);
             request.setRerankTopN(3);
             RagEvidenceResponse evidence = ragEvidenceService.retrieveProgramEvidence(request);
+            if (ctx != null) ctx.addRagCitations(evidence.getCitations());
 
             result.put("ok", evidence.getErrorSummary() == null);
             result.put("fallbackUsed", evidence.isFallbackUsed());
@@ -458,6 +459,7 @@ public class V2ChatTools {
             request.setMaxResults(8);
             request.setRerankTopN(4);
             RagEvidenceResponse evidence = ragEvidenceService.retrieveProgramEvidence(request);
+            if (ctx != null) ctx.addRagCitations(evidence.getCitations());
 
             result.put("ok", evidence.getErrorSummary() == null);
             result.put("fallbackUsed", evidence.isFallbackUsed());

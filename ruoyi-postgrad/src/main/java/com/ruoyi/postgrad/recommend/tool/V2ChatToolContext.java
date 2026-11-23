@@ -1,10 +1,14 @@
 package com.ruoyi.postgrad.recommend.tool;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Supplier;
+
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.ruoyi.postgrad.domain.ai.AiToolBudget;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
-import java.util.function.Supplier;
+import com.ruoyi.postgrad.rag.knowledge.RagCitation;
 
 /**
  * 对话工具上下文 —— ThreadLocal 持有当前对话的 userId 和依赖。
@@ -136,6 +140,7 @@ public final class V2ChatToolContext {
         private final boolean confirmed;
         private final AiToolBudget toolBudget;
         private final ToolLifecycleListener toolLifecycleListener;
+        private final List<RagCitation> ragCitations = new ArrayList<>();
         private boolean writeExecuted;
         private boolean draftChanged;
         private String lastActionResultJson;
@@ -161,6 +166,14 @@ public final class V2ChatToolContext {
         public String lastActionResultJson() { return lastActionResultJson; }
         public AiToolBudget toolBudget() { return toolBudget; }
         public ToolLifecycleListener toolLifecycleListener() { return toolLifecycleListener; }
+
+        synchronized void addRagCitations(List<RagCitation> citations) {
+            ragCitations.addAll(citations);
+        }
+
+        public synchronized List<RagCitation> ragCitations() {
+            return List.copyOf(ragCitations);
+        }
 
         void markWriteExecuted(String actionResultJson) {
             this.writeExecuted = true;

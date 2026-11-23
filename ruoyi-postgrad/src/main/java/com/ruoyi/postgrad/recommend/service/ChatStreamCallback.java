@@ -63,6 +63,11 @@ public interface ChatStreamCallback {
         onDone(fullMessage, draftChanged, toolActionResultJson);
     }
 
+    default void onDone(String fullMessage, boolean draftChanged, String toolActionResultJson, String runId,
+                        String metadataJson) {
+        onDone(fullMessage, draftChanged, toolActionResultJson, runId);
+    }
+
     /**
      * 对话出错。
      *

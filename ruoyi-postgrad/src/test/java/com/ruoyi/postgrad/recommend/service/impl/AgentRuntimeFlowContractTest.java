@@ -94,6 +94,7 @@ class AgentRuntimeFlowContractTest {
         Map<String, Object> parsed = JSON.parseObject(toolResult);
         assertEquals(run.getRunId(), parsed.get("runId"));
         assertFalse(((List<?>) parsed.get("citations")).isEmpty());
+        assertEquals("https://example.com/source", toolContext.ragCitations().get(0).getSourceUrl());
         assertEquals(run.getRunId(), traces.listRecent(1).get(0).getRunId());
         assertEquals("scoped-evidence", traces.listRecent(1).get(0).getRetrievalRoute());
 
