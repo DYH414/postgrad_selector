@@ -110,7 +110,7 @@
               <h3>学校列表</h3>
               <span>{{ schoolList.length }} 所</span>
             </div>
-            <el-button size="mini" type="text" icon="el-icon-school" @click="jumpToCrud('school')">学校管理</el-button>
+            <el-button size="mini" type="text" icon="el-icon-school" @click="$router.push('/postgrad/basic/school')">学校管理</el-button>
           </div>
           <div v-loading="schoolsLoading" class="school-list">
             <button
@@ -585,7 +585,7 @@ export default {
       const stats = this.stats || {}
       chart.setOption({
         color: ['#16a34a', '#3b82f6', '#f59e0b', '#dc2626'],
-        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        tooltip: { trigger: 'item', formatter: '{b}: {c}' },
         legend: { bottom: 0, itemWidth: 10, itemHeight: 10 },
         series: [{
           name: '完整度',
@@ -593,7 +593,7 @@ export default {
           radius: ['48%', '72%'],
           center: ['50%', '44%'],
           avoidLabelOverlap: true,
-          label: { formatter: '{b}\\n{d}%' },
+          label: { formatter: '{b}' },
           data: [
             { name: 'A 完整', value: Number(stats.aLevelCount || 0) },
             { name: 'B 基本完整', value: Number(stats.bLevelCount || 0) },

@@ -6,17 +6,23 @@ import dev.langchain4j.micrometer.metrics.listeners.MicrometerMetricsChatModelLi
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import io.micrometer.core.instrument.MeterRegistry;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotListener;
 import com.ruoyi.postgrad.observe.runtime.AiInvocationSnapshotRecorder;
 import com.ruoyi.postgrad.observe.llm.service.AiLlmTracePersistenceService;
+import com.ruoyi.postgrad.recommend.service.ConversationChatModelFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.StringUtils;
 
 /**
  * AI 模型统一配置 —— 替代各处散落的 buildChatModel() / buildStreamingChatModel()。
@@ -26,6 +32,8 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 public class AiConfig {
+
+    private static final Map<String, Object> DISABLED_THINKING = Map.of("thinking", Map.of("type", "disabled"));
 
     @Value("${app.ai.deepseek.base-url}")
     private String baseUrl;
@@ -69,23 +77,47 @@ public class AiConfig {
         this.tracePersistenceService = tracePersistenceService;
     }
 
+    public boolean isChatConfigured() {
+        return StringUtils.hasText(apiKey);
+    }
+
     @Bean
     @ConditionalOnProperty(name = "app.ai.deepseek.api-key")
     public ChatModel chatModel() {
-        return OpenAiChatModel.builder()
+        var builder = OpenAiChatModel.builder()
             .baseUrl(baseUrl)
             .apiKey(apiKey)
             .modelName(modelName)
             .maxTokens(maxTokens)
             .temperature(temperature)
             .timeout(Duration.ofSeconds(timeoutSeconds))
-            .listeners(chatModelListeners())
-            .build();
+            .listeners(chatModelListeners());
+        if (usesOpenCodeGo()) {
+            builder.customHeaders(() -> openCodeHeaders(UUID.randomUUID()))
+                .customParameters(openCodeParameters());
+        }
+        return builder.build();
     }
 
     @Bean
     @ConditionalOnProperty(name = "app.ai.deepseek.api-key")
-    public OpenAiStreamingChatModel streamingChatModel() {
+    public ConversationChatModelFactory conversationChatModelFactory() {
+        if (!usesOpenCodeGo()) {
+            var model = streamingChatModelBuilder().build();
+            return conversationId -> model;
+        }
+        UUID instanceId = UUID.randomUUID();
+        return conversationId -> {
+            UUID sessionId = UUID.nameUUIDFromBytes(
+                (instanceId + ":" + conversationId).getBytes(StandardCharsets.UTF_8));
+            return streamingChatModelBuilder()
+                .customHeaders(openCodeHeaders(sessionId))
+                .customParameters(openCodeParameters())
+                .build();
+        };
+    }
+
+    private OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder streamingChatModelBuilder() {
         return OpenAiStreamingChatModel.builder()
             .baseUrl(baseUrl)
             .apiKey(apiKey)
@@ -94,8 +126,23 @@ public class AiConfig {
             .strictTools(true)
             .parallelToolCalls(false)
             .timeout(Duration.ofSeconds(timeoutSeconds))
-            .listeners(chatModelListeners())
-            .build();
+            .listeners(chatModelListeners());
+    }
+
+    private boolean usesOpenCodeGo() {
+        URI endpoint = URI.create(baseUrl);
+        String path = endpoint.getPath();
+        return "https".equalsIgnoreCase(endpoint.getScheme())
+            && "opencode.ai".equalsIgnoreCase(endpoint.getHost())
+            && (path.startsWith("/zen/go/") || path.startsWith("/inference/go/"));
+    }
+
+    private Map<String, String> openCodeHeaders(UUID sessionId) {
+        return Map.of("User-Agent", "PostgradSelector/1.0", "x-opencode-session", sessionId.toString());
+    }
+
+    private Map<String, Object> openCodeParameters() {
+        return "deepseek-v4.1-flash".equals(modelName) ? DISABLED_THINKING : Map.of();
     }
 
     @Bean

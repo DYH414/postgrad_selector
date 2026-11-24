@@ -61,6 +61,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { displayMetric, formatAdmissionQuota } from '@/utils/admissionDisplay.mjs'
 
 const props = defineProps({
   candidate: { type: Object, default: () => ({}) },
@@ -73,12 +74,16 @@ const fact = computed(() => props.candidate?.fact || {})
 const opinion = computed(() => props.candidate?.opinion || {})
 const finalJudgement = computed(() => props.candidate?.finalJudgement || '')
 
-const metrics = computed(() => [
-  { key: 'avg', label: '录取均分', value: valueOrDash(fact.value.avgAdmittedScore || fact.value.scoreLine) },
-  { key: 'gap', label: '分差', value: valueOrDash(fact.value.scoreGap || fact.value.gapLabel) },
-  { key: 'quota', label: '名额', value: valueOrDash(fact.value.unifiedExamQuota || fact.value.planCount || fact.value.admittedCount) },
-  { key: 'code', label: '专业代码', value: valueOrDash(fact.value.programCode) }
-])
+const metrics = computed(() => {
+  const { avgAdmittedScore, scoreGap, gapLabel, programCode } = fact.value
+  const quota = formatAdmissionQuota(fact.value, { allowZero: true })
+  return [
+    { key: 'avg', label: '录取均分', value: displayMetric(avgAdmittedScore) },
+    { key: 'gap', label: '分差', value: displayMetric(scoreGap ?? gapLabel) },
+    { key: 'quota', label: quota.hint || '名额', value: quota.value },
+    { key: 'code', label: '专业代码', value: valueOrDash(programCode) }
+  ]
+})
 
 const pros = computed(() => toList(opinion.value.pros))
 const risks = computed(() => toList(opinion.value.risks))

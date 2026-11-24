@@ -14,16 +14,46 @@ import com.ruoyi.postgrad.observe.tool.service.AiToolTraceService;
 import com.ruoyi.postgrad.recommend.tool.runtime.AgentToolRuntime;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.rag.dto.RagChunkResult;
 import com.ruoyi.postgrad.rag.dto.RagEvidenceRequest;
 import com.ruoyi.postgrad.rag.dto.RagEvidenceResponse;
+import com.ruoyi.postgrad.rag.dto.RagSearchTestResponse;
 import com.ruoyi.postgrad.rag.knowledge.RagCitation;
 import com.ruoyi.postgrad.rag.service.RagEvidenceService;
+import com.ruoyi.postgrad.rag.service.RagRetrievalResult;
+import com.ruoyi.postgrad.rag.service.RagRetrievalService;
+import dev.langchain4j.data.document.Metadata;
+import dev.langchain4j.data.segment.TextSegment;
+import java.util.List;
 import java.util.Map;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.domain.RowMap;
 import org.junit.jupiter.api.Test;
 
 class V2ChatToolsRagEvidenceTest {
+
+    @Test
+    void knowledgeToolProvidesTheFullSelectedPassageAndItsSource() throws Exception {
+        String preview = "考试大纲".repeat(50);
+        String fullText = preview + "操作系统 35 分，计算机网络 25 分。";
+        RagChunkResult chunk = new RagChunkResult();
+        chunk.setSourceName("408考试介绍.md");
+        chunk.setSelectedForPrompt(true);
+        chunk.setContentPreview(preview + "...");
+        RagSearchTestResponse search = new RagSearchTestResponse();
+        search.setChunks(List.of(chunk));
+        TextSegment segment = TextSegment.from(fullText, Metadata.from("source_name", "408考试介绍.md"));
+        RagRetrievalService retrieval = mock(RagRetrievalService.class);
+        when(retrieval.retrieve(any())).thenReturn(new RagRetrievalResult(search, List.of(segment)));
+        V2ChatTools tools = new V2ChatTools();
+        var field = V2ChatTools.class.getDeclaredField("ragEvidenceService");
+        field.setAccessible(true);
+        field.set(tools, new RagEvidenceService(retrieval));
+
+        var payload = JSON.parseObject(tools.searchKnowledgeBase("408 各科分值"));
+        assertEquals(List.of(Map.of("sourceName", "408考试介绍.md", "text", fullText)),
+            payload.getJSONArray("passages"), () -> "Knowledge tool payload: " + payload);
+    }
 
     @Test
     void getProgramEvidenceDelegatesToRagEvidenceService() throws Exception {

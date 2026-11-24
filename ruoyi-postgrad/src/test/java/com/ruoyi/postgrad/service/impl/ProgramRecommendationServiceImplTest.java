@@ -3,14 +3,18 @@ package com.ruoyi.postgrad.service.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.ruoyi.postgrad.domain.RecommendationLog;
 import com.ruoyi.postgrad.domain.RowMap;
+import com.ruoyi.postgrad.domain.UserProfile;
 import com.ruoyi.postgrad.domain.dto.ProgramSummaryDTO;
 import com.ruoyi.postgrad.domain.vo.RecommendResultVO;
 import com.ruoyi.postgrad.mapper.RecommendationLogMapper;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
+import com.ruoyi.postgrad.mapper.SchoolMapper;
+import com.ruoyi.postgrad.mapper.UserProfileMapper;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -35,17 +39,67 @@ class ProgramRecommendationServiceImplTest
     @Mock
     private RecommendationLogMapper logMapper;
 
+    @Mock
+    private UserProfileMapper userProfileMapper;
+
+    @Mock
+    private SchoolMapper schoolMapper;
+
     @BeforeEach
     void setUp() throws Exception
     {
         service = new ProgramRecommendationServiceImpl();
         setField("recommendationMapper", recommendationMapper);
         setField("logMapper", logMapper);
-        when(logMapper.insertRecommendationLog(any(RecommendationLog.class))).thenAnswer(invocation -> {
+        setField("userProfileMapper", userProfileMapper);
+        setField("schoolMapper", schoolMapper);
+        lenient().when(logMapper.insertRecommendationLog(any(RecommendationLog.class))).thenAnswer(invocation -> {
             RecommendationLog log = invocation.getArgument(0);
             log.setId(83L);
             return 1;
         });
+    }
+
+    @Test
+    void optionsUseSavedScoreAndExamCombo()
+    {
+        UserProfile profile = new UserProfile();
+        profile.setEstimatedScore(350);
+        profile.setExamCombo("22408");
+        when(userProfileMapper.selectUserProfileByUserId(1L)).thenReturn(profile);
+
+        Map<?, ?> defaults = (Map<?, ?>) service.recommendationOptions(1L).get("defaultProfile");
+
+        assertEquals(350, defaults.get("estimatedScore"));
+        assertEquals("22408", defaults.get("examCombo"));
+    }
+
+    @Test
+    void anonymousOptionsKeepDefaultScoreAndExamCombo()
+    {
+        Map<?, ?> defaults = (Map<?, ?>) service.recommendationOptions(null).get("defaultProfile");
+
+        assertEquals(300, defaults.get("estimatedScore"));
+        assertEquals("11408", defaults.get("examCombo"));
+    }
+
+    @Test
+    void hidesUnavailableProgramsFromStoredRecommendation()
+    {
+        RowMap stored = new RowMap();
+        stored.put("result_json", """
+            {"items":[{"programId":2945},{"programId":2939}],
+             "groups":[{"schools":[{"program_id":2945},{"program_id":2939}]}],
+             "totalCandidates":2}
+            """);
+        when(logMapper.selectLogByIdAndUserId(8L, 1L)).thenReturn(stored);
+        when(recommendationMapper.selectApplicantProgramIds(List.of(2945L, 2939L))).thenReturn(List.of(2945L));
+
+        Map<String, Object> result = service.loadRecommendationResult(1L, 8L);
+
+        assertEquals(1, result.get("totalCandidates"));
+        assertEquals(List.of(Map.of("programId", 2945)), result.get("items"));
+        assertEquals(List.of(Map.of("schools", List.of(Map.of("program_id", 2945)))), result.get("groups"));
     }
 
     @Nested

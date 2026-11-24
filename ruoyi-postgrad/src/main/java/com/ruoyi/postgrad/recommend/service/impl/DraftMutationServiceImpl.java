@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.service.impl;
 
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.ProgramExamCombo;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
@@ -336,9 +339,6 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
 
     // ── DB fallback for fillTier ──
 
-    private static final List<String> EXAM_408_SUBJECT_CODES = List.of(
-        "101,204,302,408", "101,201,301,408");
-
     /**
      * workspace 候选不足时从 DB 补位。
      */
@@ -351,10 +351,9 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
 
         List<String> regions = parseRegionsList(targetRegions);
 
-        // 查 DB：双考试组合 + programId 去重
         LinkedHashSet<Long> seen = new LinkedHashSet<>();
         List<RowMap> allRows = new ArrayList<>();
-        for (String subjectCodes : EXAM_408_SUBJECT_CODES) {
+        for (String subjectCodes : ProgramExamCombo.subjectsForPreference(draft.getProfileBasis().getExamCombo())) {
             List<RowMap> rows = recommendationMapper.selectCandidates(
                 subjectCodes, regions, null, estimatedScore, 30, "full_time");
             if (rows != null) {
@@ -710,7 +709,9 @@ public class DraftMutationServiceImpl implements IDraftMutationService {
         String json = redisTemplate.opsForValue().get(DraftServiceImpl.DRAFT_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return emptyDraft();
         try {
-            return com.alibaba.fastjson2.JSON.parseObject(json, DraftVO.class);
+            DraftVO draft = com.alibaba.fastjson2.JSON.parseObject(json, DraftVO.class);
+            if (draft != null) ApplicantCandidateFilter.draft(draft, recommendationMapper);
+            return draft != null ? draft : emptyDraft();
         } catch (Exception e) {
             log.warn("[Mutation] Failed to parse draft userId={}: {}", userId, e.getMessage());
             return emptyDraft();

@@ -1,5 +1,6 @@
 package com.ruoyi.postgrad.recommend.service.impl;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -7,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
@@ -22,19 +24,34 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.rag.RetrievalAugmentor;
 
 import com.ruoyi.postgrad.mapper.AiChatMapper;
 import com.ruoyi.postgrad.recommend.domain.AiChatConversation;
+import com.ruoyi.postgrad.recommend.domain.AiChatMessage;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
+import com.ruoyi.postgrad.recommend.domain.ChatMessageVO;
 import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.SchoolFact;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
-import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
+import com.ruoyi.postgrad.recommend.routing.AgentIntentRoute;
+import com.ruoyi.postgrad.recommend.routing.AgentIntentRouter;
+import com.ruoyi.postgrad.recommend.routing.AgentRouteDecision;
 import com.ruoyi.postgrad.recommend.service.ChatRunLockService;
+import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
+import com.ruoyi.postgrad.recommend.service.ConversationChatModelFactory;
+import com.ruoyi.postgrad.recommend.service.IDraftService;
 
 class AiChatServiceImplTest {
 
@@ -223,6 +240,98 @@ class AiChatServiceImplTest {
             "Prompt 应明确禁止依赖后端自动 general RAG 注入");
         assertFalse(prompt.contains("系统已自动从工作集补充"),
             "已废弃的自动补位行为不能继续出现在 Prompt 中");
+    }
+
+    @Test
+    void resumedHistoryReturnsAssistantContentAndCitations() throws Exception {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class, RETURNS_DEEP_STUBS);
+        when(redis.opsForValue().get("ai:v2:chat:7")).thenReturn("prompt");
+        AiChatMapper mapper = mock(AiChatMapper.class);
+        AiChatConversation conversation = new AiChatConversation();
+        conversation.setId(42L);
+        when(mapper.selectActiveConversation(7L)).thenReturn(conversation);
+        AiChatMessage user = message("user", "Compare the two programs");
+        AiChatMessage assistant = message("assistant", "Stored answer");
+        assistant.setDisplayContent("Displayed answer");
+        String metadataJson = "{\"ragCitations\":[{\"sourceName\":\"policy.md\"}]}";
+        assistant.setMetadataJson(metadataJson);
+        AiChatMessage legacyAssistant = message("assistant", "Legacy answer");
+        when(mapper.selectMessages(42L, 200)).thenReturn(List.of(
+            message("system", "SYNTHETIC_HIDDEN_INSTRUCTIONS"), user, assistant, legacyAssistant,
+            message("tool", "internal")));
+        AiChatServiceImpl service = new AiChatServiceImpl();
+        injectField(service, "redisTemplate", redis);
+        injectField(service, "aiChatMapper", mapper);
+
+        var messages = service.resumeChat(7L).getMessages();
+        assertEquals(List.of("user", "assistant", "assistant"),
+            messages.stream().map(ChatMessageVO::getRole).toList());
+        assertAll(
+            () -> assertEquals(List.of("Compare the two programs", "Displayed answer", "Legacy answer"),
+                messages.stream().map(ChatMessageVO::getContent).toList()),
+            () -> assertEquals(metadataJson, messages.get(1).getMetadataJson()));
+        verify(mapper).selectActiveConversation(7L);
+    }
+
+    @Test
+    void cachedAndDatabaseHistoryIncludeAssistantTurnsInRoutingAndModelRequest() throws Exception {
+        for (boolean cached : List.of(true, false)) {
+            StringRedisTemplate redis = mock(StringRedisTemplate.class, RETURNS_DEEP_STUBS);
+            AiChatMapper mapper = mock(AiChatMapper.class);
+            AiChatConversation conversation = new AiChatConversation();
+            conversation.setId(42L);
+            when(mapper.selectActiveConversation(7L)).thenReturn(conversation);
+            if (cached) {
+                when(redis.opsForValue().get("ai:v2:chat:msg:7"))
+                    .thenReturn("[{\"role\":\"user\",\"content\":\"program 13\"},"
+                        + "{\"role\":\"assistant\",\"content\":\"previous answer\"}]");
+            } else {
+                when(mapper.selectMessages(eq(42L), any(Integer.class)))
+                    .thenReturn(List.of(message("user", "program 13"), message("assistant", "previous answer")));
+            }
+            ChatRunLockService locks = mock(ChatRunLockService.class);
+            when(locks.acquire(eq(7L), anyString())).thenReturn(true);
+            AgentIntentRouter router = mock(AgentIntentRouter.class);
+            AtomicReference<List<ChatMessageVO>> routed = new AtomicReference<>();
+            when(router.route(anyString(), any())).thenAnswer(invocation -> {
+                routed.set(List.copyOf(invocation.getArgument(1)));
+                return new AgentRouteDecision(AgentIntentRoute.CLARIFY, "fixture");
+            });
+            StreamingChatModel model = mock(StreamingChatModel.class);
+            ConversationChatModelFactory modelFactory = mock(ConversationChatModelFactory.class);
+            when(modelFactory.forConversation(42L)).thenReturn(model);
+            AiChatServiceImpl service = new AiChatServiceImpl();
+            injectField(service, "redisTemplate", redis);
+            injectField(service, "aiChatMapper", mapper);
+            injectField(service, "chatRunLockService", locks);
+            injectField(service, "agentIntentRouter", router);
+            injectField(service, "draftService", mock(IDraftService.class));
+            injectField(service, "chatSystemPromptResource", new ByteArrayResource("fixture".getBytes(StandardCharsets.UTF_8)));
+            injectField(service, "conversationChatModelFactory", modelFactory);
+            service.chat(7L, "next", new ChatStreamCallback() {
+                @Override public void onToken(String token) {}
+                @Override public void onError(Throwable error) {}
+            });
+            assertNotNull(routed.get());
+            ArgumentCaptor<ChatRequest> request = ArgumentCaptor.forClass(ChatRequest.class);
+            verify(model).chat(request.capture(), any(StreamingChatResponseHandler.class));
+            assertAll(
+                () -> assertEquals(List.of("user", "assistant", "user"),
+                    routed.get().stream().map(ChatMessageVO::getRole).toList()),
+                () -> assertEquals(List.of("program 13", "previous answer", "next"),
+                    routed.get().stream().map(ChatMessageVO::getContent).toList()),
+                () -> assertEquals(List.of(UserMessage.from("program 13"), AiMessage.from("previous answer"),
+                        UserMessage.from("<user_input>next</user_input>")),
+                    request.getValue().messages().stream()
+                        .filter(message -> !(message instanceof SystemMessage)).toList()));
+        }
+    }
+
+    private static AiChatMessage message(String role, String content) {
+        AiChatMessage message = new AiChatMessage();
+        message.setRole(role);
+        message.setContent(content);
+        return message;
     }
 
     private static void injectField(Object target, String fieldName, Object value) throws Exception {

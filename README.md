@@ -159,6 +159,8 @@ sql/30_postgrad_menu_permissions.sql
 
 其中 `00_platform_bootstrap.sql` 和 `10_postgrad_core_schema.sql` 包含 `DROP TABLE`，只允许用于空库初始化或明确批准的全量重建，不能用于生产环境增量升级。
 
+使用旧版核心脚本初始化的数据库，若 `user_profile` 缺少 `exam_combo` 列，请执行一次 `sql/migrations/2026-11-22_user_profile.sql`。
+
 业务数据导入后，可按需执行 `sql/90_data_quality_maintenance.sql` 刷新专业年度数据质量。历史迁移和一次性修复保存在 `sql/archive/`，不属于常规安装步骤。
 
 ### 3. 配置环境变量

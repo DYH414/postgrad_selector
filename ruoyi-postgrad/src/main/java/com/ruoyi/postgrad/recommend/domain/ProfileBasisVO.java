@@ -13,6 +13,8 @@ public class ProfileBasisVO implements Serializable {
     /** 预估分数 */
     private Integer estimatedScore;
 
+    private String examCombo;
+
     /** 目标地区（中文展示，如 "北京、上海"） */
     private String targetRegions;
 
@@ -26,6 +28,9 @@ public class ProfileBasisVO implements Serializable {
 
     public Integer getEstimatedScore() { return estimatedScore; }
     public void setEstimatedScore(Integer estimatedScore) { this.estimatedScore = estimatedScore; }
+
+    public String getExamCombo() { return examCombo; }
+    public void setExamCombo(String examCombo) { this.examCombo = examCombo; }
 
     public String getTargetRegions() { return targetRegions; }
     public void setTargetRegions(String targetRegions) { this.targetRegions = targetRegions; }

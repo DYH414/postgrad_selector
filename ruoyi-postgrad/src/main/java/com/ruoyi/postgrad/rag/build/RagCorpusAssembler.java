@@ -58,6 +58,8 @@ public class RagCorpusAssembler {
     private static final Pattern YEAR_PATTERN = Pattern.compile("(?<!\\d)(20\\d{2})(?!\\d)");
     private static final Pattern SOURCE_URL_PATTERN =
         Pattern.compile("(?m)^>\\s*来源\\s*:\\s*(https?://\\S+)\\s*$");
+    private static final Pattern SOURCE_BACKUP_URL_PATTERN =
+        Pattern.compile("(?m)^>\\s*备用来源（研招网）\\s*:\\s*(https?://\\S+)\\s*$");
     private static final String ADMISSION_GUIDE_SUFFIX = "-招生简章.md";
 
     // Package-private for test injection via reflection
@@ -134,7 +136,8 @@ public class RagCorpusAssembler {
             String schoolName = inferSchoolName(sourceName);
             String sourceType = schoolName != null ? "school_guide" : "general";
             String year = extractYear(document.text());
-            String sourceUrl = extractSourceUrl(document.text());
+            String sourceUrl = extractUrl(document.text(), SOURCE_URL_PATTERN);
+            String backupUrl = extractUrl(document.text(), SOURCE_BACKUP_URL_PATTERN);
             for (int i = 0; i < segments.size(); i++) {
                 TextSegment segment = segments.get(i);
                 Metadata metadata = segment.metadata().copy();
@@ -152,6 +155,7 @@ public class RagCorpusAssembler {
                 if (schoolName != null) metadata.put("school_name", schoolName);
                 if (year != null) metadata.put("year", year);
                 if (sourceUrl != null) metadata.put("source_url", sourceUrl);
+                if (backupUrl != null) metadata.put("source_backup_url", backupUrl);
                 // Unstructured chunks intentionally omit program_id/program_name.
                 result.add(TextSegment.from(segment.text(), metadata));
             }
@@ -233,9 +237,9 @@ public class RagCorpusAssembler {
         return matcher.find() ? matcher.group(1) : null;
     }
 
-    private String extractSourceUrl(String content) {
+    private String extractUrl(String content, Pattern pattern) {
         if (content == null) return null;
-        Matcher matcher = SOURCE_URL_PATTERN.matcher(content);
+        Matcher matcher = pattern.matcher(content);
         return matcher.find() ? matcher.group(1) : null;
     }
 

@@ -9,7 +9,7 @@ const CompressionPlugin = require('compression-webpack-plugin')
 
 const name = process.env.VUE_APP_TITLE || '考研择校管理系统' // 网页标题
 
-const baseUrl = 'http://localhost:8080' // 后端接口
+const baseUrl = process.env.VUE_APP_API_TARGET || 'http://localhost:8080'
 
 const port = process.env.port || process.env.npm_config_port || 8081 // 端口
 
@@ -37,7 +37,7 @@ module.exports = {
       // detail: https://cli.vuejs.org/config/#devserver-proxy
       [process.env.VUE_APP_BASE_API]: {
         target: baseUrl,
-        changeOrigin: true,
+        changeOrigin: !process.env.VUE_APP_API_TARGET,
         pathRewrite: {
           ['^' + process.env.VUE_APP_BASE_API]: ''
         }

@@ -45,18 +45,24 @@
         <table v-if="compareSchools.length" class="compare-table">
           <thead>
             <tr>
-              <th></th>
-              <th v-for="s in compareSchools" :key="s.compareKey">{{ s.name }}</th>
+              <th scope="col">项目</th>
+              <th v-for="s in compareSchools" :key="s.compareKey" scope="col">
+                <CompareProgramHeader :program="s" />
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td>专业</td>
-              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.program }}</td>
+              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.programName }}</td>
             </tr>
             <tr>
               <td>学院</td>
-              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.college || '-' }}</td>
+              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.collegeName || '-' }}</td>
+            </tr>
+            <tr>
+              <td>学位</td>
+              <td v-for="s in compareSchools" :key="s.compareKey">{{ s.degreeTypeLabel }}</td>
             </tr>
             <tr>
               <td>考试组合</td>
@@ -73,9 +79,10 @@
             <tr>
               <td>与预估分差距</td>
               <td v-for="s in compareSchools" :key="s.compareKey">
-                <span class="score-diff" :class="{ positive: s.admissionLowGap >= 0, negative: s.admissionLowGap < 0 }">
+                <span v-if="s.admissionLowGap != null" class="score-diff" :class="{ positive: s.admissionLowGap >= 0, negative: s.admissionLowGap < 0 }">
                   {{ s.admissionLowGap > 0 ? '+' : '' }}{{ s.admissionLowGap }}
                 </span>
+                <span v-else>-</span>
               </td>
             </tr>
             <tr>
@@ -105,19 +112,29 @@
         <el-button type="primary" @click="$router.push('/recommend')">去生成推荐</el-button>
       </div>
     </div>
-    <el-drawer title="备选专业详情" :visible.sync="detailVisible" size="520px" append-to-body>
+    <el-drawer title="备选专业详情" v-model="detailVisible" size="520px" append-to-body>
       <div class="detail-drawer" v-loading="detailLoading">
         <template v-if="detail">
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span>{{ detail.basic.examCombo || '-' }}</span>
+            <span
+              v-if="hasExamCombo(detail.basic.examCombo)"
+              class="exam-combo-tip"
+              tabindex="0"
+              data-tip="该专业考试科目组合"
+              title="该专业考试科目组合">{{ formatExamCombo(detail.basic.examCombo) }}</span>
+            <span v-else>暂无</span>
             <span>{{ detail.basic.studyModeLabel }}</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
-            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine }}</strong></div>
-            <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
+            <div><small>复试线</small><strong>{{ displayMetric(detail.recommendationOverview.scoreLine) }}</strong></div>
+            <div><small>最低录取分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionLow) }}</strong></div>
+            <div><small>最高分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionHigh) }}</strong></div>
+            <div><small>拟录取均分</small><strong>{{ displayMetric(detail.recommendationOverview.avgAdmittedScore) }}</strong></div>
+            <div><small>拟录取区间</small><strong>{{ formatAdmissionRange(detail.recommendationOverview.admissionLow, detail.recommendationOverview.admissionHigh, detail.recommendationOverview.admissionRangeLabel) }}</strong></div>
+            <div><small>拟录取人数</small><strong>{{ displayMetric(detail.recommendationOverview.admittedCount) }}</strong></div>
           </div>
           <div class="drawer-warning">
             <p v-for="warning in detail.riskWarnings" :key="warning">· {{ warning }}</p>
@@ -133,8 +150,11 @@ import { ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
+import CompareProgramHeader from '@/components/CompareProgramHeader.vue'
 import { useUserStore } from '@/stores/user'
 import { listFavorites, removeFavorite } from '@/api/favorites'
+import { displayMetric, formatAdmissionRange } from '@/utils/admissionDisplay.mjs'
+import { formatExamCombo, hasExamCombo } from '@/utils/examComboDisplay.mjs'
 import { getProgramDetail, comparePrograms } from '@/api/programs'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getProfile } from '@/api/profile'
@@ -159,6 +179,7 @@ function fetchList() {
   loading.value = true
   listFavorites().then(res => {
     favorites.value = res.data || []
+    loadCompareState()
   }).finally(() => { loading.value = false })
 }
 
@@ -166,13 +187,28 @@ function handleRemove(row) {
   removeFavorite(row.programId).then(() => {
     ElMessage.success('已取消收藏')
     favorites.value = favorites.value.filter(f => f.programId !== row.programId)
+    saveCompareIds(compareIds.value.filter(id => id !== row.programId))
   })
 }
 
+function saveCompareIds(ids) {
+  compareIds.value = ids
+  if (ids.length) {
+    localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(ids))
+  } else {
+    localStorage.removeItem(COMPARE_STORAGE_KEY)
+  }
+}
+
 function loadCompareState() {
+  let ids
   try {
-    compareIds.value = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]')
-  } catch (_) { compareIds.value = [] }
+    ids = JSON.parse(localStorage.getItem(COMPARE_STORAGE_KEY) || '[]')
+  } catch (_) {
+    ids = []
+  }
+  const favoriteIds = new Set(favorites.value.map(item => item.programId))
+  saveCompareIds(Array.isArray(ids) ? ids.filter(id => favoriteIds.has(id)) : [])
 }
 
 function addToCompare(row) {
@@ -180,8 +216,7 @@ function addToCompare(row) {
   if (!id) return
   const idx = compareIds.value.indexOf(id)
   if (idx >= 0) {
-    compareIds.value.splice(idx, 1)
-    localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(compareIds.value))
+    saveCompareIds(compareIds.value.filter(id => id !== row.programId))
     ElMessage.success('已从对比列表移除')
     return
   }
@@ -189,8 +224,7 @@ function addToCompare(row) {
     ElMessage.warning(`最多对比 ${COMPARE_MAX_ITEMS} 所学校`)
     return
   }
-  compareIds.value.push(id)
-  localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(compareIds.value))
+  saveCompareIds([...compareIds.value, id])
   if (profileScore.value) {
     localStorage.setItem(COMPARE_SCORE_KEY, String(profileScore.value))
   }
@@ -198,47 +232,51 @@ function addToCompare(row) {
 }
 
 function clearAllCompare() {
-  compareIds.value = []
-  compareSchools.value = []
-  localStorage.removeItem(COMPARE_STORAGE_KEY)
+  saveCompareIds([])
   ElMessage.success('已清空对比列表')
 }
 
-function fetchCompare() {
-  if (compareIds.value.length < 2) {
+watch(compareIds, (ids, _, onCleanup) => {
+  if (ids.length < 2) {
     compareSchools.value = []
+    compareLoading.value = false
     return
   }
   compareLoading.value = true
   const score = profileScore.value || localStorage.getItem(COMPARE_SCORE_KEY) || ''
-  comparePrograms({ programIds: compareIds.value.join(','), estimatedScore: score })
+  let current = true
+  onCleanup(() => { current = false })
+  comparePrograms({ programIds: ids.join(','), estimatedScore: score })
     .then(res => {
+      if (!current) return
       const items = (res.data && res.data.items) || []
       compareSchools.value = items.map(item => ({
         compareKey: `p:${item.programId || item.program_id}`,
-        name: item.schoolName || '-',
-        program: item.programName || '-',
-        college: item.collegeName || '-',
+        schoolName: item.schoolName || '-',
+        collegeName: item.collegeName,
+        programName: item.programName || '-',
+        is985: item.is985,
+        is211: item.is211,
+        isDoubleFirst: item.isDoubleFirst,
+        degreeTypeLabel: item.degreeTypeLabel || '-',
         exam: item.examSubjectsLabel || '-',
         score: item.scoreLine ?? '-',
         admissionLow: item.admissionLow ?? '-',
-        admissionLowGap: item.admissionLowGap ?? 0,
+        admissionLowGap: item.admissionLowGap,
         range: item.admissionRangeLabel || '-',
         quota: item.planCount || '-',
         confidence: item.dataCompleteness || '-'
       }))
     })
     .catch(() => {
+      if (!current) return
       compareSchools.value = []
       ElMessage.error('加载对比数据失败')
     })
-    .finally(() => { compareLoading.value = false })
-}
-
-// 监听对比列表变化，自动刷新对比面板
-watch(compareIds, () => {
-  fetchCompare()
-}, { deep: true })
+    .finally(() => {
+      if (current) compareLoading.value = false
+    })
+})
 
 function compareSelected() {
   const ids = selectedRows.value.map(row => row.programId).filter(Boolean)
@@ -246,8 +284,12 @@ function compareSelected() {
     ElMessage.warning('至少选择 2 个项目进行对比')
     return
   }
-  ids.forEach(id => { if (!compareIds.value.includes(id)) compareIds.value.push(id) })
-  localStorage.setItem(COMPARE_STORAGE_KEY, JSON.stringify(compareIds.value))
+  const nextIds = [...new Set([...compareIds.value, ...ids])]
+  if (nextIds.length > COMPARE_MAX_ITEMS) {
+    ElMessage.warning(`最多对比 ${COMPARE_MAX_ITEMS} 所学校`)
+    return
+  }
+  saveCompareIds(nextIds)
   if (profileScore.value) {
     localStorage.setItem(COMPARE_SCORE_KEY, String(profileScore.value))
   }
@@ -269,12 +311,9 @@ function handleLogout() {
 
 onMounted(() => {
   fetchList()
-  loadCompareState()
   getProfile().then(res => {
     if (res.data?.estimatedScore) profileScore.value = res.data.estimatedScore
   }).catch(() => {})
-  // 初始加载时如果有对比项，自动获取对比数据
-  if (compareIds.value.length >= 2) fetchCompare()
 })
 </script>
 
@@ -329,4 +368,45 @@ onMounted(() => {
 .detail-score-grid strong { font-size: 22px; }
 .drawer-warning { border: 1px solid #ffd7a8; border-radius: 8px; padding: 12px; background: #fff8e8; }
 .drawer-warning p { color: #9a4d00; margin: 4px 0; }
+</style>
+
+<style>
+.exam-combo-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+  outline: none;
+  border-bottom: 1px dashed #9aa8bc;
+}
+.exam-combo-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(280px, 78vw);
+  padding: 7px 9px;
+  border: 1px solid #dbe7ff;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 37, 76, 0.14);
+  color: #526278;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+.exam-combo-tip:hover::after,
+.exam-combo-tip:focus::after,
+.exam-combo-tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
 </style>

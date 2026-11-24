@@ -1,6 +1,12 @@
 package com.ruoyi.web.controller.postgrad;
 
 import java.util.Map;
+import java.util.Set;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +27,17 @@ public class AppProfileController
     @Autowired
     private IUserProfileService profileService;
 
+    private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+
+    private static final Map<String, Set<String>> ENUMS = Map.of(
+            "riskPreference", Set.of("conservative", "balanced", "aggressive", "safe_first", "reach_first"),
+            "schoolTierPreference", Set.of("must_211_or_better", "prefer_211_or_better", "no_strict_requirement", "developed_region_priority", "school_tier_priority", "safe_admission_priority", "tier_priority"),
+            "regionStrategy", Set.of("developed_priority", "developed_balanced", "no_strict_requirement", "target_regions_only"),
+            "undergradTier", Set.of("985", "211", "DOUBLE_FIRST", "PUBLIC_REGULAR", "PRIVATE", "JUNIOR_COLLEGE", "OTHER"),
+            "mathLevel", Set.of("weak", "medium", "strong"),
+            "englishLevel", Set.of("weak", "medium", "strong"),
+            "csLevel", Set.of("weak", "medium", "strong"));
+
     @GetMapping
     public AjaxResult get()
     {
@@ -32,15 +49,31 @@ public class AppProfileController
     }
 
     @PostMapping
-    public AjaxResult save(@RequestBody Map<String, Object> body)
+    public ResponseEntity<AjaxResult> save(@RequestBody Map<String, Object> body)
     {
         AppLoginUser loginUser = getCurrentAppUser();
-        if (loginUser == null) return AjaxResult.error("未登录");
+        if (loginUser == null) return ResponseEntity.ok(AjaxResult.error("未登录"));
+
+        String regions;
+        try
+        {
+            regions = parseRegions(body.get("targetRegions"));
+        }
+        catch (IllegalArgumentException e)
+        {
+            return ResponseEntity.badRequest().body(AjaxResult.error(400, e.getMessage()));
+        }
+        for (Map.Entry<String, Set<String>> entry : ENUMS.entrySet())
+        {
+            String value = stringVal(body.get(entry.getKey()));
+            if (value != null && !entry.getValue().contains(value))
+                return ResponseEntity.badRequest().body(AjaxResult.error(400, entry.getKey() + " is invalid"));
+        }
 
         UserProfile profile = new UserProfile();
         profile.setEstimatedScore(intVal(body.get("estimatedScore")));
         profile.setExamCombo(stringVal(body.get("examCombo")));
-        profile.setTargetRegions(stringVal(body.get("targetRegions")));
+        profile.setTargetRegions(regions);
         profile.setAcceptPartTime(intVal(body.get("acceptPartTime")));
         profile.setAcceptTransfer(intVal(body.get("acceptTransfer")));
         profile.setAcceptAcademic(intVal(body.get("acceptAcademic")));
@@ -61,7 +94,32 @@ public class AppProfileController
         profile.setReviewProgress(stringVal(body.get("reviewProgress")));
 
         profileService.saveOrUpdateUserProfile(loginUser.getUserId(), profile);
-        return AjaxResult.success("保存成功");
+        return ResponseEntity.ok(AjaxResult.success("保存成功"));
+    }
+
+    private String parseRegions(Object value)
+    {
+        if (value == null || value instanceof String && ((String) value).isBlank()) return null;
+        JsonNode node;
+        try
+        {
+            node = value instanceof String ? JSON.readTree((String) value) : JSON.valueToTree(value);
+        }
+        catch (JsonProcessingException e)
+        {
+            throw new IllegalArgumentException("目标地区必须是字符串数组");
+        }
+        if (node == null || !node.isArray()) throw new IllegalArgumentException("目标地区必须是字符串数组");
+        for (JsonNode item : node)
+            if (!item.isTextual()) throw new IllegalArgumentException("目标地区必须是字符串数组");
+        try
+        {
+            return JSON.writeValueAsString(node);
+        }
+        catch (JsonProcessingException e)
+        {
+            throw new IllegalArgumentException("目标地区必须是字符串数组");
+        }
     }
 
     private AppLoginUser getCurrentAppUser()

@@ -4,5 +4,5 @@ import java.util.Map;
 
 public interface IProgramSearchService
 {
-    Map<String, Object> searchPrograms(String keyword, int limit);
+    Map<String, Object> searchPrograms(String keyword, int limit, int offset);
 }

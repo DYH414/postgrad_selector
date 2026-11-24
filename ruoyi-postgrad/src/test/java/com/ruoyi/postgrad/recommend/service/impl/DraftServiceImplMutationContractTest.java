@@ -48,6 +48,9 @@ class DraftServiceImplMutationContractTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         inject("redisTemplate", redisTemplate);
         inject("draftMutationService", mutationService);
+        var recommendationMapper = mock(com.ruoyi.postgrad.mapper.RecommendationMapper.class);
+        when(recommendationMapper.selectApplicantProgramIds(any())).thenAnswer(inv -> inv.getArgument(0));
+        inject("recommendationMapper", recommendationMapper);
     }
 
     @Test

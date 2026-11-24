@@ -1,5 +1,9 @@
 package com.ruoyi.postgrad.recommend.service.impl;
 
+import com.ruoyi.postgrad.mapper.RecommendationMapper;
+
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
+
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -82,6 +86,9 @@ public class DraftServiceImpl implements IDraftService {
     private UserProfileMapper userProfileMapper;
 
     @Autowired
+    private RecommendationMapper recommendationMapper;
+
+    @Autowired
     private ICandidatePoolService candidatePoolService;
 
     @Autowired
@@ -118,23 +125,22 @@ public class DraftServiceImpl implements IDraftService {
             callback.onError(new IllegalStateException("已有草稿正在生成，请稍候"));
             return;
         }
+        boolean draftStarted = false;
         try {
-            // 1. 终结旧对话 + 清除 Redis 聊天记忆（新草稿 = 新上下文）
-            aiChatMapper.finalizeActiveConversations(userId);
-            redisTemplate.delete("ai:v2:chat:msg:" + userId);
-            redisTemplate.delete("ai:v2:chat:system:" + userId);
-
-            // 1.5 写入生成中占位草稿 — 防止页面刷新时展示旧草稿
-            saveDraft(userId, buildGeneratingPlaceholder());
-
-            // 2. 加载用户画像
             callback.onProgress(RecommendationProgressEvent.running(
                 currentPhase, currentTitle, "正在分析用户画像...", null, null));
             UserProfile up = userProfileMapper.selectUserProfileByUserId(userId);
-            if (up == null || up.getEstimatedScore() == null || up.getEstimatedScore() <= 0) {
+            if (!hasEstimatedScore(up)) {
                 callback.onError(new IllegalArgumentException("请先在个人资料中补充预计分数"));
                 return;
             }
+
+            aiChatMapper.finalizeActiveConversations(userId);
+            redisTemplate.delete("ai:v2:chat:msg:" + userId);
+            redisTemplate.delete("ai:v2:chat:system:" + userId);
+            saveDraft(userId, buildGeneratingPlaceholder());
+            draftStarted = true;
+
             callback.onProgress(RecommendationProgressEvent.success(
                 currentPhase, currentTitle, null, null, null));
             int estimatedScore = up.getEstimatedScore();
@@ -147,7 +153,8 @@ public class DraftServiceImpl implements IDraftService {
             currentTitle = "筛选408专业";
             callback.onProgress(RecommendationProgressEvent.running(
                 currentPhase, currentTitle, "正在筛选408专业...", null, null));
-            List<TierCandidates> allTiers = candidatePoolService.buildPool(estimatedScore, regions, schoolTierPref);
+            List<TierCandidates> allTiers = candidatePoolService.buildPool(
+                estimatedScore, regions, schoolTierPref, up.getExamCombo());
             int totalCandidates = allTiers.stream().mapToInt(t -> t.getCandidates().size()).sum();
             callback.onProgress(RecommendationProgressEvent.success(
                 currentPhase, currentTitle, null, totalCandidates, null));
@@ -303,7 +310,9 @@ public class DraftServiceImpl implements IDraftService {
 
         } catch (Exception e) {
             log.error("[Draft] generateDraft failed for userId={}: {}", userId, e.getMessage(), e);
-            saveDraft(userId, buildGenerationFailedPlaceholder("草稿生成失败，请重新生成"));
+            if (draftStarted) {
+                saveDraft(userId, buildGenerationFailedPlaceholder("草稿生成失败，请重新生成"));
+            }
             callback.onProgress(RecommendationProgressEvent.error(
                 currentPhase != null ? currentPhase : "finalize",
                 currentTitle != null ? currentTitle : "生成候选草稿",
@@ -321,14 +330,34 @@ public class DraftServiceImpl implements IDraftService {
 
     @Override
     public DraftVO getDraft(Long userId) {
-        String json = redisTemplate.opsForValue().get(draftKey(userId));
+        String key = draftKey(userId);
+        var values = redisTemplate.opsForValue();
+        String json = values.get(key);
         if (json == null || json.isBlank()) return emptyDraft();
         try {
-            return JSON.parseObject(json, DraftVO.class);
+            DraftVO draft = JSON.parseObject(json, DraftVO.class);
+            if (draft != null && isGenerationPlaceholder(draft)
+                && !Boolean.TRUE.equals(redisTemplate.hasKey(LOCK_KEY_PREFIX + userId))) {
+                String latest = values.get(key);
+                if (latest == null || latest.equals(json)) return emptyDraft();
+                draft = JSON.parseObject(latest, DraftVO.class);
+            }
+            if (draft != null) ApplicantCandidateFilter.draft(draft, recommendationMapper);
+            return draft != null ? draft : emptyDraft();
         } catch (Exception e) {
             log.warn("[Draft] Failed to parse draft for userId={}: {}", userId, e.getMessage());
             return emptyDraft();
         }
+    }
+
+    private static boolean isGenerationPlaceholder(DraftVO draft) {
+        return draft.getProfileBasis() == null && draft.getTiers() != null
+            && draft.getTiers().stream().anyMatch(tier -> tier.isInsufficient()
+                && tier.getInsufficientReason() != null && tier.getInsufficientReason().startsWith("AI 正在"));
+    }
+
+    private static boolean hasEstimatedScore(UserProfile profile) {
+        return profile != null && profile.getEstimatedScore() != null && profile.getEstimatedScore() > 0;
     }
 
     // ==================== delegate to DraftMutationService ====================
@@ -336,7 +365,8 @@ public class DraftServiceImpl implements IDraftService {
     private CandidateWorkspaceVO loadWorkspace(Long userId) {
         String json = redisTemplate.opsForValue().get(WORKSPACE_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return null;
-        try { return JSON.parseObject(json, CandidateWorkspaceVO.class); }
+        try { return ApplicantCandidateFilter.workspace(
+            JSON.parseObject(json, CandidateWorkspaceVO.class), recommendationMapper); }
         catch (Exception e) { return null; }
     }
 
@@ -658,6 +688,7 @@ public class DraftServiceImpl implements IDraftService {
     private ProfileBasisVO buildProfileBasis(UserProfile up, int candidateCount) {
         ProfileBasisVO b = new ProfileBasisVO();
         b.setEstimatedScore(up.getEstimatedScore());
+        b.setExamCombo(up.getExamCombo());
         b.setTargetRegions(up.getTargetRegions() != null ? up.getTargetRegions() : "不限");
         b.setSchoolTierPreference(priorityLabel(up.getSchoolTierPreference()));
         b.setCandidateScope("系统按画像自动选择最多 " + candidateCount + " 个具备录取数据的 408 项目");

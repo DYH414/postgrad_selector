@@ -16,19 +16,23 @@
     <dl class="fact-grid">
       <div class="fact">
         <dt>均分</dt>
-        <dd class="t-num">{{ displayVal(candidate.fact.avgAdmittedScore) }}</dd>
+        <dd class="t-num">{{ displayMetric(candidate.fact.avgAdmittedScore) }}</dd>
       </div>
       <div class="fact">
         <dt>差距</dt>
-        <dd :class="['t-num', gapClass]">{{ displayGap(candidate.fact.scoreGap) }}</dd>
+        <dd :class="['t-num', gapClass]">{{ formatScoreGap(candidate.fact.scoreGap) }}</dd>
       </div>
       <div class="fact">
-        <dt>名额</dt>
-        <dd class="t-num">{{ candidate.fact.unifiedExamQuota || candidate.fact.planCount || '—' }}</dd>
+        <dt>{{ quota.hint || '名额' }}</dt>
+        <dd class="t-num">{{ quota.value }}</dd>
       </div>
       <div class="fact">
         <dt>城市</dt>
         <dd>{{ candidate.fact.city || '—' }}</dd>
+      </div>
+      <div class="fact">
+        <dt>考试组合</dt>
+        <dd class="t-num">{{ candidate.fact.examCombo || '—' }}</dd>
       </div>
     </dl>
 
@@ -70,6 +74,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { displayMetric, formatAdmissionQuota, formatScoreGap } from '@/utils/admissionDisplay.mjs'
 
 const props = defineProps({
   candidate: { type: Object, required: true },
@@ -77,6 +82,8 @@ const props = defineProps({
 })
 
 defineEmits(['remove', 'ask-about'])
+
+const quota = computed(() => formatAdmissionQuota(props.candidate.fact, { allowZero: true }))
 
 const gapClass = computed(() => {
   const g = props.candidate.fact.scoreGap
@@ -95,15 +102,6 @@ const sourceLabel = computed(() => {
   const f = props.candidate.fact || {}
   return f.sourceOwner || '查看来源'
 })
-
-function displayVal(value) {
-  return value != null ? value : '—'
-}
-
-function displayGap(value) {
-  if (value == null) return '—'
-  return value >= 0 ? `+${value}` : `${value}`
-}
 </script>
 
 <style scoped>
@@ -158,9 +156,7 @@ function displayGap(value) {
   font-size: 12px;
   line-height: 1.4;
   color: var(--ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .remove-btn {
@@ -187,7 +183,7 @@ function displayGap(value) {
 /* ── Fact grid ── */
 .fact-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0;
   margin: 12px 0 0;
   padding: 10px 0;

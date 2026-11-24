@@ -4,7 +4,7 @@
 
     <main class="result-layout" :class="{ 'result-layout--compare': activeTab === 'compare' }">
       <aside class="filter-sidebar" :class="{ 'shortlist-sidebar': activeTab === 'compare' }">
-        <template v-if="activeTab !== 'compare'">
+        <template v-if="activeTab !== 'compare' && !defaultsLoading">
           <div class="sidebar-title">
             <strong>筛选条件</strong>
             <button type="button" @click="resetFilters">清空</button>
@@ -59,7 +59,7 @@
           </div>
         </template>
 
-        <template v-else>
+        <template v-else-if="activeTab === 'compare'">
           <div class="shortlist-header">
             <strong>我的备选</strong>
             <span>{{ backupTotal }} 个方案</span>
@@ -113,6 +113,18 @@
           <el-button v-if="activeTab !== 'compare'" plain type="primary" icon="el-icon-download">导出结果</el-button>
         </div>
 
+        <div v-if="isCatalogSearch" class="catalog-progress-bar">
+          <span class="catalog-progress-text">{{ catalogProgressText }}</span>
+          <button
+            v-if="catalogHasMore"
+            type="button"
+            class="catalog-more-btn"
+            :disabled="catalogLoadingMore"
+            @click="loadMoreCatalog">
+            {{ catalogLoadingMore ? '加载中…' : '加载更多符合方向' }}
+          </button>
+        </div>
+
         <div class="data-alert">
           <i class="el-icon-warning"></i>
           复试线不是最低录取分；筛选学校不代表只有这些学校可以报。数据来源为第三方公开信息整理，可能存在遗漏或错误，请以院校官网为准。
@@ -142,12 +154,19 @@
               </div>
             </div>
             <table v-if="activeCompareTab === 'compare' && compareSchools.length" class="compare-table">
+              <thead>
+                <tr>
+                  <th scope="col">项目</th>
+                  <th v-for="school in compareSchools" :key="school.compareKey" scope="col">
+                    <CompareProgramHeader :program="school" />
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 <tr v-for="row in compareRows" :key="row.label">
                   <th>{{ row.label }}</th>
                   <td v-for="school in compareSchools" :key="school.compareKey + row.label">
-                    <template v-if="row.type === 'name'"><strong>{{ school.name }}</strong></template>
-                    <template v-else-if="row.type === 'diff'">
+                    <template v-if="row.type === 'diff'">
                       <span class="score-diff" :class="{ positive: school[row.key] >= 0, negative: school[row.key] < 0 }">
                         {{ school[row.key] > 0 ? '+' : '' }}{{ school[row.key] }}
                       </span>
@@ -162,7 +181,7 @@
                       </span>
                     </template>
                     <template v-else-if="row.type === 'source'">
-                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="school.sourceUrl" target="_blank" rel="noopener noreferrer">查看来源</a>
+                      <a v-if="school.sourceUrl" class="source-link compare-source" :href="presentationSourceUrl(school.sourceUrl)" target="_blank" rel="noopener noreferrer">{{ school.sourceLabel || '查看来源' }}</a>
                       <span v-else>-</span>
                     </template>
                     <template v-else-if="row.type === 'action'"><button class="detail-link" type="button" @click="openDetail(school.programId)">查看详情</button></template>
@@ -243,7 +262,7 @@
           </section>
         </template>
 
-        <div v-if="activeTab !== 'compare' && !hasResult" class="empty-result">
+        <div v-if="activeTab !== 'compare' && !isCatalogSearch && !hasResult" class="empty-result">
           <i class="el-icon-document"></i>
           <strong>还没有筛选结果</strong>
           <p>请先填写报考条件开始筛选；系统不会用演示院校替代你的真实结果。</p>
@@ -261,10 +280,17 @@
           </div>
         </div>
 
-        <template v-if="activeTab !== 'compare' && hasResult && !result.aiAnalysis">
+        <template v-if="activeTab !== 'compare' && (hasResult || isCatalogSearch) && !result.aiAnalysis">
           <div v-if="filteredItems.length === 0" class="empty-group">暂无匹配结果</div>
           <div v-else class="school-grid">
-            <article v-for="school in filteredItems" :key="school.cardKey" class="school-card">
+            <article
+              v-for="school in filteredItems"
+              :key="school.cardKey"
+              class="school-card"
+              :class="{
+                'has-multiple-directions': listedDirectionCount(school) > 1,
+                'is-expanded': listedDirectionCount(school) > 1 && isSchoolExpanded(school.cardKey)
+              }">
                 <div class="card-top">
                   <div class="school-seal">{{ school.schoolName.slice(0, 1) }}</div>
                   <div>
@@ -274,16 +300,23 @@
                       / {{ school.programName }}
                     </p>
                     <button
-                      v-if="school.directionCount > 1"
+                      v-if="listedDirectionCount(school) > 1"
                       class="direction-count"
                       type="button"
+                      :aria-expanded="isSchoolExpanded(school.cardKey) ? 'true' : 'false'"
                       @click="toggleSchoolDirections(school.cardKey)">
-                      共 {{ school.directionCount }} 个符合方向
+                      {{ directionToggleLabel(listedDirectionCount(school), isSchoolExpanded(school.cardKey)) }}
                     </button>
                     <div class="school-meta-line">
-                      <span>{{ school.exam }} | {{ school.province || '-' }}</span>
+                      <span
+                        v-if="hasExamCombo(school.examCombo || school.exam)"
+                        class="exam-combo-tip"
+                        tabindex="0"
+                        data-tip="该专业考试科目组合"
+                        title="该专业考试科目组合">{{ formatExamCombo(school.examCombo || school.exam) }}</span>
+                      <span v-if="school.province">{{ school.province }}</span>
                       <em v-if="school.dataYear" class="data-year-badge">{{ school.dataYear }}年数据</em>
-                      <em v-else class="data-year-badge muted">年份待补</em>
+                      <em v-else class="data-year-badge muted">暂无</em>
                     </div>
                   </div>
                   <button
@@ -298,22 +331,31 @@
 
                 <div class="score-line">
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的平均总分，是本次筛选范围的主依据。">
-                    <span>拟录取均分</span><strong>{{ school.avgScore || '-' }}</strong>
+                    <span>拟录取均分</span><strong>{{ displayMetric(school.avgScore) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="你的预计初试总分减去拟录取均分，负数代表低于历史均分。">
                     <span>均分差距</span><strong :class="{ positive: school.avgScoreGap >= 0, negative: school.avgScoreGap < 0 }">{{ formatDiff(school.avgScoreGap) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最低总分，仅作风险边界参考。">
-                    <span>最低录取分</span><strong>{{ school.admissionLow || '-' }}</strong>
+                    <span>最低录取分</span><strong>{{ displayMetric(school.admissionLow) }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业进入复试的分数门槛。">
+                    <span>复试线</span><strong>{{ displayMetric(school.scoreLine) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取最低分到最高分的范围，仅作历史参考。">
                     <span>拟录取区间</span><strong>{{ school.range }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业对应年份拟录取名单中的人数。">
+                    <span>拟录取人数</span><strong>{{ displayMetric(school.admittedCount) }}</strong>
+                  </div>
+                  <div class="score-metric" tabindex="0" data-tip="该专业近年拟录取名单中的最高总分。">
+                    <span>最高分</span><strong>{{ displayMetric(school.admissionHigh) }}</strong>
                   </div>
                   <div class="score-metric" tabindex="0" data-tip="优先展示该专业统考名额；缺少统考名额时展示计划人数，计划人数可能包含推免。">
                     <span>{{ school.quotaDisplay.label }}</span>
                     <strong>
                       {{ school.quotaDisplay.value }}
-                      <small>{{ school.quotaDisplay.hint }}</small>
+                      <small v-if="school.quotaDisplay.hint">{{ school.quotaDisplay.hint }}</small>
                     </strong>
                   </div>
                 </div>
@@ -326,10 +368,11 @@
                 <a
                   v-if="school.sourceUrl"
                   class="source-link"
-                  :href="school.sourceUrl"
+                  :href="presentationSourceUrl(school.sourceUrl)"
+                  :title="school.sourceLabel"
                   target="_blank"
                   rel="noopener noreferrer">
-                  <i class="el-icon-link"></i> 来源链接
+                  <i class="el-icon-link"></i> {{ school.sourceLabel || '来源链接' }}
                 </a>
                 <span v-else class="source-link source-missing">
                   <i class="el-icon-link"></i> 来源待补充
@@ -344,20 +387,57 @@
                     {{ isFavorited(school) ? '已加入备选' : '加入备选' }}
                   </button>
                 </div>
-                <div v-if="school.directionCount > 1 && isSchoolExpanded(school.cardKey)" class="direction-list">
+                <div v-if="listedDirectionCount(school) > 1 && isSchoolExpanded(school.cardKey)" class="direction-list">
+                  <div class="direction-list-header">{{ directionListHeader(listedDirectionCount(school), school.schoolTotal) }}</div>
                   <div v-for="direction in school.directions" :key="direction.cardKey" class="direction-row">
                     <div class="direction-main">
                       <strong>
                         <span :class="{ 'pending-field': isPendingCollege(direction.collegeName) }">{{ displayCollegeName(direction.collegeName) }}</span>
                         / {{ direction.programName }}
                       </strong>
-                      <small>{{ direction.exam }} | {{ direction.dataYear ? `${direction.dataYear}年数据` : '年份待补' }}</small>
-                    </div>
-                    <div class="direction-stats">
-                      <span>均分 {{ direction.avgScore || '-' }}</span>
-                      <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
-                      <span>区间 {{ direction.range }}</span>
-                      <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}（{{ direction.quotaDisplay.hint }}）</span>
+                      <small class="direction-meta">
+                        <span
+                          v-if="hasExamCombo(direction.examCombo || direction.exam)"
+                          class="exam-combo-tip"
+                          tabindex="0"
+                          data-tip="该专业考试科目组合"
+                          title="该专业考试科目组合">{{ directionMetaExam(direction.examCombo || direction.exam) }}</span>
+                        <span
+                          v-if="hasExamCombo(direction.examCombo || direction.exam)"
+                          class="direction-meta-sep"
+                          aria-hidden="true">·</span>
+                        <span class="direction-year">{{ directionMetaYear(direction.dataYear) }}</span>
+                      </small>
+                      <div class="direction-metrics">
+                        <div class="direction-metric">
+                          <span>拟录取均分</span>
+                          <strong>{{ displayMetric(direction.avgScore) }}</strong>
+                        </div>
+                        <div class="direction-metric">
+                          <span>拟录取人数</span>
+                          <strong>{{ displayMetric(direction.admittedCount) }}</strong>
+                        </div>
+                        <div class="direction-metric">
+                          <span>拟录取区间</span>
+                          <strong>{{ direction.range }}</strong>
+                        </div>
+                      </div>
+                      <div class="direction-secondary">
+                        <span>复试线 {{ displayMetric(direction.scoreLine) }}</span>
+                        <span>最低录取分 {{ displayMetric(direction.admissionLow) }}</span>
+                        <span>最高分 {{ displayMetric(direction.admissionHigh) }}</span>
+                        <span :class="{ positive: direction.avgScoreGap >= 0, negative: direction.avgScoreGap < 0 }">差距 {{ formatDiff(direction.avgScoreGap) }}</span>
+                        <span>{{ direction.quotaDisplay.label }} {{ direction.quotaDisplay.value }}<template v-if="direction.quotaDisplay.hint">（{{ direction.quotaDisplay.hint }}）</template></span>
+                        <span>完整度{{ direction.confidence }}</span>
+                      </div>
+                      <a
+                        v-if="direction.sourceUrl"
+                        class="source-link direction-source"
+                        :href="presentationSourceUrl(direction.sourceUrl)"
+                        :title="direction.sourceLabel"
+                        target="_blank"
+                        rel="noopener noreferrer">{{ direction.sourceLabel || '来源链接' }}</a>
+                      <span v-else class="direction-source source-missing">来源待补充</span>
                     </div>
                     <div class="direction-actions">
                       <button
@@ -386,14 +466,23 @@
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span>{{ detail.basic.examCombo || '-' }}</span>
+            <span
+              v-if="hasExamCombo(detail.basic.examCombo)"
+              class="exam-combo-tip"
+              tabindex="0"
+              data-tip="该专业考试科目组合"
+              title="该专业考试科目组合">{{ formatExamCombo(detail.basic.examCombo) }}</span>
+            <span v-else>暂无</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
-            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine }}</strong></div>
-            <div><small>最低录取分</small><strong>{{ detail.recommendationOverview.admissionLow || '-' }}</strong></div>
+            <div><small>复试线</small><strong>{{ displayMetric(detail.recommendationOverview.scoreLine) }}</strong></div>
+            <div><small>最低录取分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionLow) }}</strong></div>
+            <div><small>最高分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionHigh) }}</strong></div>
             <div><small>与最低录取分差距</small><strong>{{ formatDiff(detail.recommendationOverview.admissionLowGap) }}</strong></div>
-            <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
+            <div><small>拟录取均分</small><strong>{{ displayMetric(detail.recommendationOverview.avgAdmittedScore) }}</strong></div>
+            <div><small>拟录取区间</small><strong>{{ formatAdmissionRange(detail.recommendationOverview.admissionLow, detail.recommendationOverview.admissionHigh, detail.recommendationOverview.admissionRangeLabel) }}</strong></div>
+            <div><small>拟录取人数</small><strong>{{ displayMetric(detail.recommendationOverview.admittedCount) }}</strong></div>
             <div><small>与拟录取均分差距</small><strong>{{ formatDiff(detail.recommendationOverview.avgScoreGap) }}</strong></div>
           </div>
           <div class="drawer-warning">
@@ -402,21 +491,22 @@
           <a
             v-if="detail.source && detail.source.sourceUrl"
             class="drawer-source-link"
-            :href="detail.source.sourceUrl"
+            :href="presentationSourceUrl(detail.source.sourceUrl)"
             target="_blank"
             rel="noopener noreferrer">
-            <i class="el-icon-link"></i> 查看来源
+            <i class="el-icon-link"></i> {{ detail.source.sourceTitle || detail.source.sourceOwner || '查看来源' }}
           </a>
           <table class="trend-table">
             <thead>
-              <tr><th>年份</th><th>复试线</th><th>拟录取均分</th><th>录取区间</th></tr>
+              <tr><th>年份</th><th>复试线</th><th>拟录取人数</th><th>拟录取均分</th><th>录取区间</th></tr>
             </thead>
             <tbody>
               <tr v-for="item in detail.trends" :key="item.year">
                 <td>{{ item.year }}</td>
-                <td>{{ item.scoreLine }}</td>
-                <td>{{ item.avgAdmittedScore || '-' }}</td>
-                <td>{{ item.admissionLow || '-' }} - {{ item.admissionHigh || '-' }}</td>
+                <td>{{ displayMetric(item.scoreLine) }}</td>
+                <td>{{ displayMetric(item.admittedCount) }}</td>
+                <td>{{ displayMetric(item.avgAdmittedScore) }}</td>
+                <td>{{ formatAdmissionRange(item.admissionLow, item.admissionHigh) }}</td>
               </tr>
             </tbody>
           </table>
@@ -432,15 +522,27 @@ import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppHeader from '@/components/AppHeader.vue'
+import CompareProgramHeader from '@/components/CompareProgramHeader.vue'
 import { generateRecommendation, getRecommendationOptions, getRecommendationResult } from '@/api/recommendation'
 import { comparePrograms, getProgramDetail, searchPrograms } from '@/api/programs'
 import { addFavorite, listFavorites, removeFavorite } from '@/api/favorites'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
 import { getToken } from '@/api/request'
-import { formatAdmissionQuota } from '@/utils/admissionDisplay.mjs'
+import { displayMetric, formatAdmissionQuota, formatAdmissionRange, formatScoreGap as formatDiff, presentationSourceUrl } from '@/utils/admissionDisplay.mjs'
+import {
+  catalogProgressLabel,
+  directionListHeader,
+  directionMetaExam,
+  directionMetaYear,
+  directionToggleLabel,
+  isDirectionListExpanded,
+  listedDirectionCount
+} from '@/utils/schoolDirections.mjs'
+import { formatExamCombo, hasExamCombo } from '@/utils/examComboDisplay.mjs'
 
 const router = useRouter()
 const route = useRoute()
+const signedIn = Boolean(getToken())
 
 const FILTER_STORAGE_PREFIX = 'app-results-filters'
 const emptyFilters = () => ({
@@ -455,11 +557,11 @@ const emptyFilters = () => ({
 const emptyResult = () => ({
   recommendationId: null,
   totalCandidates: 0,
+  catalogTotal: null,
   score: '-',
   exam: '-',
   region: '不限',
   majorDirections: [],
-  studyMode: '不限',
   scoreRange: null,
   aiAnalysis: null,
   summary: null,
@@ -469,7 +571,12 @@ const emptyResult = () => ({
 })
 
 // --- data properties ---
+const CATALOG_PAGE_SIZE = 500
+
 const loading = ref(false)
+const catalogLoadingMore = ref(false)
+const catalogOffset = ref(0)
+let isCurrentCatalogSearch = () => false
 const filtering = ref(false)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -481,10 +588,12 @@ const favoriteProgramIds = ref([])
 const favoriteLoadingIds = ref([])
 const filterForm = ref(emptyFilters())
 const appliedFilters = ref(emptyFilters())
+const defaultsLoading = ref(signedIn)
+let defaultProfile
 const optionRegions = ref(['福建', '广东', '浙江', '上海'])
 const compareRows = [
-  { label: '学校', type: 'name' },
-  { label: '专业', key: 'program' },
+  { label: '专业', key: 'programName' },
+  { label: '学位', key: 'degreeTypeLabel' },
   { label: '考试组合', key: 'exam' },
   { label: '数据年份', key: 'dataYearLabel' },
   { label: '复试线', key: 'score' },
@@ -503,11 +612,14 @@ const backupGroups = ref([])
 const backupLoaded = ref(false)
 const selectedBackupCompareIds = ref([])
 const expandedSchoolKeys = ref([])
+const collapsedSchoolKeys = ref([])
 
 // --- computed properties ---
 const currentHeader = computed(() => {
   return activeTab.value === 'compare' ? 'compare' : 'results'
 })
+
+const isCatalogSearch = computed(() => Boolean(route.query.keyword && !route.query.id))
 
 const hasResult = computed(() => {
   return (result.value.items || []).length > 0
@@ -557,12 +669,14 @@ const keywordFilter = computed(() => (filterForm.value.keyword || '').trim().toL
 const filteredItems = computed(() => {
   const kw = keywordFilter.value
   const items = result.value.items || []
-  const filtered = !kw ? items : items.filter(school =>
-    (school.schoolName || '').toLowerCase().includes(kw) ||
-    (school.collegeName || '').toLowerCase().includes(kw) ||
-    (school.programName || '').toLowerCase().includes(kw) ||
-    (school.programCode || '').toLowerCase().includes(kw)
-  )
+  const filtered = !kw || (isCatalogSearch.value && kw === String(route.query.keyword).toLowerCase())
+    ? items
+    : items.filter(school =>
+      (school.schoolName || '').toLowerCase().includes(kw) ||
+      (school.collegeName || '').toLowerCase().includes(kw) ||
+      (school.programName || '').toLowerCase().includes(kw) ||
+      (school.programCode || '').toLowerCase().includes(kw)
+    )
   return groupSchools(filtered)
 })
 
@@ -597,6 +711,17 @@ const backupPreviewItems = computed(() => {
 
 const filteredTotal = computed(() => filteredItems.value.length)
 
+const catalogListedCount = computed(() => (result.value.items || []).length)
+const catalogTrueTotal = computed(() => (
+  result.value.catalogTotal != null ? result.value.catalogTotal : catalogListedCount.value
+))
+const catalogHasMore = computed(() => (
+  isCatalogSearch.value && catalogOffset.value < catalogTrueTotal.value
+))
+const catalogProgressText = computed(() => (
+  catalogProgressLabel(catalogListedCount.value, catalogTrueTotal.value)
+))
+
 const aiParagraphs = computed(() => {
   const text = result.value.aiAnalysis
   if (!text) return []
@@ -606,39 +731,78 @@ const aiParagraphs = computed(() => {
 // --- methods ---
 
 function loadOptions() {
-  getRecommendationOptions().then(res => {
+  return getRecommendationOptions().then(res => {
     const data = res.data || {}
+    defaultProfile = data.defaultProfile
     if (data.regions && data.regions.length) {
       optionRegions.value = data.regions
     }
   }).catch(() => {})
 }
 
-function loadResult() {
-  const id = route.query.id || window.sessionStorage.getItem('app-recommend-id')
+function loadMoreCatalog() {
+  if (!isCatalogSearch.value || catalogLoadingMore.value || !catalogHasMore.value) return
+  const isCurrent = isCurrentCatalogSearch
+  const keyword = String(route.query.keyword || '').trim()
+  if (!keyword || !isCurrent()) return
+  const offset = catalogOffset.value
+  catalogLoadingMore.value = true
+  searchPrograms(keyword, CATALOG_PAGE_SIZE, offset).then(res => {
+    if (!isCurrent()) return
+    const data = res.data || {}
+    const page = data.items || []
+    const known = new Set((result.value.items || []).map(item => item.programId))
+    const extra = page
+      .filter(item => item.programId == null || !known.has(item.programId))
+      .map(normalizeSchool)
+    result.value = {
+      ...result.value,
+      items: [...(result.value.items || []), ...extra],
+      catalogTotal: data.total != null ? Number(data.total) : result.value.catalogTotal
+    }
+    catalogOffset.value = offset + page.length
+  }).catch(() => {}).finally(() => {
+    if (isCurrent()) catalogLoadingMore.value = false
+  })
+}
+
+function sidebarDefaults() {
+  const filters = emptyFilters()
+  if (signedIn) {
+    filters.score = defaultProfile?.estimatedScore ?? ''
+    filters.exam = defaultProfile?.examCombo ?? ''
+  }
+  return filters
+}
+
+function loadResult(id, keyword, isCurrent) {
   const cached = window.sessionStorage.getItem('app-recommend-result')
   if (cached) {
     try {
       const parsed = JSON.parse(cached)
-      result.value = normalizeResult(parsed)
-      restoreFilters(parsed)
-      if (activeTab.value === 'compare') {
-        loadCompare()
-        loadBackupGroups()
+      if (!id || String(parsed.recommendationId) === String(id)) {
+        result.value = normalizeResult(parsed)
+        restoreFilters(parsed)
+        if (keyword) filterForm.value.keyword = keyword
       }
     } catch (e) {}
   }
   if (!id) return
   loading.value = true
   getRecommendationResult(id).then(res => {
-    result.value = normalizeResult(res.data || {})
-    restoreFilters(res.data || {})
-    window.sessionStorage.setItem('app-recommend-result', JSON.stringify(res.data || {}))
+    if (!isCurrent()) return
+    const data = res.data || {}
+    result.value = normalizeResult(data)
+    restoreFilters(data)
+    if (keyword) filterForm.value.keyword = keyword
+    window.sessionStorage.setItem('app-recommend-result', JSON.stringify(data))
     if (activeTab.value === 'compare') {
       loadCompare()
       loadBackupGroups()
     }
-  }).finally(() => { loading.value = false })
+  }).catch(() => {}).finally(() => {
+    if (isCurrent()) loading.value = false
+  })
 }
 
 function normalizeResult(data) {
@@ -653,12 +817,12 @@ function normalizeResult(data) {
   }
   return {
     recommendationId: data.recommendationId,
-    totalCandidates: data.totalCandidates || items.length,
+    totalCandidates: data.totalCandidates || data.total || items.length,
+    catalogTotal: data.total != null ? Number(data.total) : null,
     score: request.estimatedScore || data.score || 300,
     exam: request.examCombo || data.exam || '22408',
     region: request.targetRegions && request.targetRegions.length ? request.targetRegions.join('、') : '不限',
     majorDirections: Array.isArray(request.majorDirections) ? request.majorDirections : [],
-    studyMode: studyModeText(request.studyMode || data.studyMode),
     scoreRange: request.scoreRange != null ? request.scoreRange : null,
     aiAnalysis: data.aiAnalysis || null,
     summary: data.summary || null,
@@ -692,13 +856,15 @@ function normalizeSchool(item) {
     planCount: item.planCount,
     quotaDisplay: formatAdmissionQuota(item),
     admissionLow: item.admissionLow,
+    admissionHigh: item.admissionHigh,
     admissionLowGap: item.admissionLowGap,
-    range: item.admissionRangeLabel || '-',
-    avgScore: item.avgAdmittedScore || '-',
+    admittedCount: item.admittedCount,
+    range: formatAdmissionRange(item.admissionLow, item.admissionHigh, item.admissionRangeLabel),
+    avgScore: item.avgAdmittedScore,
     avgScoreGap: item.avgScoreGap,
     sourceUrl: item.sourceUrl,
-    sourceTitle: item.sourceTitle,
-    sourceOwner: item.sourceOwner,
+    sourceLabel: item.sourceTitle || item.sourceOwner,
+    schoolTotal: item.schoolTotal,
     confidence: item.dataCompleteness || 'C',
     tag: item.fitLevelLabel || '数据不足',
     fitLevelClass: item.fitLevel || 'insufficient_data',
@@ -710,7 +876,11 @@ function normalizeSchool(item) {
 
 function groupSchools(items) {
   const grouped = new Map()
-  items.forEach(item => {
+  const catalogSearch = isCatalogSearch.value
+  const ordered = catalogSearch
+    ? [...items].sort((a, b) => Number(hasAdmissionScores(b)) - Number(hasAdmissionScores(a)))
+    : items
+  ordered.forEach(item => {
     const key = item.schoolName || item.cardKey
     if (!grouped.has(key)) {
       grouped.set(key, [])
@@ -718,15 +888,27 @@ function groupSchools(items) {
     grouped.get(key).push(item)
   })
   return Array.from(grouped.values()).map(directions => {
-    const sorted = [...directions].sort(directionComparator)
+    const sorted = catalogSearch
+      ? directions.sort((a, b) => Number(hasAdmissionScores(b)) - Number(hasAdmissionScores(a))
+        || (b.dataYear ?? 0) - (a.dataYear ?? 0))
+      : directions.sort(directionComparator)
     const primary = sorted[0]
     return {
       ...primary,
       cardKey: `school:${primary.schoolName}:${primary.examCombo}:${primary.province || ''}`,
+      directions: sorted,
       directionCount: sorted.length,
-      directions: sorted
+      schoolTotal: primary.schoolTotal || sorted.length
     }
   })
+}
+
+function hasNumericScore(value) {
+  return value != null && value !== '' && value !== '-' && value !== '暂无' && Number.isFinite(Number(value))
+}
+
+function hasAdmissionScores(item) {
+  return hasNumericScore(item.scoreLine) || hasNumericScore(item.admissionLow) || hasNumericScore(item.avgScore)
 }
 
 function directionComparator(a, b) {
@@ -762,11 +944,6 @@ function isPendingCollege(name) {
 
 function displayCollegeName(name) {
   return isPendingCollege(name) ? '学院待核验' : name
-}
-
-function studyModeText(value) {
-  const map = { any: '不限', full_time: '全日制', part_time: '非全日制' }
-  return map[value] || value || '不限'
 }
 
 function tierLabel(value) {
@@ -825,7 +1002,7 @@ function sanitizeFilters(filters = {}) {
 }
 
 function defaultFiltersFromRequest(request = {}) {
-  const filters = emptyFilters()
+  const filters = sidebarDefaults()
   if (request.estimatedScore) filters.score = Number(request.estimatedScore)
   if (request.examCombo) filters.exam = request.examCombo
   if (Array.isArray(request.targetRegions) && request.targetRegions.length) {
@@ -851,6 +1028,10 @@ function restoreFilters(data = {}) {
         filters = {
           ...defaults,
           ...sanitizeFilters(savedFilters)
+        }
+        if (signedIn) {
+          filters.score = defaults.score
+          filters.exam = defaults.exam
         }
         if (Object.prototype.hasOwnProperty.call(data.request || {}, 'scoreRange')) {
           filters.scoreRange = defaults.scoreRange
@@ -903,7 +1084,9 @@ function applyFilters() {
     window.sessionStorage.setItem('app-recommend-result', JSON.stringify(data))
     if (data.recommendationId) {
       window.sessionStorage.setItem('app-recommend-id', data.recommendationId)
-      router.replace({ path: '/results', query: { ...route.query, id: data.recommendationId } }).catch(() => {})
+      const query = { ...route.query, id: data.recommendationId }
+      delete query.keyword
+      router.replace({ path: '/results', query }).catch(() => {})
     }
     ElMessage.success('筛选结果已更新')
   }).finally(() => {
@@ -919,18 +1102,27 @@ function clearHeaderChip(key) {
 }
 
 function resetFilters() {
-  filterForm.value = emptyFilters()
+  filterForm.value = sidebarDefaults()
   applyFilters()
 }
 
 function isSchoolExpanded(cardKey) {
-  return expandedSchoolKeys.value.includes(cardKey)
+  return isDirectionListExpanded({
+    cardKey,
+    isCatalogSearch: isCatalogSearch.value,
+    expandedKeys: expandedSchoolKeys.value,
+    collapsedKeys: collapsedSchoolKeys.value
+  })
 }
 
 function toggleSchoolDirections(cardKey) {
-  expandedSchoolKeys.value = isSchoolExpanded(cardKey)
-    ? expandedSchoolKeys.value.filter(key => key !== cardKey)
-    : [...expandedSchoolKeys.value, cardKey]
+  if (isSchoolExpanded(cardKey)) {
+    collapsedSchoolKeys.value = [...collapsedSchoolKeys.value, cardKey]
+    expandedSchoolKeys.value = expandedSchoolKeys.value.filter(key => key !== cardKey)
+  } else {
+    collapsedSchoolKeys.value = collapsedSchoolKeys.value.filter(key => key !== cardKey)
+    expandedSchoolKeys.value = [...expandedSchoolKeys.value, cardKey]
+  }
 }
 
 function matchSchoolFilters(school, filters) {
@@ -981,11 +1173,16 @@ function loadCompare() {
         compareKey: school.programId
           ? `program:${school.programId}`
           : `local:${school.schoolName}:${school.collegeName}:${school.programName}:${school.examCombo}`,
-        name: school.schoolName,
-        program: school.programName,
+        schoolName: school.schoolName,
+        collegeName: school.collegeName,
+        programName: school.programName,
+        is985: school.is985,
+        is211: school.is211,
+        isDoubleFirst: school.isDoubleFirst,
+        degreeTypeLabel: item.degreeTypeLabel || '-',
         exam: school.exam,
         dataYear: school.dataYear,
-        dataYearLabel: school.dataYear ? `${school.dataYear}年` : '年份待补',
+        dataYearLabel: school.dataYear ? `${school.dataYear}年` : '暂无',
         score: school.scoreLine,
         scoreLineGap: school.scoreLineGap,
         admissionLow: school.admissionLow,
@@ -994,7 +1191,8 @@ function loadCompare() {
         avgScore: school.avgScore,
         avgScoreGap: school.avgScoreGap,
         quota: item.planCount || '-',
-        sourceUrl: item.sourceUrl,
+        sourceUrl: school.sourceUrl,
+        sourceLabel: school.sourceLabel,
         confidence: school.confidence,
         star: school.star
       }
@@ -1239,16 +1437,12 @@ function openDetail(programId) {
   }).finally(() => { detailLoading.value = false })
 }
 
-function formatDiff(value) {
-  if (value === null || value === undefined) return '-'
-  return (value > 0 ? '+' : '') + value
-}
-
 function dataCompletenessText(level) {
   const map = {
     A: '含复试线、拟录取区间、人数等字段',
     B: '含主要分数字段，部分字段缺失',
-    C: '仅有复试线或基础字段'
+    C: '仅有复试线或基础字段',
+    D: '缺少复试总分线'
   }
   return map[level] || '字段完整度待核验'
 }
@@ -1266,36 +1460,49 @@ watch(() => route.query.programIds, () => {
   if (activeTab.value === 'compare') loadCompare()
 })
 
-watch(() => route.query.id, () => {
-  loadResult()
-})
+const optionsReady = loadOptions()
 
-watch(() => route.query.keyword, (newKw) => {
-  filterForm.value.keyword = newKw || ''
-  // Header 搜索跳转：无筛选结果时自动调搜索 API
-  if (newKw && !hasResult.value) {
-    searchPrograms(newKw, 50).then(res => {
-      const data = res.data || {}
-      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : [])
-      const schools = items.map(normalizeSchool)
-      if (schools.length > 0) {
-        result.value = {
-          ...emptyResult(),
-          score: '-',
-          exam: '-',
-          region: '不限',
-          scoreRange: null,
-          totalCandidates: schools.length,
-          items: schools
-        }
-      }
-    }).catch(() => {})
+watch([() => route.query.id, () => route.query.keyword], ([id, keyword], _, onCleanup) => {
+  let current = true
+  const isCurrent = () => current && route.query.id === id && route.query.keyword === keyword
+  isCurrentCatalogSearch = isCurrent
+  onCleanup(() => { current = false })
+  result.value = emptyResult()
+  loading.value = false
+  catalogLoadingMore.value = false
+  catalogOffset.value = 0
+
+  function initializeFilters() {
+    if (!current) return
+    filterForm.value = { ...sidebarDefaults(), keyword: keyword || '' }
+    appliedFilters.value = sidebarDefaults()
+    defaultsLoading.value = false
+    if (!isCatalogSearch.value) {
+      loadResult(id || window.sessionStorage.getItem('app-recommend-id'), keyword, () => current)
+    }
   }
+  if (defaultsLoading.value) {
+    optionsReady.then(initializeFilters)
+  } else {
+    initializeFilters()
+  }
+
+  if (!isCatalogSearch.value) {
+    return
+  }
+
+  loading.value = true
+  searchPrograms(keyword, CATALOG_PAGE_SIZE, 0).then(res => {
+    if (!isCurrent()) return
+    result.value = normalizeResult(res.data)
+    result.value.score = '-'
+    result.value.exam = '-'
+    catalogOffset.value = res.data?.items?.length ?? 0
+  }).catch(() => {}).finally(() => {
+    if (isCurrent()) loading.value = false
+  })
 }, { immediate: true })
 
-// --- created (top-level execution) ---
-loadOptions()
-loadResult()
 loadFavoriteIds()
 if (activeTab.value === 'compare') {
   loadCompare()
@@ -1536,6 +1743,40 @@ if (activeTab.value === 'compare') {
   color: #6b778a;
 }
 
+.catalog-progress-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: -8px 0 16px;
+  padding: 8px 12px;
+  border: 1px solid #e2ebf8;
+  border-radius: 8px;
+  background: #f7faff;
+  color: #5f6f85;
+  font-size: 13px;
+}
+
+.catalog-progress-text {
+  font-weight: 700;
+}
+
+.catalog-more-btn {
+  border: 1px solid #c9dcff;
+  border-radius: 6px;
+  background: #fff;
+  color: #1769f6;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+
+.catalog-more-btn:disabled {
+  color: #93a3b8;
+  cursor: default;
+}
+
 .chips {
   display: flex;
   align-items: center;
@@ -1726,31 +1967,44 @@ if (activeTab.value === 'compare') {
   white-space: nowrap;
 }
 
+.school-card.has-multiple-directions.is-expanded {
+  grid-column: 1 / -1;
+}
+
 .direction-count {
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #c5d8ff;
   background: #eef4ff;
   color: #1769f6;
   border-radius: 999px;
-  padding: 3px 9px;
-  margin-top: 4px;
-  font-size: 12px;
+  padding: 6px 12px;
+  margin-top: 8px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .direction-list {
-  margin-top: 14px;
+  margin-top: 16px;
   border-top: 1px solid #eef2f7;
-  padding-top: 10px;
+  padding-top: 12px;
+}
+
+.direction-list-header {
+  margin-bottom: 8px;
+  color: #5f6f85;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .direction-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 9px 0;
-  border-bottom: 1px solid #f1f5fb;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 20px;
+  align-items: start;
+  padding: 16px 0;
+  border-bottom: 1px solid #e8eef6;
 }
 
 .direction-row:last-child {
@@ -1758,8 +2012,7 @@ if (activeTab.value === 'compare') {
 }
 
 .direction-main strong,
-.direction-main small,
-.direction-stats span {
+.direction-main small {
   display: block;
 }
 
@@ -1774,15 +2027,76 @@ if (activeTab.value === 'compare') {
   margin-top: 2px;
 }
 
-.direction-stats {
-  color: #5f6f85;
+/* Higher specificity than `.direction-main small`, otherwise the meta line renders as a block
+   and Vue's whitespace trimming glues the exam combo to the year. */
+.direction-main small.direction-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 4px;
+}
+
+.direction-meta-sep {
+  color: #a6b1c2;
+}
+
+.direction-year {
+  white-space: nowrap;
+}
+
+.direction-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.direction-metric {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f6f9ff;
+}
+
+.direction-metric span {
+  display: block;
+  color: #7a879a;
   font-size: 12px;
-  line-height: 1.7;
+}
+
+.direction-metric strong {
+  display: block;
+  margin-top: 2px;
+  color: #1f2937;
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.direction-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  color: #7a879a;
+  font-size: 12px;
+}
+
+.direction-source {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 10px;
+  color: #7a879a;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .direction-actions {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 .direction-actions button {
@@ -1943,7 +2257,8 @@ if (activeTab.value === 'compare') {
   border: 1px solid #b7d1ff;
 }
 
-.grade-c {
+.grade-c,
+.grade-d {
   color: #d46b08;
   background: #fff3dd;
 }
@@ -2070,10 +2385,13 @@ if (activeTab.value === 'compare') {
 }
 
 .compare-table th {
-  width: 155px;
   background: #f8fbff;
-  text-align: left;
   color: #1f2937;
+}
+
+.compare-table th:first-child {
+  width: 155px;
+  text-align: left;
 }
 
 .star {
@@ -2618,5 +2936,50 @@ if (activeTab.value === 'compare') {
   .shortlist-sidebar {
     display: none;
   }
+}
+</style>
+
+<style>
+/* exam-combo-tip global — also covers the append-to-body drawer */
+.exam-combo-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+  outline: none;
+  border-bottom: 1px dashed #9aa8bc;
+}
+
+.exam-combo-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(280px, 78vw);
+  padding: 7px 9px;
+  border: 1px solid #dbe7ff;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 37, 76, 0.14);
+  color: #526278;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+  pointer-events: none;
+}
+
+.exam-combo-tip:hover::after,
+.exam-combo-tip:focus::after,
+.exam-combo-tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 </style>

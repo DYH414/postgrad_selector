@@ -106,7 +106,7 @@
               </div>
               <div class="panel-actions">
                 <span>已选择 {{ shortlistSelectedIds.length }} 项</span>
-                <el-button type="primary" :disabled="selectedRows.length < 2" @click="compareSelected">对比所选</el-button>
+                <el-button type="primary" :disabled="shortlistSelectedIds.length < 2" @click="compareSelected">对比所选</el-button>
                 <el-button v-if="compareIds.length > 0" type="success" size="small" plain @click="goToCompare">
                   查看对比 ({{ compareIds.length }})
                 </el-button>
@@ -146,7 +146,7 @@
                 <div class="shortlist-card-main">
                   <el-checkbox
                     :model-value="shortlistSelectedIds.includes(item.programId)"
-                    @change="toggleShortlistSelection(item)"
+                    @update:model-value="setShortlistSelection(item.programId, $event)"
                   />
                   <div class="shortlist-card-copy">
                     <div class="shortlist-title-row">
@@ -215,13 +215,23 @@
           <h2>{{ detail.basic.schoolName }}</h2>
           <p>{{ detail.basic.collegeName }} / {{ detail.basic.programName }}</p>
           <div class="detail-tags">
-            <span>{{ detail.basic.examCombo || '-' }}</span>
+            <span
+              v-if="hasExamCombo(detail.basic.examCombo)"
+              class="exam-combo-tip"
+              tabindex="0"
+              data-tip="该专业考试科目组合"
+              title="该专业考试科目组合">{{ formatExamCombo(detail.basic.examCombo) }}</span>
+            <span v-else>暂无</span>
             <span>{{ detail.basic.studyModeLabel }}</span>
             <span>{{ detail.dataCompleteness.label }}</span>
           </div>
           <div class="detail-score-grid">
-            <div><small>复试线</small><strong>{{ detail.recommendationOverview.scoreLine }}</strong></div>
-            <div><small>拟录取区间</small><strong>{{ detail.recommendationOverview.admissionRangeLabel || '-' }}</strong></div>
+            <div><small>复试线</small><strong>{{ displayMetric(detail.recommendationOverview.scoreLine) }}</strong></div>
+            <div><small>最低录取分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionLow) }}</strong></div>
+            <div><small>最高分</small><strong>{{ displayMetric(detail.recommendationOverview.admissionHigh) }}</strong></div>
+            <div><small>拟录取均分</small><strong>{{ displayMetric(detail.recommendationOverview.avgAdmittedScore) }}</strong></div>
+            <div><small>拟录取区间</small><strong>{{ formatAdmissionRange(detail.recommendationOverview.admissionLow, detail.recommendationOverview.admissionHigh, detail.recommendationOverview.admissionRangeLabel) }}</strong></div>
+            <div><small>拟录取人数</small><strong>{{ displayMetric(detail.recommendationOverview.admittedCount) }}</strong></div>
           </div>
           <div class="drawer-warning">
             <p v-for="warning in detail.riskWarnings" :key="warning">· {{ warning }}</p>
@@ -240,6 +250,8 @@ import AppHeader from '@/components/AppHeader.vue'
 import { useUserStore } from '@/stores/user'
 import { getProfile, saveProfile } from '@/api/profile'
 import { listFavorites, removeFavorite } from '@/api/favorites'
+import { displayMetric, formatAdmissionRange } from '@/utils/admissionDisplay.mjs'
+import { formatExamCombo, hasExamCombo } from '@/utils/examComboDisplay.mjs'
 import { getProgramDetail } from '@/api/programs'
 import { listReports } from '@/api/recommend-v2'
 import { COMPARE_STORAGE_KEY, COMPARE_SCORE_KEY, COMPARE_MAX_ITEMS } from '@/api/compare-constants'
@@ -276,7 +288,7 @@ const form = reactive({
 })
 
 const favorites = ref([])
-const selectedRows = ref([])
+const shortlistSelectedIds = ref([])
 const compareIds = ref([])
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -329,8 +341,6 @@ const profileRows = computed(() => [
   { label: '目标地区', value: regionText.value },
   { label: '择校偏好', value: priorityLabels[normalizePriority(profile.schoolTierPreference)] || '安全上岸优先' }
 ])
-
-const shortlistSelectedIds = computed(() => selectedRows.value.map(row => row.programId).filter(Boolean))
 
 const shortlistOverview = computed(() => {
   const professional = favorites.value.filter(item => item.degreeType === 'professional').length
@@ -406,15 +416,15 @@ function handleRemove(row) {
   removeFavorite(row.programId).then(() => {
     ElMessage.success('已移出备选')
     favorites.value = favorites.value.filter(f => f.programId !== row.programId)
-    selectedRows.value = selectedRows.value.filter(f => f.programId !== row.programId)
+    shortlistSelectedIds.value = shortlistSelectedIds.value.filter(id => id !== row.programId)
   })
 }
 
-function toggleShortlistSelection(row) {
-  const exists = selectedRows.value.some(item => item.programId === row.programId)
-  selectedRows.value = exists
-    ? selectedRows.value.filter(item => item.programId !== row.programId)
-    : [...selectedRows.value, row]
+function setShortlistSelection(programId, checked) {
+  if (shortlistSelectedIds.value.includes(programId) === checked) return
+  shortlistSelectedIds.value = checked
+    ? [...shortlistSelectedIds.value, programId]
+    : shortlistSelectedIds.value.filter(id => id !== programId)
 }
 
 function loadCompareState() {
@@ -452,12 +462,19 @@ function goToCompare() {
 }
 
 function compareSelected() {
-  const ids = selectedRows.value.map(row => row.programId).filter(Boolean)
+  const ids = shortlistSelectedIds.value
   if (ids.length < 2) {
     ElMessage.warning('至少选择 2 个项目进行对比')
     return
   }
-  router.push({ path: '/results', query: { tab: 'compare', programIds: ids.join(',') } })
+  if (ids.length > COMPARE_MAX_ITEMS) {
+    ElMessage.warning(`最多对比 ${COMPARE_MAX_ITEMS} 所学校`)
+    return
+  }
+  router.push({
+    path: '/results',
+    query: { tab: 'compare', programIds: ids.join(','), score: profile.estimatedScore || undefined }
+  })
 }
 
 function openDetail(row) {
@@ -1073,5 +1090,46 @@ onMounted(() => {
   .shortlist-actions {
     padding-left: 0;
   }
+}
+</style>
+
+<style>
+.exam-combo-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+  outline: none;
+  border-bottom: 1px dashed #9aa8bc;
+}
+.exam-combo-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(280px, 78vw);
+  padding: 7px 9px;
+  border: 1px solid #dbe7ff;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 37, 76, 0.14);
+  color: #526278;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+.exam-combo-tip:hover::after,
+.exam-combo-tip:focus::after,
+.exam-combo-tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 </style>

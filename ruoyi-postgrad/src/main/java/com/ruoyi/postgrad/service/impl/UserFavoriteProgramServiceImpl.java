@@ -3,6 +3,8 @@ package com.ruoyi.postgrad.service.impl;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import com.ruoyi.common.constant.HttpStatus;
+import com.ruoyi.common.exception.ServiceException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.ruoyi.postgrad.domain.UserFavoriteProgram;
@@ -38,7 +40,12 @@ public class UserFavoriteProgramServiceImpl implements IUserFavoriteProgramServi
         fav.setUserId(userId);
         fav.setProgramId(programId);
         fav.setNote(note);
-        return favoriteMapper.insertUserFavoriteProgram(fav);
+        int rows = favoriteMapper.insertUserFavoriteProgram(fav);
+        if (rows == 0 && !isFavorited(userId, programId))
+        {
+            throw new ServiceException("专业不存在或暂无可用数据", HttpStatus.NOT_FOUND);
+        }
+        return rows;
     }
 
     @Override

@@ -348,16 +348,12 @@ async function handleGenerate() {
   resetProgress()
   startProgress()
   applyProgress({ phase: 'queued', message: '正在准备生成草稿...' })
-  draft.value = null
-  pendingFinalDraft.value = null
-  chatMessages.value = []
-  enqueueGenerationBubble(getGenerationStartMessage())
   closeEventSource(draftEventSource)
 
   try {
     const res = await startGenerateDraft()
     const task = res.data || {}
-    if (task.status === 'busy') {
+    if (task.status === 'locked') {
       generating.value = false
       stopProgress()
       resetGenerationBubbles()
@@ -368,6 +364,11 @@ async function handleGenerate() {
     if (!task.taskId || !task.streamToken) {
       throw new Error('生成任务创建失败')
     }
+
+    draft.value = null
+    pendingFinalDraft.value = null
+    chatMessages.value = []
+    enqueueGenerationBubble(getGenerationStartMessage())
 
     const source = openDraftGenerationStream({
       taskId: task.taskId,
@@ -426,13 +427,13 @@ async function handleGenerate() {
       ElMessage.error(message)
     })
   } catch (e) {
-    const msg = e.message || '网络错误'
+    const msg = safeUserError(e.message, '生成草稿失败，请稍后重试')
     if (msg.includes('正在生成')) {
       ElMessage.warning('已有草稿正在生成，请稍候')
     } else {
-      ElMessage.error('生成草稿失败，请稍后重试')
+      ElMessage.error(msg)
     }
-    applyProgress({ phase: 'error', message: safeUserError(msg, '生成草稿失败，请稍后重试') })
+    applyProgress({ phase: 'error', message: msg })
     generating.value = false
     stopProgress()
     clearRevealTimers()
@@ -533,6 +534,7 @@ function handleAskAbout(programId, schoolName, programName) {
 }
 
 async function handleChatSend(message) {
+  if (chatStreaming.value) return
   chatVisible.value = true
   chatMessages.value.push({ role: 'user', content: message })
   chatStreaming.value = true
@@ -548,6 +550,7 @@ async function handleChatSend(message) {
     let buffer = ''
     let currentEvent = ''
     let assistantText = ''
+    let completed = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -572,14 +575,16 @@ async function handleChatSend(message) {
               assistantText += data.text
               chatStreamingText.value = sanitizeAssistantText(assistantText)
             } else if (currentEvent === 'done') {
+              completed = true
               currentToolCall.value = ''
               chatStreamingText.value = ''
-              chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message) })
+              chatMessages.value.push({ role: 'assistant', content: sanitizeAssistantText(data.message), metadataJson: data.metadataJson || null })
               if (data.draftChanged) {
                 await loadDraftData()
               }
               await presentAgentAction(data.toolActionResult)
             } else if (currentEvent === 'error') {
+              completed = true
               currentToolCall.value = ''
               chatStreamingText.value = ''
               ElMessage.error(safeUserError(data.message, '对话失败，请稍后重试'))
@@ -588,6 +593,7 @@ async function handleChatSend(message) {
         }
       }
     }
+    if (!completed) throw new Error('Chat stream closed before completion')
   } catch (e) {
     currentToolCall.value = ''
     chatStreamingText.value = ''

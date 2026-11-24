@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.domain.dto;
 
+import com.ruoyi.postgrad.domain.ProgramDegreeType;
+import com.ruoyi.postgrad.domain.ProgramExamCombo;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.domain.ai.AiRecommendationSafety;
 import java.io.Serializable;
@@ -104,7 +106,7 @@ public class ProgramSummaryDTO implements Serializable {
         d.programName = str(row.get("programName"));
         d.programCode = str(row.get("programCode"));
         d.researchDirection = str(row.get("researchDirection"));
-        d.degreeType = str(row.get("degreeType"));
+        d.degreeType = ProgramDegreeType.resolve(d.programCode, str(row.get("degreeType")));
         d.subjectCodes = str(row.get("subjectCodes"));
         d.scoreLine = toInt(row.get("scoreLine"));
         d.avgAdmittedScore = toInt(row.get("avgAdmittedScore"));
@@ -120,8 +122,11 @@ public class ProgramSummaryDTO implements Serializable {
         d.sourceOwner = str(row.get("sourceOwner"));
 
         // 计算字段
-        d.examCombo = examComboBySubjects(d.subjectCodes);
-        d.examSubjectsLabel = subjectsLabel(d.examCombo);
+        if (d.subjectCodes != null && !d.subjectCodes.isBlank()) {
+            ProgramExamCombo combo = ProgramExamCombo.fromSubjects(d.subjectCodes);
+            d.examCombo = combo != null ? combo.code() : d.subjectCodes;
+            d.examSubjectsLabel = combo != null ? combo.label() : d.subjectCodes;
+        }
         d.degreeTypeLabel = degreeTypeLabel(d.degreeType);
 
         int score = estimatedScore <= 0 ? 0 : estimatedScore;
@@ -133,7 +138,8 @@ public class ProgramSummaryDTO implements Serializable {
         d.admissionRangeLabel = rangeLabel(d.admissionLow, d.admissionHigh);
         d.retestAdmissionRatio = ratio(d.retestCount, d.admittedCount);
 
-        String completeness = AiRecommendationSafety.computedCompleteness(row);
+        String completeness = d.scoreLine == null && "D".equals(row.get("dataCompleteness"))
+            ? "D" : AiRecommendationSafety.computedCompleteness(row);
         d.dataCompleteness = completeness;
         d.dataCompletenessText = dataCompletenessDescription(completeness);
 
@@ -144,15 +150,6 @@ public class ProgramSummaryDTO implements Serializable {
     }
 
     // ── 计算逻辑（从 ProgramRecommendationServiceImpl 移入）──
-
-    private static String examComboBySubjects(String codes) {
-        return "101,204,302,408".equals(codes) ? "22408" : "11408";
-    }
-
-    private static String subjectsLabel(String combo) {
-        return "22408".equals(combo) ? "政治 + 英语二 + 数学二 + 408"
-            : "政治 + 英语一 + 数学一 + 408";
-    }
 
     private static String degreeTypeLabel(String s) {
         return "academic".equals(s) ? "学硕" : "专硕";
@@ -193,6 +190,7 @@ public class ProgramSummaryDTO implements Serializable {
         return switch (level) {
             case "A" -> "含复试线、拟录取区间、人数等字段";
             case "B" -> "含主要分数字段，部分字段缺失";
+            case "D" -> "缺少复试总分线";
             default -> "仅有复试线或基础字段";
         };
     }
@@ -201,7 +199,7 @@ public class ProgramSummaryDTO implements Serializable {
         List<String> w = new ArrayList<>();
         w.add("复试线不是最低录取分。");
         w.add("筛选学校不代表只有这些学校可以报。");
-        if (!"A".equals(completeness)) w.add("N诺数据字段不完整，请重点核对院校官方公告。");
+        if (!"A".equals(completeness)) w.add("数据字段不完整，请重点核对院校官方公告。");
         if (d.unifiedExamQuota != null && d.unifiedExamQuota < 10) w.add("统考名额较少，波动风险较高。");
         if (!Boolean.TRUE.equals(d.officialVerified)) w.add("保护一志愿信息不明确或不保护，需单独核实。");
         return w;

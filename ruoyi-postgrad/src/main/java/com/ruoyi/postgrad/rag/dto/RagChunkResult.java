@@ -14,6 +14,7 @@ public class RagChunkResult {
     private String sourceName;
     private String sourceId;
     private String sourceUrl;
+    private String sourceBackupUrl;
     private String docType;
     private String schoolId;
     private String programId;
@@ -45,6 +46,8 @@ public class RagChunkResult {
     public void setSourceId(String sourceId) { this.sourceId = sourceId; }
     public String getSourceUrl() { return sourceUrl; }
     public void setSourceUrl(String sourceUrl) { this.sourceUrl = sourceUrl; }
+    public String getSourceBackupUrl() { return sourceBackupUrl; }
+    public void setSourceBackupUrl(String sourceBackupUrl) { this.sourceBackupUrl = sourceBackupUrl; }
     public String getDocType() { return docType; }
     public void setDocType(String docType) { this.docType = docType; }
     public String getSchoolId() { return schoolId; }

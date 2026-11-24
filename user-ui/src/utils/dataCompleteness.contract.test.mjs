@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-const files = [
-  'ruoyi-postgrad/src/main/resources/mapper/postgrad/RecommendationMapper.xml',
-  'ruoyi-postgrad/src/main/resources/mapper/postgrad/ProgramSearchMapper.xml',
-  'ruoyi-postgrad/src/main/resources/mapper/postgrad/AiDatabaseToolMapper.xml'
-]
+const mapper = 'ruoyi-postgrad/src/main/resources/mapper/postgrad/'
+const files = [mapper + 'RecommendationMapper.xml', mapper + 'AiDatabaseToolMapper.xml']
+const search = readFileSync(mapper + 'ProgramSearchMapper.xml', 'utf8')
+assert.match(search, /<include refid="com\.ruoyi\.postgrad\.mapper\.RecommendationMapper\.DynamicDataCompleteness"\/>\s+as\s+dataCompleteness/)
 
 for (const file of files) {
   const source = readFileSync(file, 'utf8')
@@ -19,7 +18,7 @@ for (const file of files) {
   assert.match(source, /ar\.avg_admitted_score\s+is\s+not\s+null/i, `${file} must compute fallback from result data`)
 }
 
-const syncSql = readFileSync('sql/sync_program_year_data_quality.sql', 'utf8')
+const syncSql = readFileSync('sql/90_data_quality_maintenance.sql', 'utf8')
 assert.match(syncSql, /THEN\s+'A'/i, 'quality sync must be able to produce A level')
 
 console.log('Data completeness SQL contract checks passed')

@@ -4,6 +4,25 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.postgrad.mapper.RecommendationMapper">
 
+    <!--
+      Applicant-visible programs: active full-time programs on active schools whose
+      exam subject list contains 408. program.is_408 is not a reliable source of
+      truth on its own (the live catalog has both false positives and false
+      negatives), so the program_subject rows decide.
+    -->
+    <sql id="ApplicantVisibleProgram">
+        p.status = 'active'
+        and s.status = 'active'
+        and p.study_mode = 'full_time'
+        and exists (
+            select 1
+            from program_subject ps408
+            join subject sub408 on sub408.id = ps408.subject_id
+            where ps408.program_id = p.id
+              and sub408.code = '408'
+        )
+    </sql>
+
     <sql id="DynamicDataCompleteness">
         case
             when sc.score_line is not null
@@ -71,15 +90,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active' and s.status = 'active' and p.is_408 = 1
-        <choose>
-            <when test="studyMode != null">
-                and p.study_mode = #{studyMode}
-            </when>
-            <otherwise>
-                and p.study_mode = 'full_time'
-            </otherwise>
-        </choose>
+        where <include refid="ApplicantVisibleProgram"/>
           and subj.subject_codes = #{subjectCodes}
         <if test="regions != null and regions.size() > 0">
             and (s.province in
@@ -104,7 +115,66 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit 300
     </select>
 
-    <select id="selectProgramForRecommendation" resultType="com.ruoyi.postgrad.domain.RowMap">
+    <sql id="LatestFactYear">fact_year.year</sql>
+
+    <sql id="LatestFactYearJoins">
+        left join (
+            select program_id, max(year) as year
+            from (
+                select program_id, year from admission_score where score_line is not null
+                union all
+                select program_id, year from admission_result
+                union all
+                select program_id, year from admission_plan
+            ) annual_facts
+            group by program_id
+        ) fact_year on fact_year.program_id = p.id
+        left join admission_score sc on sc.program_id = p.id and sc.year = fact_year.year
+        left join admission_plan ap on ap.program_id = p.id and ap.year = fact_year.year
+        left join admission_result ar on ar.program_id = p.id and ar.year = fact_year.year
+        left join program_year_data_quality q on q.program_id = p.id and q.year = fact_year.year
+    </sql>
+
+    <!--
+      Pick the most complete data_source attached to the same program's admission facts.
+      Short placeholder titles such as 'N诺考研择校-中国科学院大学-' end with a dash; prefer
+      a title that carries the program/major suffix, newest year first.
+    -->
+    <sql id="PreferredSourceJoin">
+        left join (
+            select program_id, url, title, source_owner
+            from (
+                select ar2.program_id, ds2.url, ds2.title, ds2.source_owner,
+                       row_number() over (
+                           partition by ar2.program_id
+                           order by case
+                               when ds2.title is null or trim(ds2.title) = '' or trim(ds2.title) like '%-' then 1
+                               else 0
+                           end,
+                           ar2.year desc,
+                           char_length(ds2.title) desc,
+                           ds2.id desc
+                       ) as rn
+                from admission_result ar2
+                join data_source ds2 on ds2.id = ar2.source_id
+            ) ranked_sources
+            where rn = 1
+        ) preferred_ds on preferred_ds.program_id = p.id
+    </sql>
+
+    <sql id="CutoffYear">sc.year</sql>
+
+    <sql id="CutoffYearJoins">
+        left join admission_score sc on sc.program_id = p.id and sc.year = (
+            select max(sc2.year) from admission_score sc2
+            where sc2.program_id = p.id and sc2.score_line is not null
+        )
+        left join admission_plan ap on ap.program_id = p.id and ap.year = sc.year
+        left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
+        left join program_year_data_quality q on q.program_id = p.id and q.year = sc.year
+    </sql>
+
+    <sql id="CatalogProgramById">
         select
             p.id as programId, s.id as schoolId, s.name as schoolName,
             s.province as province, s.city as city, s.tier as schoolTier,
@@ -118,7 +188,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             p.is_joint_program as isJointProgram,
             subj.subject_codes as subjectCodes,
             subj.subject_names as subjectNames,
-            sc.year as dataYear, sc.score_line as scoreLine,
+            <include refid="${yearColumn}"/> as dataYear, sc.score_line as scoreLine,
             ap.total_plan as planCount, ap.unified_exam_quota as unifiedExamQuota,
             ap.retest_count as retestCount,
             ar.admitted_count as admittedCount,
@@ -127,9 +197,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ar.max_admitted_score as admissionHigh,
             <include refid="DynamicDataCompleteness"/> as dataCompleteness,
             q.has_official_source as officialVerified,
-            coalesce(ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
-            coalesce(ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
-            coalesce(ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
+            coalesce(preferred_ds.url, ar_ds.url, sc_ds.url, ap_ds.url) as sourceUrl,
+            coalesce(preferred_ds.title, ar_ds.title, sc_ds.title, ap_ds.title) as sourceTitle,
+            coalesce(preferred_ds.source_owner, ar_ds.source_owner, sc_ds.source_owner, ap_ds.source_owner, 'N诺') as sourceOwner
         from program p
         join college c on p.college_id = c.id
         join school s on c.school_id = s.id
@@ -141,31 +211,54 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             join subject sub on ps.subject_id = sub.id
             group by ps.program_id
         ) subj on subj.program_id = p.id
-        join admission_score sc on sc.program_id = p.id
-          and sc.year = (
-            select max(sc2.year) from admission_score sc2
-            where sc2.program_id = p.id and sc2.score_line is not null
-          )
-        left join admission_plan ap on ap.program_id = p.id and ap.year = sc.year
-        left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
-        left join program_year_data_quality q on q.program_id = p.id and q.year = sc.year
+        <include refid="${yearJoins}"/>
+        <include refid="PreferredSourceJoin"/>
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.id = #{programId} and p.status = 'active' and s.status = 'active'
+        where p.id = #{programId}
+          and <include refid="ApplicantVisibleProgram"/>
+    </sql>
+
+    <select id="selectProgramForRecommendation" resultType="com.ruoyi.postgrad.domain.RowMap">
+        <include refid="CatalogProgramById">
+            <property name="yearColumn" value="CutoffYear"/>
+            <property name="yearJoins" value="CutoffYearJoins"/>
+        </include>
+        and sc.score_line is not null
+    </select>
+
+    <select id="selectCatalogProgram" resultType="com.ruoyi.postgrad.domain.RowMap">
+        <include refid="CatalogProgramById">
+            <property name="yearColumn" value="LatestFactYear"/>
+            <property name="yearJoins" value="LatestFactYearJoins"/>
+        </include>
     </select>
 
     <select id="selectTrends" resultType="com.ruoyi.postgrad.domain.RowMap">
-        select sc.year as year, sc.score_line as scoreLine,
+        select fact_year.year, sc.score_line as scoreLine,
                ar.avg_admitted_score as avgAdmittedScore,
                ar.min_admitted_score as admissionLow,
                ar.max_admitted_score as admissionHigh,
                ar.admitted_count as admittedCount
-        from admission_score sc
-        left join admission_result ar on ar.program_id = sc.program_id and ar.year = sc.year
-        where sc.program_id = #{programId} and sc.score_line is not null
-        order by sc.year desc
+        from (
+            select year from admission_score where program_id = #{programId} and score_line is not null
+            union
+            select year from admission_result where program_id = #{programId}
+        ) fact_year
+        left join admission_score sc on sc.year = fact_year.year and sc.program_id = #{programId}
+        left join admission_result ar on ar.year = fact_year.year and ar.program_id = #{programId}
+        order by fact_year.year desc
         limit 3
+    </select>
+
+    <select id="selectApplicantProgramIds" resultType="java.lang.Long">
+        select p.id from program p
+        join college c on c.id = p.college_id
+        join school s on s.id = c.school_id
+        where <include refid="ApplicantVisibleProgram"/>
+          and p.id in
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 
     <select id="selectProgramsByIds" resultType="com.ruoyi.postgrad.domain.RowMap">
@@ -220,8 +313,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <foreach collection="ids" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
-        and p.status = 'active' and s.status = 'active'
-        and p.study_mode = 'full_time'
+        and <include refid="ApplicantVisibleProgram"/>
     </select>
 
     <select id="selectForAnalysis" resultType="com.ruoyi.postgrad.domain.RowMap">
@@ -254,8 +346,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active' and s.status = 'active' and p.is_408 = 1
-          and p.study_mode = 'full_time'
+        where <include refid="ApplicantVisibleProgram"/>
           and (sc.score_line is not null or ar.avg_admitted_score is not null)
           and ar.avg_admitted_score >= #{minScore}
           and ar.avg_admitted_score &lt;= #{maxScore}
@@ -306,9 +397,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         left join data_source sc_ds on sc_ds.id = sc.source_id
         left join data_source ap_ds on ap_ds.id = ap.source_id
         left join data_source ar_ds on ar_ds.id = ar.source_id
-        where p.status = 'active' and s.status = 'active'
-          and p.is_408 = 1
-          and p.study_mode = 'full_time'
+        where <include refid="ApplicantVisibleProgram"/>
           and (sc.score_line is not null or ar.avg_admitted_score is not null)
           and (ar.avg_admitted_score is null or ar.avg_admitted_score between #{minScore} and #{maxScore})
         <if test="regions != null and regions.size() > 0">

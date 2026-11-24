@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.tool;
 
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -9,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.alibaba.fastjson2.JSON;
+import com.ruoyi.postgrad.domain.ProgramExamCombo;
 import com.ruoyi.postgrad.domain.RowMap;
 import com.ruoyi.postgrad.mapper.RecommendationMapper;
 import com.ruoyi.postgrad.recommend.domain.CandidateCardVO;
@@ -109,12 +112,14 @@ public class V2ChatTools {
             request.setMaxResults(6);
             request.setRerankTopN(3);
             RagEvidenceResponse evidence = ragEvidenceService.retrieveProgramEvidence(request);
+            if (ctx != null) ctx.addRagCitations(evidence.getCitations());
 
             result.put("ok", evidence.getErrorSummary() == null);
             result.put("fallbackUsed", evidence.isFallbackUsed());
             result.put("fallbackMode", evidence.getFallbackMode());
             result.put("citations", evidence.getCitations());
             result.put("selectedChunks", evidence.getSelectedChunks());
+            result.put("passages", evidence.getPassages());
             if (evidence.getErrorSummary() != null) {
                 result.put("error", evidence.getErrorSummary());
             }
@@ -218,6 +223,11 @@ public class V2ChatTools {
         item.put("collegeName", f.getCollegeName());
         item.put("programName", f.getProgramName());
         item.put("programCode", f.getProgramCode());
+        item.put("examCombo", f.getExamCombo());
+        ProgramExamCombo examCombo = ProgramExamCombo.fromCode(f.getExamCombo());
+        if (examCombo != null) {
+            item.put("examSubjectsLabel", examCombo.label());
+        }
         item.put("degreeType", f.getDegreeType());
         item.put("dataYear", f.getDataYear());
         item.put("displayName", displayName(f));
@@ -457,11 +467,13 @@ public class V2ChatTools {
             request.setMaxResults(8);
             request.setRerankTopN(4);
             RagEvidenceResponse evidence = ragEvidenceService.retrieveProgramEvidence(request);
+            if (ctx != null) ctx.addRagCitations(evidence.getCitations());
 
             result.put("ok", evidence.getErrorSummary() == null);
             result.put("fallbackUsed", evidence.isFallbackUsed());
             result.put("citations", evidence.getCitations());
             result.put("selectedChunks", evidence.getSelectedChunks());
+            result.put("passages", evidence.getPassages());
             if (evidence.getErrorSummary() != null) {
                 result.put("error", evidence.getErrorSummary());
             }
@@ -517,6 +529,7 @@ public class V2ChatTools {
                 return "{\"ok\":false,\"message\":\"尚未生成草稿，无法分析。\"}";
             }
             DraftVO draft = JSON.parseObject(json, DraftVO.class);
+            if (draft != null) ApplicantCandidateFilter.draft(draft, V2ChatToolContext.current().mapper());
             if (draft.getTiers() == null || draft.getTiers().isEmpty()) {
                 return "{\"ok\":false,\"message\":\"草稿中没有候选学校，无法分析。\"}";
             }
@@ -647,6 +660,7 @@ public class V2ChatTools {
 
         try {
             DraftVO draft = JSON.parseObject(json, DraftVO.class);
+            if (draft != null) ApplicantCandidateFilter.draft(draft, V2ChatToolContext.current().mapper());
             return formatDraftSummary(draft);
         } catch (Exception e) {
             return "草稿数据解析失败。";
@@ -669,7 +683,7 @@ public class V2ChatTools {
                     if (tier.getCandidates() != null) all.addAll(tier.getCandidates());
                 }
             }
-            return all;
+            return ApplicantCandidateFilter.cards(all, V2ChatToolContext.current().mapper());
         } catch (Exception e) { return new ArrayList<>(); }
     }
 
@@ -678,7 +692,8 @@ public class V2ChatTools {
             .opsForValue().get(DraftServiceImpl.DRAFT_POOL_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return new ArrayList<>();
         try {
-            return JSON.parseArray(json, CandidateCardVO.class);
+            return ApplicantCandidateFilter.cards(
+                JSON.parseArray(json, CandidateCardVO.class), V2ChatToolContext.current().mapper());
         } catch (Exception e) { return new ArrayList<>(); }
     }
 
@@ -691,9 +706,11 @@ public class V2ChatTools {
 
     private String formatFactCard(com.ruoyi.postgrad.recommend.domain.SchoolFact f) {
         if (f == null) return "无数据";
+        ProgramExamCombo examCombo = ProgramExamCombo.fromCode(f.getExamCombo());
         return String.format(
-            "%s | %s | 层次:%s | 城市:%s | 均分:%s | 差距:%s | 招生:%s | %s | 可保底:%s | 数据:%s",
+            "%s | %s | 层次:%s | 城市:%s | 考试组合:%s | 均分:%s | 差距:%s | 招生:%s | %s | 可保底:%s | 数据:%s",
             f.getSchoolName(), f.getProgramName(), f.getSchoolTier(), f.getCity(),
+            examCombo != null ? examCombo.label() : "-",
             f.getAvgAdmittedScore() != null ? String.valueOf(f.getAvgAdmittedScore()) : "-",
             f.getGapLabel() != null ? f.getGapLabel() : "-",
             f.getUnifiedExamQuota() != null ? String.valueOf(f.getUnifiedExamQuota())
@@ -710,6 +727,9 @@ public class V2ChatTools {
         sb.append(row.get("programName")).append(" | ");
         sb.append("层次:").append(row.get("schoolTier")).append(" | ");
         sb.append("城市:").append(row.get("city")).append(" | ");
+        if (row.get("subjectNames") != null) {
+            sb.append("考试科目:").append(row.get("subjectNames")).append(" | ");
+        }
         sb.append("均分:").append(row.get("avgAdmittedScore") != null ? row.get("avgAdmittedScore") : "-").append(" | ");
         sb.append("招生:").append(row.get("unifiedExamQuota") != null ? row.get("unifiedExamQuota")
             : (row.get("planCount") != null ? row.get("planCount") : "-")).append(" | ");

@@ -1,5 +1,7 @@
 package com.ruoyi.postgrad.recommend.tool;
 
+import com.ruoyi.postgrad.recommend.service.ApplicantCandidateFilter;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -473,7 +475,8 @@ public class V2DraftActionTools {
     private CandidateWorkspaceVO loadWorkspace(Long userId) {
         String json = redisTemplate.opsForValue().get(WORKSPACE_KEY_PREFIX + userId);
         if (json == null || json.isBlank()) return null;
-        try { return JSON.parseObject(json, CandidateWorkspaceVO.class); }
+        try { return ApplicantCandidateFilter.workspace(
+            JSON.parseObject(json, CandidateWorkspaceVO.class), recommendationMapper); }
         catch (Exception e) { return null; }
     }
 

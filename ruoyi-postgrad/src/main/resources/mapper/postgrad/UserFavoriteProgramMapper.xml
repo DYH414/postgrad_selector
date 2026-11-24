@@ -30,26 +30,28 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                          where sc2.program_id = p.id and sc2.score_line is not null)
         left join admission_result ar on ar.program_id = p.id and ar.year = sc.year
         where ufp.user_id = #{userId}
+          and <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.ApplicantVisibleProgram"/>
         order by ufp.created_at desc
     </select>
 
     <select id="selectCountByUserIdAndProgramId" resultType="int">
-        select count(1) from user_favorite_program
-        where user_id = #{userId} and program_id = #{programId}
+        select count(1) from user_favorite_program ufp
+        join program p on p.id = ufp.program_id
+        join college c on c.id = p.college_id
+        join school s on s.id = c.school_id
+        where ufp.user_id = #{userId} and ufp.program_id = #{programId}
+          and <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.ApplicantVisibleProgram"/>
     </select>
 
     <insert id="insertUserFavoriteProgram" parameterType="UserFavoriteProgram" useGeneratedKeys="true" keyProperty="id">
-        insert into user_favorite_program(
-            <if test="userId != null">user_id,</if>
-            <if test="programId != null">program_id,</if>
-            <if test="note != null and note != ''">note,</if>
-            created_at, updated_at
-        )values(
-            <if test="userId != null">#{userId},</if>
-            <if test="programId != null">#{programId},</if>
-            <if test="note != null and note != ''">#{note},</if>
-            sysdate(), sysdate()
-        )
+        insert into user_favorite_program(user_id, program_id, note, created_at, updated_at)
+        select #{userId}, p.id, nullif(#{note}, ''), sysdate(), sysdate()
+        from program p
+        join college c on c.id = p.college_id
+        join school s on s.id = c.school_id
+        where p.id = #{programId}
+          and <include refid="com.ruoyi.postgrad.mapper.RecommendationMapper.ApplicantVisibleProgram"/>
+        on duplicate key update id = user_favorite_program.id
     </insert>
 
     <delete id="deleteUserFavoriteProgram">

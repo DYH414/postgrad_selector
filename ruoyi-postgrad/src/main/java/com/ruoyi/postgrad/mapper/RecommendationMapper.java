@@ -26,7 +26,11 @@ public interface RecommendationMapper
 
     RowMap selectProgramForRecommendation(@Param("programId") Long programId);
 
+    RowMap selectCatalogProgram(@Param("programId") Long programId);
+
     List<RowMap> selectTrends(@Param("programId") Long programId);
+
+    List<Long> selectApplicantProgramIds(@Param("ids") List<Long> ids);
 
     List<RowMap> selectProgramsByIds(@Param("ids") List<Long> ids,
         @Param("estimatedScore") Integer estimatedScore);

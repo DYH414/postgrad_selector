@@ -66,6 +66,7 @@ class DraftMutationServiceImplInvariantTest {
         injectField(service, "decisionLogService", decisionLogService);
         injectField(service, "refillPolicyService", refillPolicyService);
         injectField(service, "recommendationMapper", recommendationMapper);
+        when(recommendationMapper.selectApplicantProgramIds(any())).thenAnswer(inv -> inv.getArgument(0));
 
         valueOperations = mock(ValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);

@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -28,6 +29,7 @@ import com.ruoyi.postgrad.recommend.domain.DraftVO;
 import com.ruoyi.postgrad.recommend.domain.TierCandidates;
 import com.ruoyi.postgrad.recommend.service.ChatStreamCallback;
 import com.ruoyi.postgrad.recommend.service.ChatRunLockService;
+import com.ruoyi.postgrad.recommend.service.ConversationChatModelFactory;
 import com.ruoyi.postgrad.recommend.service.IAiChatService;
 import com.ruoyi.postgrad.recommend.service.IDraftService;
 import com.ruoyi.postgrad.recommend.tool.V2BoundChatTools;
@@ -47,7 +49,6 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.ToolErrorHandlerResult;
@@ -73,7 +74,7 @@ public class AiChatServiceImpl implements IAiChatService {
     private ChatModel chatModel;
 
     @Autowired
-    private OpenAiStreamingChatModel streamingChatModel;
+    private ConversationChatModelFactory conversationChatModelFactory;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -105,6 +106,8 @@ public class AiChatServiceImpl implements IAiChatService {
     private interface StreamAssistant {
         dev.langchain4j.service.TokenStream chat(String message);
     }
+
+    private record ChatSource(String sourceName, String sourceUrl, String sourceBackupUrl, String title) {}
 
     @Override
     public void finalizeConversation(Long userId) {
@@ -173,7 +176,6 @@ public class AiChatServiceImpl implements IAiChatService {
             // 3. 构建 ChatMemory
             ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(MAX_MESSAGES);
             for (ChatMessageVO m : history) {
-                if ("system".equals(m.getRole())) continue;
                 if (m.getContent() == null || m.getContent().isBlank()) continue;
                 if ("assistant".equals(m.getRole())) {
                     chatMemory.add(AiMessage.from(m.getContent()));
@@ -183,7 +185,7 @@ public class AiChatServiceImpl implements IAiChatService {
             }
 
             // 4. 保存用户消息
-            persistMessage(userId, conversation.getId(), "user", message, message);
+            persistMessage(userId, conversation.getId(), "user", message, null);
             history.add(new ChatMessageVO("user", message));
             saveHistory(userId, history);
 
@@ -226,7 +228,7 @@ public class AiChatServiceImpl implements IAiChatService {
             var writeTools = new V2BoundDraftActionTools(v2DraftActionTools, toolContext, agentToolRuntime);
             var scopedTools = AgentToolScope.select(routeDecision.route(), readTools, writeTools);
             AiServices<StreamAssistant> assistantBuilder = AiServices.builder(StreamAssistant.class)
-                .streamingChatModel(streamingChatModel)
+                .streamingChatModel(conversationChatModelFactory.forConversation(conversation.getId()))
                 .tools(scopedTools)
                 .hallucinatedToolNameStrategy(request -> ToolExecutionResultMessage.from(request,
                     agentToolRuntime.rejectWithoutExecution(toolContext, request.name(), "TOOL_NOT_FOUND",
@@ -260,11 +262,18 @@ public class AiChatServiceImpl implements IAiChatService {
 
                         history.add(new ChatMessageVO("assistant", aiText));
                         saveHistory(userId, history);
-                        persistMessage(userId, conversation.getId(), "assistant", aiText, aiText);
+                        List<ChatSource> sources = toolContext.ragCitations().stream()
+                            .map(citation -> new ChatSource(citation.getSourceName(), citation.getSourceUrl(),
+                                citation.getSourceBackupUrl(), citation.getTitle()))
+                            .distinct()
+                            .toList();
+                        String metadataJson = sources.isEmpty() ? null
+                            : JSON.toJSONString(Map.of("ragCitations", sources));
+                        persistMessage(userId, conversation.getId(), "assistant", aiText, metadataJson);
 
                         boolean draftChanged = toolContext.draftChanged();
                         String toolActionResultJson = toolContext.lastActionResultJson();
-                        callback.onDone(aiText, draftChanged, toolActionResultJson, runId);
+                        callback.onDone(aiText, draftChanged, toolActionResultJson, runId, metadataJson);
                     } catch (Exception e) {
                         log.error("[AiChat] Failed to complete stream for userId={}: {}", userId, e.getMessage());
                         callback.onError(e, runId);
@@ -356,18 +365,18 @@ public class AiChatServiceImpl implements IAiChatService {
         return conversation;
     }
 
-    private void persistMessage(Long userId, Long conversationId, String role, String content, String displayContent) {
+    private void persistMessage(Long userId, Long conversationId, String role, String content, String metadataJson) {
         AiChatMessage message = new AiChatMessage();
         message.setConversationId(conversationId);
         message.setUserId(userId);
         message.setRole(role);
         message.setContent(content);
-        message.setDisplayContent(displayContent != null ? displayContent : content);
+        message.setDisplayContent(content);
         message.setMessageType("text");
         message.setStatus("completed");
         Integer seq = aiChatMapper.selectNextSeq(conversationId);
         message.setSeq(seq != null ? seq : 1);
-        message.setMetadataJson(null);
+        message.setMetadataJson(metadataJson);
         aiChatMapper.insertMessage(message);
         aiChatMapper.touchConversation(conversationId);
     }
@@ -376,7 +385,7 @@ public class AiChatServiceImpl implements IAiChatService {
         List<AiChatMessage> rows = aiChatMapper.selectMessages(conversationId, 200);
         List<ChatMessageVO> result = new ArrayList<>();
         for (AiChatMessage row : rows) {
-            if ("system".equals(row.getRole())) continue;
+            if (!"user".equals(row.getRole()) && !"assistant".equals(row.getRole())) continue;
             ChatMessageVO vo = new ChatMessageVO(row.getRole(),
                 row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent());
             vo.setMessageType(row.getMessageType());
@@ -392,7 +401,6 @@ public class AiChatServiceImpl implements IAiChatService {
         List<AiChatMessage> rows = aiChatMapper.selectMessages(conversationId, MAX_MESSAGES);
         List<ChatMessageVO> result = new ArrayList<>();
         for (AiChatMessage row : rows) {
-            if ("system".equals(row.getRole())) continue;
             if (!"user".equals(row.getRole()) && !"assistant".equals(row.getRole())) continue;
             String content = row.getDisplayContent() != null ? row.getDisplayContent() : row.getContent();
             if (content == null || content.isBlank()) continue;

@@ -47,7 +47,7 @@ import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { getToken, removeToken, requireLoginPrompt } from '@/api/request'
+import { getToken, requireLoginPrompt } from '@/api/request'
 
 const router = useRouter()
 const route = useRoute()
@@ -99,9 +99,8 @@ function goProtected(path) {
   router.push(path)
 }
 
-function logout() {
-  removeToken()
-  userStore.logoutAction()
+async function logout() {
+  await userStore.logoutAction()
   hasToken.value = false
   ElMessage.success('已退出登录')
   if (route.path !== '/') {
